@@ -1,0 +1,26 @@
+{
+  "families": {
+    "ha": {
+      "workspaceFolder": "ha",
+      "front": {
+        "anchorName": "hommage-agence-front.git",
+        "remote": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-front"
+      },
+      "back": {
+        "anchorName": "hommage-agence-back.git",
+        "remote": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-back"
+      }
+    },
+    "he": {
+      "workspaceFolder": "he",
+      "front": {
+        "anchorName": "hommage-exploitation-front.git",
+        "remote": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/FRONT%20HOMMAGE%20EXPLOITATION"
+      },
+      "back": {
+        "anchorName": "hommage-exploitation-back.git",
+        "remote": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/HOMMAGE%20EXPLOITATION"
+      }
+    }
+  }
+}
