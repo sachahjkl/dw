@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sachahjkl/dw/schemas/databases.schema.json",
+  "title": "dw databases configuration",
+  "type": "object",
+  "required": ["schema", "defaults", "projects"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "const": 1
+    },
+    "defaults": {
+      "type": "object",
+      "required": ["readonly", "maxRows", "timeoutSeconds"],
+      "properties": {
+        "readonly": {
+          "const": true
+        },
+        "maxRows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        }
+      },
+      "additionalProperties": false
+    },
+    "projects": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["databases"],
+        "properties": {
+          "databases": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/database"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "database": {
+      "type": "object",
+      "required": ["provider"],
+      "properties": {
+        "provider": {
+          "const": "sqlserver"
+        },
+        "connectionString": {
+          "type": "string"
+        },
+        "connectionStringEnvironmentVariable": {
+          "type": "string"
+        },
+        "credentialKey": {
+          "type": "string"
+        },
+        "readonly": {
+          "const": true
+        },
+        "maxRows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
