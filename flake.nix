@@ -73,10 +73,10 @@
 
         publishLinuxX64Script = pkgs.writeShellApplication {
           name = "dw-publish-linux-x64";
-          runtimeInputs = [ dotnet pkgs.coreutils ];
+          runtimeInputs = [ dotnet pkgs.bash pkgs.coreutils ];
           text = ''
             ${dotnetEnv}
-            VERSION=${versionPrefix} COMMIT=${sourceRevision} ./scripts/publish-linux-x64.sh
+            VERSION=${versionPrefix} COMMIT=${sourceRevision} bash ./scripts/publish-linux-x64.sh
           '';
         };
       in
