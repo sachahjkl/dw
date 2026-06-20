@@ -1,0 +1,13 @@
+global using Dw.Cli.AzureDevOps;
+global using Dw.Cli.Bootstrap;
+global using Dw.Cli.Cli;
+global using Dw.Cli.Commands;
+global using Dw.Cli.Configuration;
+global using Dw.Cli.Database;
+global using Dw.Cli.Git;
+global using Dw.Cli.Platform;
+global using Dw.Cli.Security;
+global using Dw.Cli.Settings;
+global using Dw.Cli.Text;
+global using Dw.Cli.Updates;
+global using Dw.Cli.Workspaces;

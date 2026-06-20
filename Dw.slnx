@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src\Dw.Cli\Dw.Cli.csproj" />
+  <Project Path="tests\Dw.Cli.Tests\Dw.Cli.Tests.csproj" />
+</Solution>

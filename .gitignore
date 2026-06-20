@@ -1,0 +1,22 @@
+# Build outputs
+bin/
+obj/
+artifacts/
+
+# Local smoke/test roots
+.smoke/
+
+# User/local settings
+.env
+*.user
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS
+Thumbs.db
+Desktop.ini

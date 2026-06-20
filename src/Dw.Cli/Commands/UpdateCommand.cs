@@ -1,0 +1,105 @@
+namespace Dw.Cli.Commands;
+
+internal static class UpdateCommand
+{
+    public static int Run(CommandContext context, string[] args)
+    {
+        var sub = args.FirstOrDefault()?.ToLowerInvariant();
+        if (sub is null or "check")
+        {
+            return Check(context);
+        }
+
+        if (sub == "download")
+        {
+            return Download(context, args.Skip(1).ToArray());
+        }
+
+        context.Out.WriteLine("Usage: dw update [check|download]");
+        return 0;
+    }
+
+    private static int Check(CommandContext context)
+    {
+        var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
+        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        if (workflow.Updates is null)
+        {
+            throw new DwException("Configuration updates manquante dans workflow.json.");
+        }
+
+        using var http = new HttpClient();
+        var client = new GitHubReleaseClient(http);
+        var release = client.GetLatestReleaseAsync(workflow.Updates).GetAwaiter().GetResult();
+        var manifest = client.DownloadManifestAsync(release, workflow.Updates.AssetName).GetAwaiter().GetResult();
+
+        context.Out.WriteLine($"Latest release: {release.TagName}");
+        context.Out.WriteLine($"Manifest version: {manifest.Version}+{manifest.Commit}");
+        foreach (var asset in manifest.Assets)
+        {
+            context.Out.WriteLine($"- {asset.Rid}: {asset.FileName} {asset.Sha256}");
+        }
+
+        return 0;
+    }
+
+    private static int Download(CommandContext context, string[] args)
+    {
+        var rid = OptionValue(args, "--rid") ?? "win-x64";
+        var output = OptionValue(args, "--output") ?? Path.Combine(AppPaths.UserConfigDirectory, "updates");
+        var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
+        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        if (workflow.Updates is null)
+        {
+            throw new DwException("Configuration updates manquante dans workflow.json.");
+        }
+
+        using var http = new HttpClient();
+        var client = new GitHubReleaseClient(http);
+        var release = client.GetLatestReleaseAsync(workflow.Updates).GetAwaiter().GetResult();
+        var manifest = client.DownloadManifestAsync(release, workflow.Updates.AssetName).GetAwaiter().GetResult();
+        var asset = manifest.Assets.FirstOrDefault(asset => string.Equals(asset.Rid, rid, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new DwException($"Aucun asset pour RID {rid}.");
+
+        if (string.IsNullOrWhiteSpace(asset.Url))
+        {
+            throw new DwException("release.json doit contenir assets[].url pour telecharger un asset.");
+        }
+
+        Directory.CreateDirectory(output);
+        var destination = Path.Combine(output, asset.FileName);
+        using (var response = http.GetAsync(asset.Url).GetAwaiter().GetResult())
+        {
+            var body = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new DwException($"Telechargement update impossible HTTP {(int)response.StatusCode}.");
+            }
+
+            File.WriteAllBytes(destination, body);
+        }
+
+        var hash = Sha256.FileHashAsync(destination).GetAwaiter().GetResult();
+        if (!string.Equals(hash, asset.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Delete(destination);
+            throw new DwException($"SHA256 invalide pour {destination}. Attendu {asset.Sha256}, obtenu {hash}.");
+        }
+
+        context.Out.WriteLine($"Asset telecharge et verifie: {destination}");
+        return 0;
+    }
+
+    private static string? OptionValue(string[] args, string name)
+    {
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
+            {
+                return args[i + 1];
+            }
+        }
+
+        return null;
+    }
+}
