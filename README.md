@@ -54,6 +54,7 @@ With Nix:
 
 ```bash
 nix develop
+nix run . -- help
 nix run .#check
 DW_VERSION=2026.06.20.1 DW_COMMIT=abc1234 nix run .#publish-win-x64
 ```
@@ -77,6 +78,38 @@ Publish a Windows artifact and `release.json`:
 ```
 
 ## Install
+
+### Nix
+
+Run the CLI without installing it:
+
+```bash
+nix run github:sachahjkl/dw -- help
+nix run github:sachahjkl/dw -- auth status
+```
+
+Refresh to the latest pushed revision when needed:
+
+```bash
+nix run --refresh github:sachahjkl/dw -- version
+```
+
+Install it into your Nix profile for repeated use:
+
+```bash
+nix profile install github:sachahjkl/dw
+dw version
+```
+
+Upgrade a profile install:
+
+```bash
+nix profile upgrade github:sachahjkl/dw
+```
+
+`dw update check` and `dw update download` are disabled for Nix-managed installs. Use `nix run --refresh ...` or `nix profile upgrade ...` instead.
+
+### Release Binaries
 
 Windows install from the latest GitHub release:
 
@@ -145,6 +178,8 @@ When a commit lands on `master`, `.github/workflows/release.yml`:
    - `release.json`
 
 `release.json` is the manifest used by `dw update check` and `dw update download`.
+
+For release-binary installs, `dw update check` can inspect the latest GitHub release manifest. For Nix-managed installs, use Nix upgrade commands instead.
 
 Store a SQL connection string in Windows Credential Manager:
 

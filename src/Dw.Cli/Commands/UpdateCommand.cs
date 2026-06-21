@@ -4,6 +4,8 @@ internal static class UpdateCommand
 {
     public static int Run(CommandContext context, string[] args)
     {
+        EnsureSupportedHost();
+
         var sub = args.FirstOrDefault()?.ToLowerInvariant();
         if (sub is null or "check")
         {
@@ -23,15 +25,12 @@ internal static class UpdateCommand
     {
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
         var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
-        if (workflow.Updates is null)
-        {
-            throw new DwException("Configuration updates manquante dans workflow.json.");
-        }
+        var updates = ResolveUpdates(workflow);
 
         using var http = new HttpClient();
         var client = new GitHubReleaseClient(http);
-        var release = client.GetLatestReleaseAsync(workflow.Updates).GetAwaiter().GetResult();
-        var manifest = client.DownloadManifestAsync(release, workflow.Updates.AssetName).GetAwaiter().GetResult();
+        var release = client.GetLatestReleaseAsync(updates).GetAwaiter().GetResult();
+        var manifest = client.DownloadManifestAsync(release, updates.AssetName).GetAwaiter().GetResult();
 
         context.Out.WriteLine($"Latest release: {release.TagName}");
         context.Out.WriteLine($"Manifest version: {manifest.Version}+{manifest.Commit}");
@@ -49,15 +48,12 @@ internal static class UpdateCommand
         var output = OptionValue(args, "--output") ?? Path.Combine(AppPaths.UserConfigDirectory, "updates");
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
         var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
-        if (workflow.Updates is null)
-        {
-            throw new DwException("Configuration updates manquante dans workflow.json.");
-        }
+        var updates = ResolveUpdates(workflow);
 
         using var http = new HttpClient();
         var client = new GitHubReleaseClient(http);
-        var release = client.GetLatestReleaseAsync(workflow.Updates).GetAwaiter().GetResult();
-        var manifest = client.DownloadManifestAsync(release, workflow.Updates.AssetName).GetAwaiter().GetResult();
+        var release = client.GetLatestReleaseAsync(updates).GetAwaiter().GetResult();
+        var manifest = client.DownloadManifestAsync(release, updates.AssetName).GetAwaiter().GetResult();
         var asset = manifest.Assets.FirstOrDefault(asset => string.Equals(asset.Rid, rid, StringComparison.OrdinalIgnoreCase))
                     ?? throw new DwException($"Aucun asset pour RID {rid}.");
 
@@ -101,5 +97,16 @@ internal static class UpdateCommand
         }
 
         return null;
+    }
+
+    internal static UpdateOptions ResolveUpdates(WorkflowConfig workflow)
+        => workflow.Updates ?? UpdateDefaults.Options;
+
+    internal static void EnsureSupportedHost(string? executablePath = null)
+    {
+        if (RuntimeEnvironment.IsNixManagedExecutablePath(executablePath ?? Environment.ProcessPath))
+        {
+            throw new DwException("Auto-update indisponible pour une installation Nix. Utiliser `nix run --refresh github:sachahjkl/dw` ou `nix profile upgrade`.");
+        }
     }
 }

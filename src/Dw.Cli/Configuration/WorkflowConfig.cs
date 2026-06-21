@@ -23,7 +23,7 @@ internal sealed record UpdateOptions(
     string? Owner,
     string? Repository,
     bool IncludePrerelease = false,
-    string AssetName = "release.json");
+    string AssetName = UpdateDefaults.ManifestAssetName);
 
 internal sealed record TaskStartOptions(
     bool UpdateWorkItemState = true,

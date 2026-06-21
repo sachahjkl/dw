@@ -95,7 +95,7 @@ internal static class Templates
 }
 """;
 
-    public const string DefaultWorkflowJson = """
+    public static string DefaultWorkflowJson => $$"""
 {
   "$schema": "../schemas/workflow.schema.json",
   "schema": 1,
@@ -129,22 +129,22 @@ internal static class Templates
     "verificationCommands": {}
   },
   "auth": {
-    "tenantId": "organizations",
-    "clientId": "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+    "tenantId": "{{AzureDevOpsDefaults.TenantId}}",
+    "clientId": "{{AzureDevOpsDefaults.PublicClientId}}",
     "scopes": [
-      "499b84ac-1321-427f-aa17-267ca6975798/.default"
+      "{{AzureDevOpsDefaults.Scopes[0]}}"
     ]
   },
   "updates": {
     "owner": "",
     "repository": "",
     "includePrerelease": false,
-    "assetName": "release.json"
+    "assetName": "{{UpdateDefaults.ManifestAssetName}}"
   }
 }
 """;
 
-    public const string OgfWorkflowJson = """
+    public static string OgfWorkflowJson => $$"""
 {
   "$schema": "../schemas/workflow.schema.json",
   "schema": 1,
@@ -185,17 +185,17 @@ internal static class Templates
     }
   },
   "auth": {
-    "tenantId": "organizations",
-    "clientId": "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+    "tenantId": "{{AzureDevOpsDefaults.TenantId}}",
+    "clientId": "{{AzureDevOpsDefaults.PublicClientId}}",
     "scopes": [
-      "499b84ac-1321-427f-aa17-267ca6975798/.default"
+      "{{AzureDevOpsDefaults.Scopes[0]}}"
     ]
   },
   "updates": {
-    "owner": "sachahjkl",
-    "repository": "dw",
+    "owner": "{{UpdateDefaults.Owner}}",
+    "repository": "{{UpdateDefaults.Repository}}",
     "includePrerelease": false,
-    "assetName": "release.json"
+    "assetName": "{{UpdateDefaults.ManifestAssetName}}"
   }
 }
 """;

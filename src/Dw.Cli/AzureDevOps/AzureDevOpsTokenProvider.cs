@@ -5,15 +5,11 @@ namespace Dw.Cli.AzureDevOps;
 
 internal sealed class AzureDevOpsTokenProvider(AuthOptions? authOptions)
 {
-    public const string AzureDevOpsResourceId = "499b84ac-1321-427f-aa17-267ca6975798";
-    public const string DefaultPublicClientId = "04b07795-8ddb-461a-bbee-02f9e1bf7b46";
-    public static readonly string[] DefaultScopes = [$"{AzureDevOpsResourceId}/.default"];
-
     public async Task<TokenResult> GetTokenInteractiveAsync(CancellationToken cancellationToken = default)
     {
         var configured = RequireConfiguredAuth();
         var app = BuildApplication(configured);
-        var scopes = configured.Scopes.Length > 0 ? configured.Scopes : DefaultScopes;
+        var scopes = configured.Scopes.Length > 0 ? configured.Scopes : AzureDevOpsDefaults.Scopes;
 
         var result = await app.AcquireTokenInteractive(scopes)
             .WithUseEmbeddedWebView(false)
@@ -46,7 +42,7 @@ internal sealed class AzureDevOpsTokenProvider(AuthOptions? authOptions)
 
         try
         {
-            var scopes = authOptions.Scopes.Length > 0 ? authOptions.Scopes : DefaultScopes;
+            var scopes = authOptions.Scopes.Length > 0 ? authOptions.Scopes : AzureDevOpsDefaults.Scopes;
             var result = await app.AcquireTokenSilent(scopes, account).ExecuteAsync(cancellationToken);
             return new TokenResult(result.AccessToken, result.ExpiresOn, "MSAL cache", AzureDevOpsAuthenticationScheme.Bearer);
         }
@@ -86,8 +82,8 @@ internal sealed class AzureDevOpsTokenProvider(AuthOptions? authOptions)
 
     private static IPublicClientApplication BuildApplication(AuthOptions options)
     {
-        var tenant = string.IsNullOrWhiteSpace(options.TenantId) ? "organizations" : options.TenantId;
-        var clientId = string.IsNullOrWhiteSpace(options.ClientId) ? DefaultPublicClientId : options.ClientId;
+        var tenant = string.IsNullOrWhiteSpace(options.TenantId) ? AzureDevOpsDefaults.TenantId : options.TenantId;
+        var clientId = string.IsNullOrWhiteSpace(options.ClientId) ? AzureDevOpsDefaults.PublicClientId : options.ClientId;
         var app = PublicClientApplicationBuilder
             .Create(clientId)
             .WithAuthority(AzureCloudInstance.AzurePublic, tenant)
