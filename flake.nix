@@ -10,7 +10,8 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        dotnet = pkgs.dotnet-sdk_8;
+        dotnet = pkgs.dotnetCorePackages.sdk_8_0;
+        dotnetRuntime = pkgs.dotnetCorePackages.runtime_8_0;
         version = builtins.getEnv "DW_VERSION";
         commit = builtins.getEnv "DW_COMMIT";
         versionPrefix =
@@ -52,6 +53,25 @@
               --no-build \
               -- version
           '';
+        };
+
+        dwPackage = pkgs.buildDotnetModule {
+          pname = "dw";
+          version = versionPrefix;
+          src = ./.;
+          projectFile = "src/Dw.Cli/Dw.Cli.csproj";
+          nugetDeps = pkgs.mkNugetDeps {
+            name = "dw";
+            sourceFile = ./deps.json;
+          };
+          dotnet-sdk = dotnet;
+          dotnet-runtime = dotnetRuntime;
+          executables = [ "dw" ];
+          selfContainedBuild = false;
+          dotnetFlags = [
+            "-p:VersionPrefix=${versionPrefix}"
+            "-p:SourceRevisionId=${sourceRevision}"
+          ];
         };
 
         publishWinX64Script = pkgs.writeShellApplication {
@@ -122,33 +142,14 @@
             program = "${publishLinuxX64Script}/bin/dw-publish-linux-x64";
           };
 
-          default = self.apps.${system}.check;
+          dw = {
+            type = "app";
+            program = "${dwPackage}/bin/dw";
+          };
+
+          default = self.apps.${system}.dw;
         };
 
-        packages.default = pkgs.stdenvNoCC.mkDerivation {
-          pname = "dw";
-          version = versionPrefix;
-          src = self;
-
-          nativeBuildInputs = [ dotnet ];
-
-          buildPhase = ''
-            ${dotnetEnv}
-            dotnet publish ./src/Dw.Cli/Dw.Cli.csproj \
-              --configuration Release \
-              --runtime linux-x64 \
-              --self-contained false \
-              -p:PublishSingleFile=true \
-              -p:DebugType=embedded \
-              -p:VersionPrefix=${versionPrefix} \
-              -p:SourceRevisionId=${sourceRevision} \
-              --output ./publish
-          '';
-
-          installPhase = ''
-            mkdir -p $out/bin
-            cp ./publish/dw $out/bin/dw
-          '';
-        };
+        packages.default = dwPackage;
       });
 }
