@@ -19,7 +19,7 @@ public sealed class AgentCommandTests
             using var error = new StringWriter();
             var context = new CommandContext(output, error, new FixedClock(), fs, new NoopProcessRunner());
 
-            var exitCode = AgentCommand.Run(context, ["config", "set-default", "claude", "--root", root]);
+            var exitCode = AgentCommand.SetDefaultAgent(context, root, "claude");
 
             Assert.Equal(0, exitCode);
             var workflow = WorkflowConfigStore.Load(fs, root);
@@ -54,7 +54,7 @@ public sealed class AgentCommandTests
             using var error = new StringWriter();
             var context = new CommandContext(output, error, new FixedClock(), fs, new NoopProcessRunner());
 
-            var exitCode = AgentCommand.Run(context, ["config", "show", "--root", root]);
+            var exitCode = AgentCommand.ShowConfig(context, root);
 
             Assert.Equal(0, exitCode);
             Assert.Contains("codex", output.ToString());

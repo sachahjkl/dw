@@ -6,8 +6,6 @@ namespace Dw.Cli.Updates;
 
 internal sealed class GitHubReleaseClient(HttpClient httpClient)
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
-
     public async Task<GitHubRelease> GetLatestReleaseAsync(UpdateOptions options, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(options.Owner) || string.IsNullOrWhiteSpace(options.Repository))
@@ -31,11 +29,11 @@ internal sealed class GitHubReleaseClient(HttpClient httpClient)
 
         if (!options.IncludePrerelease)
         {
-            return JsonSerializer.Deserialize<GitHubRelease>(body, Options)
+            return JsonSerializer.Deserialize(body, AppJsonContext.Default.GitHubRelease)
                    ?? throw new DwException("Reponse GitHub release invalide.");
         }
 
-        var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(body, Options)
+        var releases = JsonSerializer.Deserialize(body, AppJsonContext.Default.ListGitHubRelease)
                        ?? throw new DwException("Reponse GitHub releases invalide.");
         return releases.FirstOrDefault()
                ?? throw new DwException("Aucune release GitHub trouvee.");
@@ -53,7 +51,7 @@ internal sealed class GitHubReleaseClient(HttpClient httpClient)
             throw new DwException($"Telechargement release.json impossible HTTP {(int)response.StatusCode}: {body}");
         }
 
-        return JsonSerializer.Deserialize<ReleaseManifest>(body, Options)
+        return JsonSerializer.Deserialize(body, AppJsonContext.Default.ReleaseManifest)
                ?? throw new DwException("release.json invalide.");
     }
 }

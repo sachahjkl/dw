@@ -21,7 +21,7 @@ Checks:
 - DevWorkflow root
 - user settings
 - Git
-- .NET 8 runtime
+- .NET 10 runtime
 - OpenCode on PATH
 
 `--fix` initializes the default root if it is missing.

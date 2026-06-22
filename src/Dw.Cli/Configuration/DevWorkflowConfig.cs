@@ -25,13 +25,6 @@ internal sealed record RepositoryConfig(
 
 internal static class DevWorkflowConfigLoader
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
-    {
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-        Converters = { new JsonStringEnumConverter() }
-    };
-
     public static DevWorkflowConfig Load(IFileSystem fileSystem, string root)
     {
         var path = Path.Combine(root, "config", "projects.json");
@@ -55,7 +48,7 @@ internal static class DevWorkflowConfigLoader
         var projects = new Dictionary<string, ProjectConfig>(StringComparer.OrdinalIgnoreCase);
         foreach (var projectProperty in projectsElement.EnumerateObject())
         {
-            var project = projectProperty.Value.Deserialize<ProjectConfig>(Options);
+            var project = projectProperty.Value.Deserialize(AppJsonContext.Default.ProjectConfig);
             if (project is not null)
             {
                 projects[projectProperty.Name] = project;

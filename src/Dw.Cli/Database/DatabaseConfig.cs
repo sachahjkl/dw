@@ -25,12 +25,6 @@ internal sealed record DatabaseConnectionConfig(
 
 internal static class DatabasesConfigLoader
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
-    {
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
-    };
-
     public static DatabasesConfig Load(IFileSystem fileSystem, string root)
     {
         var path = Path.Combine(root, "config", "databases.json");
@@ -39,7 +33,7 @@ internal static class DatabasesConfigLoader
             return DatabasesConfig.Empty;
         }
 
-        return JsonSerializer.Deserialize<DatabasesConfig>(fileSystem.ReadAllText(path), Options)
+        return JsonSerializer.Deserialize(fileSystem.ReadAllText(path), AppJsonContext.Default.DatabasesConfig)
                ?? DatabasesConfig.Empty;
     }
 }

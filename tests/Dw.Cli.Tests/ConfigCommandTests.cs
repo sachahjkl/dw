@@ -10,7 +10,7 @@ public sealed class ConfigCommandTests
         {
             var fs = new RealFileSystem();
             fs.WriteAllText(Path.Combine(root, "config", "projects.json"), "{\"schema\":1,\"projects\":{}}");
-            fs.WriteAllText(Path.Combine(root, "config", "workflow.json"), "{\"schema\":1,\"branchPrefixes\":{}}");
+            fs.WriteAllText(Path.Combine(root, "config", "workflow.json"), "{\"schema\":1,\"branchPrefixes\":{},\"azureDevOps\":{},\"auth\":{},\"updates\":{}}");
             fs.WriteAllText(Path.Combine(root, "config", "databases.json"), "{\"schema\":1,\"defaults\":{},\"globals\":{},\"projects\":{}}");
             fs.WriteAllText(Path.Combine(root, "config", "opencode", "opencode.jsonc"), "{\"instructions\":[]}");
             fs.WriteAllText(Path.Combine(root, "schemas", "projects.schema.json"), "{}");
@@ -20,7 +20,7 @@ public sealed class ConfigCommandTests
             using var error = new StringWriter();
             var context = new CommandContext(output, error, new FixedClock(), fs, new NoopProcessRunner());
 
-            var exitCode = ConfigCommand.Run(context, ["doctor", "--root", root]);
+            var exitCode = ConfigCommand.Doctor(context, root);
 
             Assert.Equal(0, exitCode);
         }

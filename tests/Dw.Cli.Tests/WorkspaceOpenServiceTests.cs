@@ -3,18 +3,6 @@ namespace Dw.Cli.Tests;
 public sealed class WorkspaceOpenServiceTests
 {
     [Fact]
-    public void OpenOptions_parses_continue_and_filters()
-    {
-        var options = AgentCommand.OpenOptions(["--continue", "--project", "ha", "--work-item", "55222", "--workspace", @"S:\w"]);
-
-        Assert.True(options.Continue);
-        Assert.Equal("ha", options.Project);
-        Assert.Equal("55222", options.WorkItemId);
-        Assert.Equal(@"S:\w", options.Workspace);
-        Assert.Null(options.Agent);
-    }
-
-    [Fact]
     public void ResolveWorkspace_continue_uses_latest_matching_workspace()
     {
         var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));
@@ -173,25 +161,10 @@ public sealed class WorkspaceOpenServiceTests
             ["front"] = new("", "develop", Folder: "custom-front")
         });
 
-        var target = WorkspaceOpenService.ResolveOpenTarget(@"S:\workspace", manifest, projectConfig, "front");
+        var workspace = Path.Combine(Path.GetTempPath(), "workspace");
+        var target = WorkspaceOpenService.ResolveOpenTarget(workspace, manifest, projectConfig, "front");
 
-        Assert.Equal(@"S:\workspace\custom-front", target);
-    }
-
-    [Fact]
-    public void OpenOptions_parses_repo()
-    {
-        var options = AgentCommand.OpenOptions(["--repo", "front"]);
-
-        Assert.Equal("front", options.Repository);
-    }
-
-    [Fact]
-    public void OpenOptions_accepts_agent_override()
-    {
-        var options = AgentCommand.OpenOptions(["--agent", "opencode"]);
-
-        Assert.Equal("opencode", options.Agent);
+        Assert.Equal(Path.Combine(workspace, "custom-front"), target);
     }
 
     [Fact]

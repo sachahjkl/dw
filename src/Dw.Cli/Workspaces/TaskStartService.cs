@@ -4,30 +4,21 @@ namespace Dw.Cli.Workspaces;
 
 internal static class TaskStartService
 {
-    public static int Start(CommandContext context, string[] args)
+    public static int Start(CommandContext context, TaskStartRequest request)
     {
-        if (args.Length == 0)
-        {
-            throw new DwException("Usage: dw task start <workItemId> [--project <name>] [--slug <text>]", 2);
-        }
-
-        var workItemId = args[0];
-        var project = CommandOptions.OptionValue(args, "--project") ?? "default";
-        var taskId = CommandOptions.OptionValue(args, "--task");
-        var type = CommandOptions.OptionValue(args, "--type") ?? "feat";
-        var only = CommandOptions.OptionValue(args, "--only");
-        var skipAdo = CommandOptions.HasFlag(args, "--skip-ado");
-        var createChildTasks = CommandOptions.HasFlag(args, "--create-child-tasks");
-        var requestedSlug = CommandOptions.OptionValue(args, "--slug");
+        var workItemId = request.WorkItemId;
+        var project = request.Project ?? "default";
+        var taskId = request.TaskId;
+        var type = request.Type ?? "feat";
 
         var settings = UserSettingsStore.Load(context.FileSystem);
         var root = settings.Root ?? AppPaths.DefaultRoot;
         var config = DevWorkflowConfigLoader.Load(context.FileSystem, root);
         var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var projectConfig = DevWorkflowConfigLoader.ResolveProject(config, project);
-        var repositories = TaskCommand.ResolveRepositories(projectConfig, only);
+        var repositories = TaskCommand.ResolveRepositories(projectConfig, request.Only);
         CommandContext.Assert(repositories.Count > 0, "Task start should resolve at least one repository.");
-        var adoContext = skipAdo
+        var adoContext = request.SkipAdo
             ? null
             : TaskCommand.TryCreateAdoContext(context, workflow, projectConfig, required: false);
         WorkItemSnapshot? workItem = null;
@@ -50,7 +41,7 @@ internal static class TaskStartService
                 }
             }
 
-            if (createChildTasks || (workflow.TaskStart?.CreateChildTasks ?? false))
+            if (request.CreateChildTasks || (workflow.TaskStart?.CreateChildTasks ?? false))
             {
                 childTaskIds = TaskCommand.CreateChildTasks(context, adoContext, workItem, repositories);
                 if (string.IsNullOrWhiteSpace(taskId) && childTaskIds.Count == 1)
@@ -59,12 +50,12 @@ internal static class TaskStartService
                 }
             }
         }
-        else if (!skipAdo && workflow.AzureDevOps is not null)
+        else if (!request.SkipAdo && workflow.AzureDevOps is not null)
         {
             context.Out.WriteLine("ADO ignore: aucun token silencieux disponible. Utiliser dw auth login, DW_ADO_TOKEN, ou --skip-ado.");
         }
 
-        var slug = TaskCommand.ResolveSlug(requestedSlug, workItemId, workItem);
+        var slug = TaskCommand.ResolveSlug(request.Slug, workItemId, workItem);
         context.Debug($"Slug normalise: {slug}");
 
         var subject = GitBranchNames.BuildSubjectName(type, workItemId, slug);
@@ -120,3 +111,13 @@ internal static class TaskStartService
         }
     }
 }
+
+internal sealed record TaskStartRequest(
+    string WorkItemId,
+    string? Project,
+    string? TaskId,
+    string? Type,
+    string? Only,
+    string? Slug,
+    bool SkipAdo,
+    bool CreateChildTasks);

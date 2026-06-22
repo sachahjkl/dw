@@ -1,53 +1,32 @@
 using System.Text.Json;
-using Json.Schema;
 
 namespace Dw.Cli.Commands;
 
 internal static class ConfigCommand
 {
-    public static int Run(CommandContext context, string[] args)
-    {
-        var sub = args.FirstOrDefault()?.ToLowerInvariant();
-        return sub switch
-        {
-            "doctor" => Doctor(context, args.Skip(1).ToArray()),
-            "show" => Show(context),
-            "set-root" => SetRoot(context, args.Skip(1).ToArray()),
-            _ => Help(context)
-        };
-    }
-
-    private static int Help(CommandContext context)
-    {
-        context.Out.WriteLine("Usage: dw config <show|set-root|doctor> [--root <path>]");
-        return 0;
-    }
-
-    private static int Show(CommandContext context)
+    internal static int Show(CommandContext context)
     {
         var settings = UserSettingsStore.Load(context.FileSystem);
         context.Out.WriteLine($"Root: {settings.Root ?? AppPaths.DefaultRoot}");
         return 0;
     }
 
-    private static int SetRoot(CommandContext context, string[] args)
+    internal static int SetRoot(CommandContext context, string root)
     {
-        var root = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal))
-            ?? throw new DwException("Usage: dw config set-root <path>", 2);
         root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root));
         UserSettingsStore.Save(context.FileSystem, new UserSettings(root));
         context.Out.WriteLine($"Root: {root}");
         return 0;
     }
 
-    private static int Doctor(CommandContext context, string[] args)
+    internal static int Doctor(CommandContext context, string? configuredRoot)
     {
-        var root = CommandOptions.ResolveRoot(context, args);
+        var root = RootResolver.Resolve(context, configuredRoot);
         var checks = new[]
         {
-            CheckJsonSchema(context, Path.Combine(root, "config", "projects.json"), Path.Combine(root, "schemas", "projects.schema.json")),
-            CheckJsonSchema(context, Path.Combine(root, "config", "workflow.json"), Path.Combine(root, "schemas", "workflow.schema.json")),
-            CheckJsonSchema(context, Path.Combine(root, "config", "databases.json"), Path.Combine(root, "schemas", "databases.schema.json")),
+            CheckKnownConfig(context, Path.Combine(root, "config", "projects.json"), ["schema", "projects"]),
+            CheckKnownConfig(context, Path.Combine(root, "config", "workflow.json"), ["schema", "branchPrefixes", "azureDevOps", "auth", "updates"]),
+            CheckKnownConfig(context, Path.Combine(root, "config", "databases.json"), ["schema", "defaults", "globals", "projects"]),
             CheckJson(context, Path.Combine(root, "config", "opencode", "opencode.jsonc")),
             CheckExists(context, Path.Combine(root, "schemas", "projects.schema.json")),
             CheckExists(context, Path.Combine(root, "schemas", "workflow.schema.json")),
@@ -66,7 +45,7 @@ internal static class ConfigCommand
         return checks.All(check => check.Passed) ? 0 : 1;
     }
 
-    private static ConfigCheck CheckJsonSchema(CommandContext context, string path, string schemaPath)
+    private static ConfigCheck CheckKnownConfig(CommandContext context, string path, IReadOnlyList<string> requiredProperties)
     {
         var jsonCheck = CheckJson(context, path);
         if (!jsonCheck.Passed)
@@ -74,24 +53,20 @@ internal static class ConfigCommand
             return jsonCheck;
         }
 
-        if (!context.FileSystem.FileExists(schemaPath))
-        {
-            return new ConfigCheck(path, false, $"schema manquant: {schemaPath}");
-        }
-
         try
         {
-            var schema = JsonSchema.FromText(context.FileSystem.ReadAllText(schemaPath));
             using var document = JsonDocument.Parse(context.FileSystem.ReadAllText(path), new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
-            var result = schema.Evaluate(document.RootElement, new EvaluationOptions { OutputFormat = OutputFormat.List });
-            if (result.IsValid)
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                return new ConfigCheck(path, true, null);
+                return new ConfigCheck(path, false, "la racine doit etre un objet JSON");
             }
 
-            return new ConfigCheck(path, false, "schema invalide");
+            var missing = requiredProperties.Where(property => !document.RootElement.TryGetProperty(property, out _)).ToArray();
+            return missing.Length == 0
+                ? new ConfigCheck(path, true, null)
+                : new ConfigCheck(path, false, $"proprietes manquantes: {string.Join(", ", missing)}");
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        catch (JsonException ex)
         {
             return new ConfigCheck(path, false, ex.Message);
         }

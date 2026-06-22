@@ -14,7 +14,7 @@ The project goal is not to replace the AI agent. It gives the agent rails:
 
 This repository currently contains the first vertical slice:
 
-- `.NET 8` CLI project
+- `.NET 10` CLI project
 - `dw version`
 - `dw doctor`
 - `dw init` with `default` and `ogf` profiles
@@ -32,8 +32,6 @@ This repository currently contains the first vertical slice:
 ## Build
 
 ```powershell
-dotnet build .\Dw.sln -c Release
-# or, with a recent SDK:
 dotnet build .\Dw.slnx -c Release
 ```
 
@@ -151,7 +149,7 @@ The Linux/WSL installer detects the current shell and updates the matching init 
 
 Use `DW_NO_PATH_UPDATE=1` or `--no-path-update` to skip shell profile changes.
 
-Windows release bundles are framework-dependent: the host machine must have the .NET 8 runtime. The zip contains `dw.exe` plus the native SQL Server dependency required by `Microsoft.Data.SqlClient`.
+Windows release bundles are framework-dependent: the host machine must have the .NET 10 runtime. The zip contains `dw.exe` plus the native SQL Server dependency required by `Microsoft.Data.SqlClient`.
 
 Linux users can download `dw-linux-x64.tar.gz` from the GitHub release, or build locally through Nix:
 

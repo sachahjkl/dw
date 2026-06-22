@@ -2,27 +2,9 @@ namespace Dw.Cli.Commands;
 
 internal static class AuthCommand
 {
-    public static int Run(CommandContext context, string[] args)
+    internal static int Login(CommandContext context, string? configuredRoot)
     {
-        var sub = args.FirstOrDefault()?.ToLowerInvariant();
-        return sub switch
-        {
-            "login" => Login(context, args.Skip(1).ToArray()),
-            "status" => Status(context, args.Skip(1).ToArray()),
-            "logout" => Logout(context, args.Skip(1).ToArray()),
-            _ => Help(context)
-        };
-    }
-
-    private static int Help(CommandContext context)
-    {
-        context.Out.WriteLine("Usage: dw auth <login|status|logout> [--root <path>]");
-        return 0;
-    }
-
-    private static int Login(CommandContext context, string[] args)
-    {
-        var root = CommandOptions.ResolveRoot(context, args);
+        var root = RootResolver.Resolve(context, configuredRoot);
         var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var provider = new AzureDevOpsTokenProvider(workflow.Auth);
         var token = provider.GetTokenInteractiveAsync().GetAwaiter().GetResult();
@@ -34,9 +16,9 @@ internal static class AuthCommand
         return 0;
     }
 
-    private static int Status(CommandContext context, string[] args)
+    internal static int Status(CommandContext context, string? configuredRoot)
     {
-        var root = CommandOptions.ResolveRoot(context, args);
+        var root = RootResolver.Resolve(context, configuredRoot);
         var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var provider = new AzureDevOpsTokenProvider(workflow.Auth);
         var token = provider.GetTokenSilentOrEnvironmentAsync().GetAwaiter().GetResult();
@@ -55,9 +37,9 @@ internal static class AuthCommand
         return 0;
     }
 
-    private static int Logout(CommandContext context, string[] args)
+    internal static int Logout(CommandContext context, string? configuredRoot)
     {
-        var root = CommandOptions.ResolveRoot(context, args);
+        var root = RootResolver.Resolve(context, configuredRoot);
         var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var provider = new AzureDevOpsTokenProvider(workflow.Auth);
         var removed = provider.LogoutAsync().GetAwaiter().GetResult();

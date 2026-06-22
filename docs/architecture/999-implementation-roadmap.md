@@ -2,7 +2,7 @@
 
 ## Phase 0 - Foundation
 
-- .NET 8 CLI
+- .NET 10 CLI
 - buildable solution
 - `version`
 - `doctor`

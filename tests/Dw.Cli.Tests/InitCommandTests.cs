@@ -12,7 +12,7 @@ public sealed class InitCommandTests
             using var error = new StringWriter();
             var context = new CommandContext(output, error, new FixedClock(), new RealFileSystem(), new NoopProcessRunner());
 
-            var exitCode = InitCommand.Run(context, ["--root", root, "--profile", "ogf", "--no-save"]);
+            var exitCode = InitCommand.Run(context, new InitRequest(root, "ogf", NoSave: true, DryRun: false));
 
             Assert.Equal(0, exitCode);
             Assert.True(File.Exists(Path.Combine(root, "config", "projects.json")));

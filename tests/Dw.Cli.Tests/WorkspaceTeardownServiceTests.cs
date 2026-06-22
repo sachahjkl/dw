@@ -13,11 +13,13 @@ public sealed class WorkspaceTeardownServiceTests
                 ["front"] = new("https://example/front.git", "develop", AnchorName: "front.git", Folder: "front")
             });
 
-        var steps = WorkspaceTeardownService.Plan(@"S:\root", @"S:\root\projects\ha\workspaces\feat-55222-slug", manifest, projectConfig).ToArray();
+        var root = Path.Combine(Path.GetTempPath(), "dw-root");
+        var workspace = Path.Combine(root, "projects", "ha", "workspaces", "feat-55222-slug");
+        var steps = WorkspaceTeardownService.Plan(root, workspace, manifest, projectConfig).ToArray();
 
-        Assert.Contains(steps, step => step.Repository == "front" && step.Action == "worktree remove" && step.Target == @"S:\root\projects\ha\workspaces\feat-55222-slug\front");
-        Assert.Contains(steps, step => step.Repository == "front" && step.Action == "worktree prune" && step.Target == @"S:\root\projects\ha\repositories\front.git");
-        Assert.Contains(steps, step => step.Repository == "workspace" && step.Action == "delete directory" && step.Target == @"S:\root\projects\ha\workspaces\feat-55222-slug");
+        Assert.Contains(steps, step => step.Repository == "front" && step.Action == "worktree remove" && step.Target == Path.Combine(workspace, "front"));
+        Assert.Contains(steps, step => step.Repository == "front" && step.Action == "worktree prune" && step.Target == Path.Combine(root, "projects", "ha", "repositories", "front.git"));
+        Assert.Contains(steps, step => step.Repository == "workspace" && step.Action == "delete directory" && step.Target == workspace);
     }
 
     [Fact]
