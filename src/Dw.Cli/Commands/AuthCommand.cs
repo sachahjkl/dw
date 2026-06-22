@@ -23,7 +23,7 @@ internal static class AuthCommand
     private static int Login(CommandContext context, string[] args)
     {
         var root = CommandOptions.ResolveRoot(context, args);
-        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var provider = new AzureDevOpsTokenProvider(workflow.Auth);
         var token = provider.GetTokenInteractiveAsync().GetAwaiter().GetResult();
 
@@ -37,7 +37,7 @@ internal static class AuthCommand
     private static int Status(CommandContext context, string[] args)
     {
         var root = CommandOptions.ResolveRoot(context, args);
-        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var provider = new AzureDevOpsTokenProvider(workflow.Auth);
         var token = provider.GetTokenSilentOrEnvironmentAsync().GetAwaiter().GetResult();
 
@@ -58,7 +58,7 @@ internal static class AuthCommand
     private static int Logout(CommandContext context, string[] args)
     {
         var root = CommandOptions.ResolveRoot(context, args);
-        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var provider = new AzureDevOpsTokenProvider(workflow.Auth);
         var removed = provider.LogoutAsync().GetAwaiter().GetResult();
 

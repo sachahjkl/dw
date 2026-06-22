@@ -1,0 +1,72 @@
+namespace Dw.Cli.Workspaces;
+
+internal static class TaskRenameService
+{
+    public static int Rename(CommandContext context, string[] args)
+    {
+        var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
+        var requestedSlug = CommandOptions.OptionValue(args, "--slug") ?? CommandOptions.FirstPositional(args);
+        if (string.IsNullOrWhiteSpace(requestedSlug))
+        {
+            throw new DwException("Usage: dw task rename --slug <texte> [--workspace <path>] [--execute]", 2);
+        }
+
+        var execute = CommandOptions.HasFlag(args, "--execute");
+        var workspace = WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(CommandOptions.OptionValue(args, "--workspace"), CommandOptions.OptionValue(args, "--project"), CommandOptions.OptionValue(args, "--work-item"), CommandOptions.HasFlag(args, "--continue")));
+        var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
+        var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
+        var projectConfig = DevWorkflowConfigLoader.ResolveProject(projects, manifest.Project);
+        var slug = Slug.FromPhraseOrFallback(requestedSlug, manifest.Slug);
+        var newBranch = GitBranchNames.Build(manifest.Type, manifest.WorkItemId, manifest.TaskId, slug);
+        var newWorkspace = Path.Combine(Path.GetDirectoryName(workspace) ?? workspace, GitBranchNames.BuildSubjectName(manifest.Type, manifest.WorkItemId, slug));
+
+        context.Out.WriteLine("Rename dry-run:");
+        context.Out.WriteLine($"- slug: {manifest.Slug} -> {slug}");
+        context.Out.WriteLine($"- branch: {manifest.BranchName} -> {newBranch}");
+        context.Out.WriteLine($"- workspace: {workspace} -> {newWorkspace}");
+        if (!execute)
+        {
+            context.Out.WriteLine("Relancer avec --execute pour appliquer.");
+            return 0;
+        }
+
+        var updated = manifest with { Slug = slug, BranchName = newBranch };
+        context.FileSystem.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(updated));
+        foreach (var repositoryKey in manifest.Repositories)
+        {
+            var repository = projectConfig?.Repositories.GetValueOrDefault(repositoryKey) ?? new RepositoryConfig("", "main", Folder: repositoryKey);
+            var folder = string.IsNullOrWhiteSpace(repository.Folder) ? repositoryKey : repository.Folder;
+            var repositoryPath = Path.Combine(workspace, folder);
+            if (context.FileSystem.DirectoryExists(repositoryPath))
+            {
+                RenameLocalBranchIfPresent(context, repositoryPath, manifest.BranchName, newBranch);
+            }
+        }
+
+        if (!string.Equals(workspace, newWorkspace, StringComparison.OrdinalIgnoreCase))
+        {
+            Directory.Move(workspace, newWorkspace);
+        }
+
+        context.Out.WriteLine($"Workspace renomme: {newWorkspace}");
+        return 0;
+    }
+
+    private static void RenameLocalBranchIfPresent(CommandContext context, string repositoryPath, string oldBranch, string newBranch)
+    {
+        var current = context.ProcessRunner.RunAsync("git", ["branch", "--show-current"], repositoryPath).GetAwaiter().GetResult();
+        if (current.ExitCode != 0)
+        {
+            context.Debug($"rename branch ignore: {repositoryPath} n'est pas un repo git utilisable");
+            return;
+        }
+
+        if (!string.Equals(current.StandardOutput.Trim(), oldBranch, StringComparison.OrdinalIgnoreCase))
+        {
+            context.Debug($"rename branch ignore: branche courante {current.StandardOutput.Trim()} != {oldBranch}");
+            return;
+        }
+
+        TaskCommand.RunGitOrThrow(context, repositoryPath, "branch", "-m", newBranch);
+    }
+}

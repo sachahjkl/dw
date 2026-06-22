@@ -45,10 +45,27 @@
           },
           "additionalProperties": false
         },
+        "agent": {
+          "type": "object",
+          "properties": {
+            "default": {
+              "type": "string",
+              "enum": ["opencode", "cursor", "cursor-agent", "agent", "claude", "codex-cli", "codex", "copilot"]
+            }
+          },
+          "additionalProperties": false
+        },
         "repositories": {
           "type": "object",
           "additionalProperties": {
             "$ref": "#/$defs/repository"
+          }
+        },
+        "includedProjects": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },

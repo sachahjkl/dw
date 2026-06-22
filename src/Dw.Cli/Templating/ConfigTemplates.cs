@@ -1,8 +1,6 @@
-using System.Text.Json;
+namespace Dw.Cli.Templating;
 
-namespace Dw.Cli;
-
-internal static class Templates
+internal static partial class Templates
 {
     public const string DefaultProjectsJson = """
 {
@@ -46,19 +44,22 @@ internal static class Templates
         "project": "HOMMAGE AGENCE",
         "apiVersion": "7.1"
       },
+      "agent": {
+        "default": "opencode"
+      },
       "repositories": {
         "front": {
           "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-front",
-          "defaultBranch": "main",
-          "pullRequestTargetBranch": "main",
+          "defaultBranch": "develop",
+          "pullRequestTargetBranch": "develop",
           "azureDevOpsRepository": "gesco-front",
           "anchorName": "hommage-agence-front.git",
           "folder": "front"
         },
         "back": {
           "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-back",
-          "defaultBranch": "master",
-          "pullRequestTargetBranch": "master",
+          "defaultBranch": "develop",
+          "pullRequestTargetBranch": "develop",
           "azureDevOpsRepository": "gesco-back",
           "anchorName": "hommage-agence-back.git",
           "folder": "back"
@@ -72,24 +73,32 @@ internal static class Templates
         "project": "HOMMAGE EXPLOITATION",
         "apiVersion": "7.1"
       },
+      "agent": {
+        "default": "opencode"
+      },
       "repositories": {
         "front": {
           "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/FRONT%20HOMMAGE%20EXPLOITATION",
-          "defaultBranch": "main",
-          "pullRequestTargetBranch": "main",
+          "defaultBranch": "develop",
+          "pullRequestTargetBranch": "develop",
           "azureDevOpsRepository": "FRONT HOMMAGE EXPLOITATION",
           "anchorName": "hommage-exploitation-front.git",
           "folder": "front"
         },
         "back": {
           "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/HOMMAGE%20EXPLOITATION",
-          "defaultBranch": "master",
-          "pullRequestTargetBranch": "master",
+          "defaultBranch": "develop",
+          "pullRequestTargetBranch": "develop",
           "azureDevOpsRepository": "HOMMAGE EXPLOITATION",
           "anchorName": "hommage-exploitation-back.git",
           "folder": "back"
         }
       }
+    },
+    "cross-ha-he": {
+      "displayName": "Cross HA HE",
+      "repositories": {},
+      "includedProjects": ["ha", "he"]
     }
   }
 }
@@ -108,6 +117,9 @@ internal static class Templates
   "worktreeFolders": {
     "front": "front",
     "back": "back"
+  },
+  "agent": {
+    "default": "opencode"
   },
   "azureDevOps": {
     "organizationUrl": "",
@@ -157,6 +169,9 @@ internal static class Templates
   "worktreeFolders": {
     "front": "front",
     "back": "back"
+  },
+  "agent": {
+    "default": "opencode"
   },
   "azureDevOps": {
     "organizationUrl": "https://dev.azure.com/digital-factory-ogf",
@@ -209,6 +224,7 @@ internal static class Templates
     "maxRows": 500,
     "timeoutSeconds": 600
   },
+  "globals": {},
   "projects": {}
 }
 """;
@@ -222,145 +238,19 @@ internal static class Templates
     "maxRows": 500,
     "timeoutSeconds": 600
   },
+  "globals": {},
   "projects": {
     "ha": {
       "databases": {}
     },
     "he": {
       "databases": {}
+    },
+    "cross-ha-he": {
+      "databases": {}
     }
   }
 }
 """;
 
-    public const string AgentsMd = """
-# DevWorkflow Rules
-
-This workspace is managed by `dw`.
-
-Mandatory rules:
-
-1. Use `dw agent context` before starting an AI workflow.
-2. Use Azure DevOps work items as the source of truth for task state.
-3. Use one subject workspace per work item.
-4. Keep front and back as separate Git repositories.
-5. For API contract changes, always check both front and back.
-6. Do not commit, push or open PRs unless the user explicitly asks for the finish step.
-""";
-
-    public const string OpenCodeJsonc = """
-{
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": [
-    "AGENTS.md"
-  ],
-  "permission": {
-    "bash": "ask",
-    "edit": "ask"
-  }
-}
-""";
-
-    public const string OgfAgentsMd = """
-# DevWorkflow OGF Rules
-
-This workspace is managed by `dw`.
-
-Mandatory rules:
-
-1. Run `dw agent context` before starting an AI workflow.
-2. Use Azure DevOps work items as the source of truth.
-3. Use the skills in the repository references for ADO, Git naming, PRs and HA/HE conventions.
-4. Keep front and back as separate Git repositories.
-5. Group worktrees for the same subject under one subject workspace.
-6. For API contract changes, always check both front and back.
-7. Write ADO/PR/commit text in French unless a repository convention says otherwise.
-8. Do not bypass `dw task finish` for commit/push/PR workflows.
-""";
-
-    public const string OgfOpenCodeJsonc = """
-{
-  "$schema": "https://opencode.ai/config.json",
-  "instructions": [
-    "AGENTS.md"
-  ],
-  "permission": {
-    "bash": "ask",
-    "edit": "ask"
-  },
-  "mcp": {
-    "ado": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "@azure-devops/mcp@next",
-        "digital-factory-ogf"
-      ],
-      "environment": {
-        "LOG_LEVEL": "debug"
-      }
-    }
-  }
-}
-""";
-
-    public static string AgentContext(string root) => $$"""
-# DevWorkflow agent context
-
-You are working inside a DevWorkflow-managed environment.
-
-Use `dw` for workflow operations:
-
-- `dw doctor` checks local prerequisites.
-- `dw task status` lists detected task workspaces.
-- `dw task start <workItemId> --project <name> --slug <slug>` creates a task workspace.
-- `dw db ...` is the only intended SQL entrypoint and is read-only by default.
-
-Current configured root:
-
-```text
-{{root}}
-```
-
-Important rules:
-
-1. Azure DevOps work items are the source of truth.
-2. Git repositories remain separate per front/back repo.
-3. A subject workspace groups related worktrees under one work item.
-4. Plans live as `plan.md` in the subject workspace.
-5. Branches, commits and PR titles must follow the loaded skills.
-6. Never bypass skills when ADO, Git naming, PRs or worktrees are involved.
-""";
-
-    public static string PlanMd(string workItemId, string project) => $$"""
-# Plan - Work item {{workItemId}}
-
-Project: `{{project}}`
-
-## Functional Summary
-
-TODO
-
-## Affected Repositories
-
-- front: TODO
-- back: TODO
-
-## Code Analysis
-
-TODO
-
-## Technical Plan
-
-TODO
-
-## Risks
-
-TODO
-
-## Verification
-
-TODO
-""";
 }

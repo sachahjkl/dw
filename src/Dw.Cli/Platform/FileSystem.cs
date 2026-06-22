@@ -10,6 +10,7 @@ internal interface IFileSystem
     string ReadAllText(string path);
     void WriteAllText(string path, string content);
     IEnumerable<string> EnumerateFiles(string path, string searchPattern, SearchOption searchOption);
+    void DeleteDirectory(string path, bool recursive);
 }
 
 internal sealed class RealFileSystem : IFileSystem
@@ -37,4 +38,6 @@ internal sealed class RealFileSystem : IFileSystem
         => Directory.Exists(path)
             ? Directory.EnumerateFiles(path, searchPattern, searchOption)
             : [];
+
+    public void DeleteDirectory(string path, bool recursive) => Directory.Delete(path, recursive);
 }

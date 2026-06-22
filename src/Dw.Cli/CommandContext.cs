@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Dw.Cli;
 
 internal sealed record CommandContext(
@@ -5,7 +7,21 @@ internal sealed record CommandContext(
     TextWriter Error,
     IClock Clock,
     IFileSystem FileSystem,
-    IProcessRunner ProcessRunner);
+    IProcessRunner ProcessRunner,
+    bool Verbose = false)
+{
+    public void Debug(string message)
+    {
+        if (Verbose)
+        {
+            Error.WriteLine($"[debug] {message}");
+        }
+    }
+
+    [Conditional("DEBUG")]
+    public static void Assert(bool condition, string message)
+        => System.Diagnostics.Debug.Assert(condition, message);
+}
 
 internal interface IClock
 {

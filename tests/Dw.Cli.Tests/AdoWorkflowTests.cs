@@ -23,9 +23,9 @@ public sealed class AdoWorkflowTests
     [Fact]
     public void ChildTaskTitle_uses_skill_prefixes()
     {
-        Assert.Equal("[FRONT][AI] Ajouter le formulaire", AdoTaskNaming.ChildTaskTitle("front", "Ajouter le formulaire"));
-        Assert.Equal("[BACK][AI] Ajouter endpoint", AdoTaskNaming.ChildTaskTitle("back", "Ajouter endpoint"));
-        Assert.Equal("[SQL][AI] Ajouter vue", AdoTaskNaming.ChildTaskTitle("sql", "Ajouter vue"));
+        Assert.Equal("[FRONT] Ajouter le formulaire", AdoTaskNaming.ChildTaskTitle("front", "Ajouter le formulaire"));
+        Assert.Equal("[BACK] Ajouter endpoint", AdoTaskNaming.ChildTaskTitle("back", "Ajouter endpoint"));
+        Assert.Equal("[SQL] Ajouter vue", AdoTaskNaming.ChildTaskTitle("sql", "Ajouter vue"));
     }
 
     [Fact]

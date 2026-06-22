@@ -15,6 +15,7 @@ internal sealed record WorkspaceManifest(
     string Status,
     string? WorkItemType = null,
     string? WorkItemTitle = null,
+    string? WorkItemState = null,
     IReadOnlyDictionary<string, string>? ChildTaskIds = null);
 
 internal static class WorkspaceManifestWriter

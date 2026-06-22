@@ -23,6 +23,16 @@
         "type": "string"
       }
     },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": ["opencode", "cursor", "cursor-agent", "agent", "claude", "codex-cli", "codex", "copilot"]
+        }
+      },
+      "additionalProperties": false
+    },
     "azureDevOps": {
       "type": "object",
       "required": ["organizationUrl", "apiVersion"],

@@ -43,7 +43,16 @@ public sealed class InitCommandTests
         public Task<ProcessResult> RunAsync(string fileName, string arguments, string? workingDirectory = null)
             => Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
 
+        public Task<ProcessResult> RunAsync(ProcessRequest request)
+            => Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
+
         public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory = null)
             => Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
+
+        public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment)
+            => Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
+
+        public Task<int> RunInteractiveAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment)
+            => Task.FromResult(0);
     }
 }

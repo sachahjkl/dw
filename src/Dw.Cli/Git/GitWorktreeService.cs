@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace Dw.Cli.Git;
 
 internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSystem fileSystem)
@@ -18,6 +20,7 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
         var anchorName = string.IsNullOrWhiteSpace(repository.AnchorName)
             ? $"{repositoryKey}.git"
             : repository.AnchorName;
+        Debug.Assert(!string.IsNullOrWhiteSpace(anchorName), "Anchor name should always be resolved.");
 
         var repositoriesRoot = Path.Combine(projectRoot, "repositories");
         var anchorPath = Path.Combine(repositoriesRoot, anchorName);
@@ -45,7 +48,14 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
             return GitWorktreeResult.Prepared(repositoryKey, "Worktree deja present.");
         }
 
-        var baseRef = $"origin/{repository.DefaultBranch}";
+        var baseRef = await ResolveBaseRefAsync(projectRoot, anchorPath, repository.DefaultBranch);
+        if (baseRef is null)
+        {
+            return GitWorktreeResult.Failed(
+                repositoryKey,
+                $"Branche de base introuvable: {repository.DefaultBranch}. References testees: origin/{repository.DefaultBranch}, refs/heads/{repository.DefaultBranch}.");
+        }
+
         var add = await processRunner.RunAsync(
             "git",
             ["--git-dir", anchorPath, "worktree", "add", "-b", branchName, worktreePath, baseRef],
@@ -57,6 +67,24 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
         }
 
         return GitWorktreeResult.Prepared(repositoryKey, $"Worktree cree depuis {baseRef}.");
+    }
+
+    private async Task<string?> ResolveBaseRefAsync(string projectRoot, string anchorPath, string defaultBranch)
+    {
+        foreach (var candidate in new[] { $"origin/{defaultBranch}", $"refs/heads/{defaultBranch}" })
+        {
+            var result = await processRunner.RunAsync(
+                "git",
+                ["--git-dir", anchorPath, "rev-parse", "--verify", candidate],
+                projectRoot);
+
+            if (result.ExitCode == 0)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 }
 

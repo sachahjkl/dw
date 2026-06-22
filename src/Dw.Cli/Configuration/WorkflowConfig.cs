@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Dw.Cli.Agents;
 
 namespace Dw.Cli.Configuration;
 
@@ -7,6 +9,7 @@ internal sealed record WorkflowConfig(
     AuthOptions? Auth,
     UpdateOptions? Updates,
     IReadOnlyDictionary<string, string> BranchPrefixes,
+    AgentOptions? Agent = null,
     TaskStartOptions? TaskStart = null,
     TaskFinishOptions? TaskFinish = null)
 {
@@ -25,6 +28,8 @@ internal sealed record UpdateOptions(
     bool IncludePrerelease = false,
     string AssetName = UpdateDefaults.ManifestAssetName);
 
+internal sealed record AgentOptions(string Default = AgentDefaults.DefaultAgent);
+
 internal sealed record TaskStartOptions(
     bool UpdateWorkItemState = true,
     bool CreateChildTasks = false,
@@ -40,7 +45,7 @@ internal sealed record TaskFinishOptions(
     string TaskState = "PR en attente",
     IReadOnlyDictionary<string, string[]>? VerificationCommands = null);
 
-internal static class WorkflowConfigLoader
+internal static class WorkflowConfigStore
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {
@@ -58,5 +63,22 @@ internal static class WorkflowConfigLoader
 
         var json = fileSystem.ReadAllText(path);
         return JsonSerializer.Deserialize<WorkflowConfig>(json, Options) ?? WorkflowConfig.Empty;
+    }
+
+    public static void SetDefaultAgent(IFileSystem fileSystem, string root, string agent)
+    {
+        var path = Path.Combine(root, "config", "workflow.json");
+        if (!fileSystem.FileExists(path))
+        {
+            throw new DwException($"workflow.json introuvable: {path}", 2);
+        }
+
+        _ = AgentAdapterRegistry.Resolve(agent);
+        var node = JsonNode.Parse(fileSystem.ReadAllText(path))?.AsObject()
+            ?? throw new DwException($"workflow.json invalide: {path}", 2);
+        var agentNode = node["agent"]?.AsObject() ?? new JsonObject();
+        agentNode["default"] = agent;
+        node["agent"] = agentNode;
+        fileSystem.WriteAllText(path, node.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 }

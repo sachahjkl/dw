@@ -17,8 +17,8 @@ internal static class SecretCommand
     private static int Set(CommandContext context, string[] args)
     {
         var key = args.FirstOrDefault() ?? throw new DwException("Usage: dw secret set <key>", 2);
-        var secret = OptionValue(args, "--value");
-        var fromEnv = OptionValue(args, "--from-env");
+        var secret = CommandOptions.OptionValue(args, "--value");
+        var fromEnv = CommandOptions.OptionValue(args, "--from-env");
         if (!string.IsNullOrWhiteSpace(fromEnv))
         {
             secret = Environment.GetEnvironmentVariable(fromEnv)
@@ -83,16 +83,4 @@ internal static class SecretCommand
         }
     }
 
-    private static string? OptionValue(string[] args, string name)
-    {
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[i + 1];
-            }
-        }
-
-        return null;
-    }
 }

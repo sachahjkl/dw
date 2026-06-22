@@ -4,10 +4,10 @@ internal static class InitCommand
 {
     public static int Run(CommandContext context, string[] args)
     {
-        var root = OptionValue(args, "--root") ?? FirstPositional(args) ?? AppPaths.DefaultRoot;
-        var profile = InitProfile.Resolve(OptionValue(args, "--profile"));
-        var noSave = args.Any(arg => string.Equals(arg, "--no-save", StringComparison.OrdinalIgnoreCase));
-        var dryRun = args.Any(arg => string.Equals(arg, "--dry-run", StringComparison.OrdinalIgnoreCase));
+        var root = CommandOptions.OptionValue(args, "--root") ?? CommandOptions.FirstPositional(args) ?? AppPaths.DefaultRoot;
+        var profile = InitProfile.Resolve(CommandOptions.OptionValue(args, "--profile"));
+        var noSave = CommandOptions.HasFlag(args, "--no-save");
+        var dryRun = CommandOptions.HasFlag(args, "--dry-run");
         root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root));
 
         if (dryRun)
@@ -79,19 +79,4 @@ internal static class InitCommand
         yield return Path.Combine(root, "schemas", "release.schema.json");
     }
 
-    private static string? FirstPositional(string[] args)
-        => args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
-
-    private static string? OptionValue(string[] args, string name)
-    {
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[i + 1];
-            }
-        }
-
-        return null;
-    }
 }

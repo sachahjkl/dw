@@ -53,6 +53,49 @@ internal sealed class AzureDevOpsClient(HttpClient httpClient, AzureDevOpsOption
         return WorkItemSnapshot.From(document.RootElement);
     }
 
+    public async Task<IReadOnlyList<WorkItemSnapshot>> GetAssignedWorkItemsAsync(
+        int top,
+        TokenResult token,
+        CancellationToken cancellationToken = default)
+    {
+        var wiql = $$"""
+select [System.Id]
+from WorkItems
+where [System.TeamProject] = @project
+  and [System.AssignedTo] = @Me
+  and [System.State] <> 'Closed'
+order by [System.ChangedDate] desc
+""";
+        using var wiqlRequest = CreateRequest(HttpMethod.Post, AzureDevOpsUris.Wiql(options), token);
+        wiqlRequest.Content = new StringContent(JsonSerializer.Serialize(new { query = wiql }, JsonOptions), Encoding.UTF8, "application/json");
+        using var wiqlResponse = await httpClient.SendAsync(wiqlRequest, cancellationToken);
+        using var wiqlDocument = await ReadJsonOrThrow(wiqlResponse, cancellationToken);
+        var ids = wiqlDocument.RootElement.TryGetProperty("workItems", out var workItems) && workItems.ValueKind == JsonValueKind.Array
+            ? workItems.EnumerateArray()
+                .Select(item => item.TryGetProperty("id", out var id) && id.TryGetInt32(out var value) ? value : 0)
+                .Where(id => id > 0)
+                .Take(top)
+                .ToArray()
+            : [];
+
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        using var batchRequest = CreateRequest(HttpMethod.Post, AzureDevOpsUris.WorkItemsBatch(options), token);
+        batchRequest.Content = new StringContent(JsonSerializer.Serialize(new
+        {
+            ids,
+            fields = new[] { "System.Id", "System.WorkItemType", "System.State", "System.Title" }
+        }, JsonOptions), Encoding.UTF8, "application/json");
+        using var batchResponse = await httpClient.SendAsync(batchRequest, cancellationToken);
+        using var batchDocument = await ReadJsonOrThrow(batchResponse, cancellationToken);
+        return batchDocument.RootElement.TryGetProperty("value", out var values) && values.ValueKind == JsonValueKind.Array
+            ? values.EnumerateArray().Select(WorkItemSnapshot.From).ToArray()
+            : [];
+    }
+
     public async Task<JsonDocument> UpdateWorkItemAsync(
         string workItemId,
         IReadOnlyList<JsonPatchOperation> operations,

@@ -11,7 +11,9 @@ internal sealed record DevWorkflowConfig(IReadOnlyDictionary<string, ProjectConf
 internal sealed record ProjectConfig(
     string DisplayName,
     IReadOnlyDictionary<string, RepositoryConfig> Repositories,
-    AzureDevOpsOptions? AzureDevOps = null);
+    AzureDevOpsOptions? AzureDevOps = null,
+    string[]? IncludedProjects = null,
+    AgentOptions? Agent = null);
 
 internal sealed record RepositoryConfig(
     string Url,
@@ -61,5 +63,40 @@ internal static class DevWorkflowConfigLoader
         }
 
         return new DevWorkflowConfig(projects);
+    }
+
+    public static ProjectConfig? ResolveProject(DevWorkflowConfig config, string project)
+        => ResolveProject(config, project, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+    private static ProjectConfig? ResolveProject(DevWorkflowConfig config, string project, HashSet<string> visited)
+    {
+        if (!visited.Add(project))
+        {
+            throw new DwException($"Boucle de composition detectee dans projects.json pour {project}.");
+        }
+
+        if (!config.Projects.TryGetValue(project, out var projectConfig))
+        {
+            return null;
+        }
+
+        var repositories = new Dictionary<string, RepositoryConfig>(StringComparer.OrdinalIgnoreCase);
+        foreach (var includedProject in projectConfig.IncludedProjects ?? [])
+        {
+            var includedConfig = ResolveProject(config, includedProject, visited)
+                ?? throw new DwException($"Projet inclus introuvable dans projects.json: {includedProject}");
+
+            foreach (var repository in includedConfig.Repositories)
+            {
+                repositories[repository.Key] = repository.Value;
+            }
+        }
+
+        foreach (var repository in projectConfig.Repositories)
+        {
+            repositories[repository.Key] = repository.Value;
+        }
+
+        return projectConfig with { Repositories = repositories };
     }
 }

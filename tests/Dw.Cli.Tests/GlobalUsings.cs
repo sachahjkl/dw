@@ -1,4 +1,5 @@
 global using Dw.Cli;
+global using Dw.Cli.Agents;
 global using Dw.Cli.AzureDevOps;
 global using Dw.Cli.Bootstrap;
 global using Dw.Cli.Cli;

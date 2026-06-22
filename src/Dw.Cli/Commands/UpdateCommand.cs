@@ -24,7 +24,7 @@ internal static class UpdateCommand
     private static int Check(CommandContext context)
     {
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
-        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var updates = ResolveUpdates(workflow);
 
         using var http = new HttpClient();
@@ -44,10 +44,10 @@ internal static class UpdateCommand
 
     private static int Download(CommandContext context, string[] args)
     {
-        var rid = OptionValue(args, "--rid") ?? "win-x64";
-        var output = OptionValue(args, "--output") ?? Path.Combine(AppPaths.UserConfigDirectory, "updates");
+        var rid = CommandOptions.OptionValue(args, "--rid") ?? "win-x64";
+        var output = CommandOptions.OptionValue(args, "--output") ?? Path.Combine(AppPaths.UserConfigDirectory, "updates");
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
-        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var updates = ResolveUpdates(workflow);
 
         using var http = new HttpClient();
@@ -84,19 +84,6 @@ internal static class UpdateCommand
 
         context.Out.WriteLine($"Asset telecharge et verifie: {destination}");
         return 0;
-    }
-
-    private static string? OptionValue(string[] args, string name)
-    {
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[i + 1];
-            }
-        }
-
-        return null;
     }
 
     internal static UpdateOptions ResolveUpdates(WorkflowConfig workflow)

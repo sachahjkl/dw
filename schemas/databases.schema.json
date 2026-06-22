@@ -3,7 +3,7 @@
   "$id": "https://github.com/sachahjkl/dw/schemas/databases.schema.json",
   "title": "dw databases configuration",
   "type": "object",
-  "required": ["schema", "defaults", "projects"],
+  "required": ["schema", "defaults", "globals", "projects"],
   "properties": {
     "$schema": {
       "type": "string"
@@ -30,6 +30,12 @@
         }
       },
       "additionalProperties": false
+    },
+    "globals": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/database"
+      }
     },
     "projects": {
       "type": "object",

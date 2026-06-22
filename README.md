@@ -41,13 +41,13 @@ Run locally:
 
 ```powershell
 dotnet run --project .\src\Dw.Cli -- version
-dotnet run --project .\src\Dw.Cli -- init --profile ogf --root S:\ai-agent-workdir\dw
+dotnet run --project .\src\Dw.Cli -- init --profile ogf --root C:\Dev\dw
 dotnet run --project .\src\Dw.Cli -- init --root .\.smoke\root --no-save
 dotnet run --project .\src\Dw.Cli -- doctor
 dotnet run --project .\src\Dw.Cli -- agent context
 dotnet run --project .\src\Dw.Cli -- task start 27485 --project default --task 55201 --slug "descriptif cours" --type feat --only front,back
 dotnet run --project .\src\Dw.Cli -- task start 27485 --project ha --slug "descriptif cours" --create-child-tasks
-dotnet run --project .\src\Dw.Cli -- task finish --workspace S:\ai-agent-workdir\dw\projects\ha\workspaces\feat-27485-descriptif-cours --execute --message "feat: descriptif cours" --create-pr
+dotnet run --project .\src\Dw.Cli -- task finish --workspace C:\Dev\dw\projects\ha\workspaces\feat-27485-descriptif-cours --execute --message "feat: descriptif cours" --create-pr
 ```
 
 With Nix:

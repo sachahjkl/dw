@@ -10,6 +10,12 @@ internal static class AzureDevOpsUris
     public static Uri WorkItem(AzureDevOpsOptions options, string workItemId)
         => Build(options, $"{ProjectSegment(options)}/_apis/wit/workitems/{workItemId}?api-version={options.ApiVersion}");
 
+    public static Uri WorkItemsBatch(AzureDevOpsOptions options)
+        => Build(options, $"{ProjectSegment(options)}/_apis/wit/workitemsbatch?api-version={options.ApiVersion}");
+
+    public static Uri Wiql(AzureDevOpsOptions options)
+        => Build(options, $"{ProjectSegment(options)}/_apis/wit/wiql?api-version={options.ApiVersion}");
+
     public static Uri WorkItemExpanded(AzureDevOpsOptions options, string workItemId)
         => Build(options, $"{ProjectSegment(options)}/_apis/wit/workitems/{workItemId}?$expand=all&api-version={options.ApiVersion}");
 

@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using Dw.Cli.Agents;
+
 namespace Dw.Cli.Commands;
 
 internal static class TaskCommand
@@ -7,154 +10,19 @@ internal static class TaskCommand
         var sub = args.FirstOrDefault()?.ToLowerInvariant();
         return sub switch
         {
-            "start" => Start(context, args.Skip(1).ToArray()),
-            "status" => Status(context),
+            "start" => TaskStartService.Start(context, args.Skip(1).ToArray()),
+            "status" => TaskListService.Status(context),
+            "list" => TaskListService.List(context, args.Skip(1).ToArray()),
+            "current" => TaskListService.Current(context),
+            "open" => WorkspaceOpenService.Open(context, AgentCommand.OpenOptions(args.Skip(1).ToArray())),
+            "sync" => TaskSyncPruneService.Sync(context, args.Skip(1).ToArray()),
+            "prune" => TaskSyncPruneService.Prune(context, args.Skip(1).ToArray()),
+            "rename" => TaskRenameService.Rename(context, args.Skip(1).ToArray()),
+            "teardown" => WorkspaceTeardownService.Teardown(context, TeardownOptions(args.Skip(1).ToArray())),
             "finish" => Finish(context, args.Skip(1).ToArray()),
             "add-repo" => AddRepo(context, args.Skip(1).ToArray()),
             _ => Help(context)
         };
-    }
-
-    private static int Start(CommandContext context, string[] args)
-    {
-        if (args.Length == 0)
-        {
-            throw new DwException("Usage: dw task start <workItemId> [--project <name>] [--slug <text>]", 2);
-        }
-
-        var workItemId = args[0];
-        var project = OptionValue(args, "--project") ?? "default";
-        var taskId = OptionValue(args, "--task");
-        var slug = OptionValue(args, "--slug") ?? $"work-item-{workItemId}";
-        var type = OptionValue(args, "--type") ?? "feat";
-        var only = OptionValue(args, "--only");
-        var skipAdo = args.Any(arg => string.Equals(arg, "--skip-ado", StringComparison.OrdinalIgnoreCase));
-        var createChildTasks = args.Any(arg => string.Equals(arg, "--create-child-tasks", StringComparison.OrdinalIgnoreCase));
-
-        var settings = UserSettingsStore.Load(context.FileSystem);
-        var root = settings.Root ?? AppPaths.DefaultRoot;
-        var config = DevWorkflowConfigLoader.Load(context.FileSystem, root);
-        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
-        var projectConfig = ResolveProjectConfig(config, project);
-        var repositories = ResolveRepositories(projectConfig, only);
-        var adoContext = skipAdo
-            ? null
-            : TryCreateAdoContext(context, workflow, projectConfig, required: false);
-        WorkItemSnapshot? workItem = null;
-        IReadOnlyDictionary<string, string>? childTaskIds = null;
-
-        if (adoContext is not null)
-        {
-            workItem = adoContext.Client.GetWorkItemSnapshotAsync(workItemId, adoContext.Token).GetAwaiter().GetResult();
-            context.Out.WriteLine($"ADO item {workItem.Id}: {workItem.Type} - {workItem.Title}");
-
-            if (workflow.TaskStart?.UpdateWorkItemState ?? true)
-            {
-                var startState = AdoWorkflowStates.StartState(workItem.Type, workflow.TaskStart);
-                if (!string.IsNullOrWhiteSpace(startState) &&
-                    !string.Equals(workItem.State, startState, StringComparison.OrdinalIgnoreCase))
-                {
-                    UpdateWorkItemState(adoContext.Client, adoContext.Token, workItem.Id, startState, "dw task start");
-                    context.Out.WriteLine($"ADO item {workItem.Id}: etat -> {startState}");
-                }
-            }
-
-            if (createChildTasks || (workflow.TaskStart?.CreateChildTasks ?? false))
-            {
-                childTaskIds = CreateChildTasks(context, adoContext, workItem, repositories);
-                if (string.IsNullOrWhiteSpace(taskId) && childTaskIds.Count == 1)
-                {
-                    taskId = childTaskIds.Values.First();
-                }
-            }
-        }
-        else if (!skipAdo && workflow.AzureDevOps is not null)
-        {
-            context.Out.WriteLine("ADO ignore: aucun token silencieux disponible. Utiliser dw auth login, DW_ADO_TOKEN, ou --skip-ado.");
-        }
-
-        var subject = GitBranchNames.BuildSubjectName(type, workItemId, slug);
-        var branchName = GitBranchNames.Build(type, workItemId, taskId, slug);
-        var projectRoot = Path.Combine(root, "projects", project);
-        var workspace = Path.Combine(projectRoot, "workspaces", subject);
-
-        context.FileSystem.CreateDirectory(workspace);
-        var git = new GitWorktreeService(context.ProcessRunner, context.FileSystem);
-        var results = new List<GitWorktreeResult>();
-
-        foreach (var repositoryKey in repositories)
-        {
-            var repository = projectConfig?.Repositories.GetValueOrDefault(repositoryKey)
-                ?? new RepositoryConfig("", "main", Folder: repositoryKey);
-
-            var folder = string.IsNullOrWhiteSpace(repository.Folder)
-                ? repositoryKey
-                : repository.Folder;
-
-            var result = git.PrepareAsync(
-                projectRoot,
-                repositoryKey,
-                repository,
-                branchName,
-                Path.Combine(workspace, folder)).GetAwaiter().GetResult();
-
-            if (result.Status == GitWorktreeStatus.Failed)
-            {
-                throw new DwException($"Creation worktree impossible pour {repositoryKey}: {result.Message}");
-            }
-
-            results.Add(result);
-        }
-
-        var manifest = new WorkspaceManifest(
-            Schema: 1,
-            WorkItemId: workItemId,
-            TaskId: taskId,
-            Project: project,
-            Type: type,
-            Slug: slug,
-            BranchName: branchName,
-            CreatedAt: context.Clock.Now,
-            Repositories: repositories,
-            Status: "created",
-            WorkItemType: workItem?.Type,
-            WorkItemTitle: workItem?.Title,
-            ChildTaskIds: childTaskIds);
-
-        context.FileSystem.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(manifest));
-        context.FileSystem.WriteAllText(Path.Combine(workspace, "plan.md"), Templates.PlanMd(workItemId, project));
-
-        context.Out.WriteLine($"Workspace cree: {workspace}");
-        context.Out.WriteLine($"Branche cible: {branchName}");
-        foreach (var result in results)
-        {
-            context.Out.WriteLine($"Repo {result.Repository}: {result.Status} - {result.Message}");
-        }
-
-        context.Out.WriteLine("Prochaine etape: ouvrir ce dossier avec OpenCode/Codex et executer dw agent context.");
-        return 0;
-    }
-
-    private static int Status(CommandContext context)
-    {
-        var settings = UserSettingsStore.Load(context.FileSystem);
-        var root = settings.Root ?? AppPaths.DefaultRoot;
-        context.Out.WriteLine($"Root: {root}");
-        context.Out.WriteLine("Workspaces detectes:");
-
-        var files = context.FileSystem.EnumerateFiles(Path.Combine(root, "projects"), "task.json", SearchOption.AllDirectories).ToList();
-        if (files.Count == 0)
-        {
-            context.Out.WriteLine("  Aucun workspace task trouve.");
-            return 0;
-        }
-
-        foreach (var file in files)
-        {
-            context.Out.WriteLine($"  {Path.GetDirectoryName(file)}");
-        }
-
-        return 0;
     }
 
     private static int AddRepo(CommandContext context, string[] args)
@@ -165,7 +33,7 @@ internal static class TaskCommand
             throw new DwException("Usage: dw task add-repo <repo> [--workspace <path>]", 2);
         }
 
-        var workspace = OptionValue(args, "--workspace") ?? Environment.CurrentDirectory;
+        var workspace = CommandOptions.OptionValue(args, "--workspace") ?? Environment.CurrentDirectory;
         workspace = Path.GetFullPath(workspace);
         var manifestPath = Path.Combine(workspace, "task.json");
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, manifestPath);
@@ -203,14 +71,14 @@ internal static class TaskCommand
 
     private static int Finish(CommandContext context, string[] args)
     {
-        var workspace = OptionValue(args, "--workspace") ?? Environment.CurrentDirectory;
+        var workspace = CommandOptions.OptionValue(args, "--workspace") ?? Environment.CurrentDirectory;
         workspace = Path.GetFullPath(workspace);
-        var execute = args.Any(arg => string.Equals(arg, "--execute", StringComparison.OrdinalIgnoreCase));
-        var createPr = args.Any(arg => string.Equals(arg, "--create-pr", StringComparison.OrdinalIgnoreCase));
-        var draft = !args.Any(arg => string.Equals(arg, "--ready", StringComparison.OrdinalIgnoreCase));
-        var message = OptionValue(args, "--message");
-        var skipVerify = args.Any(arg => string.Equals(arg, "--skip-verify", StringComparison.OrdinalIgnoreCase));
-        var skipAdo = args.Any(arg => string.Equals(arg, "--skip-ado", StringComparison.OrdinalIgnoreCase));
+        var execute = CommandOptions.HasFlag(args, "--execute");
+        var createPr = CommandOptions.HasFlag(args, "--create-pr");
+        var draft = !CommandOptions.HasFlag(args, "--ready");
+        var message = CommandOptions.OptionValue(args, "--message");
+        var skipVerify = CommandOptions.HasFlag(args, "--skip-verify");
+        var skipAdo = CommandOptions.HasFlag(args, "--skip-ado");
 
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
         var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
@@ -257,7 +125,7 @@ internal static class TaskCommand
 
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
-        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var projectConfig = projects.Projects.GetValueOrDefault(manifest.Project);
         var verificationResults = Array.Empty<VerificationResult>();
 
@@ -301,7 +169,12 @@ internal static class TaskCommand
         }
 
         var adoContext = skipAdo ? null : TryCreateAdoContext(context, workflow, projectConfig, required: true);
-        CreatePullRequests(context, adoContext!, workflow, projectConfig, manifest, changed, draft, verificationResults);
+        if (adoContext is null)
+        {
+            throw new DwException("Contexte Azure DevOps indisponible.");
+        }
+
+        CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, changed, draft, verificationResults);
         return 0;
     }
 
@@ -364,8 +237,9 @@ internal static class TaskCommand
         }
     }
 
-    private static void RunGitOrThrow(CommandContext context, string workingDirectory, params string[] args)
+    internal static void RunGitOrThrow(CommandContext context, string workingDirectory, params string[] args)
     {
+        context.Debug($"git ({workingDirectory}): {string.Join(' ', args)}");
         var result = context.ProcessRunner.RunAsync("git", args, workingDirectory).GetAwaiter().GetResult();
         if (result.ExitCode != 0)
         {
@@ -373,7 +247,7 @@ internal static class TaskCommand
         }
     }
 
-    private static AdoContext? TryCreateAdoContext(CommandContext context, WorkflowConfig workflow, ProjectConfig? projectConfig, bool required)
+    internal static AdoContext? TryCreateAdoContext(CommandContext context, WorkflowConfig workflow, ProjectConfig? projectConfig, bool required)
     {
         var options = ResolveAzureDevOpsOptions(workflow, projectConfig);
         if (options is null)
@@ -398,11 +272,17 @@ internal static class TaskCommand
             return null;
         }
 
+        context.Debug($"ADO token resolu via {token.Scheme}");
         return new AdoContext(new AzureDevOpsClient(new HttpClient(), options), token, options);
     }
 
     private static AzureDevOpsOptions? ResolveAzureDevOpsOptions(WorkflowConfig workflow, ProjectConfig? projectConfig)
     {
+        if (projectConfig?.IncludedProjects is { Length: > 0 } && projectConfig.AzureDevOps is null)
+        {
+            return null;
+        }
+
         if (projectConfig?.AzureDevOps is null)
         {
             return workflow.AzureDevOps;
@@ -425,7 +305,7 @@ internal static class TaskCommand
                 : projectConfig.AzureDevOps.ApiVersion);
     }
 
-    private static IReadOnlyDictionary<string, string> CreateChildTasks(
+    internal static IReadOnlyDictionary<string, string> CreateChildTasks(
         CommandContext context,
         AdoContext adoContext,
         WorkItemSnapshot parent,
@@ -438,6 +318,7 @@ internal static class TaskCommand
             using var document = adoContext.Client.CreateWorkItemAsync("Task",
                 [
                     new JsonPatchOperation("add", "/fields/System.Title", title),
+                    new JsonPatchOperation("add", "/fields/System.History", DevWorkflowTraceComment(parent.Id, repository)),
                     new JsonPatchOperation("add", "/relations/-", new
                     {
                         rel = "System.LinkTypes.Hierarchy-Reverse",
@@ -454,7 +335,10 @@ internal static class TaskCommand
         return created;
     }
 
-    private static void UpdateWorkItemState(AzureDevOpsClient client, TokenResult token, string workItemId, string state, string history)
+    private static string DevWorkflowTraceComment(string parentId, string repository)
+        => $"Créé automatiquement par Dev Workflow {AppVersion.InformationalVersion()} via dw task start. Parent #{parentId}. Repository: {repository}.";
+
+    internal static void UpdateWorkItemState(AzureDevOpsClient client, TokenResult token, string workItemId, string state, string history)
     {
         client.UpdateWorkItemAsync(workItemId,
             [
@@ -517,6 +401,7 @@ internal static class TaskCommand
 
     private static ProcessResult RunShell(CommandContext context, string workingDirectory, string command)
     {
+        context.Debug($"shell ({workingDirectory}): {command}");
         var shell = OperatingSystem.IsWindows() ? "powershell" : "sh";
         var args = OperatingSystem.IsWindows()
             ? new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command }
@@ -570,27 +455,64 @@ internal static class TaskCommand
 
     private static int Help(CommandContext context)
     {
-        context.Out.WriteLine("Usage: dw task <start|status|add-repo|finish>");
+        context.Out.WriteLine("Usage: dw task <start|status|open|teardown|add-repo|finish>");
         return 0;
     }
 
-    private static string? OptionValue(string[] args, string name)
-    {
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[i + 1];
-            }
-        }
-
-        return null;
-    }
+    private static WorkspaceTeardownOptions TeardownOptions(string[] args)
+        => new(
+            Workspace: CommandOptions.OptionValue(args, "--workspace"),
+            Project: CommandOptions.OptionValue(args, "--project"),
+            WorkItemId: CommandOptions.OptionValue(args, "--work-item"),
+            Continue: CommandOptions.HasFlag(args, "--continue"),
+            Execute: CommandOptions.HasFlag(args, "--execute"),
+            Yes: CommandOptions.HasFlag(args, "--yes"));
 
     private static ProjectConfig? ResolveProjectConfig(DevWorkflowConfig config, string project)
-        => config.Projects.GetValueOrDefault(project);
+        => DevWorkflowConfigLoader.ResolveProject(config, project);
 
-    private static IReadOnlyList<string> ResolveRepositories(ProjectConfig? projectConfig, string? only)
+    internal static string ResolveSlug(string? requestedSlug, string workItemId, WorkItemSnapshot? workItem)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedSlug))
+        {
+            return Slug.FromPhraseOrFallback(requestedSlug, $"work-item-{workItemId}");
+        }
+
+        var fallbackSource = workItem?.Title;
+        if (!string.IsNullOrWhiteSpace(fallbackSource))
+        {
+            fallbackSource = StripDecorations(fallbackSource);
+        }
+
+        return Slug.FromPhraseOrFallback(fallbackSource, $"work-item-{workItemId}");
+    }
+
+    private static string StripDecorations(string value)
+    {
+        Debug.Assert(!string.IsNullOrWhiteSpace(value), "Work item title should not be empty when stripping decorations.");
+        return string.Join(' ', value
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => !part.StartsWith("[", StringComparison.Ordinal) && !part.EndsWith("]", StringComparison.Ordinal)));
+    }
+
+    internal static bool IsFinalState(string? workItemType, string? state)
+    {
+        var normalizedState = (state ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedState))
+        {
+            return false;
+        }
+
+        var normalizedType = (workItemType ?? string.Empty).Trim().ToLowerInvariant();
+        return normalizedType switch
+        {
+            "user story" or "anomalie" => normalizedState is "validé" or "valide" or "cloturé" or "clôturé" or "abandonné" or "abandonne",
+            "bug" or "activité" or "activite" => normalizedState is "cloturé" or "clôturé" or "abandonné" or "abandonne",
+            _ => normalizedState is "validé" or "valide" or "cloturé" or "clôturé" or "abandonné" or "abandonne"
+        };
+    }
+
+    internal static IReadOnlyList<string> ResolveRepositories(ProjectConfig? projectConfig, string? only)
     {
         if (!string.IsNullOrWhiteSpace(only))
         {
@@ -640,7 +562,7 @@ internal static class AdoTaskNaming
                 ? "BACK"
                 : repository.ToUpperInvariant();
 
-        return $"[{prefix}][AI] {title}";
+        return $"[{prefix}] {title}";
     }
 }
 

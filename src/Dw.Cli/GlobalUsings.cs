@@ -1,3 +1,4 @@
+global using Dw.Cli.Agents;
 global using Dw.Cli.AzureDevOps;
 global using Dw.Cli.Bootstrap;
 global using Dw.Cli.Cli;
@@ -9,5 +10,6 @@ global using Dw.Cli.Platform;
 global using Dw.Cli.Security;
 global using Dw.Cli.Settings;
 global using Dw.Cli.Text;
+global using Dw.Cli.Templating;
 global using Dw.Cli.Updates;
 global using Dw.Cli.Workspaces;

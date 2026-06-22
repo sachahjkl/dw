@@ -2,9 +2,12 @@ using System.Text.Json;
 
 namespace Dw.Cli.Database;
 
-internal sealed record DatabasesConfig(DatabaseDefaults Defaults, IReadOnlyDictionary<string, ProjectDatabases> Projects)
+internal sealed record DatabasesConfig(
+    DatabaseDefaults Defaults,
+    IReadOnlyDictionary<string, DatabaseConnectionConfig> Globals,
+    IReadOnlyDictionary<string, ProjectDatabases> Projects)
 {
-    public static DatabasesConfig Empty { get; } = new(new DatabaseDefaults(true, 500, 600), new Dictionary<string, ProjectDatabases>());
+    public static DatabasesConfig Empty { get; } = new(new DatabaseDefaults(true, 500, 600), new Dictionary<string, DatabaseConnectionConfig>(StringComparer.OrdinalIgnoreCase), new Dictionary<string, ProjectDatabases>(StringComparer.OrdinalIgnoreCase));
 }
 
 internal sealed record DatabaseDefaults(bool Readonly, int MaxRows, int TimeoutSeconds);

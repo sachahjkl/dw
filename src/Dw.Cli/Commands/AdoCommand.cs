@@ -13,6 +13,7 @@ internal static class AdoCommand
         var sub = args.FirstOrDefault()?.ToLowerInvariant();
         return sub switch
         {
+            "assigned" => Assigned(context, args.Skip(1).ToArray()),
             "work-item" => WorkItem(context, args.Skip(1).ToArray()),
             "context" => WorkItemContext(context, args.Skip(1).ToArray()),
             _ => Help(context)
@@ -22,13 +23,37 @@ internal static class AdoCommand
     private static int Help(CommandContext context)
     {
         context.Out.WriteLine("Usage: dw ado <work-item|context> <id> [--project <name>] [--root <path>]");
+        context.Out.WriteLine("       dw ado assigned [--project <name>] [--top <n>]");
         context.Out.WriteLine("       dw ado context <id> [--summary] [--comments <n>]");
+        return 0;
+    }
+
+    private static int Assigned(CommandContext context, string[] args)
+    {
+        var top = CommandOptions.IntValue(args, "--top", 20, 1);
+        var (_, azureDevOps, token) = CreateClientInputs(context, args);
+        using var http = new HttpClient();
+        var client = new AzureDevOpsClient(http, azureDevOps);
+        var items = client.GetAssignedWorkItemsAsync(top, token).GetAwaiter().GetResult();
+        if (items.Count == 0)
+        {
+            context.Out.WriteLine("Aucun work item assigne.");
+            return 0;
+        }
+
+        var projectHint = ProjectName(args) is { } project ? $" --project {project}" : string.Empty;
+        foreach (var item in items)
+        {
+            context.Out.WriteLine($"#{item.Id} [{item.Type}] {item.State} - {item.Title}");
+            context.Out.WriteLine($"  Start: dw task start {item.Id}{projectHint}");
+        }
+
         return 0;
     }
 
     private static int WorkItem(CommandContext context, string[] args)
     {
-        var id = FirstPositional(args);
+        var id = CommandOptions.FirstPositional(args, OptionsWithValue);
         if (string.IsNullOrWhiteSpace(id))
         {
             throw new DwException("Usage: dw ado work-item <id>", 2);
@@ -50,16 +75,14 @@ internal static class AdoCommand
 
     private static int WorkItemContext(CommandContext context, string[] args)
     {
-        var id = FirstPositional(args);
+        var id = CommandOptions.FirstPositional(args, OptionsWithValue);
         if (string.IsNullOrWhiteSpace(id))
         {
             throw new DwException("Usage: dw ado context <id> [--project <name>] [--summary] [--comments <n>]", 2);
         }
 
-        var summaryOnly = args.Any(arg => string.Equals(arg, "--summary", StringComparison.OrdinalIgnoreCase));
-        var commentLimit = int.TryParse(CommandOptions.OptionValue(args, "--comments"), out var requestedComments)
-            ? Math.Max(0, requestedComments)
-            : 200;
+        var summaryOnly = CommandOptions.HasFlag(args, "--summary");
+        var commentLimit = CommandOptions.IntValue(args, "--comments", 200, 0);
 
         var (_, azureDevOps, token) = CreateClientInputs(context, args);
         using var http = new HttpClient();
@@ -84,12 +107,12 @@ internal static class AdoCommand
     private static (WorkflowConfig Workflow, AzureDevOpsOptions AzureDevOps, TokenResult Token) CreateClientInputs(CommandContext context, string[] args)
     {
         var root = CommandOptions.ResolveRoot(context, args);
-        var workflow = WorkflowConfigLoader.Load(context.FileSystem, root);
+        var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
         var projectName = CommandOptions.OptionValue(args, "--project");
         var projectConfig = string.IsNullOrWhiteSpace(projectName)
             ? null
-            : projects.Projects.GetValueOrDefault(projectName);
+            : DevWorkflowConfigLoader.ResolveProject(projects, projectName);
         var azureDevOps = ResolveAzureDevOpsOptions(workflow, projectConfig);
         if (azureDevOps is null)
         {
@@ -299,7 +322,7 @@ internal static class AdoCommand
             return null;
         }
 
-        var match = Regex.Match(url, @"/workItems/(\d+)$", RegexOptions.IgnoreCase);
+        var match = AdoRegexes.WorkItemRelationUrl().Match(url);
         return match.Success ? match.Groups[1].Value : null;
     }
 
@@ -334,41 +357,30 @@ internal static class AdoCommand
             .Replace("</p>", "\n", StringComparison.OrdinalIgnoreCase)
             .Replace("</div>", "\n", StringComparison.OrdinalIgnoreCase)
             .Replace("</li>", "\n", StringComparison.OrdinalIgnoreCase);
-        normalized = Regex.Replace(normalized, "<li[^>]*>", "- ", RegexOptions.IgnoreCase);
-        normalized = Regex.Replace(normalized, "<[^>]+>", string.Empty);
+        normalized = AdoRegexes.HtmlListItem().Replace(normalized, "- ");
+        normalized = AdoRegexes.HtmlTag().Replace(normalized, string.Empty);
         normalized = WebUtility.HtmlDecode(normalized);
-        normalized = Regex.Replace(normalized, @"[ \t]+\r?\n", Environment.NewLine);
-        normalized = Regex.Replace(normalized, @"(\r?\n){3,}", Environment.NewLine + Environment.NewLine);
+        normalized = AdoRegexes.TrailingWhitespaceBeforeNewLine().Replace(normalized, Environment.NewLine);
+        normalized = AdoRegexes.ExcessBlankLines().Replace(normalized, Environment.NewLine + Environment.NewLine);
         return normalized.Trim();
-    }
-
-    private static string? FirstPositional(string[] args)
-    {
-        for (var i = 0; i < args.Length; i++)
-        {
-            if (OptionsWithValue.Contains(args[i], StringComparer.OrdinalIgnoreCase))
-            {
-                i++;
-                continue;
-            }
-
-            if (!args[i].StartsWith("-", StringComparison.Ordinal))
-            {
-                return args[i];
-            }
-        }
-
-        return null;
     }
 
     private static string ProjectHint(string[] args)
     {
-        var project = CommandOptions.OptionValue(args, "--project");
+        var project = ProjectName(args);
         return string.IsNullOrWhiteSpace(project) ? string.Empty : $" --project {project}";
     }
 
+    private static string? ProjectName(string[] args)
+        => CommandOptions.OptionValue(args, "--project");
+
     private static AzureDevOpsOptions? ResolveAzureDevOpsOptions(WorkflowConfig workflow, ProjectConfig? projectConfig)
     {
+        if (projectConfig?.IncludedProjects is { Length: > 0 } && projectConfig.AzureDevOps is null)
+        {
+            return null;
+        }
+
         if (projectConfig?.AzureDevOps is null)
         {
             return workflow.AzureDevOps;
@@ -426,21 +438,21 @@ internal static class AdoCommand
 
         private static bool TryParsePullRequest(string value, out string display)
         {
-            var match = Regex.Match(value, @"PullRequestId/(?:[^/]+/)*(?<id>\d+)$", RegexOptions.IgnoreCase);
+            var match = AdoRegexes.PullRequestIdArtifact().Match(value);
             if (match.Success)
             {
                 display = $"PR #{match.Groups["id"].Value}";
                 return true;
             }
 
-            match = Regex.Match(value, @"PullRequest/(?:[^/]+/)*(?<id>\d+)$", RegexOptions.IgnoreCase);
+            match = AdoRegexes.PullRequestArtifact().Match(value);
             if (match.Success)
             {
                 display = $"PR #{match.Groups["id"].Value}";
                 return true;
             }
 
-            match = Regex.Match(value, @"[?&]pullRequestId=(?<id>\d+)", RegexOptions.IgnoreCase);
+            match = AdoRegexes.PullRequestQuery().Match(value);
             if (match.Success)
             {
                 display = $"PR #{match.Groups["id"].Value}";
@@ -453,14 +465,14 @@ internal static class AdoCommand
 
         private static bool TryParseCommit(string value, out string display)
         {
-            var match = Regex.Match(value, @"Commit/(?:[^/]+/)*(?<hash>[0-9a-f]{7,40})$", RegexOptions.IgnoreCase);
+            var match = AdoRegexes.CommitArtifact().Match(value);
             if (match.Success)
             {
                 display = $"commit {match.Groups["hash"].Value}";
                 return true;
             }
 
-            match = Regex.Match(value, @"[Cc]ommit[s]?/(?<hash>[0-9a-f]{7,40})", RegexOptions.IgnoreCase);
+            match = AdoRegexes.CommitPath().Match(value);
             if (match.Success)
             {
                 display = $"commit {match.Groups["hash"].Value}";
@@ -473,7 +485,7 @@ internal static class AdoCommand
 
         private static bool TryParseBuild(string value, out string display)
         {
-            var match = Regex.Match(value, @"Build/Build/(\d+)$", RegexOptions.IgnoreCase);
+            var match = AdoRegexes.BuildArtifact().Match(value);
             if (match.Success)
             {
                 display = $"build #{match.Groups[1].Value}";
@@ -486,7 +498,7 @@ internal static class AdoCommand
 
         private static bool TryParseRelease(string value, out string display)
         {
-            var match = Regex.Match(value, @"Release/(?:Environment|Release)/(\d+)(?:/(\d+))?", RegexOptions.IgnoreCase);
+            var match = AdoRegexes.ReleaseArtifact().Match(value);
             if (match.Success)
             {
                 display = string.IsNullOrWhiteSpace(match.Groups[2].Value)
@@ -499,4 +511,5 @@ internal static class AdoCommand
             return false;
         }
     }
+
 }

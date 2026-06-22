@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Dw.Cli.Commands;
 
 internal static class DbCommand
@@ -23,8 +25,8 @@ internal static class DbCommand
 
     private static int Query(CommandContext context, string[] args)
     {
-        var project = OptionValue(args, "--project") ?? "default";
-        var database = OptionValue(args, "--database") ?? OptionValue(args, "--env") ?? "dev";
+        var project = CommandOptions.OptionValue(args, "--project") ?? "default";
+        var database = CommandOptions.OptionValue(args, "--database") ?? CommandOptions.OptionValue(args, "--env") ?? "dev";
         var sql = RemainingSql(args);
         var guard = SqlReadOnlyGuard.Validate(sql);
         if (!guard.IsAllowed)
@@ -40,8 +42,8 @@ internal static class DbCommand
 
     private static int Schema(CommandContext context, string[] args)
     {
-        var project = OptionValue(args, "--project") ?? "default";
-        var database = OptionValue(args, "--database") ?? OptionValue(args, "--env") ?? "dev";
+        var project = CommandOptions.OptionValue(args, "--project") ?? "default";
+        var database = CommandOptions.OptionValue(args, "--database") ?? CommandOptions.OptionValue(args, "--env") ?? "dev";
         var sql = """
 select TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
 from INFORMATION_SCHEMA.TABLES
@@ -61,8 +63,8 @@ order by TABLE_SCHEMA, TABLE_NAME
             throw new DwException("Usage: dw db describe <schema.table> [--project <project>] [--database <name>]", 2);
         }
 
-        var project = OptionValue(args, "--project") ?? "default";
-        var database = OptionValue(args, "--database") ?? OptionValue(args, "--env") ?? "dev";
+        var project = CommandOptions.OptionValue(args, "--project") ?? "default";
+        var database = CommandOptions.OptionValue(args, "--database") ?? CommandOptions.OptionValue(args, "--env") ?? "dev";
         var parts = table.Split('.', 2);
         var schema = parts.Length == 2 ? parts[0] : "dbo";
         var name = parts.Length == 2 ? parts[1] : parts[0];
@@ -87,18 +89,46 @@ order by ORDINAL_POSITION
     {
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
         var config = DatabasesConfigLoader.Load(context.FileSystem, root);
-        if (!config.Projects.TryGetValue(project, out var projectDatabases) ||
-            !projectDatabases.Databases.TryGetValue(database, out var connection))
-        {
-            throw new DwException($"Base introuvable dans databases.json: {project}/{database}");
-        }
-
-        if (connection.Readonly == false || !config.Defaults.Readonly)
+        var resolvedConnection = ResolveConnectionOrThrow(config, project, database);
+        if (resolvedConnection is { Readonly: false } || !config.Defaults.Readonly)
         {
             throw new DwException("Execution SQL refusee: readonly doit rester true.");
         }
 
-        return (connection, config.Defaults);
+        return (resolvedConnection, config.Defaults);
+    }
+
+    internal static bool TryResolveConnection(
+        DatabasesConfig config,
+        string project,
+        string database,
+        [NotNullWhen(true)] out DatabaseConnectionConfig? connection)
+    {
+        if (config.Projects.TryGetValue(project, out var projectDatabases) &&
+            projectDatabases.Databases.TryGetValue(database, out var projectConnection))
+        {
+            connection = projectConnection;
+            return true;
+        }
+
+        if (config.Globals.TryGetValue(database, out var globalConnection))
+        {
+            connection = globalConnection;
+            return true;
+        }
+
+        connection = null;
+        return false;
+    }
+
+    private static DatabaseConnectionConfig ResolveConnectionOrThrow(DatabasesConfig config, string project, string database)
+    {
+        if (TryResolveConnection(config, project, database, out var connection) && connection is not null)
+        {
+            return connection;
+        }
+
+        throw new DwException($"Base introuvable dans databases.json: {project}/{database}");
     }
 
     private static string RemainingSql(string[] args)
@@ -121,16 +151,4 @@ order by ORDINAL_POSITION
         return string.Join(' ', parts);
     }
 
-    private static string? OptionValue(string[] args, string name)
-    {
-        for (var i = 0; i < args.Length - 1; i++)
-        {
-            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
-            {
-                return args[i + 1];
-            }
-        }
-
-        return null;
-    }
 }
