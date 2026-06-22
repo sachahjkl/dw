@@ -1,5 +1,7 @@
 namespace Dw.Cli.Tests;
 
+using System.IO.Compression;
+
 public sealed class UpgradeCommandTests
 {
     [Fact]
@@ -40,5 +42,77 @@ public sealed class UpgradeCommandTests
         Assert.Contains("copy /Y \"%NEW%\" \"%TARGET%\"", script);
         Assert.Contains("move /Y \"%BACKUP%\" \"%TARGET%\"", script);
         Assert.DoesNotContain("move /Y \"new.exe\" \"dw.exe\"", script);
+    }
+
+    [Fact]
+    public void PrepareReplacementExecutable_extracts_dw_exe_from_zip()
+    {
+        var zipPath = CreateZip(("dw.exe", [0x4D, 0x5A, 0x01, 0x02]));
+
+        var replacement = UpgradeCommand.PrepareReplacementExecutable("dw-win-x64.zip", zipPath, "win-x64");
+
+        try
+        {
+            Assert.False(File.Exists(zipPath));
+            Assert.True(File.Exists(replacement));
+            Assert.Equal([0x4D, 0x5A, 0x01, 0x02], File.ReadAllBytes(replacement));
+        }
+        finally
+        {
+            if (File.Exists(replacement))
+            {
+                File.Delete(replacement);
+            }
+        }
+    }
+
+    [Fact]
+    public void PrepareReplacementExecutable_rejects_zip_without_dw_exe()
+    {
+        var zipPath = CreateZip(("readme.txt", [0x41]));
+
+        var ex = Assert.Throws<DwException>(() => UpgradeCommand.PrepareReplacementExecutable("dw-win-x64.zip", zipPath, "win-x64"));
+
+        Assert.Contains("dw.exe introuvable", ex.Message);
+        Assert.False(File.Exists(zipPath));
+    }
+
+    [Fact]
+    public void PrepareReplacementExecutable_rejects_zip_when_dw_exe_is_not_windows_executable()
+    {
+        var zipPath = CreateZip(("dw.exe", [0x50, 0x4B, 0x03, 0x04]));
+
+        var ex = Assert.Throws<DwException>(() => UpgradeCommand.PrepareReplacementExecutable("dw-win-x64.zip", zipPath, "win-x64"));
+
+        Assert.Contains("n'est pas un executable Windows", ex.Message);
+        Assert.False(File.Exists(zipPath));
+    }
+
+    [Fact]
+    public void PrepareReplacementExecutable_rejects_tar_gz_asset()
+    {
+        var assetPath = Path.Combine(Path.GetTempPath(), "dw-upgrade-test-" + Guid.NewGuid().ToString("N") + ".tar.gz");
+        File.WriteAllBytes(assetPath, [0x1F, 0x8B]);
+
+        var ex = Assert.Throws<DwException>(() => UpgradeCommand.PrepareReplacementExecutable("dw-linux-x64.tar.gz", assetPath, "linux-x64"));
+
+        Assert.Contains("archive non supporte", ex.Message);
+        Assert.False(File.Exists(assetPath));
+    }
+
+    private static string CreateZip(params (string Name, byte[] Content)[] entries)
+    {
+        var zipPath = Path.Combine(Path.GetTempPath(), "dw-upgrade-test-" + Guid.NewGuid().ToString("N") + ".zip");
+        using (var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+        {
+            foreach (var entry in entries)
+            {
+                var zipEntry = archive.CreateEntry(entry.Name);
+                using var stream = zipEntry.Open();
+                stream.Write(entry.Content);
+            }
+        }
+
+        return zipPath;
     }
 }
