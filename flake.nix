@@ -1,6 +1,15 @@
 {
   description = "dw - Dev Workflow CLI";
 
+  nixConfig = {
+    extra-substituters = [
+      "https://sachahjkl.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "sachahjkl.cachix.org-1:cepX7PCUV88hCchnh9prZM5V72wRkCf6oSJL6JfgWs0="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
