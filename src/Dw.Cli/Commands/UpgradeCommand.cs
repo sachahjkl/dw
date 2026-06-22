@@ -1,7 +1,11 @@
 namespace Dw.Cli.Commands;
 
+using System.IO.Compression;
+
 internal static class UpgradeCommand
 {
+    private const ushort WindowsPeSignature = 0x5A4D;
+
     internal static int Check(CommandContext context)
     {
         EnsureSupportedHost();
@@ -45,7 +49,7 @@ internal static class UpgradeCommand
         }
 
         var executablePath = Environment.ProcessPath ?? throw new DwException("Chemin du binaire courant indisponible.");
-        var temp = Path.Combine(Path.GetTempPath(), $"dw-upgrade-{Guid.NewGuid():N}{Path.GetExtension(asset.FileName)}");
+        var tempAsset = Path.Combine(Path.GetTempPath(), $"dw-upgrade-{Guid.NewGuid():N}{Path.GetExtension(asset.FileName)}");
         using (var response = http.GetAsync(asset.Url).GetAwaiter().GetResult())
         {
             var body = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
@@ -54,19 +58,86 @@ internal static class UpgradeCommand
                 throw new DwException($"Telechargement upgrade impossible HTTP {(int)response.StatusCode}.");
             }
 
-            File.WriteAllBytes(temp, body);
+            File.WriteAllBytes(tempAsset, body);
         }
 
-        var hash = Sha256.FileHashAsync(temp).GetAwaiter().GetResult();
+        var hash = Sha256.FileHashAsync(tempAsset).GetAwaiter().GetResult();
         if (!string.Equals(hash, asset.Sha256, StringComparison.OrdinalIgnoreCase))
         {
-            File.Delete(temp);
-            throw new DwException($"SHA256 invalide pour {temp}. Attendu {asset.Sha256}, obtenu {hash}.");
+            File.Delete(tempAsset);
+            throw new DwException($"SHA256 invalide pour {tempAsset}. Attendu {asset.Sha256}, obtenu {hash}.");
         }
 
-        ReplaceExecutable(context, executablePath, temp);
+        var replacement = PrepareReplacementExecutable(asset.FileName, tempAsset, rid);
+        ReplaceExecutable(context, executablePath, replacement);
         context.Out.WriteLine($"Upgrade prepare: {manifest.Version}+{manifest.Commit}");
         return 0;
+    }
+
+    internal static string PrepareReplacementExecutable(string assetFileName, string assetPath, string rid)
+    {
+        if (assetFileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return ExtractWindowsExecutable(assetPath);
+        }
+
+        if (assetFileName.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)
+            || assetFileName.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase))
+        {
+            File.Delete(assetPath);
+            throw new DwException($"Asset archive non supporte pour l'upgrade automatique: {assetFileName} ({rid}).");
+        }
+
+        if (assetFileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            EnsureWindowsExecutable(assetPath, assetFileName);
+        }
+
+        return assetPath;
+    }
+
+    private static string ExtractWindowsExecutable(string archivePath)
+    {
+        var destination = Path.Combine(Path.GetTempPath(), $"dw-upgrade-{Guid.NewGuid():N}.exe");
+        try
+        {
+            using var archive = ZipFile.OpenRead(archivePath);
+            var entry = archive.Entries.FirstOrDefault(entry => string.Equals(Path.GetFileName(entry.FullName), "dw.exe", StringComparison.OrdinalIgnoreCase))
+                        ?? throw new DwException("Archive upgrade invalide: dw.exe introuvable.");
+
+            entry.ExtractToFile(destination, overwrite: true);
+            EnsureWindowsExecutable(destination, entry.FullName);
+            return destination;
+        }
+        catch
+        {
+            if (File.Exists(destination))
+            {
+                File.Delete(destination);
+            }
+
+            throw;
+        }
+        finally
+        {
+            File.Delete(archivePath);
+        }
+    }
+
+    private static void EnsureWindowsExecutable(string path, string displayName)
+    {
+        Span<byte> signature = stackalloc byte[2];
+        bool isWindowsExecutable;
+        using (var stream = File.OpenRead(path))
+        {
+            isWindowsExecutable = stream.Read(signature) == signature.Length && BitConverter.ToUInt16(signature) == WindowsPeSignature;
+        }
+
+        if (!isWindowsExecutable)
+        {
+            File.Delete(path);
+            throw new DwException($"Asset upgrade invalide: {displayName} n'est pas un executable Windows.");
+        }
     }
 
     private static void ReplaceExecutable(CommandContext context, string executablePath, string temp)
