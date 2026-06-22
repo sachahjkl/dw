@@ -21,13 +21,12 @@
         pkgs = import nixpkgs { inherit system; };
         dotnet = pkgs.dotnetCorePackages.sdk_8_0;
         dotnetRuntime = pkgs.dotnetCorePackages.runtime_8_0;
-        buildProps = builtins.readFile ./Directory.Build.props;
-        versionMatch = builtins.match ".*<VersionPrefix Condition=\"'\\$\\(VersionPrefix\\)' == ''\">([^<]+)</VersionPrefix>.*" buildProps;
-        revisionMatch = builtins.match ".*<SourceRevisionId Condition=\"'\\$\\(SourceRevisionId\\)' == ''\">([^<]+)</SourceRevisionId>.*" buildProps;
-        versionPrefix =
-          if versionMatch == null then throw "Could not read VersionPrefix from Directory.Build.props" else builtins.elemAt versionMatch 0;
+        versionPrefix = pkgs.lib.strings.trim (builtins.readFile ./VERSION);
         sourceRevision =
-          if revisionMatch == null then throw "Could not read SourceRevisionId from Directory.Build.props" else builtins.elemAt revisionMatch 0;
+          if self ? shortRev then self.shortRev
+          else if self ? rev then builtins.substring 0 7 self.rev
+          else if self ? dirtyShortRev then self.dirtyShortRev
+          else "dev";
         packageVersion = "${versionPrefix}+${sourceRevision}";
 
         dotnetEnv = ''
@@ -110,6 +109,14 @@
             VERSION=${versionPrefix} COMMIT=${sourceRevision} bash ./scripts/publish-linux-x64.sh
           '';
         };
+
+        setVersionScript = pkgs.writeShellApplication {
+          name = "dw-set-version";
+          runtimeInputs = [ pkgs.bash pkgs.coreutils ];
+          text = ''
+            bash ./scripts/set-version.sh "$@"
+          '';
+        };
       in
       {
         devShells.default = pkgs.mkShell {
@@ -126,6 +133,7 @@
             echo "  nix run .#check"
             echo "  nix run .#publish-win-x64"
             echo "  nix run .#publish-linux-x64"
+            echo "  nix run .#set-version -- 2026.06.20.2"
             echo ""
             echo "For release artifacts with explicit metadata:"
             echo "  nix develop -c env VERSION=2026.06.20.1 COMMIT=abc1234 bash ./scripts/publish-linux-x64.sh"
@@ -151,6 +159,11 @@
           publish-linux-x64 = {
             type = "app";
             program = "${publishLinuxX64Script}/bin/dw-publish-linux-x64";
+          };
+
+          set-version = {
+            type = "app";
+            program = "${setVersionScript}/bin/dw-set-version";
           };
 
           dw = {

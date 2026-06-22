@@ -26,11 +26,12 @@ jobs:
         id: version
         shell: bash
         run: |
-          base="$(date -u +'%Y.%m.%d')"
-          count="$(git tag --list "v${base}.*" | wc -l | tr -d ' ')"
-          patch="$((count + 1))"
-          version="${base}.${patch}"
+          version="$(tr -d '[:space:]' < VERSION)"
           tag="v${version}"
+          if git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
+            echo "Release tag already exists: ${tag}" >&2
+            exit 1
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 

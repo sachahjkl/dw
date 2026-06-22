@@ -3,7 +3,7 @@
     <Company>DevWorkflow</Company>
     <Product>dw</Product>
     <Authors>Sacha FROMENT</Authors>
-    <VersionPrefix Condition="'$(VersionPrefix)' == ''">2026.06.20.1</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</VersionPrefix>
     <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">dev</SourceRevisionId>
     <InformationalVersion>$(VersionPrefix)+$(SourceRevisionId)</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
