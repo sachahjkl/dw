@@ -16,7 +16,7 @@ internal static class AuthCommand
 
     private static int Help(CommandContext context)
     {
-        context.Out.WriteLine("Usage: dw auth <login|status|logout> [--root <path>]");
+        CliCatalog.WriteCommandHelp(context.Out, "auth");
         return 0;
     }
 

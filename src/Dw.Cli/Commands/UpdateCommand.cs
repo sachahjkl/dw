@@ -17,7 +17,7 @@ internal static class UpdateCommand
             return Download(context, args.Skip(1).ToArray());
         }
 
-        context.Out.WriteLine("Usage: dw update [check|download]");
+        CliCatalog.WriteCommandHelp(context.Out, "update");
         return 0;
     }
 

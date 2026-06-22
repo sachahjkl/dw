@@ -455,7 +455,7 @@ internal static class TaskCommand
 
     private static int Help(CommandContext context)
     {
-        context.Out.WriteLine("Usage: dw task <start|status|open|teardown|add-repo|finish>");
+        CliCatalog.WriteCommandHelp(context.Out, "task");
         return 0;
     }
 

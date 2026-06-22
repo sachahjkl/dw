@@ -3,6 +3,7 @@ namespace Dw.Cli.Commands;
 internal static class CompletionCommand
 {
     private static IReadOnlyDictionary<string, string[]> Commands => CliCatalog.CompletionMap;
+    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Descriptions => CliCatalog.CompletionDescriptionMap;
 
     public static int Run(CommandContext context, string[] args)
     {
@@ -33,6 +34,9 @@ Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock {
     $commands = @{
 {{PowerShellEntries()}}
     }
+    $descriptions = @{
+{{PowerShellDescriptionEntries()}}
+    }
 
     $tokens = @($commandAst.CommandElements | ForEach-Object { $_.ToString() })
     $rootCommand = ""
@@ -46,10 +50,17 @@ Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock {
         $commands[""]
     }
 
+    $descriptionMap = if ($descriptions.ContainsKey($rootCommand)) {
+        $descriptions[$rootCommand]
+    } else {
+        $descriptions[""]
+    }
+
     $candidates |
         Where-Object { $_ -like "$wordToComplete*" } |
         ForEach-Object {
-            [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $_)
+            $description = if ($descriptionMap.ContainsKey($_)) { $descriptionMap[$_] } else { $_ }
+            [System.Management.Automation.CompletionResult]::new($_, $_, "ParameterValue", $description)
         }
 }
 """);
@@ -111,7 +122,8 @@ complete -c dw -f
 """);
         foreach (var command in Commands[""])
         {
-            context.Out.WriteLine($"complete -c dw -n '__fish_use_subcommand' -a '{command}'");
+            var description = EscapeFish(Descriptions[""].GetValueOrDefault(command, command));
+            context.Out.WriteLine($"complete -c dw -n '__fish_use_subcommand' -a '{command}' -d '{description}'");
         }
 
         foreach (var (root, candidates) in Commands.Where(pair => pair.Key.Length > 0))
@@ -121,7 +133,8 @@ complete -c dw -f
                 var option = candidate.StartsWith("--", StringComparison.Ordinal)
                     ? $"-l {candidate[2..]}"
                     : $"-a '{candidate}'";
-                context.Out.WriteLine($"complete -c dw -n '__fish_seen_subcommand_from {root}' {option}");
+                var description = EscapeFish(Descriptions.GetValueOrDefault(root)?.GetValueOrDefault(candidate, candidate) ?? candidate);
+                context.Out.WriteLine($"complete -c dw -n '__fish_seen_subcommand_from {root}' {option} -d '{description}'");
             }
         }
 
@@ -136,7 +149,7 @@ def "nu-complete dw" [context: string] {
   let root = if (($words | length) > 1) { $words | get 1 } else { "" }
   match $root {
 {{NuEntries()}}
-    _ => [{{NuList(Commands[""])}}]
+    _ => [{{NuRecords("", Commands[""])}}]
   }
 }
 
@@ -151,6 +164,10 @@ export extern "dw" [
         => string.Join(Environment.NewLine, Commands.Select(pair =>
             $"        \"{pair.Key}\" = @({string.Join(", ", pair.Value.Select(value => $"\"{value}\""))})"));
 
+    private static string PowerShellDescriptionEntries()
+        => string.Join(Environment.NewLine, Descriptions.Select(pair =>
+            $"        \"{pair.Key}\" = @{{ {string.Join("; ", pair.Value.Select(value => $"\"{value.Key}\" = \"{EscapePowerShell(value.Value)}\""))} }}"));
+
     private static string CaseEntries(string shell)
     {
         return string.Join(Environment.NewLine, Commands
@@ -163,7 +180,7 @@ export extern "dw" [
     private static string NuEntries()
         => string.Join(Environment.NewLine, Commands
             .Where(pair => pair.Key.Length > 0)
-            .Select(pair => $"    \"{pair.Key}\" => [{NuList(pair.Value)}]"));
+            .Select(pair => $"    \"{pair.Key}\" => [{NuRecords(pair.Key, pair.Value)}]"));
 
     private static string Join(IEnumerable<string> values)
         => string.Join(' ', values);
@@ -173,4 +190,19 @@ export extern "dw" [
 
     private static string NuList(IEnumerable<string> values)
         => string.Join(' ', values.Select(value => $"\"{value}\""));
+
+    private static string NuRecords(string root, IEnumerable<string> values)
+    {
+        var descriptions = Descriptions.GetValueOrDefault(root) ?? new Dictionary<string, string>();
+        return string.Join(' ', values.Select(value => $"{{ value: \"{value}\", description: \"{EscapeNu(descriptions.GetValueOrDefault(value, value))}\" }}"));
+    }
+
+    private static string EscapePowerShell(string value)
+        => value.Replace("`", "``", StringComparison.Ordinal).Replace("\"", "`\"", StringComparison.Ordinal);
+
+    private static string EscapeFish(string value)
+        => value.Replace("'", "\\'", StringComparison.Ordinal);
+
+    private static string EscapeNu(string value)
+        => value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 }

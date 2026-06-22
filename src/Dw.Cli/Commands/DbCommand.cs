@@ -18,7 +18,7 @@ internal static class DbCommand
 
     private static int Help(CommandContext context)
     {
-        context.Out.WriteLine("Usage: dw db <schema|describe|query>");
+        CliCatalog.WriteCommandHelp(context.Out, "db");
         context.Out.WriteLine("SQL Server sera read-only par defaut: SELECT/introspection uniquement, maxRows=500, timeout=10min.");
         return 0;
     }

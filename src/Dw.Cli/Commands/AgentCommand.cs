@@ -8,7 +8,7 @@ internal static class AgentCommand
     {
         if (args.Length == 0 || args[0] is "-h" or "--help")
         {
-            context.Out.WriteLine("Usage: dw agent <context|open>");
+            CliCatalog.WriteCommandHelp(context.Out, "agent");
             return 0;
         }
 

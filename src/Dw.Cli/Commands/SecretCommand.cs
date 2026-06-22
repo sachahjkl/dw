@@ -54,7 +54,7 @@ internal static class SecretCommand
 
     private static int Help(CommandContext context)
     {
-        context.Out.WriteLine("Usage: dw secret <set|get|delete> <key>");
+        CliCatalog.WriteCommandHelp(context.Out, "secret");
         return 0;
     }
 
