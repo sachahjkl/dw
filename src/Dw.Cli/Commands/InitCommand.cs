@@ -2,12 +2,12 @@ namespace Dw.Cli.Commands;
 
 internal static class InitCommand
 {
-    public static int Run(CommandContext context, InitCommandOptions options)
+    public static int Run(CommandContext context, InitRequest request)
     {
-        var root = options.Root ?? AppPaths.DefaultRoot;
-        var profile = InitProfile.Resolve(options.Profile);
-        var noSave = options.NoSave;
-        var dryRun = options.DryRun;
+        var root = request.Root ?? AppPaths.DefaultRoot;
+        var profile = InitProfile.Resolve(request.Profile);
+        var noSave = request.NoSave;
+        var dryRun = request.DryRun;
         root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root));
 
         if (dryRun)
@@ -81,4 +81,4 @@ internal static class InitCommand
 
 }
 
-internal sealed record InitCommandOptions(string? Root, string? Profile, bool NoSave, bool DryRun);
+internal sealed record InitRequest(string? Root, string? Profile, bool NoSave, bool DryRun);

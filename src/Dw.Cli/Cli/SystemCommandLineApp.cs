@@ -74,7 +74,7 @@ internal static class SystemCommandLineApp
             Value("--root", "Root DevWorkflow a creer."),
             Flag("--dry-run", "Simule sans ecrire."),
             Flag("--no-save", "Ne sauvegarde pas le root utilisateur."));
-        command.SetAction(parse => InitCommand.Run(context, new InitCommandOptions(
+        command.SetAction(parse => InitCommand.Run(context, new InitRequest(
             parse.GetValue<string>("--root"),
             parse.GetValue<string>("--profile"),
             parse.GetValue<bool>("--no-save"),
@@ -140,16 +140,37 @@ internal static class SystemCommandLineApp
 
     private static Command Completion(CommandContext context)
     {
-        var command = Command("completion", "Explique l'autocompletion native System.CommandLine.");
-        command.SetAction(_ =>
-        {
-            context.Out.WriteLine("System.CommandLine expose les completions via la directive [suggest].");
-            context.Out.WriteLine("Exemples:");
-            context.Out.WriteLine("  dw [suggest] \"dw task --\"");
-            context.Out.WriteLine("  dotnet-suggest script powershell | Invoke-Expression");
-            return 0;
-        });
+        var command = Command("completion", "Configure l'autocompletion native System.CommandLine.");
+        AddSubcommands(command,
+            Subcommand("show", "Affiche les commandes d'installation de l'autocompletion.", _ => CompletionShow(context)),
+            Subcommand("install", "Affiche la commande d'installation pour un shell donne.", parse => CompletionInstall(context, parse.GetRequiredValue<string>("shell")), Argument<string>("shell", "Shell cible: powershell, bash, zsh ou fish.")));
         return command;
+    }
+
+    private static int CompletionShow(CommandContext context)
+    {
+        context.Out.WriteLine("dw utilise la directive native [suggest] de System.CommandLine.");
+        context.Out.WriteLine("Installer dotnet-suggest puis charger le script de ton shell:");
+        context.Out.WriteLine("  dotnet tool install -g dotnet-suggest");
+        context.Out.WriteLine("  dw completion install powershell");
+        context.Out.WriteLine("Tester les suggestions:");
+        context.Out.WriteLine("  dw [suggest] \"task --\"");
+        return 0;
+    }
+
+    private static int CompletionInstall(CommandContext context, string shell)
+    {
+        var command = shell.ToLowerInvariant() switch
+        {
+            "powershell" or "pwsh" => "dotnet-suggest script powershell | Invoke-Expression",
+            "bash" => "eval \"$(dotnet-suggest script bash)\"",
+            "zsh" => "eval \"$(dotnet-suggest script zsh)\"",
+            "fish" => "dotnet-suggest script fish | source",
+            _ => throw new DwException($"Shell inconnu: {shell}", 2)
+        };
+
+        context.Out.WriteLine(command);
+        return 0;
     }
 
     private static Command Task(CommandContext context)
@@ -177,7 +198,7 @@ internal static class SystemCommandLineApp
             Flag("--skip-verify", "Ignore les verifications configurees."),
             Flag("--create-child-tasks", "Cree les taches ADO enfant."));
         AddSubcommands(command,
-            Subcommand("start", "Cree un workspace et des worktrees.", parse => TaskStartService.Start(context, new TaskStartCommandOptions(
+            Subcommand("start", "Cree un workspace et des worktrees.", parse => TaskStartService.Start(context, new TaskStartRequest(
                 parse.GetRequiredValue<string>("work-item-id"),
                 parse.GetValue<string>("--project"),
                 parse.GetValue<string>("--task"),
@@ -195,7 +216,7 @@ internal static class SystemCommandLineApp
             Subcommand("open", "Ouvre le workspace dans un agent.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse))),
             Subcommand("teardown", "Supprime les worktrees et le workspace.", (parse, _) => WorkspaceTeardownService.Teardown(context, TeardownOptions(parse))),
             Subcommand("add-repo", "Ajoute un repo au workspace existant.", parse => TaskCommand.AddRepo(context, new TaskAddRepoOptions(parse.GetRequiredValue<string>("repo"), parse.GetValue<string>("--workspace"))), Argument<string>("repo", "Repo a ajouter.")),
-            Subcommand("finish", "Dry-run ou commit/push/PR.", parse => TaskCommand.Finish(context, new TaskFinishCommandOptions(
+            Subcommand("finish", "Dry-run ou commit/push/PR.", parse => TaskCommand.Finish(context, new TaskFinishRequest(
                 parse.GetValue<string>("--workspace"),
                 parse.GetValue<bool>("--execute"),
                 parse.GetValue<bool>("--create-pr"),

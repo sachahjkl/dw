@@ -44,11 +44,11 @@ internal static class TaskCommand
         return 0;
     }
 
-    internal static int Finish(CommandContext context, TaskFinishCommandOptions options)
+    internal static int Finish(CommandContext context, TaskFinishRequest request)
     {
-        var workspace = options.Workspace ?? Environment.CurrentDirectory;
+        var workspace = request.Workspace ?? Environment.CurrentDirectory;
         workspace = Path.GetFullPath(workspace);
-        var draft = !options.Ready;
+        var draft = !request.Ready;
 
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
         var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
@@ -81,14 +81,14 @@ internal static class TaskCommand
             return 0;
         }
 
-        if (!options.Execute)
+        if (!request.Execute)
         {
             context.Out.WriteLine();
             context.Out.WriteLine("Dry-run uniquement. Relancer avec --execute --message \"...\" pour committer/pousser.");
             return 0;
         }
 
-        if (string.IsNullOrWhiteSpace(options.Message))
+        if (string.IsNullOrWhiteSpace(request.Message))
         {
             throw new DwException("task finish --execute exige --message.", 2);
         }
@@ -99,7 +99,7 @@ internal static class TaskCommand
         var projectConfig = projects.Projects.GetValueOrDefault(manifest.Project);
         var verificationResults = Array.Empty<VerificationResult>();
 
-        if (!options.SkipVerify && (workflow.TaskFinish?.RunVerification ?? true))
+        if (!request.SkipVerify && (workflow.TaskFinish?.RunVerification ?? true))
         {
             verificationResults = RunVerification(context, workflow, changed).ToArray();
             var failed = verificationResults.Where(result => result.ExitCode != 0).ToArray();
@@ -121,24 +121,24 @@ internal static class TaskCommand
         foreach (var status in changed)
         {
             RunGitOrThrow(context, status.Path, "add", ".");
-            RunGitOrThrow(context, status.Path, "commit", "-m", CommitMessage.EnsureWorkItemReference(options.Message, manifest));
+            RunGitOrThrow(context, status.Path, "commit", "-m", CommitMessage.EnsureWorkItemReference(request.Message, manifest));
             RunGitOrThrow(context, status.Path, "push", "-u", "origin", manifest.BranchName);
         }
 
         context.Out.WriteLine("Commits/push termines.");
 
-        if (!options.CreatePr)
+        if (!request.CreatePr)
         {
             context.Out.WriteLine("PR non creee. Relancer avec --create-pr pour ouvrir les PR ADO.");
             return 0;
         }
 
-        if (options.SkipAdo)
+        if (request.SkipAdo)
         {
             throw new DwException("--create-pr ne peut pas etre combine avec --skip-ado.", 2);
         }
 
-        var adoContext = options.SkipAdo ? null : TryCreateAdoContext(context, workflow, projectConfig, required: true);
+        var adoContext = request.SkipAdo ? null : TryCreateAdoContext(context, workflow, projectConfig, required: true);
         if (adoContext is null)
         {
             throw new DwException("Contexte Azure DevOps indisponible.");
@@ -555,7 +555,7 @@ internal static class AdoWorkflowStates
 
 internal sealed record TaskAddRepoOptions(string Repository, string? Workspace);
 
-internal sealed record TaskFinishCommandOptions(
+internal sealed record TaskFinishRequest(
     string? Workspace,
     bool Execute,
     bool CreatePr,

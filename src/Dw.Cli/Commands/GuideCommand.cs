@@ -16,7 +16,7 @@ internal static class GuideCommand
         context.Out.WriteLine("   dw doctor");
         context.Out.WriteLine();
         context.Out.WriteLine("3. Installer l'autocompletion");
-        context.Out.WriteLine("   dw completion powershell >> $PROFILE");
+        context.Out.WriteLine("   dw completion show");
         context.Out.WriteLine("   # autres shells: bash, zsh, fish, nushell");
         context.Out.WriteLine("   . $PROFILE");
         context.Out.WriteLine();
