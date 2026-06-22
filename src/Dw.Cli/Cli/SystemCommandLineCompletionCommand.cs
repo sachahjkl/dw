@@ -79,23 +79,7 @@ internal static partial class SystemCommandLineApp
     }
 
     private static string PowerShellCompletionScript()
-        => """
-Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock {
-    param($wordToComplete, $commandAst, $cursorPosition)
-
-    $line = $commandAst.ToString()
-    if ($line.StartsWith("dw ")) { $line = $line.Substring(3) }
-    $json = dw completion suggest --format json $line 2>$null
-    if ([string]::IsNullOrWhiteSpace($json)) { return }
-
-    $items = $json | ConvertFrom-Json
-    foreach ($item in $items) {
-        if ($item.label -like "$wordToComplete*") {
-            [System.Management.Automation.CompletionResult]::new($item.insertText, $item.label, 'ParameterValue', $item.description)
-        }
-    }
-}
-""";
+        => """Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock { param($wordToComplete, $commandAst, $cursorPosition) $line = $commandAst.ToString(); if ($line.StartsWith("dw ")) { $line = $line.Substring(3) }; $json = dw completion suggest --format json $line 2>$null; if ([string]::IsNullOrWhiteSpace($json)) { return }; $items = $json | ConvertFrom-Json; foreach ($item in $items) { if ($item.label -like "$wordToComplete*") { [System.Management.Automation.CompletionResult]::new($item.insertText, $item.label, 'ParameterValue', $item.description) } } }""";
 
     private static string BashCompletionScript()
         => """
