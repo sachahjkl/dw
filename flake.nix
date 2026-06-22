@@ -21,12 +21,14 @@
         pkgs = import nixpkgs { inherit system; };
         dotnet = pkgs.dotnetCorePackages.sdk_8_0;
         dotnetRuntime = pkgs.dotnetCorePackages.runtime_8_0;
-        version = builtins.getEnv "DW_VERSION";
-        commit = builtins.getEnv "DW_COMMIT";
+        buildProps = builtins.readFile ./Directory.Build.props;
+        versionMatch = builtins.match ".*<VersionPrefix Condition=\"'\\$\\(VersionPrefix\\)' == ''\">([^<]+)</VersionPrefix>.*" buildProps;
+        revisionMatch = builtins.match ".*<SourceRevisionId Condition=\"'\\$\\(SourceRevisionId\\)' == ''\">([^<]+)</SourceRevisionId>.*" buildProps;
         versionPrefix =
-          if version == "" then "0.0.0-local" else version;
+          if versionMatch == null then throw "Could not read VersionPrefix from Directory.Build.props" else builtins.elemAt versionMatch 0;
         sourceRevision =
-          if commit == "" then "dev" else commit;
+          if revisionMatch == null then throw "Could not read SourceRevisionId from Directory.Build.props" else builtins.elemAt revisionMatch 0;
+        packageVersion = "${versionPrefix}+${sourceRevision}";
 
         dotnetEnv = ''
           export DOTNET_CLI_TELEMETRY_OPTOUT=1
@@ -66,7 +68,7 @@
 
         dwPackage = pkgs.buildDotnetModule {
           pname = "dw";
-          version = versionPrefix;
+          version = packageVersion;
           src = ./.;
           projectFile = "src/Dw.Cli/Dw.Cli.csproj";
           nugetDeps = pkgs.mkNugetDeps {
@@ -125,8 +127,8 @@
             echo "  nix run .#publish-win-x64"
             echo "  nix run .#publish-linux-x64"
             echo ""
-            echo "For reproducible release metadata, pass:"
-            echo "  DW_VERSION=2026.06.20.1 DW_COMMIT=abc1234 nix run .#publish-win-x64"
+            echo "For release artifacts with explicit metadata:"
+            echo "  nix develop -c env VERSION=2026.06.20.1 COMMIT=abc1234 bash ./scripts/publish-linux-x64.sh"
           '';
         };
 

@@ -67,8 +67,8 @@ jobs:
       - name: Smoke test with flake app
         run: nix run .#check
 
-      - name: Publish linux-x64 with Nix
-        run: DW_VERSION=0.0.0-ci DW_COMMIT=${{ github.sha }} nix run .#publish-linux-x64
+      - name: Publish linux-x64 artifact
+        run: nix develop -c env VERSION=0.0.0-ci COMMIT=${{ github.sha }} bash ./scripts/publish-linux-x64.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

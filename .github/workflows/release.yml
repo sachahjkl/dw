@@ -99,7 +99,7 @@ jobs:
         run: nix run .#check
 
       - name: Publish linux-x64
-        run: DW_VERSION=${{ needs.version.outputs.version }} DW_COMMIT=${{ github.sha }} RELEASE_BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag }}" nix run .#publish-linux-x64
+        run: nix develop -c env VERSION=${{ needs.version.outputs.version }} COMMIT=${{ github.sha }} RELEASE_BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ needs.version.outputs.tag }}" bash ./scripts/publish-linux-x64.sh
 
       - name: Package linux-x64
         run: tar -czf artifacts/dw-linux-x64.tar.gz -C artifacts/linux-x64 dw
