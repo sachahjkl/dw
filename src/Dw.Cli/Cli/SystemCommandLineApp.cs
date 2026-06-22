@@ -1,11 +1,9 @@
 using System.CommandLine;
 using System.CommandLine.Completions;
-using System.CommandLine.Invocation;
-using System.CommandLine.Parsing;
 
 namespace Dw.Cli.Cli;
 
-internal static class SystemCommandLineApp
+internal static partial class SystemCommandLineApp
 {
     public static async Task<int> RunAsync(string[] args, CommandContext context)
     {
@@ -32,6 +30,12 @@ internal static class SystemCommandLineApp
             context.Error.WriteLine(ex.Message);
             return 1;
         }
+    }
+
+    internal static IReadOnlyList<CompletionItem> GetCompletionsForTesting(CommandContext context, string commandLine)
+    {
+        var root = BuildRoot(context);
+        return root.Parse(commandLine, new ParserConfiguration { EnablePosixBundling = false }).GetCompletions().ToArray();
     }
 
     private static RootCommand BuildRoot(CommandContext context)
@@ -96,11 +100,11 @@ internal static class SystemCommandLineApp
         AddOptions(command,
             Value("--root", "Root DevWorkflow a utiliser."),
             Value("--workspace", "Chemin explicite du workspace."),
-            Value("--project", "Filtre projet dw."),
-            Value("--work-item", "Filtre work item ADO."),
+            ProjectOption(context, "Filtre projet dw."),
+            WorkItemOption(context, "Filtre work item ADO."),
             Flag("--continue", "Reprend la derniere session/workspace."),
             AgentOption(),
-            Value("--repo", "Repo cible dans le workspace."));
+            RepoOption(context, "Repo cible dans le workspace."));
         AddSubcommands(command,
             Subcommand("context", "Affiche le contexte court pour agents IA.", (_, _) => AgentCommand.WriteContext(context)),
             Subcommand("open", "Ouvre un workspace dans l'agent configure.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse))),
@@ -115,7 +119,7 @@ internal static class SystemCommandLineApp
     {
         var command = Command("ado", "Lit Azure DevOps sans modifier.");
         AddOptions(command,
-            Value("--project", "Projet dw pour resoudre Azure DevOps."),
+            ProjectOption(context, "Projet dw pour resoudre Azure DevOps."),
             Value("--root", "Root DevWorkflow a utiliser."),
             Flag("--summary", "Limite la sortie au resume."),
             Value("--comments", "Nombre de commentaires a charger."),
@@ -138,53 +142,18 @@ internal static class SystemCommandLineApp
         return command;
     }
 
-    private static Command Completion(CommandContext context)
-    {
-        var command = Command("completion", "Configure l'autocompletion native System.CommandLine.");
-        AddSubcommands(command,
-            Subcommand("show", "Affiche les commandes d'installation de l'autocompletion.", _ => CompletionShow(context)),
-            Subcommand("install", "Affiche la commande d'installation pour un shell donne.", parse => CompletionInstall(context, parse.GetRequiredValue<string>("shell")), Argument<string>("shell", "Shell cible: powershell, bash, zsh ou fish.")));
-        return command;
-    }
-
-    private static int CompletionShow(CommandContext context)
-    {
-        context.Out.WriteLine("dw utilise la directive native [suggest] de System.CommandLine.");
-        context.Out.WriteLine("Installer dotnet-suggest puis charger le script de ton shell:");
-        context.Out.WriteLine("  dotnet tool install -g dotnet-suggest");
-        context.Out.WriteLine("  dw completion install powershell");
-        context.Out.WriteLine("Tester les suggestions:");
-        context.Out.WriteLine("  dw [suggest] \"task --\"");
-        return 0;
-    }
-
-    private static int CompletionInstall(CommandContext context, string shell)
-    {
-        var command = shell.ToLowerInvariant() switch
-        {
-            "powershell" or "pwsh" => "dotnet-suggest script powershell | Invoke-Expression",
-            "bash" => "eval \"$(dotnet-suggest script bash)\"",
-            "zsh" => "eval \"$(dotnet-suggest script zsh)\"",
-            "fish" => "dotnet-suggest script fish | source",
-            _ => throw new DwException($"Shell inconnu: {shell}", 2)
-        };
-
-        context.Out.WriteLine(command);
-        return 0;
-    }
-
     private static Command Task(CommandContext context)
     {
         var command = Command("task", "Gere les workspaces, worktrees, commits, push et PR.");
         AddOptions(command,
-            Value("--project", "Projet dw."),
+            ProjectOption(context, "Projet dw."),
             Value("--task", "ID de tache ADO concrete."),
             Value("--slug", "Texte source du slug."),
             Value("--type", "Type de branche."),
             Value("--only", "Repos a creer, separes par virgule."),
-            Value("--workspace", "Chemin explicite du workspace."),
-            Value("--work-item", "Filtre work item ADO."),
-            Value("--repo", "Repo cible dans le workspace."),
+            WorkspaceOption(context, "Chemin explicite du workspace."),
+            WorkItemOption(context, "Filtre work item ADO."),
+            RepoOption(context, "Repo cible dans le workspace."),
             Flag("--continue", "Utilise le workspace le plus recent."),
             Flag("--yes", "Confirme sans prompt."),
             Flag("--no-sync", "Desactive le sync ADO automatique."),
@@ -242,8 +211,8 @@ internal static class SystemCommandLineApp
     {
         var command = Command("db", "Explore SQL Server en lecture seule.");
         AddOptions(command,
-            Value("--project", "Projet dw."),
-            Value("--database", "Base de donnees cible."),
+            ProjectOption(context, "Projet dw."),
+            DatabaseOption(context, "Base de donnees cible."),
             Value("--env", "Alias legacy de --database."));
         AddSubcommands(command,
             Subcommand("schema", "Liste les tables disponibles.", parse => DbCommand.Schema(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"))),
@@ -295,80 +264,4 @@ internal static class SystemCommandLineApp
             Execute: parse.GetValue<bool>("--execute"),
             Yes: parse.GetValue<bool>("--yes"));
 
-    private static Command Leaf(string name, string description, CommandContext context, Func<CommandContext, int> handler, string[]? aliases = null)
-    {
-        var command = new Command(name, description);
-        foreach (var alias in aliases ?? [])
-        {
-            command.Aliases.Add(alias);
-        }
-
-        command.SetAction(_ => handler(context));
-        return command;
-    }
-
-    private static Command Command(string name, string description)
-        => new(name, description);
-
-    private static void AddSubcommands(Command parent, params SubcommandSpec[] subcommands)
-    {
-        foreach (var spec in subcommands)
-        {
-            var command = Command(spec.Name, spec.Description);
-            foreach (var argument in spec.Arguments)
-            {
-                command.Add(argument);
-            }
-            command.SetAction(parse => spec.Handler(parse, command));
-            parent.Add(command);
-        }
-    }
-
-    private static SubcommandSpec Subcommand(string name, string description, Func<ParseResult, Command, int> handler, params Argument[] arguments)
-        => new(name, description, handler, arguments);
-
-    private static SubcommandSpec Subcommand(string name, string description, Func<ParseResult, int> handler, params Argument[] arguments)
-        => new(name, description, (parse, _) => handler(parse), arguments);
-
-    private static void AddOptions(Command command, params Option[] options)
-    {
-        foreach (var option in options)
-        {
-            option.Recursive = true;
-            command.Add(option);
-        }
-    }
-
-    private static Option<bool> Flag(string name, string description)
-        => new(name) { Description = description };
-
-    private static Option<string> Value(string name, string description, string[]? completions = null)
-    {
-        var option = new Option<string>(name)
-        {
-            Description = description
-        };
-        if (completions is { Length: > 0 })
-        {
-            option.AcceptOnlyFromAmong(completions);
-        }
-
-        return option;
-    }
-
-    private static Option<string> AgentOption()
-        => Value("--agent", "Agent a utiliser.", ["opencode", "cursor", "claude", "codex-cli", "codex", "copilot"]);
-
-    private static Argument<T> Argument<T>(string name, string description)
-        => new(name) { Description = description };
-
-    private static Argument<string[]> Remaining(string name, string description)
-        => new(name)
-        {
-            Arity = ArgumentArity.OneOrMore,
-            CaptureRemainingTokens = true,
-            Description = description
-        };
-
-    private sealed record SubcommandSpec(string Name, string Description, Func<ParseResult, Command, int> Handler, Argument[] Arguments);
 }

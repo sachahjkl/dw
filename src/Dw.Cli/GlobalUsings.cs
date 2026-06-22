@@ -1,4 +1,8 @@
 global using System.Globalization;
+global using System.CommandLine;
+global using System.CommandLine.Completions;
+global using System.CommandLine.Invocation;
+global using System.CommandLine.Parsing;
 global using Dw.Cli.Agents;
 global using Dw.Cli.AzureDevOps;
 global using Dw.Cli.Bootstrap;

@@ -1,0 +1,42 @@
+namespace Dw.Cli.Cli;
+
+internal static partial class SystemCommandLineApp
+{
+    private static Command Leaf(string name, string description, CommandContext context, Func<CommandContext, int> handler, string[]? aliases = null)
+    {
+        var command = new Command(name, description);
+        foreach (var alias in aliases ?? [])
+        {
+            command.Aliases.Add(alias);
+        }
+
+        command.SetAction(_ => handler(context));
+        return command;
+    }
+
+    private static Command Command(string name, string description)
+        => new(name, description);
+
+    private static void AddSubcommands(Command parent, params SubcommandSpec[] subcommands)
+    {
+        foreach (var spec in subcommands)
+        {
+            var command = Command(spec.Name, spec.Description);
+            foreach (var argument in spec.Arguments)
+            {
+                command.Add(argument);
+            }
+
+            command.SetAction(parse => spec.Handler(parse, command));
+            parent.Add(command);
+        }
+    }
+
+    private static SubcommandSpec Subcommand(string name, string description, Func<ParseResult, Command, int> handler, params Argument[] arguments)
+        => new(name, description, handler, arguments);
+
+    private static SubcommandSpec Subcommand(string name, string description, Func<ParseResult, int> handler, params Argument[] arguments)
+        => new(name, description, (parse, _) => handler(parse), arguments);
+
+    private sealed record SubcommandSpec(string Name, string Description, Func<ParseResult, Command, int> Handler, Argument[] Arguments);
+}
