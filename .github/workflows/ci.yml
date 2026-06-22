@@ -61,7 +61,10 @@ jobs:
       - name: Check flake
         uses: DeterminateSystems/flake-checker-action@main
 
-      - name: Build with flake app
+      - name: Build Nix package
+        run: nix build .#default
+
+      - name: Smoke test with flake app
         run: nix run .#check
 
       - name: Publish linux-x64 with Nix
