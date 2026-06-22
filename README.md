@@ -23,7 +23,7 @@ This repository currently contains the first vertical slice:
 - Azure DevOps MSAL/PAT auth plumbing
 - read-only SQL Server commands
 - Windows Credential Manager backed secrets
-- GitHub Releases update checks/downloads
+- GitHub Releases upgrade checks and binary replacement
 - JSON Schemas for generated config files
 - GitHub Actions CI, including a Nix flake check
 - reference skills under `docs/references`
@@ -109,7 +109,7 @@ Upgrade a profile install:
 nix profile upgrade github:sachahjkl/dw
 ```
 
-`dw update check` and `dw update download` are disabled for Nix-managed installs. Use `nix run --refresh ...` or `nix profile upgrade ...` instead.
+`dw upgrade` is disabled for Nix-managed installs. Use `nix run --refresh ...` or `nix profile upgrade ...` instead.
 
 ### Release Binaries
 
@@ -191,9 +191,9 @@ When a commit lands on `master`, `.github/workflows/release.yml`:
    - `dw-linux-x64.tar.gz`
    - `release.json`
 
-`release.json` is the manifest used by `dw update check` and `dw update download`.
+`release.json` is the manifest used by `dw upgrade --check` and `dw upgrade`.
 
-For release-binary installs, `dw update check` can inspect the latest GitHub release manifest. For Nix-managed installs, use Nix upgrade commands instead.
+For release-binary installs, `dw upgrade --check` can inspect the latest GitHub release manifest and `dw upgrade` updates the current binary. For Nix-managed installs, use Nix upgrade commands instead.
 
 Store a SQL connection string in Windows Credential Manager:
 
@@ -218,7 +218,7 @@ Then reference it from `databases.json`:
 dw version
 dw doctor [--fix]
 dw init [--root <path>]
-dw update [check]
+dw upgrade [--check]
 
 dw auth login
 dw auth status

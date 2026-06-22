@@ -1,11 +1,11 @@
 namespace Dw.Cli.Tests;
 
-public sealed class UpdateCommandTests
+public sealed class UpgradeCommandTests
 {
     [Fact]
     public void ResolveUpdates_falls_back_to_dw_release_config_when_missing()
     {
-        var updates = UpdateCommand.ResolveUpdates(WorkflowConfig.Empty);
+        var updates = UpgradeCommand.ResolveUpdates(WorkflowConfig.Empty);
 
         Assert.Equal("sachahjkl", updates.Owner);
         Assert.Equal("dw", updates.Repository);
@@ -21,7 +21,7 @@ public sealed class UpdateCommandTests
             Updates = new UpdateOptions("owner", "repo", true, "custom.json")
         };
 
-        var updates = UpdateCommand.ResolveUpdates(workflow);
+        var updates = UpgradeCommand.ResolveUpdates(workflow);
 
         Assert.Equal("owner", updates.Owner);
         Assert.Equal("repo", updates.Repository);

@@ -35,6 +35,10 @@ internal static class InitCommand
         fs.CreateDirectory(root);
         fs.CreateDirectory(Path.Combine(root, "config"));
         fs.CreateDirectory(Path.Combine(root, "config", "opencode"));
+        fs.CreateDirectory(Path.Combine(root, "config", "claude"));
+        fs.CreateDirectory(Path.Combine(root, "config", "cursor"));
+        fs.CreateDirectory(Path.Combine(root, "config", "codex"));
+        fs.CreateDirectory(Path.Combine(root, "config", "copilot"));
         fs.CreateDirectory(Path.Combine(root, "projects"));
         fs.CreateDirectory(Path.Combine(root, "cache"));
         SchemaResourceWriter.WriteIfMissing(fs, root);
@@ -44,6 +48,11 @@ internal static class InitCommand
         InitFileWriter.WriteIfMissing(fs, Path.Combine(root, "config", "databases.json"), profile.DatabasesJson);
         InitFileWriter.WriteIfMissing(fs, Path.Combine(root, "config", "opencode", "AGENTS.md"), profile.AgentsMd);
         InitFileWriter.WriteIfMissing(fs, Path.Combine(root, "config", "opencode", "opencode.jsonc"), profile.OpenCodeJsonc);
+        InitFileWriter.WriteIfMissing(fs, Path.Combine(root, "config", "claude", "CLAUDE.md"), profile.AgentsMd);
+        InitFileWriter.WriteIfMissing(fs, Path.Combine(root, "config", "cursor", "devworkflow.mdc"), profile.AgentsMd);
+        InitFileWriter.WriteIfMissing(fs, Path.Combine(root, "config", "codex", "AGENTS.md"), profile.AgentsMd);
+        InitFileWriter.WriteIfMissing(fs, Path.Combine(root, "config", "codex", "config.toml"), Templates.WorkspaceCodexConfig);
+        InitFileWriter.WriteIfMissing(fs, Path.Combine(root, "config", "copilot", "copilot-instructions.md"), profile.AgentsMd);
 
         if (!noSave)
         {
@@ -70,6 +79,11 @@ internal static class InitCommand
         yield return Path.Combine(root, "config", "databases.json");
         yield return Path.Combine(root, "config", "opencode", "AGENTS.md");
         yield return Path.Combine(root, "config", "opencode", "opencode.jsonc");
+        yield return Path.Combine(root, "config", "claude", "CLAUDE.md");
+        yield return Path.Combine(root, "config", "cursor", "devworkflow.mdc");
+        yield return Path.Combine(root, "config", "codex", "AGENTS.md");
+        yield return Path.Combine(root, "config", "codex", "config.toml");
+        yield return Path.Combine(root, "config", "copilot", "copilot-instructions.md");
         yield return Path.Combine(root, "projects");
         yield return Path.Combine(root, "cache");
         yield return Path.Combine(root, "schemas");

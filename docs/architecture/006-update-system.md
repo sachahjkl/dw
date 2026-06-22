@@ -1,4 +1,4 @@
-# Update System
+# Upgrade System
 
 Updates use GitHub Releases as the distribution channel.
 
@@ -12,13 +12,14 @@ sha256
 
 `release.json` is the stable manifest. GitHub is only the transport/CDN.
 
-Implemented first step:
+Implemented commands:
 
 ```text
-dw update check
+dw upgrade --check
+dw upgrade
 ```
 
-It reads `updates` from `workflow.json`, calls GitHub Releases, downloads `release.json`, and prints available assets.
+It reads `updates` from `workflow.json`, calls GitHub Releases, downloads `release.json`, validates SHA256, and replaces the current binary for release-binary installs.
 
 ## Manifest Shape
 
