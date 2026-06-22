@@ -18,9 +18,11 @@ internal static partial class SystemCommandLineApp
     {
         var command = Command("suggest", "Affiche les completions avec descriptions pour une ligne donnee.");
         var format = Value("--format", "Format de sortie: text ou json.", ["text", "json"]);
+        var emptyToken = Flag("--empty-token", "Indique que le curseur est sur un nouveau token vide.");
         command.Add(format);
+        command.Add(emptyToken);
         command.Add(Remaining("line", "Ligne de commande partielle, par exemple: task --"));
-        command.SetAction(parse => CompletionSuggest(context, parse.GetRequiredValue<string[]>("line"), parse.GetValue<string>("--format") ?? "text"));
+        command.SetAction(parse => CompletionSuggest(context, parse.GetRequiredValue<string[]>("line"), parse.GetValue<string>("--format") ?? "text", parse.GetValue<bool>("--empty-token")));
         return command;
     }
 
@@ -50,9 +52,15 @@ internal static partial class SystemCommandLineApp
         return 0;
     }
 
-    private static int CompletionSuggest(CommandContext context, IReadOnlyList<string> line, string format)
+    private static int CompletionSuggest(CommandContext context, IReadOnlyList<string> line, string format, bool emptyToken)
     {
-        var completions = GetCompletionsForTesting(context, string.Join(' ', line));
+        var commandLine = string.Join(' ', line);
+        if (emptyToken && !commandLine.EndsWith(' '))
+        {
+            commandLine += " ";
+        }
+
+        var completions = SortCompletions(GetCompletionsForTesting(context, commandLine), CurrentToken(line, emptyToken));
         if (completions.Count == 0)
         {
             return 0;
@@ -78,8 +86,27 @@ internal static partial class SystemCommandLineApp
         return 0;
     }
 
+    private static IReadOnlyList<CompletionItem> SortCompletions(IReadOnlyList<CompletionItem> completions, string currentToken)
+    {
+        var filtered = currentToken.StartsWith("-", StringComparison.Ordinal)
+            ? completions.Where(IsOption)
+            : completions;
+
+        return filtered
+            .OrderBy(completion => IsOption(completion) ? 1 : 0)
+            .ThenBy(completion => completion.Label, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsOption(CompletionItem completion)
+        => completion.Label.StartsWith("-", StringComparison.Ordinal)
+           || completion.Label.StartsWith("/", StringComparison.Ordinal);
+
+    private static string CurrentToken(IReadOnlyList<string> line, bool emptyToken)
+        => emptyToken || line.Count == 0 ? string.Empty : line[^1];
+
     private static string PowerShellCompletionScript()
-        => """Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock { param($wordToComplete, $commandAst, $cursorPosition) $line = $commandAst.ToString(); if ($line.StartsWith("dw ")) { $line = $line.Substring(3) }; $json = dw completion suggest --format json $line 2>$null; if ([string]::IsNullOrWhiteSpace($json)) { return }; $items = $json | ConvertFrom-Json; foreach ($item in $items) { if ($item.label -like "$wordToComplete*") { [System.Management.Automation.CompletionResult]::new($item.insertText, $item.label, 'ParameterValue', $item.description) } } }""";
+        => """Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock { param($wordToComplete, $commandAst, $cursorPosition) $line = $commandAst.ToString(); if ($line.StartsWith("dw ")) { $line = $line.Substring(3) }; $empty = if ([string]::IsNullOrEmpty($wordToComplete)) { "--empty-token" } else { "" }; $json = dw completion suggest --format json $empty $line 2>$null; if ([string]::IsNullOrWhiteSpace($json)) { return }; $items = $json | ConvertFrom-Json; foreach ($item in $items) { if ($item.label -like "$wordToComplete*") { [System.Management.Automation.CompletionResult]::new($item.insertText, $item.label, 'ParameterValue', $item.description) } } }""";
 
     private static string BashCompletionScript()
         => """
@@ -87,7 +114,9 @@ _dw_completion() {
     local cur line json labels
     cur="${COMP_WORDS[COMP_CWORD]}"
     line="${COMP_WORDS[*]:1}"
-    json=$(dw completion suggest --format json $line 2>/dev/null) || return 0
+    local empty=""
+    if [[ -z "$cur" ]]; then empty="--empty-token"; fi
+    json=$(dw completion suggest --format json $empty $line 2>/dev/null) || return 0
     labels=$(printf '%s' "$json" | sed -n 's/.*"label":"\([^"]*\)".*/\1/p')
     COMPREPLY=( $(compgen -W "$labels" -- "$cur") )
 }
@@ -100,7 +129,9 @@ complete -F _dw_completion dw
 _dw() {
   local -a labels
   local line="${words[@]:1}"
-  labels=(${(f)$(dw completion suggest --format json $line 2>/dev/null | sed -n 's/.*"label":"\([^"]*\)".*/\1/p')})
+  local empty=""
+  if [[ -z "$PREFIX" ]]; then empty="--empty-token"; fi
+  labels=(${(f)$(dw completion suggest --format json $empty $line 2>/dev/null | sed -n 's/.*"label":"\([^"]*\)".*/\1/p')})
   compadd -- $labels
 }
 _dw "$@"
@@ -110,7 +141,11 @@ _dw "$@"
         => """
 function __dw_complete
     set -l line (commandline -opc)[2..-1]
-    dw completion suggest --format json $line 2>/dev/null | string replace -ra '.*"label":"([^"]*)".*"description":"([^"]*)".*' '$1	$2'
+    set -l empty
+    if test -z (commandline -ct)
+        set empty --empty-token
+    end
+    dw completion suggest --format json $empty $line 2>/dev/null | string replace -ra '.*"label":"([^"]*)".*"description":"([^"]*)".*' '$1	$2'
 end
 complete -c dw -f -a '(__dw_complete)'
 """;

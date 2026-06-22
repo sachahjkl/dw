@@ -74,12 +74,8 @@ internal static class UpgradeCommand
         if (OperatingSystem.IsWindows())
         {
             var script = Path.Combine(Path.GetTempPath(), $"dw-upgrade-{Guid.NewGuid():N}.cmd");
-            File.WriteAllText(script, $$"""
-@echo off
-ping 127.0.0.1 -n 2 > nul
-move /Y "{{temp}}" "{{executablePath}}" > nul
-del "%~f0" > nul
-""");
+            var backup = $"{executablePath}.bak";
+            File.WriteAllText(script, WindowsReplacementScript(temp, executablePath, backup, Environment.ProcessId));
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c \"{script}\"") { CreateNoWindow = true, UseShellExecute = false });
             context.Out.WriteLine($"Remplacement programme au prochain relachement du binaire: {executablePath}");
             return;
@@ -87,13 +83,42 @@ del "%~f0" > nul
 
         File.Copy(temp, executablePath, overwrite: true);
         File.Delete(temp);
-        if (!OperatingSystem.IsWindows())
-        {
-            _ = System.Diagnostics.Process.Start("chmod", ["+x", executablePath]);
-        }
-
+        _ = System.Diagnostics.Process.Start("chmod", ["+x", executablePath]);
         context.Out.WriteLine($"Binaire remplace: {executablePath}");
     }
+
+    internal static string WindowsReplacementScript(string temp, string executablePath, string backup, int pid)
+        => $$"""
+@echo off
+setlocal
+set "NEW={{temp}}"
+set "TARGET={{executablePath}}"
+set "BACKUP={{backup}}"
+set "PID={{pid}}"
+
+:wait
+tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul
+if not errorlevel 1 (
+  timeout /t 1 /nobreak >nul
+  goto wait
+)
+
+if not exist "%NEW%" exit /b 1
+if exist "%BACKUP%" del /f /q "%BACKUP%" >nul 2>nul
+if exist "%TARGET%" move /Y "%TARGET%" "%BACKUP%" >nul
+copy /Y "%NEW%" "%TARGET%" >nul
+if errorlevel 1 (
+  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul
+  exit /b 1
+)
+if not exist "%TARGET%" (
+  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul
+  exit /b 1
+)
+del /f /q "%NEW%" >nul 2>nul
+del /f /q "%BACKUP%" >nul 2>nul
+del /f /q "%~f0" >nul 2>nul
+""";
 
     internal static UpdateOptions ResolveUpdates(WorkflowConfig workflow)
         => workflow.Updates ?? UpdateDefaults.Options;

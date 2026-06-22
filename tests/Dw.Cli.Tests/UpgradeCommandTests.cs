@@ -28,4 +28,17 @@ public sealed class UpgradeCommandTests
         Assert.True(updates.IncludePrerelease);
         Assert.Equal("custom.json", updates.AssetName);
     }
+
+    [Fact]
+    public void WindowsReplacementScript_waits_for_process_and_restores_backup_on_failure()
+    {
+        var script = UpgradeCommand.WindowsReplacementScript("new.exe", "dw.exe", "dw.exe.bak", 1234);
+
+        Assert.Contains("tasklist /FI \"PID eq %PID%\"", script);
+        Assert.Contains("set \"BACKUP=dw.exe.bak\"", script);
+        Assert.Contains("move /Y \"%TARGET%\" \"%BACKUP%\"", script);
+        Assert.Contains("copy /Y \"%NEW%\" \"%TARGET%\"", script);
+        Assert.Contains("move /Y \"%BACKUP%\" \"%TARGET%\"", script);
+        Assert.DoesNotContain("move /Y \"new.exe\" \"dw.exe\"", script);
+    }
 }
