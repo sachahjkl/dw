@@ -1,6 +1,6 @@
 namespace Dw.Cli.Commands;
 
-internal static class UpdateCommand
+internal static class UpgradeCommand
 {
     internal static int Check(CommandContext context)
     {
@@ -24,11 +24,10 @@ internal static class UpdateCommand
         return 0;
     }
 
-    internal static int Download(CommandContext context, string? rid, string? output)
+    internal static int Run(CommandContext context, string? rid)
     {
         EnsureSupportedHost();
         rid ??= "win-x64";
-        output ??= Path.Combine(AppPaths.UserConfigDirectory, "updates");
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
         var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var updates = ResolveUpdates(workflow);
@@ -45,28 +44,55 @@ internal static class UpdateCommand
             throw new DwException("release.json doit contenir assets[].url pour telecharger un asset.");
         }
 
-        Directory.CreateDirectory(output);
-        var destination = Path.Combine(output, asset.FileName);
+        var executablePath = Environment.ProcessPath ?? throw new DwException("Chemin du binaire courant indisponible.");
+        var temp = Path.Combine(Path.GetTempPath(), $"dw-upgrade-{Guid.NewGuid():N}{Path.GetExtension(asset.FileName)}");
         using (var response = http.GetAsync(asset.Url).GetAwaiter().GetResult())
         {
             var body = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
-                throw new DwException($"Telechargement update impossible HTTP {(int)response.StatusCode}.");
+                throw new DwException($"Telechargement upgrade impossible HTTP {(int)response.StatusCode}.");
             }
 
-            File.WriteAllBytes(destination, body);
+            File.WriteAllBytes(temp, body);
         }
 
-        var hash = Sha256.FileHashAsync(destination).GetAwaiter().GetResult();
+        var hash = Sha256.FileHashAsync(temp).GetAwaiter().GetResult();
         if (!string.Equals(hash, asset.Sha256, StringComparison.OrdinalIgnoreCase))
         {
-            File.Delete(destination);
-            throw new DwException($"SHA256 invalide pour {destination}. Attendu {asset.Sha256}, obtenu {hash}.");
+            File.Delete(temp);
+            throw new DwException($"SHA256 invalide pour {temp}. Attendu {asset.Sha256}, obtenu {hash}.");
         }
 
-        context.Out.WriteLine($"Asset telecharge et verifie: {destination}");
+        ReplaceExecutable(context, executablePath, temp);
+        context.Out.WriteLine($"Upgrade prepare: {manifest.Version}+{manifest.Commit}");
         return 0;
+    }
+
+    private static void ReplaceExecutable(CommandContext context, string executablePath, string temp)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var script = Path.Combine(Path.GetTempPath(), $"dw-upgrade-{Guid.NewGuid():N}.cmd");
+            File.WriteAllText(script, $$"""
+@echo off
+ping 127.0.0.1 -n 2 > nul
+move /Y "{{temp}}" "{{executablePath}}" > nul
+del "%~f0" > nul
+""");
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c \"{script}\"") { CreateNoWindow = true, UseShellExecute = false });
+            context.Out.WriteLine($"Remplacement programme au prochain relachement du binaire: {executablePath}");
+            return;
+        }
+
+        File.Copy(temp, executablePath, overwrite: true);
+        File.Delete(temp);
+        if (!OperatingSystem.IsWindows())
+        {
+            _ = System.Diagnostics.Process.Start("chmod", ["+x", executablePath]);
+        }
+
+        context.Out.WriteLine($"Binaire remplace: {executablePath}");
     }
 
     internal static UpdateOptions ResolveUpdates(WorkflowConfig workflow)

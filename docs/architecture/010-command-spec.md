@@ -125,7 +125,7 @@ Target behavior:
 - max rows and timeout enforcement
 - connection strings from config, environment variables, or Windows Credential Manager `credentialKey`
 
-## `dw update`
+## `dw upgrade`
 
 Implemented first pass.
 
@@ -134,8 +134,6 @@ Current behavior:
 - GitHub Releases lookup
 - `release.json` asset parsing
 - SHA256 validation
-- asset download
+- direct binary upgrade
 
-Target remaining behavior:
-
-- executable replacement strategy
+Nix-managed installs must use Nix upgrade commands instead.

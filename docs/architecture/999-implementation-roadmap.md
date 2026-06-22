@@ -53,9 +53,9 @@
 - publish win-x64
 - generate release manifest
 - verify SHA256
-- `dw update check`
-- `dw update download`
-- TODO: self-replace executable strategy
+- `dw upgrade --check`
+- `dw upgrade`
+- self-replace executable strategy
 
 ## Phase 6 - Config Schemas and CI
 

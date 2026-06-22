@@ -20,6 +20,13 @@ public sealed class InitCommandTests
             Assert.True(File.Exists(Path.Combine(root, "schemas", "workflow.schema.json")));
             Assert.True(File.Exists(Path.Combine(root, "schemas", "databases.schema.json")));
             Assert.True(File.Exists(Path.Combine(root, "schemas", "release.schema.json")));
+            Assert.True(File.Exists(Path.Combine(root, "config", "opencode", "AGENTS.md")));
+            Assert.True(File.Exists(Path.Combine(root, "config", "opencode", "opencode.jsonc")));
+            Assert.True(File.Exists(Path.Combine(root, "config", "claude", "CLAUDE.md")));
+            Assert.True(File.Exists(Path.Combine(root, "config", "cursor", "devworkflow.mdc")));
+            Assert.True(File.Exists(Path.Combine(root, "config", "codex", "AGENTS.md")));
+            Assert.True(File.Exists(Path.Combine(root, "config", "codex", "config.toml")));
+            Assert.True(File.Exists(Path.Combine(root, "config", "copilot", "copilot-instructions.md")));
             Assert.Contains("\"$schema\": \"../schemas/projects.schema.json\"", File.ReadAllText(Path.Combine(root, "config", "projects.json")));
             Assert.Contains("\"$schema\": \"../schemas/workflow.schema.json\"", File.ReadAllText(Path.Combine(root, "config", "workflow.json")));
             Assert.Contains("\"$schema\": \"../schemas/databases.schema.json\"", File.ReadAllText(Path.Combine(root, "config", "databases.json")));

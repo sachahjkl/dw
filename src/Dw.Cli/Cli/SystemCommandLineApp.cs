@@ -65,7 +65,7 @@ internal static partial class SystemCommandLineApp
         root.Add(Config(context));
         root.Add(Db(context));
         root.Add(Secret(context));
-        root.Add(Update(context));
+        root.Add(Upgrade(context));
 
         return root;
     }
@@ -234,15 +234,15 @@ internal static partial class SystemCommandLineApp
         return command;
     }
 
-    private static Command Update(CommandContext context)
+    private static Command Upgrade(CommandContext context)
     {
-        var command = Command("update", "Verifie ou telecharge une release configuree.");
+        var command = Command("upgrade", "Met a jour le binaire dw depuis la derniere release configuree.");
         AddOptions(command,
-            Value("--output", "Dossier de telechargement."),
+            Flag("--check", "Verifie la derniere release sans modifier le binaire."),
             Value("--rid", "Runtime identifier cible."));
-        AddSubcommands(command,
-            Subcommand("check", "Verifie la derniere release.", (_, _) => UpdateCommand.Check(context)),
-            Subcommand("download", "Telecharge la derniere release.", (parse, _) => UpdateCommand.Download(context, parse.GetValue<string>("--rid"), parse.GetValue<string>("--output"))));
+        command.SetAction(parse => parse.GetValue<bool>("--check")
+            ? UpgradeCommand.Check(context)
+            : UpgradeCommand.Run(context, parse.GetValue<string>("--rid")));
         return command;
     }
 
