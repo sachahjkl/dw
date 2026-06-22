@@ -56,8 +56,12 @@ With Nix:
 nix develop
 nix run . -- help
 nix run .#check
-DW_VERSION=2026.06.20.1 DW_COMMIT=abc1234 nix run .#publish-win-x64
+nix build .#default
+nix run .#set-version
+nix run .#set-version -- 2026.06.22.4
 ```
+
+`VERSION` is the source of truth for the Nix package version and release version. Run `nix run .#set-version` before cutting a release; without arguments it writes `YYYY.MM.DD.<buildId>`, where `<buildId>` is the next number after existing tags matching `vYYYY.MM.DD.*`. Pass an explicit version when needed.
 
 Install locally on Windows:
 
@@ -152,7 +156,7 @@ Windows release bundles are framework-dependent: the host machine must have the 
 Linux users can download `dw-linux-x64.tar.gz` from the GitHub release, or build locally through Nix:
 
 ```bash
-nix run .#publish-linux-x64
+nix develop -c env VERSION=2026.06.22.4 COMMIT=abc1234 bash ./scripts/publish-linux-x64.sh
 ./artifacts/linux-x64/dw version
 ```
 
@@ -163,13 +167,25 @@ Normal development happens on `develop`.
 CI runs on pull requests and pushes to `develop`, `main`, or `master`:
 
 - Windows job: restore, build, test, publish `win-x64`
-- Linux job: install Nix, run `nix run .#check`, publish `linux-x64`
+- Linux job: install Nix, run `nix build .#default`, push the Nix derivation to Cachix, run `nix run .#check`, publish `linux-x64`
 
 Releases are automated from `master`.
 
+Before pushing a release commit, bump `VERSION`:
+
+```bash
+git fetch --tags
+nix run .#set-version
+git add VERSION
+git commit -m "bump version to $(cat VERSION)"
+git push origin master
+```
+
+The release workflow reads `VERSION` and fails early if `v<VERSION>` already exists.
+
 When a commit lands on `master`, `.github/workflows/release.yml`:
 
-1. creates a tag like `v2026.06.20.1`
+1. reads `VERSION` and creates the matching tag, for example `v2026.06.22.4`
 2. publishes Windows and Linux artifacts
 3. creates a GitHub Release
 4. uploads:
