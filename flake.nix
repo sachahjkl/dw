@@ -133,6 +133,7 @@
             echo "  nix run .#check"
             echo "  nix run .#publish-win-x64"
             echo "  nix run .#publish-linux-x64"
+            echo "  nix run .#set-version"
             echo "  nix run .#set-version -- 2026.06.20.2"
             echo ""
             echo "For release artifacts with explicit metadata:"
