@@ -4,44 +4,24 @@ namespace Dw.Cli.Commands;
 
 internal static class ConfigCommand
 {
-    public static int Run(CommandContext context, string[] args)
-    {
-        var sub = args.FirstOrDefault()?.ToLowerInvariant();
-        return sub switch
-        {
-            "doctor" => Doctor(context, args.Skip(1).ToArray()),
-            "show" => Show(context),
-            "set-root" => SetRoot(context, args.Skip(1).ToArray()),
-            _ => Help(context)
-        };
-    }
-
-    private static int Help(CommandContext context)
-    {
-        CliCatalog.WriteCommandHelp(context.Out, "config");
-        return 0;
-    }
-
-    private static int Show(CommandContext context)
+    internal static int Show(CommandContext context)
     {
         var settings = UserSettingsStore.Load(context.FileSystem);
         context.Out.WriteLine($"Root: {settings.Root ?? AppPaths.DefaultRoot}");
         return 0;
     }
 
-    private static int SetRoot(CommandContext context, string[] args)
+    internal static int SetRoot(CommandContext context, string root)
     {
-        var root = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal))
-            ?? throw new DwException("Usage: dw config set-root <path>", 2);
         root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root));
         UserSettingsStore.Save(context.FileSystem, new UserSettings(root));
         context.Out.WriteLine($"Root: {root}");
         return 0;
     }
 
-    private static int Doctor(CommandContext context, string[] args)
+    internal static int Doctor(CommandContext context, string? configuredRoot)
     {
-        var root = CommandOptions.ResolveRoot(context, args);
+        var root = RootResolver.Resolve(context, configuredRoot);
         var checks = new[]
         {
             CheckKnownConfig(context, Path.Combine(root, "config", "projects.json"), ["schema", "projects"]),

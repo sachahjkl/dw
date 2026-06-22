@@ -2,9 +2,8 @@ namespace Dw.Cli.Commands;
 
 internal static class DoctorCommand
 {
-    public static async Task<int> RunAsync(CommandContext context, string[] args)
+    public static async Task<int> RunAsync(CommandContext context, bool fix)
     {
-        var fix = args.Any(arg => arg.Equals("--fix", StringComparison.OrdinalIgnoreCase));
         var settings = UserSettingsStore.Load(context.FileSystem);
         var root = settings.Root ?? AppPaths.DefaultRoot;
 
@@ -27,7 +26,7 @@ internal static class DoctorCommand
 
         if (fix && !context.FileSystem.DirectoryExists(root))
         {
-            InitCommand.Run(context, ["--root", root]);
+            InitCommand.Run(context, new InitCommandOptions(root, "ogf", NoSave: false, DryRun: false));
             checks[0] = checks[0] with { Passed = true };
         }
 

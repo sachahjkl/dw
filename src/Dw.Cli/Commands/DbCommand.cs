@@ -4,30 +4,11 @@ namespace Dw.Cli.Commands;
 
 internal static class DbCommand
 {
-    public static int Run(CommandContext context, string[] args)
+    internal static int Query(CommandContext context, string? project, string? database, string? env, IReadOnlyList<string> sqlTokens)
     {
-        var sub = args.FirstOrDefault()?.ToLowerInvariant();
-        return sub switch
-        {
-            "schema" => Schema(context, args.Skip(1).ToArray()),
-            "describe" => Describe(context, args.Skip(1).ToArray()),
-            "query" => Query(context, args.Skip(1).ToArray()),
-            _ => Help(context)
-        };
-    }
-
-    private static int Help(CommandContext context)
-    {
-        CliCatalog.WriteCommandHelp(context.Out, "db");
-        context.Out.WriteLine("SQL Server sera read-only par defaut: SELECT/introspection uniquement, maxRows=500, timeout=10min.");
-        return 0;
-    }
-
-    private static int Query(CommandContext context, string[] args)
-    {
-        var project = CommandOptions.OptionValue(args, "--project") ?? "default";
-        var database = CommandOptions.OptionValue(args, "--database") ?? CommandOptions.OptionValue(args, "--env") ?? "dev";
-        var sql = RemainingSql(args);
+        project ??= "default";
+        database ??= env ?? "dev";
+        var sql = string.Join(' ', sqlTokens);
         var guard = SqlReadOnlyGuard.Validate(sql);
         if (!guard.IsAllowed)
         {
@@ -40,10 +21,10 @@ internal static class DbCommand
         return 0;
     }
 
-    private static int Schema(CommandContext context, string[] args)
+    internal static int Schema(CommandContext context, string? project, string? database, string? env)
     {
-        var project = CommandOptions.OptionValue(args, "--project") ?? "default";
-        var database = CommandOptions.OptionValue(args, "--database") ?? CommandOptions.OptionValue(args, "--env") ?? "dev";
+        project ??= "default";
+        database ??= env ?? "dev";
         var sql = """
 select TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
 from INFORMATION_SCHEMA.TABLES
@@ -55,16 +36,10 @@ order by TABLE_SCHEMA, TABLE_NAME
         return 0;
     }
 
-    private static int Describe(CommandContext context, string[] args)
+    internal static int Describe(CommandContext context, string? project, string? database, string? env, string table)
     {
-        var table = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal));
-        if (string.IsNullOrWhiteSpace(table))
-        {
-            throw new DwException("Usage: dw db describe <schema.table> [--project <project>] [--database <name>]", 2);
-        }
-
-        var project = CommandOptions.OptionValue(args, "--project") ?? "default";
-        var database = CommandOptions.OptionValue(args, "--database") ?? CommandOptions.OptionValue(args, "--env") ?? "dev";
+        project ??= "default";
+        database ??= env ?? "dev";
         var parts = table.Split('.', 2);
         var schema = parts.Length == 2 ? parts[0] : "dbo";
         var name = parts.Length == 2 ? parts[1] : parts[0];
@@ -129,26 +104,6 @@ order by ORDINAL_POSITION
         }
 
         throw new DwException($"Base introuvable dans databases.json: {project}/{database}");
-    }
-
-    private static string RemainingSql(string[] args)
-    {
-        var parts = new List<string>();
-        for (var i = 0; i < args.Length; i++)
-        {
-            if (args[i].StartsWith("--", StringComparison.Ordinal) && i + 1 < args.Length)
-            {
-                i++;
-                continue;
-            }
-
-            if (!args[i].StartsWith("--", StringComparison.Ordinal))
-            {
-                parts.Add(args[i]);
-            }
-        }
-
-        return string.Join(' ', parts);
     }
 
 }

@@ -20,7 +20,7 @@ public sealed class ConfigCommandTests
             using var error = new StringWriter();
             var context = new CommandContext(output, error, new FixedClock(), fs, new NoopProcessRunner());
 
-            var exitCode = ConfigCommand.Run(context, ["doctor", "--root", root]);
+            var exitCode = ConfigCommand.Doctor(context, root);
 
             Assert.Equal(0, exitCode);
         }

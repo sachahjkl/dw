@@ -13,7 +13,9 @@ Commands
         -> filesystem / git / azure devops / sql / secrets / updates
 ```
 
-The current implementation starts with a minimal internal command parser to avoid external NuGet dependencies during bootstrap. This can be replaced later with `System.CommandLine` if the command surface becomes complex enough.
+The command tree is declared with `System.CommandLine`. Commands, subcommands, arguments, options, descriptions, help, and shell suggestions must come from that tree instead of ad-hoc command parsing or hardcoded usage text.
+
+Handlers receive typed option records or explicit values built from `ParseResult`. They must not redispatch subcommands with local `switch` statements or parse positional values manually.
 
 ## Command Groups
 

@@ -2,21 +2,14 @@ namespace Dw.Cli.Workspaces;
 
 internal static class TaskRenameService
 {
-    public static int Rename(CommandContext context, string[] args)
+    public static int Rename(CommandContext context, TaskRenameOptions options)
     {
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
-        var requestedSlug = CommandOptions.OptionValue(args, "--slug") ?? CommandOptions.FirstPositional(args);
-        if (string.IsNullOrWhiteSpace(requestedSlug))
-        {
-            throw new DwException("Usage: dw task rename --slug <texte> [--workspace <path>] [--execute]", 2);
-        }
-
-        var execute = CommandOptions.HasFlag(args, "--execute");
-        var workspace = WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(CommandOptions.OptionValue(args, "--workspace"), CommandOptions.OptionValue(args, "--project"), CommandOptions.OptionValue(args, "--work-item"), CommandOptions.HasFlag(args, "--continue")));
+        var workspace = WorkspaceOpenService.ResolveWorkspace(context, root, options.OpenOptions);
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
         var projectConfig = DevWorkflowConfigLoader.ResolveProject(projects, manifest.Project);
-        var slug = Slug.FromPhraseOrFallback(requestedSlug, manifest.Slug);
+        var slug = Slug.FromPhraseOrFallback(options.Slug, manifest.Slug);
         var newBranch = GitBranchNames.Build(manifest.Type, manifest.WorkItemId, manifest.TaskId, slug);
         var newWorkspace = Path.Combine(Path.GetDirectoryName(workspace) ?? workspace, GitBranchNames.BuildSubjectName(manifest.Type, manifest.WorkItemId, slug));
 
@@ -24,7 +17,7 @@ internal static class TaskRenameService
         context.Out.WriteLine($"- slug: {manifest.Slug} -> {slug}");
         context.Out.WriteLine($"- branch: {manifest.BranchName} -> {newBranch}");
         context.Out.WriteLine($"- workspace: {workspace} -> {newWorkspace}");
-        if (!execute)
+        if (!options.Execute)
         {
             context.Out.WriteLine("Relancer avec --execute pour appliquer.");
             return 0;
@@ -70,3 +63,5 @@ internal static class TaskRenameService
         TaskCommand.RunGitOrThrow(context, repositoryPath, "branch", "-m", newBranch);
     }
 }
+
+internal sealed record TaskRenameOptions(string Slug, WorkspaceOpenOptions OpenOptions, bool Execute);

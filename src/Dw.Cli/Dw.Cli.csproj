@@ -17,6 +17,7 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageReference Include="Microsoft.Identity.Client" Version="4.85.0" />
     <PackageReference Include="Microsoft.Identity.Client.Extensions.Msal" Version="4.85.0" />
+    <PackageReference Include="System.CommandLine" Version="3.0.0-preview.5.26302.115" />
   </ItemGroup>
 
   <ItemGroup>

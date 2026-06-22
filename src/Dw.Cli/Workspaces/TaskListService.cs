@@ -26,16 +26,13 @@ internal static class TaskListService
         return 0;
     }
 
-    public static int List(CommandContext context, string[] args)
+    public static int List(CommandContext context, TaskListOptions options)
     {
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
-        var project = CommandOptions.OptionValue(args, "--project");
-        var workItemId = CommandOptions.OptionValue(args, "--work-item");
-        var json = CommandOptions.HasFlag(args, "--json");
         var workspaces = WorkspaceDiscoveryService.Filter(
             WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, root),
-            project,
-            workItemId);
+            options.Project,
+            options.WorkItemId);
 
         if (workspaces.Count == 0)
         {
@@ -43,7 +40,7 @@ internal static class TaskListService
             return 0;
         }
 
-        if (json)
+        if (options.Json)
         {
             var payload = workspaces.Select(workspace => new
             {
@@ -87,3 +84,5 @@ internal static class TaskListService
         return 0;
     }
 }
+
+internal sealed record TaskListOptions(string? Project, string? WorkItemId, bool Json);

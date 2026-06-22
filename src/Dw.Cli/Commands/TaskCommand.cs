@@ -5,35 +5,10 @@ namespace Dw.Cli.Commands;
 
 internal static class TaskCommand
 {
-    public static int Run(CommandContext context, string[] args)
+    internal static int AddRepo(CommandContext context, TaskAddRepoOptions options)
     {
-        var sub = args.FirstOrDefault()?.ToLowerInvariant();
-        return sub switch
-        {
-            "start" => TaskStartService.Start(context, args.Skip(1).ToArray()),
-            "status" => TaskListService.Status(context),
-            "list" => TaskListService.List(context, args.Skip(1).ToArray()),
-            "current" => TaskListService.Current(context),
-            "open" => WorkspaceOpenService.Open(context, AgentCommand.OpenOptions(args.Skip(1).ToArray())),
-            "sync" => TaskSyncPruneService.Sync(context, args.Skip(1).ToArray()),
-            "prune" => TaskSyncPruneService.Prune(context, args.Skip(1).ToArray()),
-            "rename" => TaskRenameService.Rename(context, args.Skip(1).ToArray()),
-            "teardown" => WorkspaceTeardownService.Teardown(context, TeardownOptions(args.Skip(1).ToArray())),
-            "finish" => Finish(context, args.Skip(1).ToArray()),
-            "add-repo" => AddRepo(context, args.Skip(1).ToArray()),
-            _ => Help(context)
-        };
-    }
-
-    private static int AddRepo(CommandContext context, string[] args)
-    {
-        var repositoryKey = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal));
-        if (string.IsNullOrWhiteSpace(repositoryKey))
-        {
-            throw new DwException("Usage: dw task add-repo <repo> [--workspace <path>]", 2);
-        }
-
-        var workspace = CommandOptions.OptionValue(args, "--workspace") ?? Environment.CurrentDirectory;
+        var repositoryKey = options.Repository;
+        var workspace = options.Workspace ?? Environment.CurrentDirectory;
         workspace = Path.GetFullPath(workspace);
         var manifestPath = Path.Combine(workspace, "task.json");
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, manifestPath);
@@ -69,16 +44,11 @@ internal static class TaskCommand
         return 0;
     }
 
-    private static int Finish(CommandContext context, string[] args)
+    internal static int Finish(CommandContext context, TaskFinishCommandOptions options)
     {
-        var workspace = CommandOptions.OptionValue(args, "--workspace") ?? Environment.CurrentDirectory;
+        var workspace = options.Workspace ?? Environment.CurrentDirectory;
         workspace = Path.GetFullPath(workspace);
-        var execute = CommandOptions.HasFlag(args, "--execute");
-        var createPr = CommandOptions.HasFlag(args, "--create-pr");
-        var draft = !CommandOptions.HasFlag(args, "--ready");
-        var message = CommandOptions.OptionValue(args, "--message");
-        var skipVerify = CommandOptions.HasFlag(args, "--skip-verify");
-        var skipAdo = CommandOptions.HasFlag(args, "--skip-ado");
+        var draft = !options.Ready;
 
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
         var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
@@ -111,14 +81,14 @@ internal static class TaskCommand
             return 0;
         }
 
-        if (!execute)
+        if (!options.Execute)
         {
             context.Out.WriteLine();
             context.Out.WriteLine("Dry-run uniquement. Relancer avec --execute --message \"...\" pour committer/pousser.");
             return 0;
         }
 
-        if (string.IsNullOrWhiteSpace(message))
+        if (string.IsNullOrWhiteSpace(options.Message))
         {
             throw new DwException("task finish --execute exige --message.", 2);
         }
@@ -129,7 +99,7 @@ internal static class TaskCommand
         var projectConfig = projects.Projects.GetValueOrDefault(manifest.Project);
         var verificationResults = Array.Empty<VerificationResult>();
 
-        if (!skipVerify && (workflow.TaskFinish?.RunVerification ?? true))
+        if (!options.SkipVerify && (workflow.TaskFinish?.RunVerification ?? true))
         {
             verificationResults = RunVerification(context, workflow, changed).ToArray();
             var failed = verificationResults.Where(result => result.ExitCode != 0).ToArray();
@@ -151,24 +121,24 @@ internal static class TaskCommand
         foreach (var status in changed)
         {
             RunGitOrThrow(context, status.Path, "add", ".");
-            RunGitOrThrow(context, status.Path, "commit", "-m", CommitMessage.EnsureWorkItemReference(message, manifest));
+            RunGitOrThrow(context, status.Path, "commit", "-m", CommitMessage.EnsureWorkItemReference(options.Message, manifest));
             RunGitOrThrow(context, status.Path, "push", "-u", "origin", manifest.BranchName);
         }
 
         context.Out.WriteLine("Commits/push termines.");
 
-        if (!createPr)
+        if (!options.CreatePr)
         {
             context.Out.WriteLine("PR non creee. Relancer avec --create-pr pour ouvrir les PR ADO.");
             return 0;
         }
 
-        if (skipAdo)
+        if (options.SkipAdo)
         {
             throw new DwException("--create-pr ne peut pas etre combine avec --skip-ado.", 2);
         }
 
-        var adoContext = skipAdo ? null : TryCreateAdoContext(context, workflow, projectConfig, required: true);
+        var adoContext = options.SkipAdo ? null : TryCreateAdoContext(context, workflow, projectConfig, required: true);
         if (adoContext is null)
         {
             throw new DwException("Contexte Azure DevOps indisponible.");
@@ -453,21 +423,6 @@ internal static class TaskCommand
     private static int? TryGetInt(System.Text.Json.JsonElement element, string property)
         => element.TryGetProperty(property, out var value) && value.TryGetInt32(out var id) ? id : null;
 
-    private static int Help(CommandContext context)
-    {
-        CliCatalog.WriteCommandHelp(context.Out, "task");
-        return 0;
-    }
-
-    private static WorkspaceTeardownOptions TeardownOptions(string[] args)
-        => new(
-            Workspace: CommandOptions.OptionValue(args, "--workspace"),
-            Project: CommandOptions.OptionValue(args, "--project"),
-            WorkItemId: CommandOptions.OptionValue(args, "--work-item"),
-            Continue: CommandOptions.HasFlag(args, "--continue"),
-            Execute: CommandOptions.HasFlag(args, "--execute"),
-            Yes: CommandOptions.HasFlag(args, "--yes"));
-
     private static ProjectConfig? ResolveProjectConfig(DevWorkflowConfig config, string project)
         => DevWorkflowConfigLoader.ResolveProject(config, project);
 
@@ -597,3 +552,14 @@ internal static class AdoWorkflowStates
     private static string NormalizeType(string? workItemType)
         => (workItemType ?? string.Empty).Trim().ToLowerInvariant();
 }
+
+internal sealed record TaskAddRepoOptions(string Repository, string? Workspace);
+
+internal sealed record TaskFinishCommandOptions(
+    string? Workspace,
+    bool Execute,
+    bool CreatePr,
+    bool Ready,
+    string? Message,
+    bool SkipVerify,
+    bool SkipAdo);

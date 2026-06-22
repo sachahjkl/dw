@@ -4,12 +4,11 @@ internal sealed record AdoClientInputs(WorkflowConfig Workflow, AzureDevOpsOptio
 
 internal static class AdoClientFactory
 {
-    public static AdoClientInputs CreateInputs(CommandContext context, string[] args)
+    public static AdoClientInputs CreateInputs(CommandContext context, string? configuredRoot, string? projectName)
     {
-        var root = CommandOptions.ResolveRoot(context, args);
+        var root = RootResolver.Resolve(context, configuredRoot);
         var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
-        var projectName = CommandOptions.OptionValue(args, "--project");
         var projectConfig = string.IsNullOrWhiteSpace(projectName)
             ? null
             : DevWorkflowConfigLoader.ResolveProject(projects, projectName);

@@ -5,30 +5,9 @@ namespace Dw.Cli.Commands;
 
 internal static class AdoCommand
 {
-    private static readonly string[] OptionsWithValue = ["--project", "--root", "--comments"];
-
-    public static int Run(CommandContext context, string[] args)
+    internal static int Assigned(CommandContext context, string? configuredRoot, string? projectName, int top)
     {
-        var sub = args.FirstOrDefault()?.ToLowerInvariant();
-        return sub switch
-        {
-            "assigned" => Assigned(context, args.Skip(1).ToArray()),
-            "work-item" => WorkItem(context, args.Skip(1).ToArray()),
-            "context" => WorkItemContext(context, args.Skip(1).ToArray()),
-            _ => Help(context)
-        };
-    }
-
-    private static int Help(CommandContext context)
-    {
-        CliCatalog.WriteCommandHelp(context.Out, "ado");
-        return 0;
-    }
-
-    private static int Assigned(CommandContext context, string[] args)
-    {
-        var top = CommandOptions.IntValue(args, "--top", 20, 1);
-        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, args);
+        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
         using var http = new HttpClient();
         var client = new AzureDevOpsClient(http, azureDevOps);
         var items = client.GetAssignedWorkItemsAsync(top, token).GetAwaiter().GetResult();
@@ -38,7 +17,7 @@ internal static class AdoCommand
             return 0;
         }
 
-        var projectHint = ProjectName(args) is { } project ? $" --project {project}" : string.Empty;
+        var projectHint = ProjectHint(projectName);
         foreach (var item in items)
         {
             context.Out.WriteLine($"#{item.Id} [{item.Type}] {item.State} - {item.Title}");
@@ -48,15 +27,9 @@ internal static class AdoCommand
         return 0;
     }
 
-    private static int WorkItem(CommandContext context, string[] args)
+    internal static int WorkItem(CommandContext context, string? configuredRoot, string? projectName, string id)
     {
-        var id = CommandOptions.FirstPositional(args, OptionsWithValue);
-        if (string.IsNullOrWhiteSpace(id))
-        {
-            throw new DwException("Usage: dw ado work-item <id>", 2);
-        }
-
-        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, args);
+        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
         using var http = new HttpClient();
         var client = new AzureDevOpsClient(http, azureDevOps);
         var item = client.GetWorkItemSnapshotAsync(id, token).GetAwaiter().GetResult();
@@ -66,22 +39,13 @@ internal static class AdoCommand
         context.Out.WriteLine($"Etat: {item.State ?? "(inconnu)"}");
         context.Out.WriteLine($"Titre: {item.Title ?? "(inconnu)"}");
         context.Out.WriteLine();
-        context.Out.WriteLine($"Contexte complet: dw ado context {item.Id}{ProjectHint(args)}");
+        context.Out.WriteLine($"Contexte complet: dw ado context {item.Id}{ProjectHint(projectName)}");
         return 0;
     }
 
-    private static int WorkItemContext(CommandContext context, string[] args)
+    internal static int WorkItemContext(CommandContext context, string? configuredRoot, string? projectName, string id, bool summaryOnly, int commentLimit)
     {
-        var id = CommandOptions.FirstPositional(args, OptionsWithValue);
-        if (string.IsNullOrWhiteSpace(id))
-        {
-            throw new DwException("Usage: dw ado context <id> [--project <name>] [--summary] [--comments <n>]", 2);
-        }
-
-        var summaryOnly = CommandOptions.HasFlag(args, "--summary");
-        var commentLimit = CommandOptions.IntValue(args, "--comments", 200, 0);
-
-        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, args);
+        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
         using var http = new HttpClient();
         var client = new AzureDevOpsClient(http, azureDevOps);
         using var document = client.GetWorkItemExpandedAsync(id, token).GetAwaiter().GetResult();
@@ -94,7 +58,7 @@ internal static class AdoCommand
 
         if (!summaryOnly)
         {
-            PrintRelations(context, document.RootElement, args);
+            PrintRelations(context, document.RootElement, projectName);
             PrintComments(context, client, id, commentLimit, token);
         }
 
@@ -154,7 +118,7 @@ internal static class AdoCommand
         }
     }
 
-    private static void PrintRelations(CommandContext context, JsonElement root, string[] args)
+    private static void PrintRelations(CommandContext context, JsonElement root, string? projectName)
     {
         context.Out.WriteLine("## Relations");
         if (!root.TryGetProperty("relations", out var relations) || relations.ValueKind != JsonValueKind.Array)
@@ -185,7 +149,7 @@ internal static class AdoCommand
                 rel is not null &&
                 rel.Contains("Hierarchy-Reverse", StringComparison.OrdinalIgnoreCase))
             {
-                context.Out.WriteLine($"  Parent context: dw ado context {relatedId}{ProjectHint(args)}");
+                context.Out.WriteLine($"  Parent context: dw ado context {relatedId}{ProjectHint(projectName)}");
             }
         }
 
@@ -317,13 +281,7 @@ internal static class AdoCommand
             .Replace("Microsoft.VSTS.Common.", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace("Custom.", string.Empty, StringComparison.OrdinalIgnoreCase);
 
-    private static string ProjectHint(string[] args)
-    {
-        var project = ProjectName(args);
-        return string.IsNullOrWhiteSpace(project) ? string.Empty : $" --project {project}";
-    }
-
-    private static string? ProjectName(string[] args)
-        => CommandOptions.OptionValue(args, "--project");
+    private static string ProjectHint(string? projectName)
+        => string.IsNullOrWhiteSpace(projectName) ? string.Empty : $" --project {projectName}";
 
 }

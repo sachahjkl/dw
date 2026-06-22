@@ -2,23 +2,8 @@ namespace Dw.Cli.Commands;
 
 internal static class SecretCommand
 {
-    public static int Run(CommandContext context, string[] args)
+    internal static int Set(CommandContext context, string key, string? secret, string? fromEnv)
     {
-        var sub = args.FirstOrDefault()?.ToLowerInvariant();
-        return sub switch
-        {
-            "set" => Set(context, args.Skip(1).ToArray()),
-            "get" => Get(context, args.Skip(1).ToArray()),
-            "delete" => Delete(context, args.Skip(1).ToArray()),
-            _ => Help(context)
-        };
-    }
-
-    private static int Set(CommandContext context, string[] args)
-    {
-        var key = args.FirstOrDefault() ?? throw new DwException("Usage: dw secret set <key>", 2);
-        var secret = CommandOptions.OptionValue(args, "--value");
-        var fromEnv = CommandOptions.OptionValue(args, "--from-env");
         if (!string.IsNullOrWhiteSpace(fromEnv))
         {
             secret = Environment.GetEnvironmentVariable(fromEnv)
@@ -36,25 +21,17 @@ internal static class SecretCommand
         return 0;
     }
 
-    private static int Get(CommandContext context, string[] args)
+    internal static int Get(CommandContext context, string key)
     {
-        var key = args.FirstOrDefault() ?? throw new DwException("Usage: dw secret get <key>", 2);
         var value = SecretStoreFactory.Create().Get(key);
         context.Out.WriteLine(value is null ? "Secret introuvable." : "Secret present.");
         return value is null ? 1 : 0;
     }
 
-    private static int Delete(CommandContext context, string[] args)
+    internal static int Delete(CommandContext context, string key)
     {
-        var key = args.FirstOrDefault() ?? throw new DwException("Usage: dw secret delete <key>", 2);
         SecretStoreFactory.Create().Delete(key);
         context.Out.WriteLine("Secret supprime si present.");
-        return 0;
-    }
-
-    private static int Help(CommandContext context)
-    {
-        CliCatalog.WriteCommandHelp(context.Out, "secret");
         return 0;
     }
 
