@@ -68,6 +68,42 @@ public sealed class AppTests
         Assert.Equal(0, exitCode);
         Assert.Contains("Register-ArgumentCompleter", output);
         Assert.Contains("dw completion suggest --format json", output);
+        Assert.Contains("IsNullOrEmpty($wordToComplete)", output);
+        Assert.Contains("--empty-token", output);
+    }
+
+    [Theory]
+    [InlineData("bash", "--empty-token")]
+    [InlineData("zsh", "--empty-token")]
+    [InlineData("fish", "--empty-token")]
+    public async Task RunAsync_completion_install_preserves_empty_token_for_shells(string shell, string expected)
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "install", shell]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("dw completion suggest --format json", output);
+        Assert.Contains(expected, output);
+    }
+
+    [Fact]
+    public async Task RunAsync_completion_suggest_empty_token_lists_subcommands()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--empty-token", "task"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("start", output);
+        Assert.Contains("Cree un workspace et des worktrees", output);
+        Assert.True(output.IndexOf("add-repo", StringComparison.Ordinal) < output.IndexOf("--agent", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_completion_suggest_dash_token_lists_only_options()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "task", "--"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--agent", output);
+        Assert.DoesNotContain("add-repo", output);
     }
 
     [Fact]
