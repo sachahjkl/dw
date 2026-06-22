@@ -42,9 +42,8 @@ internal static class TaskListService
 
         if (options.Json)
         {
-            var payload = workspaces.Select(workspace => new
-            {
-                path = workspace.Path,
+            var payload = workspaces.Select(workspace => new TaskListItem(
+                workspace.Path,
                 workspace.Manifest.Project,
                 workspace.Manifest.WorkItemId,
                 workspace.Manifest.TaskId,
@@ -55,9 +54,8 @@ internal static class TaskListService
                 workspace.Manifest.WorkItemType,
                 workspace.Manifest.WorkItemTitle,
                 workspace.Manifest.WorkItemState,
-                workspace.Manifest.Repositories
-            });
-            context.Out.WriteLine(JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+                workspace.Manifest.Repositories)).ToArray();
+            context.Out.WriteLine(JsonSerializer.Serialize(payload, AppJsonContext.Default.TaskListItemArray));
             return 0;
         }
 
@@ -86,3 +84,17 @@ internal static class TaskListService
 }
 
 internal sealed record TaskListOptions(string? Project, string? WorkItemId, bool Json);
+
+internal sealed record TaskListItem(
+    string Path,
+    string Project,
+    string WorkItemId,
+    string? TaskId,
+    string Type,
+    string Slug,
+    string BranchName,
+    DateTimeOffset CreatedAt,
+    string? WorkItemType,
+    string? WorkItemTitle,
+    string? WorkItemState,
+    IReadOnlyList<string> Repositories);

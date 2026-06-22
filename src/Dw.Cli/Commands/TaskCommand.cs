@@ -289,12 +289,10 @@ internal static class TaskCommand
                 [
                     new JsonPatchOperation("add", "/fields/System.Title", title),
                     new JsonPatchOperation("add", "/fields/System.History", DevWorkflowTraceComment(parent.Id, repository)),
-                    new JsonPatchOperation("add", "/relations/-", new
-                    {
-                        rel = "System.LinkTypes.Hierarchy-Reverse",
-                        url = AzureDevOpsUris.WorkItemApiUrl(adoContext.Options, parent.Id).AbsoluteUri,
-                        attributes = new { comment = "creation dw task start" }
-                    })
+                    new JsonPatchOperation("add", "/relations/-", new WorkItemRelationRef(
+                        "System.LinkTypes.Hierarchy-Reverse",
+                        AzureDevOpsUris.WorkItemApiUrl(adoContext.Options, parent.Id).AbsoluteUri,
+                        new WorkItemRelationAttributes("creation dw task start")))
                 ],
                 adoContext.Token).GetAwaiter().GetResult();
             var id = TryGetString(document.RootElement, "id") ?? throw new DwException("ADO n'a pas retourne l'id de la tache creee.");

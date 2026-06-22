@@ -32,8 +32,6 @@ This repository currently contains the first vertical slice:
 ## Build
 
 ```powershell
-dotnet build .\Dw.sln -c Release
-# or, with a recent SDK:
 dotnet build .\Dw.slnx -c Release
 ```
 

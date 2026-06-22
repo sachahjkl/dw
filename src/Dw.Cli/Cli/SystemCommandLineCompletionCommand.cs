@@ -60,13 +60,11 @@ internal static partial class SystemCommandLineApp
 
         if (format.Equals("json", StringComparison.OrdinalIgnoreCase))
         {
-            var payload = completions.Select(completion => new
-            {
-                label = completion.Label,
-                insertText = string.IsNullOrWhiteSpace(completion.InsertText) ? completion.Label : completion.InsertText,
-                description = completion.Documentation ?? completion.Detail ?? string.Empty
-            });
-            context.Out.WriteLine(JsonSerializer.Serialize(payload));
+            var payload = completions.Select(completion => new CompletionSuggestion(
+                completion.Label,
+                string.IsNullOrWhiteSpace(completion.InsertText) ? completion.Label : completion.InsertText,
+                completion.Documentation ?? completion.Detail ?? string.Empty)).ToArray();
+            context.Out.WriteLine(JsonSerializer.Serialize(payload, AppJsonContext.Default.CompletionSuggestionArray));
             return 0;
         }
 

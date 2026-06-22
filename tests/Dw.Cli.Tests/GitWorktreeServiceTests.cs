@@ -6,31 +6,34 @@ public sealed class GitWorktreeServiceTests
     public async Task PrepareAsync_falls_back_to_local_head_ref_when_origin_ref_is_missing()
     {
         var processRunner = new StubProcessRunner();
+        var root = Path.Combine(Path.GetTempPath(), "dw-root");
+        var anchor = Path.Combine(root, "repositories", "front.git");
+        var worktree = Path.Combine(root, "workspaces", "subject", "front");
         var fileSystem = new StubFileSystem(
             existingDirectories:
             [
-                @"S:\root\repositories\front.git"
+                anchor
             ]);
         var service = new GitWorktreeService(processRunner, fileSystem);
 
         var result = await service.PrepareAsync(
-            @"S:\root",
+            root,
             "front",
             new RepositoryConfig("https://example/repo.git", "develop"),
             "chore/55222-refonte-modale-agences",
-            @"S:\root\workspaces\subject\front");
+            worktree);
 
         Assert.Equal(GitWorktreeStatus.Prepared, result.Status);
         Assert.Equal("Worktree cree depuis refs/heads/develop.", result.Message);
         Assert.Contains(processRunner.Calls, call =>
             call.FileName == "git" &&
-            call.Arguments.SequenceEqual(["--git-dir", @"S:\root\repositories\front.git", "rev-parse", "--verify", "origin/develop"]));
+            call.Arguments.SequenceEqual(["--git-dir", anchor, "rev-parse", "--verify", "origin/develop"]));
         Assert.Contains(processRunner.Calls, call =>
             call.FileName == "git" &&
-            call.Arguments.SequenceEqual(["--git-dir", @"S:\root\repositories\front.git", "rev-parse", "--verify", "refs/heads/develop"]));
+            call.Arguments.SequenceEqual(["--git-dir", anchor, "rev-parse", "--verify", "refs/heads/develop"]));
         Assert.Contains(processRunner.Calls, call =>
             call.FileName == "git" &&
-            call.Arguments.SequenceEqual(["--git-dir", @"S:\root\repositories\front.git", "worktree", "add", "-b", "chore/55222-refonte-modale-agences", @"S:\root\workspaces\subject\front", "refs/heads/develop"]));
+            call.Arguments.SequenceEqual(["--git-dir", anchor, "worktree", "add", "-b", "chore/55222-refonte-modale-agences", worktree, "refs/heads/develop"]));
     }
 
     private sealed class StubProcessRunner : IProcessRunner
@@ -53,22 +56,22 @@ public sealed class GitWorktreeServiceTests
         {
             Calls.Add(new ProcessCall(fileName, arguments.ToArray(), workingDirectory));
 
-            if (arguments.SequenceEqual(["--git-dir", @"S:\root\repositories\front.git", "fetch", "--prune", "origin"]))
+            if (arguments is ["--git-dir", _, "fetch", "--prune", "origin"])
             {
                 return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
             }
 
-            if (arguments.SequenceEqual(["--git-dir", @"S:\root\repositories\front.git", "rev-parse", "--verify", "origin/develop"]))
+            if (arguments is ["--git-dir", _, "rev-parse", "--verify", "origin/develop"])
             {
                 return Task.FromResult(new ProcessResult(1, string.Empty, "fatal: Needed a single revision"));
             }
 
-            if (arguments.SequenceEqual(["--git-dir", @"S:\root\repositories\front.git", "rev-parse", "--verify", "refs/heads/develop"]))
+            if (arguments is ["--git-dir", _, "rev-parse", "--verify", "refs/heads/develop"])
             {
                 return Task.FromResult(new ProcessResult(0, "abc123", string.Empty));
             }
 
-            if (arguments.SequenceEqual(["--git-dir", @"S:\root\repositories\front.git", "worktree", "add", "-b", "chore/55222-refonte-modale-agences", @"S:\root\workspaces\subject\front", "refs/heads/develop"]))
+            if (arguments is ["--git-dir", _, "worktree", "add", "-b", "chore/55222-refonte-modale-agences", _, "refs/heads/develop"])
             {
                 return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
             }

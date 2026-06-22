@@ -20,19 +20,12 @@ internal sealed record WorkspaceManifest(
 
 internal static class WorkspaceManifestWriter
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true
-    };
-
     public static string Serialize(WorkspaceManifest manifest)
-        => JsonSerializer.Serialize(manifest, Options);
+        => JsonSerializer.Serialize(manifest, AppJsonContext.Default.WorkspaceManifest);
 }
 
 internal static class WorkspaceManifestReader
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
-
     public static WorkspaceManifest Read(IFileSystem fileSystem, string path)
     {
         if (!fileSystem.FileExists(path))
@@ -40,7 +33,7 @@ internal static class WorkspaceManifestReader
             throw new DwException($"Manifest task introuvable: {path}");
         }
 
-        return JsonSerializer.Deserialize<WorkspaceManifest>(fileSystem.ReadAllText(path), Options)
+        return JsonSerializer.Deserialize(fileSystem.ReadAllText(path), AppJsonContext.Default.WorkspaceManifest)
                ?? throw new DwException($"Manifest task invalide: {path}");
     }
 }

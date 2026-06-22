@@ -1,4 +1,5 @@
 global using System.Globalization;
+global using System.Text.Json;
 global using System.CommandLine;
 global using System.CommandLine.Completions;
 global using System.CommandLine.Invocation;
@@ -13,6 +14,7 @@ global using Dw.Cli.Database;
 global using Dw.Cli.Git;
 global using Dw.Cli.Platform;
 global using Dw.Cli.Security;
+global using Dw.Cli.Serialization;
 global using Dw.Cli.Settings;
 global using Dw.Cli.Text;
 global using Dw.Cli.Templating;

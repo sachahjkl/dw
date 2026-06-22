@@ -161,9 +161,10 @@ public sealed class WorkspaceOpenServiceTests
             ["front"] = new("", "develop", Folder: "custom-front")
         });
 
-        var target = WorkspaceOpenService.ResolveOpenTarget(@"S:\workspace", manifest, projectConfig, "front");
+        var workspace = Path.Combine(Path.GetTempPath(), "workspace");
+        var target = WorkspaceOpenService.ResolveOpenTarget(workspace, manifest, projectConfig, "front");
 
-        Assert.Equal(@"S:\workspace\custom-front", target);
+        Assert.Equal(Path.Combine(workspace, "custom-front"), target);
     }
 
     [Fact]

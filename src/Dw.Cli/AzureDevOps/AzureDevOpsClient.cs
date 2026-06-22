@@ -7,11 +7,6 @@ namespace Dw.Cli.AzureDevOps;
 
 internal sealed class AzureDevOpsClient(HttpClient httpClient, AzureDevOpsOptions options)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true
-    };
-
     public async Task<JsonDocument> GetWorkItemAsync(
         string workItemId,
         TokenResult token,
@@ -67,7 +62,7 @@ where [System.TeamProject] = @project
 order by [System.ChangedDate] desc
 """;
         using var wiqlRequest = CreateRequest(HttpMethod.Post, AzureDevOpsUris.Wiql(options), token);
-        wiqlRequest.Content = new StringContent(JsonSerializer.Serialize(new { query = wiql }, JsonOptions), Encoding.UTF8, "application/json");
+        wiqlRequest.Content = new StringContent(JsonSerializer.Serialize(new WiqlRequest(wiql), AppJsonContext.Default.WiqlRequest), Encoding.UTF8, "application/json");
         using var wiqlResponse = await httpClient.SendAsync(wiqlRequest, cancellationToken);
         using var wiqlDocument = await ReadJsonOrThrow(wiqlResponse, cancellationToken);
         var ids = wiqlDocument.RootElement.TryGetProperty("workItems", out var workItems) && workItems.ValueKind == JsonValueKind.Array
@@ -84,11 +79,7 @@ order by [System.ChangedDate] desc
         }
 
         using var batchRequest = CreateRequest(HttpMethod.Post, AzureDevOpsUris.WorkItemsBatch(options), token);
-        batchRequest.Content = new StringContent(JsonSerializer.Serialize(new
-        {
-            ids,
-            fields = new[] { "System.Id", "System.WorkItemType", "System.State", "System.Title" }
-        }, JsonOptions), Encoding.UTF8, "application/json");
+        batchRequest.Content = new StringContent(JsonSerializer.Serialize(new WorkItemsBatchRequest(ids, ["System.Id", "System.WorkItemType", "System.State", "System.Title"]), AppJsonContext.Default.WorkItemsBatchRequest), Encoding.UTF8, "application/json");
         using var batchResponse = await httpClient.SendAsync(batchRequest, cancellationToken);
         using var batchDocument = await ReadJsonOrThrow(batchResponse, cancellationToken);
         return batchDocument.RootElement.TryGetProperty("value", out var values) && values.ValueKind == JsonValueKind.Array
@@ -103,7 +94,7 @@ order by [System.ChangedDate] desc
         CancellationToken cancellationToken = default)
     {
         using var request = CreateRequest(HttpMethod.Patch, AzureDevOpsUris.WorkItem(options, workItemId), token);
-        request.Content = new StringContent(JsonSerializer.Serialize(operations, JsonOptions), Encoding.UTF8, "application/json-patch+json");
+        request.Content = new StringContent(JsonSerializer.Serialize(operations.ToArray(), AppJsonContext.Default.JsonPatchOperationArray), Encoding.UTF8, "application/json-patch+json");
         using var response = await httpClient.SendAsync(request, cancellationToken);
         return await ReadJsonOrThrow(response, cancellationToken);
     }
@@ -115,7 +106,7 @@ order by [System.ChangedDate] desc
         CancellationToken cancellationToken = default)
     {
         using var request = CreateRequest(HttpMethod.Post, AzureDevOpsUris.CreateWorkItem(options, workItemType), token);
-        request.Content = new StringContent(JsonSerializer.Serialize(operations, JsonOptions), Encoding.UTF8, "application/json-patch+json");
+        request.Content = new StringContent(JsonSerializer.Serialize(operations.ToArray(), AppJsonContext.Default.JsonPatchOperationArray), Encoding.UTF8, "application/json-patch+json");
         using var response = await httpClient.SendAsync(request, cancellationToken);
         return await ReadJsonOrThrow(response, cancellationToken);
     }
@@ -127,7 +118,7 @@ order by [System.ChangedDate] desc
         CancellationToken cancellationToken = default)
     {
         using var request = CreateRequest(HttpMethod.Post, AzureDevOpsUris.PullRequests(options, repositoryIdOrName), token);
-        request.Content = new StringContent(JsonSerializer.Serialize(pullRequest, JsonOptions), Encoding.UTF8, "application/json");
+        request.Content = new StringContent(JsonSerializer.Serialize(pullRequest, AppJsonContext.Default.CreatePullRequestRequest), Encoding.UTF8, "application/json");
         using var response = await httpClient.SendAsync(request, cancellationToken);
         return await ReadJsonOrThrow(response, cancellationToken);
     }
@@ -141,7 +132,7 @@ order by [System.ChangedDate] desc
     {
         using var request = CreateRequest(HttpMethod.Patch, AzureDevOpsUris.PullRequestWorkItems(options, repositoryIdOrName, pullRequestId), token);
         request.Content = new StringContent(
-            JsonSerializer.Serialize(new[] { new ResourceRef(workItemId) }, JsonOptions),
+            JsonSerializer.Serialize(new[] { new ResourceRef(workItemId) }, AppJsonContext.Default.ResourceRefArray),
             Encoding.UTF8,
             "application/json");
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -179,6 +170,10 @@ internal sealed record CreatePullRequestRequest(
     IReadOnlyList<ResourceRef>? WorkItemRefs = null);
 
 internal sealed record ResourceRef(string Id, string? Url = null);
+
+internal sealed record WorkItemRelationRef(string Rel, string Url, WorkItemRelationAttributes Attributes);
+
+internal sealed record WorkItemRelationAttributes(string Comment);
 
 internal sealed record JsonPatchOperation(
     [property: JsonPropertyName("op")] string Operation,

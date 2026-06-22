@@ -19,8 +19,8 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        dotnet = pkgs.dotnetCorePackages.sdk_8_0;
-        dotnetRuntime = pkgs.dotnetCorePackages.runtime_8_0;
+        dotnet = pkgs.dotnetCorePackages.sdk_10_0;
+        dotnetRuntime = pkgs.dotnetCorePackages.runtime_10_0;
         versionPrefix = pkgs.lib.strings.trim (builtins.readFile ./VERSION);
         sourceRevision =
           if self ? shortRev then self.shortRev
@@ -40,7 +40,7 @@
           runtimeInputs = [ dotnet ];
           text = ''
             ${dotnetEnv}
-            dotnet build ./Dw.sln \
+            dotnet build ./Dw.slnx \
               --configuration Release \
               -p:VersionPrefix=${versionPrefix} \
               -p:SourceRevisionId=${sourceRevision}
@@ -52,7 +52,7 @@
           runtimeInputs = [ dotnet ];
           text = ''
             ${dotnetEnv}
-            dotnet build ./Dw.sln \
+            dotnet build ./Dw.slnx \
               --configuration Release \
               -p:VersionPrefix=${versionPrefix} \
               -p:SourceRevisionId=${sourceRevision}

@@ -47,12 +47,6 @@ internal sealed record TaskFinishOptions(
 
 internal static class WorkflowConfigStore
 {
-    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
-    {
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
-    };
-
     public static WorkflowConfig Load(IFileSystem fileSystem, string root)
     {
         var path = Path.Combine(root, "config", "workflow.json");
@@ -62,7 +56,7 @@ internal static class WorkflowConfigStore
         }
 
         var json = fileSystem.ReadAllText(path);
-        return JsonSerializer.Deserialize<WorkflowConfig>(json, Options) ?? WorkflowConfig.Empty;
+        return JsonSerializer.Deserialize(json, AppJsonContext.Default.WorkflowConfig) ?? WorkflowConfig.Empty;
     }
 
     public static void SetDefaultAgent(IFileSystem fileSystem, string root, string agent)
