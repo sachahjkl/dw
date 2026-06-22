@@ -16,7 +16,7 @@ internal static class DoctorCommand
         var commandCheckTasks = new[]
         {
             CheckCommand(context, "git", "--version", "Git", "Installer Git puis relancer dw doctor"),
-            CheckCommand(context, "dotnet", "--list-runtimes", ".NET 8 runtime", "Installer .NET 8 Runtime: https://dotnet.microsoft.com/download/dotnet/8.0", output => output.Contains("Microsoft.NETCore.App 8.", StringComparison.OrdinalIgnoreCase)),
+            CheckCommand(context, "dotnet", "--list-runtimes", ".NET 10 runtime", "Installer .NET 10 Runtime: https://dotnet.microsoft.com/download/dotnet/10.0", output => output.Contains("Microsoft.NETCore.App 10.", StringComparison.OrdinalIgnoreCase)),
             OperatingSystem.IsWindows()
                 ? CheckCommand(context, "cmd", "/c npm --version", "npm", "Installer Node.js/npm pour permettre aux MCP locaux OpenCode de demarrer via npx")
                 : CheckCommand(context, "npm", "--version", "npm", "Installer Node.js/npm pour permettre aux MCP locaux OpenCode de demarrer via npx"),

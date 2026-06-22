@@ -1,8 +1,8 @@
 # CLI Architecture
 
-The CLI is a small .NET 8 executable targeting Windows x64 first.
+The CLI is a small .NET 10 executable targeting Windows x64 first.
 
-It is framework-dependent because the target machines are expected to have the .NET 8 runtime. This keeps artifacts smaller than self-contained publishing while preserving straightforward deployment.
+It is framework-dependent because the target machines are expected to have the .NET 10 runtime. This keeps artifacts smaller than self-contained publishing while preserving straightforward deployment.
 
 ## Layers
 
