@@ -31,13 +31,13 @@ public sealed class AppTests
     }
 
     [Fact]
-    public async Task RunAsync_completion_show_guides_dotnet_suggest_installation()
+    public async Task RunAsync_completion_show_guides_shell_bridge_installation()
     {
         var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "show"]));
 
         Assert.Equal(0, exitCode);
-        Assert.Contains("dotnet-suggest", output);
-        Assert.Contains("[suggest]", output);
+        Assert.Contains("dw completion install powershell", output);
+        Assert.Contains("dw completion suggest task --", output);
     }
 
     [Fact]
@@ -48,6 +48,26 @@ public sealed class AppTests
         Assert.Equal(0, exitCode);
         Assert.Contains("--task", output);
         Assert.Contains("ID de tache ADO concrete", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_completion_suggest_can_emit_json()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--format", "json", "task", "--"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("\"label\":\"--task\"", output);
+        Assert.Contains("\"description\":\"ID de tache ADO concrete.\"", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_completion_install_powershell_emits_dw_bridge()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "install", "powershell"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Register-ArgumentCompleter", output);
+        Assert.Contains("dw completion suggest --format json", output);
     }
 
     [Fact]
