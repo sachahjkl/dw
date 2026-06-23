@@ -36,7 +36,32 @@ public sealed class GitWorktreeServiceTests
             call.Arguments.SequenceEqual(["-c", "core.longpaths=true", "--git-dir", anchor, "worktree", "add", "-b", "chore/55222-refonte-modale-agences", worktree, "refs/heads/develop"]));
     }
 
-    private sealed class StubProcessRunner : IProcessRunner
+    [Fact]
+    public async Task PrepareAsync_reuses_existing_branch_when_previous_worktree_creation_failed()
+    {
+        var processRunner = new StubProcessRunner(BranchExists: true);
+        var root = Path.Combine(Path.GetTempPath(), "dw-root");
+        var anchor = Path.Combine(root, "repositories", "front.git");
+        var worktree = Path.Combine(root, "workspaces", "subject", "front");
+        var fileSystem = new StubFileSystem(existingDirectories: [anchor]);
+        var service = new GitWorktreeService(processRunner, fileSystem);
+
+        var result = await service.PrepareAsync(
+            root,
+            "front",
+            new RepositoryConfig("https://example/repo.git", "develop"),
+            "chore/55222-refonte-modale-agences",
+            worktree);
+
+        Assert.Equal(GitWorktreeStatus.Prepared, result.Status);
+        Assert.Equal("Worktree cree depuis la branche existante chore/55222-refonte-modale-agences.", result.Message);
+        Assert.Contains(processRunner.Calls, call =>
+            call.FileName == "git" &&
+            call.Arguments.SequenceEqual(["-c", "core.longpaths=true", "--git-dir", anchor, "worktree", "add", worktree, "chore/55222-refonte-modale-agences"]));
+        Assert.DoesNotContain(processRunner.Calls, call => call.Arguments.Contains("-b"));
+    }
+
+    private sealed class StubProcessRunner(bool BranchExists = false) : IProcessRunner
     {
         public List<ProcessCall> Calls { get; } = [];
 
@@ -71,7 +96,19 @@ public sealed class GitWorktreeServiceTests
                 return Task.FromResult(new ProcessResult(0, "abc123", string.Empty));
             }
 
+            if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "rev-parse", "--verify", "refs/heads/chore/55222-refonte-modale-agences"])
+            {
+                return Task.FromResult(BranchExists
+                    ? new ProcessResult(0, "abc123", string.Empty)
+                    : new ProcessResult(1, string.Empty, "fatal: Needed a single revision"));
+            }
+
             if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "worktree", "add", "-b", "chore/55222-refonte-modale-agences", _, "refs/heads/develop"])
+            {
+                return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
+            }
+
+            if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "worktree", "add", _, "chore/55222-refonte-modale-agences"])
             {
                 return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
             }

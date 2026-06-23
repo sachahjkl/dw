@@ -56,9 +56,14 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
                 $"Branche de base introuvable: {repository.DefaultBranch}. References testees: origin/{repository.DefaultBranch}, refs/heads/{repository.DefaultBranch}.");
         }
 
+        var branchExists = await BranchExistsAsync(projectRoot, anchorPath, branchName);
+        var addArguments = branchExists
+            ? GitArguments("--git-dir", anchorPath, "worktree", "add", worktreePath, branchName)
+            : GitArguments("--git-dir", anchorPath, "worktree", "add", "-b", branchName, worktreePath, baseRef);
+
         var add = await processRunner.RunAsync(
             "git",
-            GitArguments("--git-dir", anchorPath, "worktree", "add", "-b", branchName, worktreePath, baseRef),
+            addArguments,
             projectRoot);
 
         if (add.ExitCode != 0)
@@ -66,7 +71,17 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
             return GitWorktreeResult.Failed(repositoryKey, add.StandardError.Trim());
         }
 
-        return GitWorktreeResult.Prepared(repositoryKey, $"Worktree cree depuis {baseRef}.");
+        return GitWorktreeResult.Prepared(repositoryKey, branchExists ? $"Worktree cree depuis la branche existante {branchName}." : $"Worktree cree depuis {baseRef}.");
+    }
+
+    private async Task<bool> BranchExistsAsync(string projectRoot, string anchorPath, string branchName)
+    {
+        var result = await processRunner.RunAsync(
+            "git",
+            GitArguments("--git-dir", anchorPath, "rev-parse", "--verify", $"refs/heads/{branchName}"),
+            projectRoot);
+
+        return result.ExitCode == 0;
     }
 
     private async Task<string?> ResolveBaseRefAsync(string projectRoot, string anchorPath, string defaultBranch)
