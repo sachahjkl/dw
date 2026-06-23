@@ -61,6 +61,16 @@ public sealed class AppTests
     }
 
     [Fact]
+    public async Task RunAsync_task_open_help_exposes_positional_work_item_id()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "open", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("work-item-id", output);
+        Assert.Contains("--work-item", output);
+    }
+
+    [Fact]
     public async Task RunAsync_exposes_system_commandline_suggestions()
     {
         var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["[suggest]", "task --"]));

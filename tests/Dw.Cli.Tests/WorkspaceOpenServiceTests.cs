@@ -64,6 +64,55 @@ public sealed class WorkspaceOpenServiceTests
     }
 
     [Fact]
+    public void ResolveWorkspace_uses_positional_work_item_id()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var fs = new RealFileSystem();
+            var workspace = Path.Combine(root, "projects", "ha", "workspaces", "feat-11010-new");
+            fs.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(1, "11010", null, "ha", "feat", "new", "feat/11010-new", DateTimeOffset.Parse("2026-06-21T00:00:00Z"), ["front"], "created")));
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            var context = new CommandContext(output, error, new FixedClock(), fs, new NoopProcessRunner());
+
+            var resolved = WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, "ha", null, Continue: false, PositionalWorkItemId: "11010"));
+
+            Assert.Equal(workspace, resolved);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void ResolveWorkspace_rejects_conflicting_positional_and_option_work_item_ids()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            var context = new CommandContext(output, error, new FixedClock(), new RealFileSystem(), new NoopProcessRunner());
+
+            var ex = Assert.Throws<DwException>(() => WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, "ha", "55206", Continue: false, PositionalWorkItemId: "11010")));
+
+            Assert.Contains("work-item-id et --work-item", ex.Message);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Open_uses_default_agent_from_workflow_config()
     {
         var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));

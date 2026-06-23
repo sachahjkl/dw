@@ -100,7 +100,7 @@ internal static class TaskStartService
         }
 
         context.Out.WriteLine("Prochaine etape:");
-        context.Out.WriteLine($"  dw task open --workspace \"{workspace}\"");
+        context.Out.WriteLine($"  dw task open {workItemId} --project {project}");
         context.Out.WriteLine("Puis, pour un commit intermediaire:");
         context.Out.WriteLine("  dw task commit --continue --execute");
         context.Out.WriteLine("Et pour terminer avec push + PR:");

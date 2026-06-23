@@ -182,7 +182,7 @@ internal static partial class SystemCommandLineApp
             Subcommand("sync", "Synchronise task.json depuis ADO.", parse => TaskSyncPruneService.Sync(context, OpenOptions(parse))),
             Subcommand("prune", "Nettoie les workspaces en etat final.", parse => TaskSyncPruneService.Prune(context, new TaskPruneOptions(parse.GetValue<string>("--project"), parse.GetValue<string>("--work-item"), parse.GetValue<bool>("--execute"), parse.GetValue<bool>("--yes"), !parse.GetValue<bool>("--no-sync")))),
             Subcommand("rename", "Renomme slug, branche et dossier workspace.", parse => TaskRenameService.Rename(context, new TaskRenameOptions(parse.GetRequiredValue<string>("--slug"), OpenOptions(parse), parse.GetValue<bool>("--execute")))),
-            Subcommand("open", "Ouvre le workspace dans un agent.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse))),
+            Subcommand("open", "Ouvre le workspace dans un agent.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse)), Argument<string?>("work-item-id", "ID du work item a ouvrir.")),
             Subcommand("teardown", "Supprime les worktrees et le workspace.", (parse, _) => WorkspaceTeardownService.Teardown(context, TeardownOptions(parse))),
             Subcommand("add-repo", "Ajoute un repo au workspace existant.", parse => TaskCommand.AddRepo(context, new TaskAddRepoOptions(parse.GetRequiredValue<string>("repo"), parse.GetValue<string>("--workspace"))), Argument<string>("repo", "Repo a ajouter.")),
             Subcommand("commit", "Commit intermediaire sans push ni PR.", parse => TaskCommand.Commit(context, new TaskCommitRequest(
@@ -267,6 +267,7 @@ internal static partial class SystemCommandLineApp
             Project: parse.GetValue<string>("--project"),
             WorkItemId: parse.GetValue<string>("--work-item"),
             Continue: parse.GetValue<bool>("--continue"),
+            PositionalWorkItemId: parse.GetValue<string>("work-item-id"),
             Agent: parse.GetValue<string>("--agent"),
             Repository: parse.GetValue<string>("--repo"));
 

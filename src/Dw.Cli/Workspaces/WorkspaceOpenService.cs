@@ -27,6 +27,7 @@ internal sealed record WorkspaceOpenOptions(
     string? Project,
     string? WorkItemId,
     bool Continue,
+    string? PositionalWorkItemId = null,
     string? Agent = null,
     string? Repository = null);
 
@@ -78,6 +79,8 @@ internal static class WorkspaceOpenService
 
     internal static string ResolveWorkspace(CommandContext context, string root, WorkspaceOpenOptions options)
     {
+        var workItemId = ResolveWorkItemId(options);
+
         if (!string.IsNullOrWhiteSpace(options.Workspace))
         {
             return Path.GetFullPath(Environment.ExpandEnvironmentVariables(options.Workspace));
@@ -86,7 +89,7 @@ internal static class WorkspaceOpenService
         var workspaces = WorkspaceDiscoveryService.Filter(
             WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, root),
             options.Project,
-            options.WorkItemId);
+            workItemId);
 
         if (workspaces.Count == 0)
         {
@@ -99,6 +102,22 @@ internal static class WorkspaceOpenService
         }
 
         return AskWorkspace(context, workspaces);
+    }
+
+    private static string? ResolveWorkItemId(WorkspaceOpenOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.PositionalWorkItemId))
+        {
+            return options.WorkItemId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.WorkItemId) &&
+            !string.Equals(options.PositionalWorkItemId, options.WorkItemId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DwException("work-item-id et --work-item doivent pointer vers le meme work item.", 2);
+        }
+
+        return options.PositionalWorkItemId;
     }
 
     private static string AskWorkspace(CommandContext context, IReadOnlyList<WorkspaceSummary> workspaces)
