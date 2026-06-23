@@ -16,9 +16,9 @@ Rules:
 
 1. Run `dw task current` to identify the current task workspace.
 2. Use `dw task sync` before making lifecycle decisions from ADO state.
-3. Use `dw task finish` for commit/push/PR workflows.
-4. Use `dw task teardown` or `dw task prune` for cleanup.
-5. Keep repository worktrees separate under this subject workspace.
+3. Use `dw task commit` for intermediate commits.
+4. Use `dw task finish` for final push/PR workflows.
+5. Use `dw task teardown` or `dw task prune` for cleanup.
 """;
 
     public static string WorkspaceClaudeMd(string workItemId, string project)

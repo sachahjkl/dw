@@ -46,8 +46,7 @@ internal static class TaskCommand
 
     internal static int Finish(CommandContext context, TaskFinishRequest request)
     {
-        var workspace = request.Workspace ?? Environment.CurrentDirectory;
-        workspace = Path.GetFullPath(workspace);
+        var workspace = ResolveWorkspacePath(request.Workspace);
         var draft = !request.Ready;
 
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
@@ -58,20 +57,7 @@ internal static class TaskCommand
 
         context.Out.WriteLine($"Workspace: {workspace}");
         context.Out.WriteLine($"Branche: {manifest.BranchName}");
-
-        foreach (var status in statuses)
-        {
-            context.Out.WriteLine();
-            context.Out.WriteLine($"[{status.Repository}] {status.Path}");
-            context.Out.WriteLine(status.IsGitRepository
-                ? status.HasChanges ? "Changements detectes:" : "Aucun changement."
-                : "Pas un repo Git utilisable.");
-
-            if (!string.IsNullOrWhiteSpace(status.Detail))
-            {
-                context.Out.WriteLine(status.Detail);
-            }
-        }
+        PrintStatuses(context, statuses);
 
         var changed = statuses.Where(status => status.IsGitRepository && status.HasChanges).ToList();
         if (changed.Count == 0)
@@ -142,6 +128,67 @@ internal static class TaskCommand
 
         CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, changed, draft, verificationResults);
         return 0;
+    }
+
+    internal static int Commit(CommandContext context, TaskCommitRequest request)
+    {
+        var workspace = ResolveWorkspacePath(request.Workspace);
+        var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
+        var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
+            .GetStatusesAsync(workspace)
+            .GetAwaiter()
+            .GetResult();
+
+        context.Out.WriteLine($"Workspace: {workspace}");
+        context.Out.WriteLine($"Branche: {manifest.BranchName}");
+        PrintStatuses(context, statuses);
+
+        var changed = statuses.Where(status => status.IsGitRepository && status.HasChanges).ToList();
+        if (changed.Count == 0)
+        {
+            context.Out.WriteLine();
+            context.Out.WriteLine("Rien a committer.");
+            return 0;
+        }
+
+        var commitMessage = CommitMessage.Build(manifest, request.Message);
+        context.Out.WriteLine();
+        context.Out.WriteLine($"Message: {commitMessage}");
+
+        if (!request.Execute)
+        {
+            context.Out.WriteLine("Dry-run uniquement. Relancer avec --execute pour committer.");
+            return 0;
+        }
+
+        foreach (var status in changed)
+        {
+            RunGitOrThrow(context, status.Path, "add", ".");
+            RunGitOrThrow(context, status.Path, "commit", "-m", commitMessage);
+        }
+
+        context.Out.WriteLine("Commits termines. Aucun push ni PR creee.");
+        return 0;
+    }
+
+    private static string ResolveWorkspacePath(string? workspace)
+        => Path.GetFullPath(workspace ?? Environment.CurrentDirectory);
+
+    private static void PrintStatuses(CommandContext context, IReadOnlyList<RepositoryStatus> statuses)
+    {
+        foreach (var status in statuses)
+        {
+            context.Out.WriteLine();
+            context.Out.WriteLine($"[{status.Repository}] {status.Path}");
+            context.Out.WriteLine(status.IsGitRepository
+                ? status.HasChanges ? "Changements detectes:" : "Aucun changement."
+                : "Pas un repo Git utilisable.");
+
+            if (!string.IsNullOrWhiteSpace(status.Detail))
+            {
+                context.Out.WriteLine(status.Detail);
+            }
+        }
     }
 
     private static void CreatePullRequests(
@@ -611,6 +658,8 @@ internal static class AdoWorkflowStates
 }
 
 internal sealed record TaskAddRepoOptions(string Repository, string? Workspace);
+
+internal sealed record TaskCommitRequest(string? Workspace, bool Execute, string? Message);
 
 internal sealed record TaskFinishRequest(
     string? Workspace,

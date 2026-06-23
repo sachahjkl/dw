@@ -40,6 +40,16 @@ public sealed class AppTests
     }
 
     [Fact]
+    public async Task RunAsync_task_commit_help_exposes_intermediate_commit_command()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "commit", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Commit intermediaire", output);
+        Assert.Contains("--execute", output);
+    }
+
+    [Fact]
     public async Task RunAsync_exposes_system_commandline_suggestions()
     {
         var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["[suggest]", "task --"]));

@@ -74,11 +74,14 @@ public sealed class AgentCommandTests
         var context = Templates.AgentContext("S:\\ai-agent-workdir\\dw");
 
         Assert.Contains("dw ado context", context);
+        Assert.Contains("dw task commit", context);
         Assert.Contains("Do not use Azure DevOps MCP tools", context);
         Assert.Contains("do not create them manually", context);
         Assert.Contains("Use `dw` for every ADO, Git naming, PR and worktree operation", context);
         Assert.DoesNotContain("Branches, commits and PR titles must follow the loaded skills", context);
         Assert.DoesNotContain("skills", context, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Git repositories remain separate", context);
+        Assert.DoesNotContain("subject workspace groups", context);
     }
 
     private sealed class FixedClock : IClock

@@ -185,6 +185,10 @@ internal static partial class SystemCommandLineApp
             Subcommand("open", "Ouvre le workspace dans un agent.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse))),
             Subcommand("teardown", "Supprime les worktrees et le workspace.", (parse, _) => WorkspaceTeardownService.Teardown(context, TeardownOptions(parse))),
             Subcommand("add-repo", "Ajoute un repo au workspace existant.", parse => TaskCommand.AddRepo(context, new TaskAddRepoOptions(parse.GetRequiredValue<string>("repo"), parse.GetValue<string>("--workspace"))), Argument<string>("repo", "Repo a ajouter.")),
+            Subcommand("commit", "Commit intermediaire sans push ni PR.", parse => TaskCommand.Commit(context, new TaskCommitRequest(
+                parse.GetValue<string>("--workspace"),
+                parse.GetValue<bool>("--execute"),
+                parse.GetValue<string>("--message")))),
             Subcommand("finish", "Dry-run ou commit/push/PR.", parse => TaskCommand.Finish(context, new TaskFinishRequest(
                 parse.GetValue<string>("--workspace"),
                 parse.GetValue<bool>("--execute"),

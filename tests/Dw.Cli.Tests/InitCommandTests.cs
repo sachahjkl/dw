@@ -39,9 +39,12 @@ public sealed class InitCommandTests
             Assert.Contains("\"bash\": \"allow\"", opencodeConfig);
             Assert.Contains("\"edit\": \"allow\"", opencodeConfig);
             Assert.Contains("dw ado", opencodeInstructions);
+            Assert.Contains("dw task commit", opencodeInstructions);
             Assert.Contains("do not use Azure DevOps MCP tools", opencodeInstructions);
             Assert.Contains("Use `dw` commands for ADO lifecycle", opencodeInstructions);
             Assert.DoesNotContain("skills", opencodeInstructions, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Keep front and back as separate Git repositories", opencodeInstructions);
+            Assert.DoesNotContain("Group worktrees for the same subject", opencodeInstructions);
         }
         finally
         {
