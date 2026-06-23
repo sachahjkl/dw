@@ -27,7 +27,6 @@ internal sealed record WorkspaceOpenOptions(
     string? Project,
     string? WorkItemId,
     bool Continue,
-    bool ResumeSession,
     string? Agent = null,
     string? Repository = null);
 
@@ -48,7 +47,7 @@ internal static class WorkspaceOpenService
         var projectConfig = DevWorkflowConfigLoader.ResolveProject(projects, manifest.Project);
         var target = ResolveOpenTarget(workspace, manifest, projectConfig, options.Repository);
         var adapter = AgentAdapterRegistry.Resolve(options.Agent ?? projectConfig?.Agent?.Default ?? workflow.Agent?.Default);
-        var launch = adapter.BuildOpenLaunch(new AgentOpenRequest(root, target, options.ResumeSession));
+        var launch = adapter.BuildOpenLaunch(new AgentOpenRequest(root, target, options.Continue));
 
         foreach (var environmentVariable in launch.Environment)
         {

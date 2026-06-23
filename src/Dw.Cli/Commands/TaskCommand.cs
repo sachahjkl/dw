@@ -182,7 +182,7 @@ internal static class TaskCommand
         if (useLatestWorkspace)
         {
             var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
-            return WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, null, null, Continue: true, ResumeSession: false));
+            return WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, null, null, Continue: true));
         }
 
         return WorkspaceCurrentService.FindWorkspacePath(context.FileSystem, Environment.CurrentDirectory)

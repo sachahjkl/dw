@@ -155,7 +155,6 @@ internal static partial class SystemCommandLineApp
             WorkItemOption(context, "Filtre work item ADO."),
             RepoOption(context, "Repo cible dans le workspace."),
             Flag("--continue", "Utilise le workspace le plus recent."),
-            Flag("--resume", "Reprend une session agent existante."),
             Flag("--yes", "Confirme sans prompt."),
             Flag("--no-sync", "Desactive le sync ADO automatique."),
             Flag("--json", "Sortie JSON."),
@@ -268,7 +267,6 @@ internal static partial class SystemCommandLineApp
             Project: parse.GetValue<string>("--project"),
             WorkItemId: parse.GetValue<string>("--work-item"),
             Continue: parse.GetValue<bool>("--continue"),
-            ResumeSession: parse.GetValue<bool>("--resume"),
             Agent: parse.GetValue<string>("--agent"),
             Repository: parse.GetValue<string>("--repo"));
 

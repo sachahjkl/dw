@@ -51,16 +51,6 @@ public sealed class AppTests
     }
 
     [Fact]
-    public async Task RunAsync_task_open_help_exposes_resume_option()
-    {
-        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "open", "--help"]));
-
-        Assert.Equal(0, exitCode);
-        Assert.Contains("--continue", output);
-        Assert.Contains("--resume", output);
-    }
-
-    [Fact]
     public async Task RunAsync_task_finish_help_exposes_continue_option()
     {
         var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "finish", "--help"]));

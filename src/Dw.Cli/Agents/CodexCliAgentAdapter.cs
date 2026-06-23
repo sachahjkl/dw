@@ -9,7 +9,7 @@ internal sealed class CodexCliAgentAdapter : IAgentAdapter
     public AgentLaunch BuildOpenLaunch(AgentOpenRequest request)
         => new(
             "codex",
-            request.ResumeSession ? ["resume", "--last", "--cd", request.Workspace] : ["--cd", request.Workspace],
+            request.Continue ? ["resume", "--last", "--cd", request.Workspace] : ["--cd", request.Workspace],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             request.Workspace);
 

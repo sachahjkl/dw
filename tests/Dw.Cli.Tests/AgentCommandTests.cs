@@ -74,6 +74,8 @@ public sealed class AgentCommandTests
         var context = Templates.AgentContext("S:\\ai-agent-workdir\\dw");
 
         Assert.Contains("dw ado context", context);
+        Assert.Contains("dw task open --workspace <path>", context);
+        Assert.Contains("dw task open --continue", context);
         Assert.Contains("dw task commit --continue --execute", context);
         Assert.Contains("dw task finish --continue --execute --create-pr", context);
         Assert.Contains("Do not use Azure DevOps MCP tools", context);
