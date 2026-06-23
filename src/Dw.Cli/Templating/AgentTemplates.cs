@@ -92,7 +92,7 @@ Important rules:
 3. Git repositories remain separate per front/back repo.
 4. A subject workspace groups related worktrees under one work item.
 5. Plans live as `plan.md` in the subject workspace.
-6. Branches, commits and PR titles must follow the loaded skills.
-7. Never bypass skills when ADO, Git naming, PRs or worktrees are involved.
+6. Branches, commits and PR titles are created by `dw task start` and `dw task finish`; do not create them manually.
+7. Never bypass `dw` when ADO, Git naming, PRs or worktrees are involved.
 """;
 }
