@@ -57,4 +57,27 @@ public sealed class AdoWorkflowTests
 
         Assert.Equal("bug(#53020): corriger-ouverture-dossier", message);
     }
+
+    [Theory]
+    [InlineData("refactor(#51553 #51786): simplifie l'intégration racine de la palette debug")]
+    [InlineData("fix(#51553 #51786): supprime les imports inutilisés signalés par le lint")]
+    [InlineData("feat(#53882): ajout des agent skills")]
+    [InlineData("chore(#53687): normaliser les fins de ligne Git")]
+    [InlineData("bug(#53098): fiabiliser le retour depuis la fiche personne")]
+    [InlineData("test(#52162 #53099) : corriger les mocks de route et d'activité")]
+    [InlineData("refactor(#52162 #53099) : simplifier le contrat des permissions connectées")]
+    public void CommitMessage_accepts_observed_ogf_formats(string message)
+    {
+        Assert.True(CommitMessage.IsWellFormed(message));
+    }
+
+    [Theory]
+    [InlineData("refactor: adjust tests (ActivatedRoute)")]
+    [InlineData("fix(#53635 #53890) restaurer l url du hub HE")]
+    [InlineData("feat #53882: ajout des agent skills")]
+    [InlineData("feat(#53882):")]
+    public void CommitMessage_rejects_non_ogf_formats(string message)
+    {
+        Assert.False(CommitMessage.IsWellFormed(message));
+    }
 }

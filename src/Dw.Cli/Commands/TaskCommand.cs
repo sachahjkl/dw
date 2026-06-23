@@ -521,6 +521,9 @@ internal sealed record VerificationResult(
 
 internal static class CommitMessage
 {
+    public static bool IsWellFormed(string message)
+        => AdoRegexes.CommitMessage().IsMatch(message);
+
     public static string Build(WorkspaceManifest manifest, string? overrideMessage = null)
     {
         if (!string.IsNullOrWhiteSpace(overrideMessage))
@@ -550,6 +553,8 @@ internal static class CommitMessage
             "fix" => "fix",
             "bug" => "bug",
             "chore" => "chore",
+            "refactor" => "refactor",
+            "test" => "test",
             _ => manifest.Type.ToLowerInvariant()
         };
 

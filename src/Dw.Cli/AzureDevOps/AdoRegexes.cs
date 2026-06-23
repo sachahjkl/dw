@@ -34,6 +34,9 @@ internal static partial class AdoRegexes
     [GeneratedRegex(@"commits?/(?<hash>[0-9a-f]{7,40})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     internal static partial Regex CommitPath();
 
+    [GeneratedRegex(@"^(feat|fix|bug|chore|refactor|test)\(#[0-9]+(?: #[0-9]+)*\)\s?:\s\S.+$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    internal static partial Regex CommitMessage();
+
     [GeneratedRegex(@"Build/Build/(\d+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     internal static partial Regex BuildArtifact();
 
