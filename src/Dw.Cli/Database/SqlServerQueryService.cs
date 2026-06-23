@@ -9,6 +9,7 @@ internal sealed class SqlServerQueryService
         DatabaseConnectionConfig connection,
         DatabaseDefaults defaults,
         string sql,
+        int? maxRowsOverride = null,
         CancellationToken cancellationToken = default)
     {
         var guard = SqlReadOnlyGuard.Validate(sql);
@@ -28,7 +29,7 @@ internal sealed class SqlServerQueryService
             ApplicationIntent = ApplicationIntent.ReadOnly
         };
 
-        var maxRows = connection.MaxRows ?? defaults.MaxRows;
+        var maxRows = maxRowsOverride ?? connection.MaxRows ?? defaults.MaxRows;
         var timeout = connection.TimeoutSeconds ?? defaults.TimeoutSeconds;
         await using var sqlConnection = new SqlConnection(builder.ConnectionString);
         await sqlConnection.OpenAsync(cancellationToken);
@@ -43,7 +44,7 @@ internal sealed class SqlServerQueryService
             .ToArray();
 
         var rows = new List<string?[]>();
-        while (rows.Count < maxRows && await reader.ReadAsync(cancellationToken))
+        while ((maxRows <= 0 || rows.Count < maxRows) && await reader.ReadAsync(cancellationToken))
         {
             var values = new string?[reader.FieldCount];
             for (var i = 0; i < reader.FieldCount; i++)
@@ -56,7 +57,7 @@ internal sealed class SqlServerQueryService
             rows.Add(values);
         }
 
-        return new QueryResult(columns, rows, rows.Count == maxRows);
+        return new QueryResult(columns, rows, maxRows > 0 && rows.Count == maxRows);
     }
 
     private static string ResolveConnectionString(DatabaseConnectionConfig connection)

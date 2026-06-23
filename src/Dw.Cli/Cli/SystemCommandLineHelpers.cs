@@ -27,6 +27,11 @@ internal static partial class SystemCommandLineApp
                 command.Add(argument);
             }
 
+            foreach (var option in spec.Options)
+            {
+                command.Add(option);
+            }
+
             command.SetAction(parse => spec.Handler(parse, command));
             parent.Add(command);
         }
@@ -38,5 +43,14 @@ internal static partial class SystemCommandLineApp
     private static SubcommandSpec Subcommand(string name, string description, Func<ParseResult, int> handler, params Argument[] arguments)
         => new(name, description, (parse, _) => handler(parse), arguments);
 
-    private sealed record SubcommandSpec(string Name, string Description, Func<ParseResult, Command, int> Handler, Argument[] Arguments);
+    private static SubcommandSpec Subcommand(string name, string description, Func<ParseResult, Command, int> handler, Option[] options, params Argument[] arguments)
+        => new(name, description, handler, arguments, options);
+
+    private static SubcommandSpec Subcommand(string name, string description, Func<ParseResult, int> handler, Option[] options, params Argument[] arguments)
+        => new(name, description, (parse, _) => handler(parse), arguments, options);
+
+    private sealed record SubcommandSpec(string Name, string Description, Func<ParseResult, Command, int> Handler, Argument[] Arguments, Option[]? LocalOptions = null)
+    {
+        public Option[] Options { get; } = LocalOptions ?? [];
+    }
 }

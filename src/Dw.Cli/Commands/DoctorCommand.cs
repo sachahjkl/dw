@@ -17,9 +17,7 @@ internal static class DoctorCommand
         {
             CheckCommand(context, "git", "--version", "Git", "Installer Git puis relancer dw doctor"),
             CheckCommand(context, "dotnet", "--list-runtimes", ".NET 10 runtime", "Installer .NET 10 Runtime: https://dotnet.microsoft.com/download/dotnet/10.0", output => output.Contains("Microsoft.NETCore.App 10.", StringComparison.OrdinalIgnoreCase)),
-            OperatingSystem.IsWindows()
-                ? CheckCommand(context, "cmd", "/c npm --version", "npm", "Installer Node.js/npm pour permettre aux MCP locaux OpenCode de demarrer via npx")
-                : CheckCommand(context, "npm", "--version", "npm", "Installer Node.js/npm pour permettre aux MCP locaux OpenCode de demarrer via npx"),
+            CheckNodePackageManager(context),
             CheckCommand(context, "opencode", "--version", "OpenCode", "Installer OpenCode selon la procedure d'equipe, puis verifier le PATH")
         };
         var checks = filesystemChecks.Concat(await Task.WhenAll(commandCheckTasks)).ToList();
@@ -84,6 +82,42 @@ internal static class DoctorCommand
         }
 
         return new DoctorCheck(name, false, null, remediation);
+    }
+
+    private static async Task<DoctorCheck> CheckNodePackageManager(CommandContext context)
+    {
+        var remediation = "Installer pnpm, ou Node.js/npm si pnpm est indisponible.";
+        var candidates = OperatingSystem.IsWindows()
+            ? new[]
+            {
+                (FileName: "cmd", Arguments: "/c pnpm --version", DetailPrefix: "pnpm"),
+                (FileName: "cmd", Arguments: "/c npm --version", DetailPrefix: "npm")
+            }
+            :
+            [
+                (FileName: "pnpm", Arguments: "--version", DetailPrefix: "pnpm"),
+                (FileName: "npm", Arguments: "--version", DetailPrefix: "npm")
+            ];
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var result = await context.ProcessRunner.RunAsync(candidate.FileName, candidate.Arguments);
+                var output = (result.StandardOutput + Environment.NewLine + result.StandardError).Trim();
+                var firstLine = output.Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (result.ExitCode == 0)
+                {
+                    return new DoctorCheck("pnpm/npm", true, firstLine is null ? candidate.DetailPrefix : $"{candidate.DetailPrefix} {firstLine}", remediation);
+                }
+            }
+            catch
+            {
+                // Try npm fallback when pnpm is unavailable.
+            }
+        }
+
+        return new DoctorCheck("pnpm/npm", false, null, remediation);
     }
 
     private static DoctorCheck CheckDefaultAgent(CommandContext context, string root)

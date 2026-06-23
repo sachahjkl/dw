@@ -192,7 +192,7 @@ internal static partial class Templates
     "taskState": "PR en attente",
     "verificationCommands": {
       "front": [
-        "npm test"
+        "pnpm test"
       ],
       "back": [
         "dotnet test"

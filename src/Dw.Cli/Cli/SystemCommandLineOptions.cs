@@ -29,6 +29,13 @@ internal static partial class SystemCommandLineApp
         return option;
     }
 
+    private static Option<int?> OptionalInt(string name, string description)
+        => new(name)
+        {
+            Arity = ArgumentArity.ExactlyOne,
+            Description = description
+        };
+
     private static Option<string> AgentOption()
         => Value("--agent", "Agent a utiliser.", ["opencode", "cursor", "claude", "codex-cli", "codex", "copilot"]);
 

@@ -21,6 +21,25 @@ public sealed class AppTests
     }
 
     [Fact]
+    public async Task RunAsync_db_query_help_exposes_max_rows_option()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["db", "query", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--max-rows", output);
+        Assert.Contains("Nombre maximum de lignes", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_db_query_rejects_non_positive_max_rows()
+    {
+        var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["db", "query", "--max-rows", "0", "select", "1"]));
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--max-rows doit etre superieur a 0", error);
+    }
+
+    [Fact]
     public async Task RunAsync_exposes_system_commandline_suggestions()
     {
         var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["[suggest]", "task --"]));

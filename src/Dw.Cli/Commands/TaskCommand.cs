@@ -360,10 +360,43 @@ internal static class TaskCommand
 
             foreach (var command in commands)
             {
-                context.Out.WriteLine($"Verification [{status.Repository}]: {command}");
-                var result = RunShell(context, status.Path, command);
-                yield return new VerificationResult(status.Repository, command, result.ExitCode, result.StandardOutput, result.StandardError);
+                var resolvedCommand = ResolveNodePackageManagerCommand(context, command);
+                context.Out.WriteLine($"Verification [{status.Repository}]: {resolvedCommand}");
+                var result = RunShell(context, status.Path, resolvedCommand);
+                yield return new VerificationResult(status.Repository, resolvedCommand, result.ExitCode, result.StandardOutput, result.StandardError);
             }
+        }
+    }
+
+    internal static string ResolveNodePackageManagerCommand(CommandContext context, string command)
+    {
+        var trimmed = command.TrimStart();
+        if (!trimmed.StartsWith("npm ", StringComparison.OrdinalIgnoreCase))
+        {
+            return command;
+        }
+
+        if (!IsCommandAvailable(context, "pnpm"))
+        {
+            return command;
+        }
+
+        var leadingWhitespaceLength = command.Length - trimmed.Length;
+        return string.Concat(command.AsSpan(0, leadingWhitespaceLength), "pnpm", trimmed.AsSpan("npm".Length));
+    }
+
+    private static bool IsCommandAvailable(CommandContext context, string command)
+    {
+        try
+        {
+            var result = OperatingSystem.IsWindows()
+                ? context.ProcessRunner.RunAsync("cmd", $"/c {command} --version").GetAwaiter().GetResult()
+                : context.ProcessRunner.RunAsync(command, "--version").GetAwaiter().GetResult();
+            return result.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 

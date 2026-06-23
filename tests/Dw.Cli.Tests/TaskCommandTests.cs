@@ -30,4 +30,66 @@ public sealed class TaskCommandTests
     {
         Assert.Equal(expected, TaskCommand.IsFinalState(type, state));
     }
+
+    [Fact]
+    public void ResolveNodePackageManagerCommand_prefers_pnpm_for_npm_commands_when_available()
+    {
+        var context = new CommandContext(new StringWriter(), new StringWriter(), new FixedClock(), new RealFileSystem(), new PackageManagerProcessRunner(pnpmAvailable: true));
+
+        var command = TaskCommand.ResolveNodePackageManagerCommand(context, "npm test");
+
+        Assert.Equal("pnpm test", command);
+    }
+
+    [Fact]
+    public void ResolveNodePackageManagerCommand_keeps_npm_when_pnpm_is_unavailable()
+    {
+        var context = new CommandContext(new StringWriter(), new StringWriter(), new FixedClock(), new RealFileSystem(), new PackageManagerProcessRunner(pnpmAvailable: false));
+
+        var command = TaskCommand.ResolveNodePackageManagerCommand(context, "npm test");
+
+        Assert.Equal("npm test", command);
+    }
+
+    [Fact]
+    public void ResolveNodePackageManagerCommand_leaves_non_npm_commands_unchanged()
+    {
+        var context = new CommandContext(new StringWriter(), new StringWriter(), new FixedClock(), new RealFileSystem(), new PackageManagerProcessRunner(pnpmAvailable: true));
+
+        var command = TaskCommand.ResolveNodePackageManagerCommand(context, "dotnet test");
+
+        Assert.Equal("dotnet test", command);
+    }
+
+    private sealed class FixedClock : IClock
+    {
+        public DateTimeOffset Now => new(2026, 6, 22, 12, 0, 0, TimeSpan.Zero);
+    }
+
+    private sealed class PackageManagerProcessRunner(bool pnpmAvailable) : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(string fileName, string arguments, string? workingDirectory = null)
+        {
+            if (fileName == "pnpm" || arguments.Contains("pnpm --version", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(pnpmAvailable
+                    ? new ProcessResult(0, "10.0.0", string.Empty)
+                    : new ProcessResult(1, string.Empty, "not found"));
+            }
+
+            return Task.FromResult(new ProcessResult(1, string.Empty, "unexpected command"));
+        }
+
+        public Task<ProcessResult> RunAsync(ProcessRequest request)
+            => RunAsync(request.FileName, request.ArgumentString ?? string.Join(' ', request.Arguments ?? Array.Empty<string>()), request.WorkingDirectory);
+
+        public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory = null)
+            => RunAsync(fileName, string.Join(' ', arguments), workingDirectory);
+
+        public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment)
+            => RunAsync(fileName, arguments, workingDirectory);
+
+        public Task<int> RunInteractiveAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment)
+            => Task.FromResult(0);
+    }
 }

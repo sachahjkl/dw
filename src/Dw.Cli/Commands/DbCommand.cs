@@ -4,7 +4,7 @@ namespace Dw.Cli.Commands;
 
 internal static class DbCommand
 {
-    internal static int Query(CommandContext context, string? project, string? database, string? env, IReadOnlyList<string> sqlTokens)
+    internal static int Query(CommandContext context, string? project, string? database, string? env, int? maxRows, IReadOnlyList<string> sqlTokens)
     {
         project ??= "default";
         database ??= env ?? "dev";
@@ -16,7 +16,7 @@ internal static class DbCommand
         }
 
         var (connection, defaults) = ResolveConnection(context, project, database);
-        var result = new SqlServerQueryService().QueryAsync(connection, defaults, sql).GetAwaiter().GetResult();
+        var result = new SqlServerQueryService().QueryAsync(connection, defaults, sql, maxRows).GetAwaiter().GetResult();
         QueryResultPrinter.Print(context.Out, result);
         return 0;
     }
@@ -31,7 +31,7 @@ from INFORMATION_SCHEMA.TABLES
 order by TABLE_SCHEMA, TABLE_NAME
 """;
         var (connection, defaults) = ResolveConnection(context, project, database);
-        var result = new SqlServerQueryService().QueryAsync(connection, defaults, sql).GetAwaiter().GetResult();
+        var result = new SqlServerQueryService().QueryAsync(connection, defaults, sql, maxRowsOverride: 0).GetAwaiter().GetResult();
         QueryResultPrinter.Print(context.Out, result);
         return 0;
     }

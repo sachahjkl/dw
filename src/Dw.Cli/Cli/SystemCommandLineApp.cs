@@ -217,7 +217,16 @@ internal static partial class SystemCommandLineApp
         AddSubcommands(command,
             Subcommand("schema", "Liste les tables disponibles.", parse => DbCommand.Schema(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"))),
             Subcommand("describe", "Decrit une table.", parse => DbCommand.Describe(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), parse.GetRequiredValue<string>("table")), Argument<string>("table", "Nom de table, avec schema optionnel.")),
-            Subcommand("query", "Execute une requete SELECT.", parse => DbCommand.Query(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), parse.GetRequiredValue<string[]>("sql")), Remaining("sql", "Requete SQL SELECT.")));
+            Subcommand("query", "Execute une requete SELECT.", (parse, command) =>
+            {
+                var maxRows = parse.GetValue<int?>("--max-rows");
+                if (maxRows is <= 0)
+                {
+                    throw new DwException("--max-rows doit etre superieur a 0.", 2);
+                }
+
+                return DbCommand.Query(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), maxRows, parse.GetRequiredValue<string[]>("sql"));
+            }, [OptionalInt("--max-rows", "Nombre maximum de lignes a afficher.")], Remaining("sql", "Requete SQL SELECT.")));
         return command;
     }
 
