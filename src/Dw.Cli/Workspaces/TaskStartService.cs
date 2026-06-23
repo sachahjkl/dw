@@ -99,7 +99,12 @@ internal static class TaskStartService
             context.Out.WriteLine($"Repo {result.Repository}: {result.Status} - {result.Message}");
         }
 
-        context.Out.WriteLine("Prochaine etape: ouvrir ce dossier avec OpenCode/Codex et executer dw agent context.");
+        context.Out.WriteLine("Prochaine etape:");
+        context.Out.WriteLine("  dw task open --continue");
+        context.Out.WriteLine("Puis, pour un commit intermediaire:");
+        context.Out.WriteLine("  dw task commit --continue --execute");
+        context.Out.WriteLine("Et pour terminer avec push + PR:");
+        context.Out.WriteLine("  dw task finish --continue --execute --create-pr");
         return 0;
     }
 

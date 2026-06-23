@@ -74,8 +74,8 @@ Use `dw` for workflow operations:
 - `dw ado context <workItemId> --project <name>` reads the full work item context.
 - `dw task status` lists detected task workspaces.
 - `dw task start <workItemId> --project <name> --slug <slug>` creates a task workspace.
-- `dw task commit --workspace <path> --execute` creates an intermediate commit without push or PR.
-- `dw task finish --workspace <path> --execute --create-pr` is the expected commit/push/PR flow when the user asks to finish.
+- `dw task commit --continue --execute` creates an intermediate commit without push or PR.
+- `dw task finish --continue --execute --create-pr` is the expected commit/push/PR flow when the user asks to finish.
 - `dw db ...` is the only intended SQL entrypoint and is read-only by default.
 
 Current configured root:

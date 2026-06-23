@@ -46,7 +46,7 @@ internal static class TaskCommand
 
     internal static int Finish(CommandContext context, TaskFinishRequest request)
     {
-        var workspace = ResolveWorkspacePath(request.Workspace);
+        var workspace = ResolveWorkspacePath(context, request.Workspace, request.Continue);
         var draft = !request.Ready;
 
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
@@ -132,7 +132,7 @@ internal static class TaskCommand
 
     internal static int Commit(CommandContext context, TaskCommitRequest request)
     {
-        var workspace = ResolveWorkspacePath(request.Workspace);
+        var workspace = ResolveWorkspacePath(context, request.Workspace, request.Continue);
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
         var projectConfig = ResolveProjectConfig(context, manifest.Project);
         var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
@@ -172,8 +172,22 @@ internal static class TaskCommand
         return 0;
     }
 
-    private static string ResolveWorkspacePath(string? workspace)
-        => Path.GetFullPath(workspace ?? Environment.CurrentDirectory);
+    private static string ResolveWorkspacePath(CommandContext context, string? workspace, bool useLatestWorkspace)
+    {
+        if (!string.IsNullOrWhiteSpace(workspace))
+        {
+            return Path.GetFullPath(Environment.ExpandEnvironmentVariables(workspace));
+        }
+
+        if (useLatestWorkspace)
+        {
+            var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
+            return WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, null, null, Continue: true));
+        }
+
+        return WorkspaceCurrentService.FindWorkspacePath(context.FileSystem, Environment.CurrentDirectory)
+               ?? throw new DwException("Aucun workspace task trouve depuis le dossier courant. Utiliser --workspace ou --continue.", 2);
+    }
 
     private static ProjectConfig? ResolveProjectConfig(CommandContext context, string project)
     {
@@ -667,10 +681,11 @@ internal static class AdoWorkflowStates
 
 internal sealed record TaskAddRepoOptions(string Repository, string? Workspace);
 
-internal sealed record TaskCommitRequest(string? Workspace, bool Execute, string? Message);
+internal sealed record TaskCommitRequest(string? Workspace, bool Continue, bool Execute, string? Message);
 
 internal sealed record TaskFinishRequest(
     string? Workspace,
+    bool Continue,
     bool Execute,
     bool CreatePr,
     bool Ready,

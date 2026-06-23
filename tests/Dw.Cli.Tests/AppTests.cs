@@ -47,6 +47,17 @@ public sealed class AppTests
         Assert.Equal(0, exitCode);
         Assert.Contains("Commit intermediaire", output);
         Assert.Contains("--execute", output);
+        Assert.Contains("--continue", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_task_finish_help_exposes_continue_option()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "finish", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--continue", output);
+        Assert.Contains("--create-pr", output);
     }
 
     [Fact]
