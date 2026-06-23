@@ -118,11 +118,13 @@ internal static class WorkspaceTeardownService
             throw new DwException($"Teardown echoue [{repository}]: gitDir introuvable {gitDir}");
         }
 
-        context.Debug($"git --git-dir {gitDir} {string.Join(' ', args)}");
-        var result = context.ProcessRunner.RunAsync("git", ["--git-dir", gitDir, .. args]).GetAwaiter().GetResult();
+        var gitArgs = new[] { "--git-dir", gitDir }.Concat(args).ToArray();
+        context.Debug($"git {string.Join(' ', gitArgs)}");
+        var result = context.ProcessRunner.RunAsync("git", gitArgs).GetAwaiter().GetResult();
         if (result.ExitCode != 0)
         {
             throw new DwException($"Teardown prune echoue [{repository}]: {result.StandardError.Trim()}");
         }
     }
+
 }

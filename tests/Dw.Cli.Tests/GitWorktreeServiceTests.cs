@@ -27,13 +27,13 @@ public sealed class GitWorktreeServiceTests
         Assert.Equal("Worktree cree depuis refs/heads/develop.", result.Message);
         Assert.Contains(processRunner.Calls, call =>
             call.FileName == "git" &&
-            call.Arguments.SequenceEqual(["-c", "core.longpaths=true", "--git-dir", anchor, "rev-parse", "--verify", "origin/develop"]));
+            call.Arguments.SequenceEqual(["--git-dir", anchor, "rev-parse", "--verify", "origin/develop"]));
         Assert.Contains(processRunner.Calls, call =>
             call.FileName == "git" &&
-            call.Arguments.SequenceEqual(["-c", "core.longpaths=true", "--git-dir", anchor, "rev-parse", "--verify", "refs/heads/develop"]));
+            call.Arguments.SequenceEqual(["--git-dir", anchor, "rev-parse", "--verify", "refs/heads/develop"]));
         Assert.Contains(processRunner.Calls, call =>
             call.FileName == "git" &&
-            call.Arguments.SequenceEqual(["-c", "core.longpaths=true", "--git-dir", anchor, "worktree", "add", "-b", "chore/55222-refonte-modale-agences", worktree, "refs/heads/develop"]));
+            call.Arguments.SequenceEqual(["--git-dir", anchor, "worktree", "add", "-b", "chore/55222-refonte-modale-agences", worktree, "refs/heads/develop"]));
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class GitWorktreeServiceTests
         Assert.Equal("Worktree cree depuis la branche existante chore/55222-refonte-modale-agences.", result.Message);
         Assert.Contains(processRunner.Calls, call =>
             call.FileName == "git" &&
-            call.Arguments.SequenceEqual(["-c", "core.longpaths=true", "--git-dir", anchor, "worktree", "add", worktree, "chore/55222-refonte-modale-agences"]));
+            call.Arguments.SequenceEqual(["--git-dir", anchor, "worktree", "add", worktree, "chore/55222-refonte-modale-agences"]));
         Assert.DoesNotContain(processRunner.Calls, call => call.Arguments.Contains("-b"));
     }
 
@@ -81,34 +81,34 @@ public sealed class GitWorktreeServiceTests
         {
             Calls.Add(new ProcessCall(fileName, arguments.ToArray(), workingDirectory));
 
-            if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "fetch", "--prune", "origin"])
+            if (arguments is ["--git-dir", _, "fetch", "--prune", "origin"])
             {
                 return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
             }
 
-            if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "rev-parse", "--verify", "origin/develop"])
+            if (arguments is ["--git-dir", _, "rev-parse", "--verify", "origin/develop"])
             {
                 return Task.FromResult(new ProcessResult(1, string.Empty, "fatal: Needed a single revision"));
             }
 
-            if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "rev-parse", "--verify", "refs/heads/develop"])
+            if (arguments is ["--git-dir", _, "rev-parse", "--verify", "refs/heads/develop"])
             {
                 return Task.FromResult(new ProcessResult(0, "abc123", string.Empty));
             }
 
-            if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "rev-parse", "--verify", "refs/heads/chore/55222-refonte-modale-agences"])
+            if (arguments is ["--git-dir", _, "rev-parse", "--verify", "refs/heads/chore/55222-refonte-modale-agences"])
             {
                 return Task.FromResult(BranchExists
                     ? new ProcessResult(0, "abc123", string.Empty)
                     : new ProcessResult(1, string.Empty, "fatal: Needed a single revision"));
             }
 
-            if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "worktree", "add", "-b", "chore/55222-refonte-modale-agences", _, "refs/heads/develop"])
+            if (arguments is ["--git-dir", _, "worktree", "add", "-b", "chore/55222-refonte-modale-agences", _, "refs/heads/develop"])
             {
                 return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
             }
 
-            if (arguments is ["-c", "core.longpaths=true", "--git-dir", _, "worktree", "add", _, "chore/55222-refonte-modale-agences"])
+            if (arguments is ["--git-dir", _, "worktree", "add", _, "chore/55222-refonte-modale-agences"])
             {
                 return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
             }

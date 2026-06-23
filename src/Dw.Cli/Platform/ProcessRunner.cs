@@ -38,6 +38,9 @@ public async Task<ProcessResult> RunAsync(string fileName, string arguments, str
     public async Task<ProcessResult> RunAsync(ProcessRequest request)
     {
         using var process = new Process();
+        var arguments = request.Arguments is not null && IsGit(request.FileName)
+            ? GitArguments(request.Arguments)
+            : request.Arguments;
         process.StartInfo = new ProcessStartInfo
         {
             FileName = request.FileName,
@@ -49,9 +52,9 @@ public async Task<ProcessResult> RunAsync(string fileName, string arguments, str
             CreateNoWindow = !request.Interactive
         };
 
-        if (request.Arguments is not null)
+        if (arguments is not null)
         {
-            foreach (var argument in request.Arguments)
+            foreach (var argument in arguments)
             {
                 process.StartInfo.ArgumentList.Add(argument);
             }
@@ -82,4 +85,13 @@ public async Task<ProcessResult> RunAsync(string fileName, string arguments, str
 
         return new ProcessResult(process.ExitCode, await stdout, await stderr);
     }
+
+    private static bool IsGit(string fileName)
+        => string.Equals(fileName, "git", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(fileName, "git.exe", StringComparison.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<string> GitArguments(IReadOnlyList<string> arguments)
+        => arguments.Count >= 2 && arguments[0] == "-c" && arguments[1] == "core.longpaths=true"
+            ? arguments
+            : ["-c", "core.longpaths=true", .. arguments];
 }
