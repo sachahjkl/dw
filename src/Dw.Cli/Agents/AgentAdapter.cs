@@ -3,7 +3,7 @@ namespace Dw.Cli.Agents;
 internal sealed record AgentOpenRequest(
     string Root,
     string Workspace,
-    bool Continue);
+    bool ResumeSession);
 
 internal sealed record AgentLaunch(
     string FileName,

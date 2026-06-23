@@ -7,7 +7,7 @@ internal sealed class OpenCodeAgentAdapter : IAgentAdapter
     public AgentLaunch BuildOpenLaunch(AgentOpenRequest request)
     {
         var opencodeConfig = Path.Combine(request.Root, "config", "opencode", "opencode.jsonc");
-        var arguments = request.Continue
+        var arguments = request.ResumeSession
             ? new[] { "-c", request.Workspace }
             : [request.Workspace];
 

@@ -36,7 +36,7 @@ internal static class AgentCommand
         context.Out.WriteLine("Agent      Command    Status");
         foreach (var agent in agents)
         {
-            var launch = agent.BuildOpenLaunch(new AgentOpenRequest(AppPaths.DefaultRoot, Environment.CurrentDirectory, Continue: false));
+            var launch = agent.BuildOpenLaunch(new AgentOpenRequest(AppPaths.DefaultRoot, Environment.CurrentDirectory, ResumeSession: false));
             var status = IsAvailable(context, launch.FileName) ? "OK" : "missing";
             context.Out.WriteLine($"{agent.Name,-10} {launch.FileName,-10} {status}");
         }

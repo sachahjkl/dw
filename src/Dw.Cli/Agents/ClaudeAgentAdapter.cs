@@ -7,7 +7,7 @@ internal sealed class ClaudeAgentAdapter : IAgentAdapter
     public AgentLaunch BuildOpenLaunch(AgentOpenRequest request)
         => new(
             "claude",
-            request.Continue ? ["--continue"] : [],
+            request.ResumeSession ? ["--continue"] : [],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             request.Workspace);
 

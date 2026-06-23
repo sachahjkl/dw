@@ -7,7 +7,7 @@ internal sealed class CopilotAgentAdapter : IAgentAdapter
     public AgentLaunch BuildOpenLaunch(AgentOpenRequest request)
         => new(
             "copilot",
-            request.Continue ? ["--continue"] : [],
+            request.ResumeSession ? ["--continue"] : [],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             request.Workspace);
 

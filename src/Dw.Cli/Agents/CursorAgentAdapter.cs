@@ -9,7 +9,7 @@ internal sealed class CursorAgentAdapter : IAgentAdapter
     public AgentLaunch BuildOpenLaunch(AgentOpenRequest request)
         => new(
             "agent",
-            request.Continue ? ["--workspace", request.Workspace, "--continue"] : ["--workspace", request.Workspace],
+            request.ResumeSession ? ["--workspace", request.Workspace, "--continue"] : ["--workspace", request.Workspace],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             request.Workspace);
 

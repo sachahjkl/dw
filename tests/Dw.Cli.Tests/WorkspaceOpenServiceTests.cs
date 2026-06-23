@@ -17,7 +17,7 @@ public sealed class WorkspaceOpenServiceTests
             using var error = new StringWriter();
             var context = new CommandContext(output, error, new FixedClock(), fs, new NoopProcessRunner());
 
-            var workspace = WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, "ha", null, Continue: true));
+            var workspace = WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, "ha", null, Continue: true, ResumeSession: false));
 
             Assert.Equal(newWorkspace, workspace);
         }
@@ -31,7 +31,7 @@ public sealed class WorkspaceOpenServiceTests
     }
 
     [Fact]
-    public void Open_sets_opencode_config_and_continue_flag()
+    public void Open_continue_selects_workspace_without_resuming_opencode_session()
     {
         var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));
         try
@@ -44,15 +44,44 @@ public sealed class WorkspaceOpenServiceTests
             var processRunner = new CapturingProcessRunner();
             var context = new CommandContext(output, error, new FixedClock(), fs, processRunner);
 
-            var exitCode = WorkspaceOpenService.Open(context, new WorkspaceOpenOptions(workspace, null, null, Continue: true), root);
+            var exitCode = WorkspaceOpenService.Open(context, new WorkspaceOpenOptions(workspace, null, null, Continue: true, ResumeSession: false), root);
 
             Assert.Equal(0, exitCode);
             Assert.Equal("opencode", processRunner.FileName);
-            Assert.Equal(["-c", workspace], processRunner.Arguments);
+            Assert.Equal([workspace], processRunner.Arguments);
             Assert.Equal(workspace, processRunner.WorkingDirectory);
             Assert.NotNull(processRunner.Environment);
             Assert.True(processRunner.Environment.TryGetValue("OPENCODE_CONFIG", out var configPath));
             Assert.Equal(Path.Combine(root, "config", "opencode", "opencode.jsonc"), configPath);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Open_resume_passes_opencode_resume_flag()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var fs = new RealFileSystem();
+            var workspace = Path.Combine(root, "projects", "ha", "workspaces", "feat-2-new");
+            fs.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(1, "2", null, "ha", "feat", "new", "feat/2-new", DateTimeOffset.Parse("2026-06-21T00:00:00Z"), ["front"], "created")));
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            var processRunner = new CapturingProcessRunner();
+            var context = new CommandContext(output, error, new FixedClock(), fs, processRunner);
+
+            var exitCode = WorkspaceOpenService.Open(context, new WorkspaceOpenOptions(workspace, null, null, Continue: true, ResumeSession: true), root);
+
+            Assert.Equal(0, exitCode);
+            Assert.Equal("opencode", processRunner.FileName);
+            Assert.Equal(["-c", workspace], processRunner.Arguments);
         }
         finally
         {
@@ -86,7 +115,7 @@ public sealed class WorkspaceOpenServiceTests
             var processRunner = new CapturingProcessRunner();
             var context = new CommandContext(output, error, new FixedClock(), fs, processRunner);
 
-            var exitCode = WorkspaceOpenService.Open(context, new WorkspaceOpenOptions(workspace, null, null, Continue: true), root);
+            var exitCode = WorkspaceOpenService.Open(context, new WorkspaceOpenOptions(workspace, null, null, Continue: true, ResumeSession: true), root);
 
             Assert.Equal(0, exitCode);
             Assert.Equal("claude", processRunner.FileName);
@@ -138,7 +167,7 @@ public sealed class WorkspaceOpenServiceTests
             var processRunner = new CapturingProcessRunner();
             var context = new CommandContext(output, error, new FixedClock(), fs, processRunner);
 
-            var exitCode = WorkspaceOpenService.Open(context, new WorkspaceOpenOptions(workspace, null, null, Continue: true), root);
+            var exitCode = WorkspaceOpenService.Open(context, new WorkspaceOpenOptions(workspace, null, null, Continue: true, ResumeSession: false), root);
 
             Assert.Equal(0, exitCode);
             Assert.Equal("claude", processRunner.FileName);
@@ -186,7 +215,7 @@ public sealed class WorkspaceOpenServiceTests
     {
         var adapter = AgentAdapterRegistry.Resolve(agent);
 
-        var launch = adapter.BuildOpenLaunch(new AgentOpenRequest(@"S:\root", @"S:\workspace", Continue: false));
+        var launch = adapter.BuildOpenLaunch(new AgentOpenRequest(@"S:\root", @"S:\workspace", ResumeSession: false));
 
         Assert.Equal(expectedFileName, launch.FileName);
         Assert.Equal(@"S:\workspace", launch.WorkingDirectory);
@@ -210,7 +239,7 @@ public sealed class WorkspaceOpenServiceTests
     {
         var adapter = AgentAdapterRegistry.Resolve("codex");
 
-        var launch = adapter.BuildOpenLaunch(new AgentOpenRequest(@"S:\root", @"S:\workspace", Continue: true));
+        var launch = adapter.BuildOpenLaunch(new AgentOpenRequest(@"S:\root", @"S:\workspace", ResumeSession: true));
 
         Assert.Equal(["resume", "--last", "--cd", @"S:\workspace"], launch.Arguments);
     }
@@ -220,7 +249,7 @@ public sealed class WorkspaceOpenServiceTests
     {
         var adapter = AgentAdapterRegistry.Resolve("cursor");
 
-        var launch = adapter.BuildOpenLaunch(new AgentOpenRequest(@"S:\root", @"S:\workspace", Continue: true));
+        var launch = adapter.BuildOpenLaunch(new AgentOpenRequest(@"S:\root", @"S:\workspace", ResumeSession: true));
 
         Assert.Equal("agent", launch.FileName);
         Assert.Equal(["--workspace", @"S:\workspace", "--continue"], launch.Arguments);
