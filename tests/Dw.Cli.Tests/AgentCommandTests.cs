@@ -74,6 +74,13 @@ public sealed class AgentCommandTests
         var context = Templates.AgentContext("S:\\ai-agent-workdir\\dw");
 
         Assert.Contains("dw ado context", context);
+        Assert.Contains("dw ado work-item", context);
+        Assert.Contains("dw task current", context);
+        Assert.Contains("dw task sync --continue", context);
+        Assert.Contains("dw db schema", context);
+        Assert.Contains("dw db describe", context);
+        Assert.Contains("dw db query", context);
+        Assert.Contains("plan.md", context);
         Assert.Contains("dw task open --workspace <path>", context);
         Assert.Contains("dw task open --continue", context);
         Assert.Contains("dw task commit --continue --execute", context);
