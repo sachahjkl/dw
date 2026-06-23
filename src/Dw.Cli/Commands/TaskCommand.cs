@@ -50,8 +50,9 @@ internal static class TaskCommand
         var draft = !request.Ready;
 
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
+        var projectConfig = ResolveProjectConfig(context, manifest.Project);
         var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
-            .GetStatusesAsync(workspace)
+            .GetStatusesAsync(workspace, projectConfig)
             .GetAwaiter()
             .GetResult();
 
@@ -77,7 +78,6 @@ internal static class TaskCommand
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
         var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
-        var projectConfig = projects.Projects.GetValueOrDefault(manifest.Project);
         var verificationResults = Array.Empty<VerificationResult>();
 
         if (!request.SkipVerify && (workflow.TaskFinish?.RunVerification ?? true))
@@ -134,8 +134,9 @@ internal static class TaskCommand
     {
         var workspace = ResolveWorkspacePath(request.Workspace);
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
+        var projectConfig = ResolveProjectConfig(context, manifest.Project);
         var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
-            .GetStatusesAsync(workspace)
+            .GetStatusesAsync(workspace, projectConfig)
             .GetAwaiter()
             .GetResult();
 
@@ -173,6 +174,13 @@ internal static class TaskCommand
 
     private static string ResolveWorkspacePath(string? workspace)
         => Path.GetFullPath(workspace ?? Environment.CurrentDirectory);
+
+    private static ProjectConfig? ResolveProjectConfig(CommandContext context, string project)
+    {
+        var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
+        var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
+        return DevWorkflowConfigLoader.ResolveProject(projects, project);
+    }
 
     private static void PrintStatuses(CommandContext context, IReadOnlyList<RepositoryStatus> statuses)
     {

@@ -3,13 +3,16 @@ namespace Dw.Cli.Git;
 internal sealed class GitRepositoryStatusService(IProcessRunner processRunner, IFileSystem fileSystem)
 {
     public async Task<IReadOnlyList<RepositoryStatus>> GetStatusesAsync(string workspacePath)
+        => await GetStatusesAsync(workspacePath, projectConfig: null);
+
+    public async Task<IReadOnlyList<RepositoryStatus>> GetStatusesAsync(string workspacePath, ProjectConfig? projectConfig)
     {
         var manifest = WorkspaceManifestReader.Read(fileSystem, Path.Combine(workspacePath, "task.json"));
         var statuses = new List<RepositoryStatus>();
 
         foreach (var repository in manifest.Repositories)
         {
-            var repoPath = Path.Combine(workspacePath, repository);
+            var repoPath = Path.Combine(workspacePath, RepositoryFolder(projectConfig, repository));
             if (!fileSystem.DirectoryExists(repoPath))
             {
                 statuses.Add(new RepositoryStatus(repository, repoPath, false, false, "Dossier absent."));
@@ -28,6 +31,12 @@ internal sealed class GitRepositoryStatusService(IProcessRunner processRunner, I
         }
 
         return statuses;
+    }
+
+    private static string RepositoryFolder(ProjectConfig? projectConfig, string repository)
+    {
+        var config = projectConfig?.Repositories.GetValueOrDefault(repository);
+        return string.IsNullOrWhiteSpace(config?.Folder) ? repository : config.Folder;
     }
 }
 
