@@ -52,7 +52,7 @@ order by ORDINAL_POSITION
 """;
 
         var (connection, defaults) = ResolveConnection(context, project, database);
-        var result = new SqlServerQueryService().QueryAsync(connection, defaults, sql).GetAwaiter().GetResult();
+        var result = new SqlServerQueryService().QueryAsync(connection, defaults, sql, maxRowsOverride: 0).GetAwaiter().GetResult();
         QueryResultPrinter.Print(context.Out, result);
         return 0;
     }
