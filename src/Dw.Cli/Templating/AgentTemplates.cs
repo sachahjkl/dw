@@ -11,10 +11,11 @@ Mandatory rules:
 
 1. Use `dw agent context` before starting an AI workflow.
 2. Use Azure DevOps work items as the source of truth for task state.
-3. Use one subject workspace per work item.
-4. Keep front and back as separate Git repositories.
-5. For API contract changes, always check both front and back.
-6. Do not commit, push or open PRs unless the user explicitly asks for the finish step.
+3. Use `dw ado ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
+4. Use one subject workspace per work item.
+5. Keep front and back as separate Git repositories.
+6. For API contract changes, always check both front and back.
+7. Do not commit, push or open PRs unless the user explicitly asks for the finish step.
 """;
 
     public const string OpenCodeJsonc = """
@@ -24,8 +25,8 @@ Mandatory rules:
     "AGENTS.md"
   ],
   "permission": {
-    "bash": "ask",
-    "edit": "ask"
+    "bash": "allow",
+    "edit": "allow"
   }
 }
 """;
@@ -39,12 +40,13 @@ Mandatory rules:
 
 1. Run `dw agent context` before starting an AI workflow.
 2. Use Azure DevOps work items as the source of truth.
-3. Use the skills in the repository references for ADO, Git naming, PRs and HA/HE conventions.
-4. Keep front and back as separate Git repositories.
-5. Group worktrees for the same subject under one subject workspace.
-6. For API contract changes, always check both front and back.
-7. Write ADO/PR/commit text in French unless a repository convention says otherwise.
-8. Do not bypass `dw task finish` for commit/push/PR workflows.
+3. Use only `dw ado ...`, `dw auth ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
+4. Use the skills in the repository references for ADO, Git naming, PRs and HA/HE conventions.
+5. Keep front and back as separate Git repositories.
+6. Group worktrees for the same subject under one subject workspace.
+7. For API contract changes, always check both front and back.
+8. Write ADO/PR/commit text in French unless a repository convention says otherwise.
+9. Do not bypass `dw task finish` for commit/push/PR workflows.
 """;
 
     public const string OgfOpenCodeJsonc = """
@@ -54,22 +56,8 @@ Mandatory rules:
     "AGENTS.md"
   ],
   "permission": {
-    "bash": "ask",
-    "edit": "ask"
-  },
-  "mcp": {
-    "ado": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "@azure-devops/mcp@next",
-        "digital-factory-ogf"
-      ],
-      "environment": {
-        "LOG_LEVEL": "debug"
-      }
-    }
+    "bash": "allow",
+    "edit": "allow"
   }
 }
 """;
@@ -82,8 +70,13 @@ You are working inside a DevWorkflow-managed environment.
 Use `dw` for workflow operations:
 
 - `dw doctor` checks local prerequisites.
+- `dw auth login` connects Azure DevOps when the silent token is unavailable.
+- `dw ado assigned --project <name>` lists assigned work items.
+- `dw ado work-item <workItemId> --project <name>` reads a work item summary.
+- `dw ado context <workItemId> --project <name>` reads the full work item context.
 - `dw task status` lists detected task workspaces.
 - `dw task start <workItemId> --project <name> --slug <slug>` creates a task workspace.
+- `dw task finish --workspace <path> --execute --create-pr` is the expected commit/push/PR flow when the user asks to finish.
 - `dw db ...` is the only intended SQL entrypoint and is read-only by default.
 
 Current configured root:
@@ -95,10 +88,11 @@ Current configured root:
 Important rules:
 
 1. Azure DevOps work items are the source of truth.
-2. Git repositories remain separate per front/back repo.
-3. A subject workspace groups related worktrees under one work item.
-4. Plans live as `plan.md` in the subject workspace.
-5. Branches, commits and PR titles must follow the loaded skills.
-6. Never bypass skills when ADO, Git naming, PRs or worktrees are involved.
+2. Use the `dw` CLI for Azure DevOps and worktree operations. Do not use Azure DevOps MCP tools.
+3. Git repositories remain separate per front/back repo.
+4. A subject workspace groups related worktrees under one work item.
+5. Plans live as `plan.md` in the subject workspace.
+6. Branches, commits and PR titles must follow the loaded skills.
+7. Never bypass skills when ADO, Git naming, PRs or worktrees are involved.
 """;
 }

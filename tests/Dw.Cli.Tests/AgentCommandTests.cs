@@ -68,6 +68,15 @@ public sealed class AgentCommandTests
         }
     }
 
+    [Fact]
+    public void Context_prints_dw_ado_commands_and_forbids_ado_mcp()
+    {
+        var context = Templates.AgentContext("S:\\ai-agent-workdir\\dw");
+
+        Assert.Contains("dw ado context", context);
+        Assert.Contains("Do not use Azure DevOps MCP tools", context);
+    }
+
     private sealed class FixedClock : IClock
     {
         public DateTimeOffset Now => new(2026, 6, 22, 12, 0, 0, TimeSpan.Zero);
