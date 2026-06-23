@@ -37,4 +37,24 @@ public sealed class AdoWorkflowTests
 
         Assert.Equal("feat: descriptif #55201", message);
     }
+
+    [Fact]
+    public void CommitMessage_builds_expected_ogf_message_with_parent_and_task_ids()
+    {
+        var manifest = new WorkspaceManifest(1, "53115", "53312", "he", "fix", "corriger-le-calcul-des-creneaux", "fix/53115-53312-corriger-le-calcul-des-creneaux", DateTimeOffset.UtcNow, ["back"], "created");
+
+        var message = CommitMessage.Build(manifest);
+
+        Assert.Equal("fix(#53115 #53312): corriger-le-calcul-des-creneaux", message);
+    }
+
+    [Fact]
+    public void CommitMessage_builds_expected_ogf_message_without_task_id()
+    {
+        var manifest = new WorkspaceManifest(1, "53020", null, "he", "bug", "corriger-ouverture-dossier", "bug/53020-corriger-ouverture-dossier", DateTimeOffset.UtcNow, ["back"], "created");
+
+        var message = CommitMessage.Build(manifest);
+
+        Assert.Equal("bug(#53020): corriger-ouverture-dossier", message);
+    }
 }

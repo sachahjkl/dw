@@ -24,6 +24,7 @@ Mandatory rules:
   "instructions": [
     "AGENTS.md"
   ],
+  "lsp": true,
   "permission": {
     "bash": "allow",
     "edit": "allow"
@@ -55,6 +56,7 @@ Mandatory rules:
   "instructions": [
     "AGENTS.md"
   ],
+  "lsp": true,
   "permission": {
     "bash": "allow",
     "edit": "allow"

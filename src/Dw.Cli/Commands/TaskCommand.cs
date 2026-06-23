@@ -84,13 +84,8 @@ internal static class TaskCommand
         if (!request.Execute)
         {
             context.Out.WriteLine();
-            context.Out.WriteLine("Dry-run uniquement. Relancer avec --execute --message \"...\" pour committer/pousser.");
+            context.Out.WriteLine("Dry-run uniquement. Relancer avec --execute pour committer/pousser.");
             return 0;
-        }
-
-        if (string.IsNullOrWhiteSpace(request.Message))
-        {
-            throw new DwException("task finish --execute exige --message.", 2);
         }
 
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
@@ -118,10 +113,11 @@ internal static class TaskCommand
             }
         }
 
+        var commitMessage = CommitMessage.Build(manifest, request.Message);
         foreach (var status in changed)
         {
             RunGitOrThrow(context, status.Path, "add", ".");
-            RunGitOrThrow(context, status.Path, "commit", "-m", CommitMessage.EnsureWorkItemReference(request.Message, manifest));
+            RunGitOrThrow(context, status.Path, "commit", "-m", commitMessage);
             RunGitOrThrow(context, status.Path, "push", "-u", "origin", manifest.BranchName);
         }
 
@@ -525,6 +521,16 @@ internal sealed record VerificationResult(
 
 internal static class CommitMessage
 {
+    public static string Build(WorkspaceManifest manifest, string? overrideMessage = null)
+    {
+        if (!string.IsNullOrWhiteSpace(overrideMessage))
+        {
+            return EnsureWorkItemReference(overrideMessage, manifest);
+        }
+
+        return $"{Prefix(manifest)}({Ids(manifest)}): {manifest.Slug}";
+    }
+
     public static string EnsureWorkItemReference(string message, WorkspaceManifest manifest)
     {
         var ids = new[] { manifest.TaskId, manifest.WorkItemId }
@@ -536,6 +542,21 @@ internal static class CommitMessage
             ? message
             : $"{message} {ids.First()}";
     }
+
+    private static string Prefix(WorkspaceManifest manifest)
+        => manifest.Type.ToLowerInvariant() switch
+        {
+            "feat" => "feat",
+            "fix" => "fix",
+            "bug" => "bug",
+            "chore" => "chore",
+            _ => manifest.Type.ToLowerInvariant()
+        };
+
+    private static string Ids(WorkspaceManifest manifest)
+        => string.IsNullOrWhiteSpace(manifest.TaskId)
+            ? $"#{manifest.WorkItemId}"
+            : $"#{manifest.WorkItemId} #{manifest.TaskId}";
 }
 
 internal static class AdoTaskNaming

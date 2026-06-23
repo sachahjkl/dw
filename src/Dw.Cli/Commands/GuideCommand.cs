@@ -38,7 +38,7 @@ internal static class GuideCommand
         context.Out.WriteLine("   dw task finish --workspace <workspace>");
         context.Out.WriteLine();
         context.Out.WriteLine("9. Terminer vraiment quand tout est pret");
-        context.Out.WriteLine("   dw task finish --workspace <workspace> --execute --message \"feat: ...\" --create-pr");
+        context.Out.WriteLine("   dw task finish --workspace <workspace> --execute --create-pr");
         context.Out.WriteLine();
         context.Out.WriteLine("Notes");
         context.Out.WriteLine("- Sans --execute, task finish est toujours un dry-run.");

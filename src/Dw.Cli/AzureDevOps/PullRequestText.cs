@@ -3,22 +3,7 @@ namespace Dw.Cli.AzureDevOps;
 internal static class PullRequestText
 {
     public static string Title(WorkspaceManifest manifest)
-    {
-        var prefix = manifest.Type.ToLowerInvariant() switch
-        {
-            "feat" => "feat",
-            "fix" => "fix",
-            "bug" => "bug",
-            "chore" => "chore",
-            _ => manifest.Type.ToLowerInvariant()
-        };
-
-        var ids = string.IsNullOrWhiteSpace(manifest.TaskId)
-            ? $"#{manifest.WorkItemId}"
-            : $"#{manifest.WorkItemId} #{manifest.TaskId}";
-
-        return $"{prefix}({ids}): {manifest.Slug}";
-    }
+        => CommitMessage.Build(manifest);
 
     public static string Description(
         WorkspaceManifest manifest,

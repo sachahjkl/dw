@@ -160,7 +160,7 @@ internal static partial class SystemCommandLineApp
             Flag("--json", "Sortie JSON."),
             AgentOption(),
             Flag("--execute", "Execute vraiment l'action."),
-            Value("--message", "Message de commit."),
+            Value("--message", "Override explicite du message de commit genere."),
             Flag("--create-pr", "Ouvre une PR apres push."),
             Flag("--ready", "Cree une PR non draft."),
             Flag("--skip-ado", "Ignore Azure DevOps."),

@@ -35,6 +35,7 @@ public sealed class InitCommandTests
             var opencodeInstructions = File.ReadAllText(Path.Combine(root, "config", "opencode", "AGENTS.md"));
             Assert.DoesNotContain("@azure-devops/mcp", opencodeConfig);
             Assert.DoesNotContain("\"mcp\"", opencodeConfig);
+            Assert.Contains("\"lsp\": true", opencodeConfig);
             Assert.Contains("\"bash\": \"allow\"", opencodeConfig);
             Assert.Contains("\"edit\": \"allow\"", opencodeConfig);
             Assert.Contains("dw ado", opencodeInstructions);
