@@ -41,7 +41,7 @@ Mandatory rules:
 1. Run `dw agent context` before starting an AI workflow.
 2. Use Azure DevOps work items as the source of truth.
 3. Use only `dw ado ...`, `dw auth ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
-4. Use the skills in the repository references for ADO, Git naming, PRs and HA/HE conventions.
+4. Use `dw` commands for ADO lifecycle, Git naming, worktrees, commits and PRs.
 5. Keep front and back as separate Git repositories.
 6. Group worktrees for the same subject under one subject workspace.
 7. For API contract changes, always check both front and back.
@@ -93,6 +93,6 @@ Important rules:
 4. A subject workspace groups related worktrees under one work item.
 5. Plans live as `plan.md` in the subject workspace.
 6. Branches, commits and PR titles are created by `dw task start` and `dw task finish`; do not create them manually.
-7. Never bypass `dw` when ADO, Git naming, PRs or worktrees are involved.
+7. Use `dw` for every ADO, Git naming, PR and worktree operation.
 """;
 }

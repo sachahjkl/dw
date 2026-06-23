@@ -76,7 +76,9 @@ public sealed class AgentCommandTests
         Assert.Contains("dw ado context", context);
         Assert.Contains("Do not use Azure DevOps MCP tools", context);
         Assert.Contains("do not create them manually", context);
+        Assert.Contains("Use `dw` for every ADO, Git naming, PR and worktree operation", context);
         Assert.DoesNotContain("Branches, commits and PR titles must follow the loaded skills", context);
+        Assert.DoesNotContain("skills", context, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class FixedClock : IClock
