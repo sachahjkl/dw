@@ -28,7 +28,7 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
 
         if (!fileSystem.DirectoryExists(anchorPath))
         {
-            var clone = await processRunner.RunAsync("git", ["clone", "--bare", repository.Url, anchorPath], projectRoot);
+            var clone = await processRunner.RunAsync("git", GitArguments("clone", "--bare", repository.Url, anchorPath), projectRoot);
             if (clone.ExitCode != 0)
             {
                 return GitWorktreeResult.Failed(repositoryKey, clone.StandardError.Trim());
@@ -36,7 +36,7 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
         }
         else
         {
-            var fetch = await processRunner.RunAsync("git", ["--git-dir", anchorPath, "fetch", "--prune", "origin"], projectRoot);
+            var fetch = await processRunner.RunAsync("git", GitArguments("--git-dir", anchorPath, "fetch", "--prune", "origin"), projectRoot);
             if (fetch.ExitCode != 0)
             {
                 return GitWorktreeResult.Failed(repositoryKey, fetch.StandardError.Trim());
@@ -58,7 +58,7 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
 
         var add = await processRunner.RunAsync(
             "git",
-            ["--git-dir", anchorPath, "worktree", "add", "-b", branchName, worktreePath, baseRef],
+            GitArguments("--git-dir", anchorPath, "worktree", "add", "-b", branchName, worktreePath, baseRef),
             projectRoot);
 
         if (add.ExitCode != 0)
@@ -75,7 +75,7 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
         {
             var result = await processRunner.RunAsync(
                 "git",
-                ["--git-dir", anchorPath, "rev-parse", "--verify", candidate],
+                GitArguments("--git-dir", anchorPath, "rev-parse", "--verify", candidate),
                 projectRoot);
 
             if (result.ExitCode == 0)
@@ -86,6 +86,9 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
 
         return null;
     }
+
+    private static string[] GitArguments(params string[] arguments)
+        => ["-c", "core.longpaths=true", .. arguments];
 }
 
 internal sealed record GitWorktreeResult(string Repository, GitWorktreeStatus Status, string Message)
