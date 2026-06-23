@@ -8,7 +8,7 @@ internal sealed record WorkspaceTeardownOptions(
     bool Execute,
     bool Yes);
 
-internal sealed record WorkspaceTeardownStep(string Repository, string Action, string Target);
+internal sealed record WorkspaceTeardownStep(string Repository, string Action, string Target, string? GitDir = null);
 
 internal static class WorkspaceTeardownService
 {
@@ -51,7 +51,7 @@ internal static class WorkspaceTeardownService
 
         foreach (var step in steps.Where(step => step.Action == "worktree remove"))
         {
-            RunGit(context, step.Repository, "worktree", "remove", "--force", step.Target);
+            RunGitDir(context, step.Repository, step.GitDir, "worktree", "remove", "--force", step.Target);
         }
 
         foreach (var step in steps.Where(step => step.Action == "worktree prune"))
@@ -86,34 +86,36 @@ internal static class WorkspaceTeardownService
                 ?? new RepositoryConfig("", "main", Folder: repositoryKey);
             var folder = string.IsNullOrWhiteSpace(repository.Folder) ? repositoryKey : repository.Folder;
             var worktreePath = Path.Combine(workspace, folder);
-            yield return new WorkspaceTeardownStep(repositoryKey, "worktree remove", worktreePath);
+            var anchorName = string.IsNullOrWhiteSpace(repository.AnchorName) ? $"{repositoryKey}.git" : repository.AnchorName;
+            var gitDir = Path.Combine(projectRoot, "repositories", anchorName);
+            yield return new WorkspaceTeardownStep(repositoryKey, "worktree remove", worktreePath, gitDir);
 
             if (!string.IsNullOrWhiteSpace(repository.Url))
             {
-                var anchorName = string.IsNullOrWhiteSpace(repository.AnchorName) ? $"{repositoryKey}.git" : repository.AnchorName;
-                yield return new WorkspaceTeardownStep(repositoryKey, "worktree prune", Path.Combine(projectRoot, "repositories", anchorName));
+                yield return new WorkspaceTeardownStep(repositoryKey, "worktree prune", gitDir, gitDir);
             }
         }
 
         yield return new WorkspaceTeardownStep("workspace", "delete directory", workspace);
     }
 
-    private static void RunGit(CommandContext context, string repository, params string[] args)
+    private static void RunGitDir(CommandContext context, string repository, string? gitDir, params string[] args)
     {
-        context.Debug($"git {string.Join(' ', args)}");
-        var result = context.ProcessRunner.RunAsync("git", args).GetAwaiter().GetResult();
-        if (result.ExitCode != 0)
+        if (string.IsNullOrWhiteSpace(gitDir))
         {
-            throw new DwException($"Teardown echoue [{repository}]: {result.StandardError.Trim()}");
+            throw new DwException($"Teardown echoue [{repository}]: gitDir manquant.");
         }
-    }
 
-    private static void RunGitDir(CommandContext context, string repository, string gitDir, params string[] args)
-    {
         if (!context.FileSystem.DirectoryExists(gitDir))
         {
-            context.Debug($"git-dir absent, prune ignore [{repository}]: {gitDir}");
-            return;
+            var isPrune = args.Length >= 2 && args[0] == "worktree" && args[1] == "prune";
+            if (isPrune)
+            {
+                context.Debug($"git-dir absent, prune ignore [{repository}]: {gitDir}");
+                return;
+            }
+
+            throw new DwException($"Teardown echoue [{repository}]: gitDir introuvable {gitDir}");
         }
 
         context.Debug($"git --git-dir {gitDir} {string.Join(' ', args)}");
