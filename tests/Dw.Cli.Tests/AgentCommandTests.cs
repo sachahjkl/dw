@@ -80,6 +80,11 @@ public sealed class AgentCommandTests
         Assert.Contains("dw db schema", context);
         Assert.Contains("dw db describe", context);
         Assert.Contains("dw db query", context);
+        Assert.Contains("initial project setup", context);
+        Assert.Contains("pnpm install", context);
+        Assert.Contains("pnpm approve-builds --all", context);
+        Assert.Contains("npm install", context);
+        Assert.Contains("dotnet restore", context);
         Assert.Contains("plan.md", context);
         Assert.Contains("dw task open --workspace <path>", context);
         Assert.Contains("dw task open --continue", context);

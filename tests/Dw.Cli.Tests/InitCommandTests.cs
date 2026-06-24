@@ -43,6 +43,7 @@ public sealed class InitCommandTests
             Assert.Contains("dw db schema", opencodeInstructions);
             Assert.Contains("dw task current", opencodeInstructions);
             Assert.Contains("dw task sync --continue", opencodeInstructions);
+            Assert.Contains("initial project setup", opencodeInstructions);
             Assert.Contains("plan.md", opencodeInstructions);
             Assert.Contains("dw task commit", opencodeInstructions);
             Assert.Contains("do not use Azure DevOps MCP tools", opencodeInstructions);
