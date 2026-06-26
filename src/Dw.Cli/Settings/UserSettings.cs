@@ -2,9 +2,9 @@ using System.Text.Json;
 
 namespace Dw.Cli.Settings;
 
-internal sealed record UserSettings(string? Root)
+internal sealed record UserSettings(string? Root, string? Color = null)
 {
-    public static UserSettings Empty { get; } = new((string?)null);
+    public static UserSettings Empty { get; } = new((string?)null, null);
 }
 
 internal static class UserSettingsStore

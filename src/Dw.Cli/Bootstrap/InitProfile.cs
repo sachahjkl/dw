@@ -8,6 +8,23 @@ internal sealed record InitProfile(
     string AgentsMd,
     string OpenCodeJsonc)
 {
+    public static InitProfile Detect(IFileSystem fileSystem, string root)
+    {
+        var projectsPath = Path.Combine(root, "config", "projects.json");
+        if (fileSystem.FileExists(projectsPath))
+        {
+            var content = fileSystem.ReadAllText(projectsPath);
+            if (content.Contains("\"ha\"", StringComparison.OrdinalIgnoreCase) ||
+                content.Contains("digital-factory-ogf", StringComparison.OrdinalIgnoreCase) ||
+                content.Contains("HOMMAGE", StringComparison.OrdinalIgnoreCase))
+            {
+                return Resolve("ogf");
+            }
+        }
+
+        return Resolve("default");
+    }
+
     public static InitProfile Resolve(string? name)
     {
         var normalized = string.IsNullOrWhiteSpace(name) ? "ogf" : name.Trim().ToLowerInvariant();

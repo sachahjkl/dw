@@ -21,12 +21,12 @@ internal static partial class SystemCommandLineApp
         }
         catch (DwException ex)
         {
-            context.Error.WriteLine($"Erreur: {ex.Message}");
+            context.Error.WriteLine($"{TerminalOutput.Bold(TerminalOutput.Red("Erreur", context.Error), context.Error)}: {ex.Message}");
             return ex.ExitCode;
         }
         catch (Exception ex)
         {
-            context.Error.WriteLine("Erreur inattendue.");
+            context.Error.WriteLine(TerminalOutput.Bold(TerminalOutput.Red("Erreur inattendue.", context.Error), context.Error));
             context.Error.WriteLine(ex.Message);
             return 1;
         }
@@ -57,6 +57,7 @@ internal static partial class SystemCommandLineApp
         root.Add(Leaf("guide", "Explique le parcours de demarrage.", context, GuideCommand.Run, aliases: ["get-started"]));
         root.Add(Doctor(context));
         root.Add(Init(context));
+        root.Add(Refresh(context));
         root.Add(Agent(context));
         root.Add(Ado(context));
         root.Add(Auth(context));
@@ -91,6 +92,16 @@ internal static partial class SystemCommandLineApp
         var command = Command("doctor", "Diagnostique l'environnement local.");
         AddOptions(command, Flag("--fix", "Corrige ce qui peut etre corrige automatiquement."));
         command.SetAction(parse => DoctorCommand.RunAsync(context, parse.GetValue<bool>("--fix")));
+        return command;
+    }
+
+    private static Command Refresh(CommandContext context)
+    {
+        var command = Command("refresh", "Regenere les schemas et contextes agents non destructifs.");
+        AddOptions(command,
+            Value("--root", "Root DevWorkflow a utiliser."),
+            Value("--profile", "Profil a utiliser pour les fichiers d'agents.", ["ogf", "default"]));
+        command.SetAction(parse => RefreshCommand.Run(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--profile")));
         return command;
     }
 
@@ -216,6 +227,7 @@ internal static partial class SystemCommandLineApp
         AddSubcommands(command,
             Subcommand("show", "Affiche le root configure.", (_, _) => ConfigCommand.Show(context)),
             Subcommand("set-root", "Definit le root DevWorkflow.", (parse, _) => ConfigCommand.SetRoot(context, parse.GetRequiredValue<string>("path")), Argument<string>("path", "Chemin du root DevWorkflow.")),
+            Subcommand("set-color", "Definit le mode de couleur du terminal.", (parse, _) => ConfigCommand.SetColor(context, parse.GetRequiredValue<string>("mode")), Argument<string>("mode", "Mode couleur: auto, always, never.")),
             Subcommand("doctor", "Valide les fichiers config.", (parse, _) => ConfigCommand.Doctor(context, parse.GetValue<string>("--root"))));
         return command;
     }

@@ -5,6 +5,7 @@ using System.IO.Compression;
 internal static class UpgradeCommand
 {
     private const ushort WindowsPeSignature = 0x5A4D;
+    private static readonly char[] SpinnerFrames = ['|', '/', '-', '\\'];
 
     internal static int Check(CommandContext context)
     {
@@ -38,6 +39,7 @@ internal static class UpgradeCommand
 
         using var http = new HttpClient();
         var client = new GitHubReleaseClient(http);
+        context.Out.WriteLine(TerminalOutput.Bold(TerminalOutput.Cyan("Preparation de l'upgrade...", context.Out), context.Out));
         var release = client.GetLatestReleaseAsync(updates).GetAwaiter().GetResult();
         var manifest = client.DownloadManifestAsync(release, updates.AssetName).GetAwaiter().GetResult();
         var asset = manifest.Assets.FirstOrDefault(asset => string.Equals(asset.Rid, rid, StringComparison.OrdinalIgnoreCase))
@@ -50,8 +52,9 @@ internal static class UpgradeCommand
 
         var executablePath = Environment.ProcessPath ?? throw new DwException("Chemin du binaire courant indisponible.");
         var tempAsset = Path.Combine(Path.GetTempPath(), $"dw-upgrade-{Guid.NewGuid():N}{Path.GetExtension(asset.FileName)}");
-        using (var response = http.GetAsync(asset.Url).GetAwaiter().GetResult())
+        using (Step(context, $"Telechargement en cours ({asset.FileName})"))
         {
+            using var response = http.GetAsync(asset.Url).GetAwaiter().GetResult();
             var body = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
@@ -61,16 +64,30 @@ internal static class UpgradeCommand
             File.WriteAllBytes(tempAsset, body);
         }
 
-        var hash = Sha256.FileHashAsync(tempAsset).GetAwaiter().GetResult();
+        string hash;
+        using (Step(context, "Verification SHA256"))
+        {
+            hash = Sha256.FileHashAsync(tempAsset).GetAwaiter().GetResult();
+        }
+
         if (!string.Equals(hash, asset.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             File.Delete(tempAsset);
             throw new DwException($"SHA256 invalide pour {tempAsset}. Attendu {asset.Sha256}, obtenu {hash}.");
         }
 
-        var replacement = PrepareReplacementExecutable(asset.FileName, tempAsset, rid);
-        ReplaceExecutable(context, executablePath, replacement);
-        context.Out.WriteLine($"Upgrade prepare: {manifest.Version}+{manifest.Commit}");
+        string replacement;
+        using (Step(context, "Desarchivage / preparation du binaire"))
+        {
+            replacement = PrepareReplacementExecutable(asset.FileName, tempAsset, rid);
+        }
+
+        using (Step(context, "Remplacement du binaire"))
+        {
+            ReplaceExecutable(context, executablePath, replacement);
+        }
+
+        context.Out.WriteLine($"{TerminalOutput.Bold(TerminalOutput.Green("Done", context.Out), context.Out)}: {manifest.Version}+{manifest.Commit}");
         return 0;
     }
 
@@ -148,14 +165,14 @@ internal static class UpgradeCommand
             var backup = $"{executablePath}.bak";
             File.WriteAllText(script, WindowsReplacementScript(temp, executablePath, backup, Environment.ProcessId));
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c \"{script}\"") { CreateNoWindow = true, UseShellExecute = false });
-            context.Out.WriteLine($"Remplacement programme au prochain relachement du binaire: {executablePath}");
+            context.Out.WriteLine($"{TerminalOutput.Yellow("Remplacement programme au prochain relachement du binaire", context.Out)}: {executablePath}");
             return;
         }
 
         File.Copy(temp, executablePath, overwrite: true);
         File.Delete(temp);
         _ = System.Diagnostics.Process.Start("chmod", ["+x", executablePath]);
-        context.Out.WriteLine($"Binaire remplace: {executablePath}");
+        context.Out.WriteLine($"{TerminalOutput.Green("Binaire remplace", context.Out)}: {executablePath}");
     }
 
     internal static string WindowsReplacementScript(string temp, string executablePath, string backup, int pid)
@@ -199,6 +216,65 @@ del /f /q "%~f0" >nul 2>nul
         if (RuntimeEnvironment.IsNixManagedExecutablePath(executablePath ?? Environment.ProcessPath))
         {
             throw new DwException("Auto-update indisponible pour une installation Nix. Utiliser `nix run --refresh github:sachahjkl/dw` ou `nix profile upgrade`.");
+        }
+    }
+
+    private static IDisposable Step(CommandContext context, string message)
+        => new UpgradeStep(context.Out, message);
+
+    internal sealed class UpgradeStep : IDisposable
+    {
+        private readonly TextWriter writer;
+        private readonly string message;
+        private readonly CancellationTokenSource cancellation = new();
+        private readonly Task? spinnerTask;
+        private readonly bool animate;
+
+        public UpgradeStep(TextWriter writer, string message)
+        {
+            this.writer = writer;
+            this.message = message;
+            animate = TerminalOutput.SupportsAnsi(writer);
+
+            if (animate)
+            {
+                spinnerTask = Task.Run(Spin);
+            }
+            else
+            {
+                writer.WriteLine($"{TerminalOutput.Cyan(message, writer)}...");
+            }
+        }
+
+        public void Dispose()
+        {
+            cancellation.Cancel();
+            if (spinnerTask is not null)
+            {
+                try
+                {
+                    spinnerTask.GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+                writer.Write("\r");
+                writer.Write(new string(' ', message.Length + 10));
+                writer.Write("\r");
+            }
+
+            writer.WriteLine($"{TerminalOutput.Cyan(message, writer)}: {TerminalOutput.Bold(TerminalOutput.Green("Done", writer), writer)}");
+        }
+
+        private async Task Spin()
+        {
+            var index = 0;
+            while (!cancellation.Token.IsCancellationRequested)
+            {
+                writer.Write($"\r{TerminalOutput.Cyan(message, writer)}... {TerminalOutput.Bold(SpinnerFrames[index++ % SpinnerFrames.Length].ToString(), writer)}");
+                await Task.Delay(100, cancellation.Token);
+            }
         }
     }
 }

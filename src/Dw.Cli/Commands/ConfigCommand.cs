@@ -8,14 +8,25 @@ internal static class ConfigCommand
     {
         var settings = UserSettingsStore.Load(context.FileSystem);
         context.Out.WriteLine($"Root: {settings.Root ?? AppPaths.DefaultRoot}");
+        context.Out.WriteLine($"Color: {TerminalOutput.NormalizeMode(settings.Color)}");
         return 0;
     }
 
     internal static int SetRoot(CommandContext context, string root)
     {
         root = Path.GetFullPath(Environment.ExpandEnvironmentVariables(root));
-        UserSettingsStore.Save(context.FileSystem, new UserSettings(root));
+        var settings = UserSettingsStore.Load(context.FileSystem);
+        UserSettingsStore.Save(context.FileSystem, settings with { Root = root });
         context.Out.WriteLine($"Root: {root}");
+        return 0;
+    }
+
+    internal static int SetColor(CommandContext context, string mode)
+    {
+        var settings = UserSettingsStore.Load(context.FileSystem);
+        var normalized = TerminalOutput.NormalizeMode(mode);
+        UserSettingsStore.Save(context.FileSystem, settings with { Color = normalized });
+        context.Out.WriteLine($"Color: {normalized}");
         return 0;
     }
 

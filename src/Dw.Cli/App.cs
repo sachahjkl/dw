@@ -11,11 +11,15 @@ internal static class App
         Console.InputEncoding = Encoding.UTF8;
         Console.OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         var verbose = args.Any(static arg => arg == "-vvv");
+        var fileSystem = new RealFileSystem();
+        var settings = UserSettingsStore.Load(fileSystem);
+        var output = TerminalOutput.CreateStyledWriter(Console.Out, isError: false, settings.Color);
+        var error = TerminalOutput.CreateStyledWriter(Console.Error, isError: true, settings.Color);
         var context = new CommandContext(
-            Console.Out,
-            Console.Error,
+            output,
+            error,
             new SystemClock(),
-            new RealFileSystem(),
+            fileSystem,
             new ProcessRunner(),
             verbose);
 

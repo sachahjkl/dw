@@ -13,6 +13,9 @@ internal static class SchemaResourceWriter
     ];
 
     public static void WriteIfMissing(IFileSystem fileSystem, string root)
+        => Write(fileSystem, root, overwrite: false);
+
+    public static void Write(IFileSystem fileSystem, string root, bool overwrite)
     {
         var schemaDirectory = Path.Combine(root, "schemas");
         fileSystem.CreateDirectory(schemaDirectory);
@@ -20,7 +23,14 @@ internal static class SchemaResourceWriter
         foreach (var fileName in SchemaFiles)
         {
             var content = ReadEmbeddedSchema(fileName);
-            InitFileWriter.WriteIfMissing(fileSystem, Path.Combine(schemaDirectory, fileName), content);
+            if (overwrite)
+            {
+                fileSystem.WriteAllText(Path.Combine(schemaDirectory, fileName), content);
+            }
+            else
+            {
+                InitFileWriter.WriteIfMissing(fileSystem, Path.Combine(schemaDirectory, fileName), content);
+            }
         }
     }
 

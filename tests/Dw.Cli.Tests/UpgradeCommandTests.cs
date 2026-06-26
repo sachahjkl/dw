@@ -100,6 +100,21 @@ public sealed class UpgradeCommandTests
         Assert.False(File.Exists(assetPath));
     }
 
+    [Fact]
+    public void UpgradeStep_writes_human_readable_progress_and_done_state_when_not_interactive()
+    {
+        using var output = new StringWriter();
+
+        using (new UpgradeCommand.UpgradeStep(output, "Telechargement en cours"))
+        {
+        }
+
+        var text = output.ToString();
+        Assert.Contains("Telechargement en cours...", text);
+        Assert.Contains("Telechargement en cours: Done", text);
+        Assert.DoesNotContain("\u001b[", text, StringComparison.Ordinal);
+    }
+
     private static string CreateZip(params (string Name, byte[] Content)[] entries)
     {
         var zipPath = Path.Combine(Path.GetTempPath(), "dw-upgrade-test-" + Guid.NewGuid().ToString("N") + ".zip");
