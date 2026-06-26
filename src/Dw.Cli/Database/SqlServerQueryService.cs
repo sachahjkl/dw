@@ -5,6 +5,23 @@ namespace Dw.Cli.Database;
 
 internal sealed class SqlServerQueryService
 {
+    public async Task<IReadOnlyList<string>> ListTablesAsync(
+        DatabaseConnectionConfig connection,
+        DatabaseDefaults defaults,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await QueryAsync(connection, defaults, """
+select TABLE_SCHEMA, TABLE_NAME
+from INFORMATION_SCHEMA.TABLES
+order by TABLE_SCHEMA, TABLE_NAME
+""", maxRowsOverride: 0, cancellationToken);
+
+        return result.Rows
+            .Select(row => row.Length >= 2 ? $"{row[0]}.{row[1]}" : null)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray()!;
+    }
+
     public async Task<QueryResult> QueryAsync(
         DatabaseConnectionConfig connection,
         DatabaseDefaults defaults,

@@ -11,7 +11,7 @@ internal sealed record AgentLaunch(
     IReadOnlyDictionary<string, string> Environment,
     string WorkingDirectory);
 
-internal sealed record AgentWorkspaceConfigRequest(string Workspace, string WorkItemId, string Project);
+internal sealed record AgentWorkspaceConfigRequest(string Workspace, IReadOnlyList<WorkspaceWorkItem> WorkItems, string Project);
 
 internal sealed record AgentWorkspaceConfigFile(string RelativePath, string Content);
 

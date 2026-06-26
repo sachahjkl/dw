@@ -2,8 +2,8 @@ namespace Dw.Cli.Templating;
 
 internal static partial class Templates
 {
-    public static string PlanMd(string workItemId, string project) => $$"""
-# Plan - Work item {{workItemId}}
+    public static string PlanMd(IReadOnlyList<WorkspaceWorkItem> workItems, string project) => $$"""
+# Plan - Work items {{string.Join(", ", workItems.Select(item => $"#{item.Id}"))}}
 
 Project: `{{project}}`
 

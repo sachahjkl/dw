@@ -487,7 +487,11 @@ internal static class TaskCommand
 
     private static IReadOnlyList<string> WorkItemIdsFor(WorkspaceManifest manifest)
     {
-        var ids = new List<string>();
+        var ids = manifest.ParentWorkItems
+            .Select(item => item.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToList();
+
         if (!string.IsNullOrWhiteSpace(manifest.TaskId))
         {
             ids.Add(manifest.TaskId);
@@ -496,11 +500,6 @@ internal static class TaskCommand
         if (manifest.ChildTaskIds is not null)
         {
             ids.AddRange(manifest.ChildTaskIds.Values.Where(id => !string.IsNullOrWhiteSpace(id)));
-        }
-
-        if (ids.Count == 0)
-        {
-            ids.Add(manifest.WorkItemId);
         }
 
         return ids.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -606,8 +605,11 @@ internal static class CommitMessage
     public static string EnsureWorkItemReference(string message, WorkspaceManifest manifest)
     {
         var ids = new[] { manifest.TaskId, manifest.WorkItemId }
+            .Concat(manifest.ParentWorkItems.Select(item => item.Id))
+            .Concat((manifest.ChildTaskIds ?? new Dictionary<string, string>()).Values)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Select(id => $"#{id}")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         return ids.Any(id => message.Contains(id, StringComparison.OrdinalIgnoreCase))
@@ -628,9 +630,10 @@ internal static class CommitMessage
         };
 
     private static string Ids(WorkspaceManifest manifest)
-        => string.IsNullOrWhiteSpace(manifest.TaskId)
-            ? $"#{manifest.WorkItemId}"
-            : $"#{manifest.WorkItemId} #{manifest.TaskId}";
+        => string.Join(' ', manifest.ParentWorkItems.Select(item => $"#{item.Id}")
+            .Concat(string.IsNullOrWhiteSpace(manifest.TaskId) ? [] : [$"#{manifest.TaskId}"])
+            .Concat((manifest.ChildTaskIds ?? new Dictionary<string, string>()).Values.Select(id => $"#{id}"))
+            .Distinct(StringComparer.OrdinalIgnoreCase));
 }
 
 internal static class AdoTaskNaming

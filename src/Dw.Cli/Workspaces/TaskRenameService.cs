@@ -10,8 +10,8 @@ internal static class TaskRenameService
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
         var projectConfig = DevWorkflowConfigLoader.ResolveProject(projects, manifest.Project);
         var slug = Slug.FromPhraseOrFallback(options.Slug, manifest.Slug);
-        var newBranch = GitBranchNames.Build(manifest.Type, manifest.WorkItemId, manifest.TaskId, slug);
-        var newWorkspace = Path.Combine(Path.GetDirectoryName(workspace) ?? workspace, GitBranchNames.BuildSubjectName(manifest.Type, manifest.WorkItemId, slug));
+        var newBranch = GitBranchNames.Build(manifest.Type, manifest.BranchWorkItemIds, slug);
+        var newWorkspace = Path.Combine(Path.GetDirectoryName(workspace) ?? workspace, GitBranchNames.BuildSubjectName(manifest.Type, manifest.ParentWorkItems.Select(item => item.Id).ToArray(), slug));
 
         context.Out.WriteLine("Rename dry-run:");
         context.Out.WriteLine($"- slug: {manifest.Slug} -> {slug}");
@@ -45,7 +45,7 @@ internal static class TaskRenameService
         return 0;
     }
 
-    private static void RenameLocalBranchIfPresent(CommandContext context, string repositoryPath, string oldBranch, string newBranch)
+    internal static void RenameLocalBranchIfPresent(CommandContext context, string repositoryPath, string oldBranch, string newBranch)
     {
         var current = context.ProcessRunner.RunAsync("git", ["branch", "--show-current"], repositoryPath).GetAwaiter().GetResult();
         if (current.ExitCode != 0)

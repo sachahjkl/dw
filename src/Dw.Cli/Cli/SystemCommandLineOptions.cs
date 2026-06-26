@@ -46,7 +46,7 @@ internal static partial class SystemCommandLineApp
         => WithCompletions(Value("--workspace", description), _ => WorkspaceCompletions(context));
 
     private static Option<string> WorkItemOption(CommandContext context, string description)
-        => WithCompletions(Value("--work-item", description), _ => WorkItemCompletions(context));
+        => WithCompletions(Value("--work-item", description), completion => WorkItemCompletions(context, completion));
 
     private static Option<string> RepoOption(CommandContext context, string description)
         => WithCompletions(Value("--repo", description), _ => RepositoryCompletions(context));
@@ -58,6 +58,12 @@ internal static partial class SystemCommandLineApp
     {
         option.CompletionSources.Add(completions);
         return option;
+    }
+
+    private static Argument<T> WithCompletions<T>(Argument<T> argument, Func<CompletionContext, IEnumerable<CompletionItem>> completions)
+    {
+        argument.CompletionSources.Add(completions);
+        return argument;
     }
 
     private static Argument<T> Argument<T>(string name, string description)

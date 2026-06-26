@@ -58,6 +58,56 @@ public sealed class AdoWorkflowTests
         Assert.Equal("bug(#53020): corriger-ouverture-dossier", message);
     }
 
+    [Fact]
+    public void CommitMessage_builds_expected_ogf_message_with_multiple_parent_ids()
+    {
+        var manifest = new WorkspaceManifest(
+            1,
+            "53020",
+            null,
+            "he",
+            "bug",
+            "corriger-ouverture-dossier",
+            "bug/53020-corriger-ouverture-dossier",
+            DateTimeOffset.UtcNow,
+            ["back"],
+            "created",
+            WorkItems:
+            [
+                new WorkspaceWorkItem("53020"),
+                new WorkspaceWorkItem("53098")
+            ]);
+
+        var message = CommitMessage.Build(manifest);
+
+        Assert.Equal("bug(#53020 #53098): corriger-ouverture-dossier", message);
+    }
+
+    [Fact]
+    public void CommitMessage_builds_expected_ogf_message_with_child_task_ids()
+    {
+        var manifest = new WorkspaceManifest(
+            1,
+            "53020",
+            null,
+            "he",
+            "bug",
+            "corriger-ouverture-dossier",
+            "bug/53020-55201-55202-corriger-ouverture-dossier",
+            DateTimeOffset.UtcNow,
+            ["front", "back"],
+            "created",
+            ChildTaskIds: new Dictionary<string, string>
+            {
+                ["front"] = "55201",
+                ["back"] = "55202"
+            });
+
+        var message = CommitMessage.Build(manifest);
+
+        Assert.Equal("bug(#53020 #55201 #55202): corriger-ouverture-dossier", message);
+    }
+
     [Theory]
     [InlineData("refactor(#51553 #51786): simplifie l'intégration racine de la palette debug")]
     [InlineData("fix(#51553 #51786): supprime les imports inutilisés signalés par le lint")]

@@ -5,15 +5,51 @@ namespace Dw.Cli.Commands;
 
 internal static class AdoCommand
 {
-    internal static int Assigned(CommandContext context, string? configuredRoot, string? projectName, int top)
+    internal static int Assigned(CommandContext context, string? configuredRoot, string? projectName, int top, bool includeFinalStates, bool groupByParent, bool json)
     {
         var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
         using var http = new HttpClient();
         var client = new AzureDevOpsClient(http, azureDevOps);
-        var items = client.GetAssignedWorkItemsAsync(top, token).GetAwaiter().GetResult();
+        var items = FilterAssignedItems(client.GetAssignedWorkItemsAsync(top, token).GetAwaiter().GetResult(), includeFinalStates);
         if (items.Count == 0)
         {
-            context.Out.WriteLine("Aucun work item assigne.");
+            context.Out.WriteLine(includeFinalStates
+                ? "Aucun work item assigne."
+                : "Aucun work item assigne hors etats finaux.");
+            return 0;
+        }
+
+        if (groupByParent)
+        {
+            var groups = GroupAssignedItemsByParent(client, token, items, projectName);
+            if (json)
+            {
+                context.Out.WriteLine(JsonSerializer.Serialize(groups));
+                return 0;
+            }
+
+            foreach (var group in groups)
+            {
+                context.Out.WriteLine($"#{group.Parent.Id} [{group.Parent.Type}] {group.Parent.State} - {group.Parent.Title}");
+                if (group.Items.Count > 0)
+                {
+                    context.Out.WriteLine($"  Start: {group.SuggestedStartCommand}");
+                }
+
+                foreach (var item in group.Items)
+                {
+                    context.Out.WriteLine($"  - #{item.Id} [{item.Type}] {item.State} - {item.Title}");
+                }
+
+                context.Out.WriteLine();
+            }
+
+            return 0;
+        }
+
+        if (json)
+        {
+            context.Out.WriteLine(JsonSerializer.Serialize(items));
             return 0;
         }
 
@@ -27,43 +63,133 @@ internal static class AdoCommand
         return 0;
     }
 
-    internal static int WorkItem(CommandContext context, string? configuredRoot, string? projectName, string id)
+    internal static IReadOnlyList<WorkItemSnapshot> FilterAssignedItems(IReadOnlyList<WorkItemSnapshot> items, bool includeFinalStates)
+        => includeFinalStates
+            ? items
+            : items.Where(item => !TaskCommand.IsFinalState(item.Type, item.State)).ToArray();
+
+    internal static int WorkItem(CommandContext context, string? configuredRoot, string? projectName, string id, bool json)
     {
         var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
         using var http = new HttpClient();
         var client = new AzureDevOpsClient(http, azureDevOps);
-        var item = client.GetWorkItemSnapshotAsync(id, token).GetAwaiter().GetResult();
+        var selection = WorkItemSet.Parse(id);
+        var items = selection.Ids
+            .Select(itemId => client.GetWorkItemSnapshotAsync(itemId, token).GetAwaiter().GetResult())
+            .ToArray();
 
-        context.Out.WriteLine($"#{item.Id}");
-        context.Out.WriteLine($"Type: {item.Type ?? "(inconnu)"}");
-        context.Out.WriteLine($"Etat: {item.State ?? "(inconnu)"}");
-        context.Out.WriteLine($"Titre: {item.Title ?? "(inconnu)"}");
-        context.Out.WriteLine();
-        context.Out.WriteLine($"Contexte complet: dw ado context {item.Id}{ProjectHint(projectName)}");
-        return 0;
-    }
-
-    internal static int WorkItemContext(CommandContext context, string? configuredRoot, string? projectName, string id, bool summaryOnly, int commentLimit)
-    {
-        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
-        using var http = new HttpClient();
-        var client = new AzureDevOpsClient(http, azureDevOps);
-        using var document = client.GetWorkItemExpandedAsync(id, token).GetAwaiter().GetResult();
-        var fields = document.RootElement.GetProperty("fields");
-
-        PrintHeader(context, document.RootElement, fields);
-        PrintCoreFields(context, fields);
-        PrintLongField(context, "Description", FieldText(fields, "System.Description"));
-        PrintAcceptanceFields(context, fields);
-
-        if (!summaryOnly)
+        if (json)
         {
-            PrintRelations(context, document.RootElement, projectName);
-            PrintComments(context, client, id, commentLimit, token);
+            context.Out.WriteLine(JsonSerializer.Serialize(items));
+            return 0;
+        }
+
+        for (var i = 0; i < items.Length; i++)
+        {
+            var item = items[i];
+
+            if (i > 0)
+            {
+                context.Out.WriteLine();
+                context.Out.WriteLine("---");
+            }
+
+            context.Out.WriteLine($"#{item.Id}");
+            context.Out.WriteLine($"Type: {item.Type ?? "(inconnu)"}");
+            context.Out.WriteLine($"Etat: {item.State ?? "(inconnu)"}");
+            context.Out.WriteLine($"Titre: {item.Title ?? "(inconnu)"}");
+            context.Out.WriteLine();
+            context.Out.WriteLine($"Contexte complet: dw ado context {item.Id}{ProjectHint(projectName)}");
         }
 
         return 0;
     }
+
+    internal static int WorkItemContext(CommandContext context, string? configuredRoot, string? projectName, string id, bool summaryOnly, int commentLimit, bool json)
+    {
+        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
+        using var http = new HttpClient();
+        var client = new AzureDevOpsClient(http, azureDevOps);
+        var selection = WorkItemSet.Parse(id);
+        if (json)
+        {
+            var payload = selection.Ids
+                .Select(itemId => client.GetWorkItemExpandedAsync(itemId, token).GetAwaiter().GetResult().RootElement.GetRawText())
+                .ToArray();
+            context.Out.WriteLine($"[{string.Join(',', payload)}]");
+            return 0;
+        }
+
+        for (var i = 0; i < selection.Ids.Count; i++)
+        {
+            using var document = client.GetWorkItemExpandedAsync(selection.Ids[i], token).GetAwaiter().GetResult();
+            var fields = document.RootElement.GetProperty("fields");
+
+            if (i > 0)
+            {
+                context.Out.WriteLine();
+                context.Out.WriteLine("---");
+                context.Out.WriteLine();
+            }
+
+            PrintHeader(context, document.RootElement, fields);
+            PrintCoreFields(context, fields);
+            PrintLongField(context, "Description", FieldText(fields, "System.Description"));
+            PrintAcceptanceFields(context, fields);
+
+            if (!summaryOnly)
+            {
+                PrintRelations(context, document.RootElement, projectName);
+                PrintComments(context, client, selection.Ids[i], commentLimit, token);
+            }
+        }
+
+        return 0;
+    }
+
+    private static IReadOnlyList<AssignedWorkItemGroup> GroupAssignedItemsByParent(AzureDevOpsClient client, TokenResult token, IReadOnlyList<WorkItemSnapshot> items, string? projectName)
+    {
+        var groups = new Dictionary<string, List<WorkItemSnapshot>>(StringComparer.OrdinalIgnoreCase);
+        var parents = new Dictionary<string, WorkItemSnapshot>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in items)
+        {
+            var parentId = client.GetRelatedWorkItemIdsAsync(item.Id, "System.LinkTypes.Hierarchy-Reverse", token).GetAwaiter().GetResult().FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(parentId))
+            {
+                parentId = item.Id;
+                parents[parentId] = item;
+            }
+            else if (!parents.ContainsKey(parentId))
+            {
+                parents[parentId] = client.GetWorkItemSnapshotAsync(parentId, token).GetAwaiter().GetResult();
+            }
+
+            if (!groups.TryGetValue(parentId, out var children))
+            {
+                children = [];
+                groups[parentId] = children;
+            }
+
+            if (!string.Equals(parentId, item.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                children.Add(item);
+            }
+        }
+
+        return groups
+            .Select(group => new AssignedWorkItemGroup(
+                parents[group.Key],
+                group.Value
+                    .OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                $"dw task start {BuildSuggestedStartIds(parents[group.Key], group.Value)}{ProjectHint(projectName)}"))
+            .OrderBy(group => group.Parent.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string BuildSuggestedStartIds(WorkItemSnapshot parent, IReadOnlyList<WorkItemSnapshot> children)
+        => string.Join(',', new[] { parent.Id }.Concat(children.Select(item => item.Id)).Distinct(StringComparer.OrdinalIgnoreCase));
 
     private static void PrintHeader(CommandContext context, JsonElement root, JsonElement fields)
     {
@@ -285,3 +411,5 @@ internal static class AdoCommand
         => string.IsNullOrWhiteSpace(projectName) ? string.Empty : $" --project {projectName}";
 
 }
+
+internal sealed record AssignedWorkItemGroup(WorkItemSnapshot Parent, IReadOnlyList<WorkItemSnapshot> Items, string SuggestedStartCommand);

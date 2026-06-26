@@ -13,6 +13,6 @@ internal sealed class CopilotAgentAdapter : IAgentAdapter
 
     public IEnumerable<AgentWorkspaceConfigFile> WorkspaceConfigFiles(AgentWorkspaceConfigRequest request)
     {
-        yield return new AgentWorkspaceConfigFile(Path.Combine(".github", "copilot-instructions.md"), Templates.WorkspaceCopilotInstructions(request.WorkItemId, request.Project));
+        yield return new AgentWorkspaceConfigFile(Path.Combine(".github", "copilot-instructions.md"), Templates.WorkspaceCopilotInstructions(request.WorkItems, request.Project));
     }
 }

@@ -123,11 +123,14 @@ internal static partial class SystemCommandLineApp
             Value("--root", "Root DevWorkflow a utiliser."),
             Flag("--summary", "Limite la sortie au resume."),
             Value("--comments", "Nombre de commentaires a charger."),
-            Value("--top", "Nombre maximum d'items."));
+            Value("--top", "Nombre maximum d'items."),
+            Flag("--all", "Inclut aussi les work items deja dans un etat final."),
+            Flag("--group-by-parent", "Groupe les work items assignes par parent ADO."),
+            Flag("--json", "Sortie JSON."));
         AddSubcommands(command,
-            Subcommand("assigned", "Liste les work items assignes a @Me.", parse => AdoCommand.Assigned(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), Math.Max(1, parse.GetValue<int?>("--top") ?? 20))),
-            Subcommand("work-item", "Affiche un resume de work item.", parse => AdoCommand.WorkItem(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("id")), Argument<string>("id", "ID du work item.")),
-            Subcommand("context", "Affiche le contexte complet d'un work item.", parse => AdoCommand.WorkItemContext(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("id"), parse.GetValue<bool>("--summary"), Math.Max(0, parse.GetValue<int?>("--comments") ?? 200)), Argument<string>("id", "ID du work item.")));
+            Subcommand("assigned", "Liste les work items assignes a @Me.", parse => AdoCommand.Assigned(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), Math.Max(1, parse.GetValue<int?>("--top") ?? 20), parse.GetValue<bool>("--all"), parse.GetValue<bool>("--group-by-parent"), parse.GetValue<bool>("--json"))),
+            Subcommand("work-item", "Affiche un resume de work item.", parse => AdoCommand.WorkItem(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("id"), parse.GetValue<bool>("--json")), WithCompletions(Argument<string>("id", "ID du work item, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
+            Subcommand("context", "Affiche le contexte complet d'un work item.", parse => AdoCommand.WorkItemContext(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("id"), parse.GetValue<bool>("--summary"), Math.Max(0, parse.GetValue<int?>("--comments") ?? 200), parse.GetValue<bool>("--json")), WithCompletions(Argument<string>("id", "ID du work item, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))));
         return command;
     }
 
@@ -165,7 +168,8 @@ internal static partial class SystemCommandLineApp
             Flag("--ready", "Cree une PR non draft."),
             Flag("--skip-ado", "Ignore Azure DevOps."),
             Flag("--skip-verify", "Ignore les verifications configurees."),
-            Flag("--create-child-tasks", "Cree les taches ADO enfant."));
+            Flag("--create-child-tasks", "Cree les taches ADO enfant."),
+            Flag("--with-active-children", "Inclut automatiquement les enfants ADO non finaux du sujet selectionne."));
         AddSubcommands(command,
             Subcommand("start", "Cree un workspace et des worktrees.", parse => TaskStartService.Start(context, new TaskStartRequest(
                 parse.GetRequiredValue<string>("work-item-id"),
@@ -175,16 +179,19 @@ internal static partial class SystemCommandLineApp
                 parse.GetValue<string>("--only"),
                 parse.GetValue<string>("--slug"),
                 parse.GetValue<bool>("--skip-ado"),
-                parse.GetValue<bool>("--create-child-tasks"))), Argument<string>("work-item-id", "ID du work item parent.")),
+                parse.GetValue<bool>("--create-child-tasks"),
+                parse.GetValue<bool>("--with-active-children"))), WithCompletions(Argument<string>("work-item-id", "ID du work item parent principal, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
             Subcommand("status", "Liste les chemins des workspaces.", (_, _) => TaskListService.Status(context)),
             Subcommand("list", "Liste les workspaces avec metadonnees.", parse => TaskListService.List(context, new TaskListOptions(parse.GetValue<string>("--project"), parse.GetValue<string>("--work-item"), parse.GetValue<bool>("--json")))),
-            Subcommand("current", "Affiche le workspace courant.", (_, _) => TaskListService.Current(context)),
+            Subcommand("current", "Affiche le workspace courant.", parse => TaskListService.Current(context, parse.GetValue<bool>("--json"))),
             Subcommand("sync", "Synchronise task.json depuis ADO.", parse => TaskSyncPruneService.Sync(context, OpenOptions(parse))),
             Subcommand("prune", "Nettoie les workspaces en etat final.", parse => TaskSyncPruneService.Prune(context, new TaskPruneOptions(parse.GetValue<string>("--project"), parse.GetValue<string>("--work-item"), parse.GetValue<bool>("--execute"), parse.GetValue<bool>("--yes"), !parse.GetValue<bool>("--no-sync")))),
             Subcommand("rename", "Renomme slug, branche et dossier workspace.", parse => TaskRenameService.Rename(context, new TaskRenameOptions(parse.GetRequiredValue<string>("--slug"), OpenOptions(parse), parse.GetValue<bool>("--execute")))),
-            Subcommand("open", "Ouvre le workspace dans un agent.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse)), Argument<string?>("work-item-id", "ID du work item a ouvrir.")),
+            Subcommand("open", "Ouvre le workspace dans un agent.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse)), WithCompletions(Argument<string?>("work-item-id", "ID du work item a ouvrir, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
             Subcommand("teardown", "Supprime les worktrees et le workspace.", (parse, _) => WorkspaceTeardownService.Teardown(context, TeardownOptions(parse))),
             Subcommand("add-repo", "Ajoute un repo au workspace existant.", parse => TaskCommand.AddRepo(context, new TaskAddRepoOptions(parse.GetRequiredValue<string>("repo"), parse.GetValue<string>("--workspace"))), Argument<string>("repo", "Repo a ajouter.")),
+            Subcommand("add-work-item", "Ajoute un ou plusieurs work items au workspace existant.", parse => TaskWorkItemService.Add(context, new TaskWorkItemUpdateOptions(parse.GetRequiredValue<string>("ids"), OpenOptions(parse))), WithCompletions(Argument<string>("ids", "ID du work item a ajouter, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
+            Subcommand("remove-work-item", "Retire un ou plusieurs work items du workspace existant.", parse => TaskWorkItemService.Remove(context, new TaskWorkItemUpdateOptions(parse.GetRequiredValue<string>("ids"), OpenOptions(parse))), WithCompletions(Argument<string>("ids", "ID du work item a retirer, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
             Subcommand("commit", "Commit intermediaire sans push ni PR.", parse => TaskCommand.Commit(context, new TaskCommitRequest(
                 parse.GetValue<string>("--workspace"),
                 parse.GetValue<bool>("--continue"),
@@ -222,7 +229,7 @@ internal static partial class SystemCommandLineApp
             Value("--env", "Alias legacy de --database."));
         AddSubcommands(command,
             Subcommand("schema", "Liste les tables disponibles.", parse => DbCommand.Schema(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"))),
-            Subcommand("describe", "Decrit une table.", parse => DbCommand.Describe(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), parse.GetRequiredValue<string>("table")), Argument<string>("table", "Nom de table, avec schema optionnel.")),
+            Subcommand("describe", "Decrit une table.", parse => DbCommand.Describe(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), parse.GetRequiredValue<string>("table")), WithCompletions(Argument<string>("table", "Nom de table, avec schema optionnel."), completion => TableCompletions(context, completion))),
             Subcommand("query", "Execute une requete SELECT.", (parse, command) =>
             {
                 var maxRows = parse.GetValue<int?>("--max-rows");

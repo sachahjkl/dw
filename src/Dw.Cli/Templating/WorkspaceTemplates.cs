@@ -2,7 +2,7 @@ namespace Dw.Cli.Templating;
 
 internal static partial class Templates
 {
-    public static string WorkspaceAgentsMd(string workItemId, string project) => $$"""
+    public static string WorkspaceAgentsMd(IReadOnlyList<WorkspaceWorkItem> workItems, string project) => $$"""
 # DevWorkflow Workspace
 
 This workspace is managed by `dw`.
@@ -10,13 +10,14 @@ This workspace is managed by `dw`.
 Context:
 
 - Project: `{{project}}`
-- Work item: `{{workItemId}}`
+- Work items:
+{{FormatWorkItems(workItems)}}
 
 Rules:
 
 1. Run `dw task current` to identify the current task workspace.
-2. Read the work item with `dw ado work-item {{workItemId}} --project {{project}}` before coding.
-3. Use `dw ado context {{workItemId}} --project {{project}}` when you need the full ADO context.
+2. Read each work item with `dw ado work-item <id> --project {{project}}` before coding.
+3. Use `dw ado context <id> --project {{project}}` when you need the full ADO context.
 4. Use `dw db schema`, `dw db describe` and `dw db query` when database context can clarify the change.
 5. Before working, make sure the initial project setup required by the environment is in place: install or restore dependencies, approve required build scripts, and initialize the basic local prerequisites.
 6. Fill `plan.md` before implementing.
@@ -26,15 +27,15 @@ Rules:
 10. Use `dw task teardown` or `dw task prune` for cleanup.
 """;
 
-    public static string WorkspaceClaudeMd(string workItemId, string project)
-        => WorkspaceAgentsMd(workItemId, project);
+    public static string WorkspaceClaudeMd(IReadOnlyList<WorkspaceWorkItem> workItems, string project)
+        => WorkspaceAgentsMd(workItems, project);
 
-    public static string WorkspaceCursorRule(string workItemId, string project) => $$"""
+    public static string WorkspaceCursorRule(IReadOnlyList<WorkspaceWorkItem> workItems, string project) => $$"""
 ---
 alwaysApply: true
 ---
 
-{{WorkspaceAgentsMd(workItemId, project)}}
+{{WorkspaceAgentsMd(workItems, project)}}
 """;
 
     public static string WorkspaceCodexConfig => """
@@ -42,6 +43,9 @@ alwaysApply: true
 # Shared instructions are loaded from AGENTS.md.
 """;
 
-    public static string WorkspaceCopilotInstructions(string workItemId, string project)
-        => WorkspaceAgentsMd(workItemId, project);
+    public static string WorkspaceCopilotInstructions(IReadOnlyList<WorkspaceWorkItem> workItems, string project)
+        => WorkspaceAgentsMd(workItems, project);
+
+    private static string FormatWorkItems(IReadOnlyList<WorkspaceWorkItem> workItems)
+        => string.Join(Environment.NewLine, workItems.Select(item => $"  - `#{item.Id}`"));
 }

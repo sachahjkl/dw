@@ -15,6 +15,6 @@ internal sealed class CursorAgentAdapter : IAgentAdapter
 
     public IEnumerable<AgentWorkspaceConfigFile> WorkspaceConfigFiles(AgentWorkspaceConfigRequest request)
     {
-        yield return new AgentWorkspaceConfigFile(Path.Combine(".cursor", "rules", "devworkflow.mdc"), Templates.WorkspaceCursorRule(request.WorkItemId, request.Project));
+        yield return new AgentWorkspaceConfigFile(Path.Combine(".cursor", "rules", "devworkflow.mdc"), Templates.WorkspaceCursorRule(request.WorkItems, request.Project));
     }
 }

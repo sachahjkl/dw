@@ -185,15 +185,30 @@ public sealed class AppTests
   }
 }
 """);
+            Directory.CreateDirectory(Path.Combine(root, "projects", "ha", "workspaces", "feat-123-456-demo"));
+            File.WriteAllText(Path.Combine(root, "projects", "ha", "workspaces", "feat-123-456-demo", "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(
+                1,
+                "123",
+                null,
+                "ha",
+                "feat",
+                "demo",
+                "feat/123-456-demo",
+                DateTimeOffset.UtcNow,
+                ["front"],
+                "created",
+                WorkItems: [new WorkspaceWorkItem("123"), new WorkspaceWorkItem("456")])));
 
             using var output = new StringWriter();
             using var error = new StringWriter();
             var context = new CommandContext(output, error, new FixedClock(), new RealFileSystem(), new NoopProcessRunner());
             var project = SystemCommandLineApp.GetCompletionsForTesting(context, "task start 123 --project ");
             var repo = SystemCommandLineApp.GetCompletionsForTesting(context, "task open --repo ");
+            var workItem = SystemCommandLineApp.GetCompletionsForTesting(context, "task start 123,");
 
             Assert.Contains(project, item => item.Label == "ha");
             Assert.Contains(repo, item => item.Label == "front");
+            Assert.Contains(workItem, item => item.Label == "123,456");
         }
         finally
         {

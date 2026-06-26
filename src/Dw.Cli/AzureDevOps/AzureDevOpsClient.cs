@@ -48,6 +48,29 @@ internal sealed class AzureDevOpsClient(HttpClient httpClient, AzureDevOpsOption
         return WorkItemSnapshot.From(document.RootElement);
     }
 
+    public async Task<IReadOnlyList<string>> GetRelatedWorkItemIdsAsync(
+        string workItemId,
+        string relationType,
+        TokenResult token,
+        CancellationToken cancellationToken = default)
+    {
+        using var document = await GetWorkItemExpandedAsync(workItemId, token, cancellationToken);
+        if (!document.RootElement.TryGetProperty("relations", out var relations) || relations.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return relations
+            .EnumerateArray()
+            .Where(relation => relation.TryGetProperty("rel", out var relProperty)
+                && string.Equals(relProperty.GetString(), relationType, StringComparison.OrdinalIgnoreCase))
+            .Select(relation => relation.TryGetProperty("url", out var urlProperty) ? urlProperty.GetString() : null)
+            .Select(WorkItemRelationIdParser.TryParse)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray()!;
+    }
+
     public async Task<IReadOnlyList<WorkItemSnapshot>> GetAssignedWorkItemsAsync(
         int top,
         TokenResult token,
@@ -58,7 +81,6 @@ select [System.Id]
 from WorkItems
 where [System.TeamProject] = @project
   and [System.AssignedTo] = @Me
-  and [System.State] <> 'Closed'
 order by [System.ChangedDate] desc
 """;
         using var wiqlRequest = CreateRequest(HttpMethod.Post, AzureDevOpsUris.Wiql(options), token);
@@ -158,6 +180,20 @@ order by [System.ChangedDate] desc
         }
 
         return JsonDocument.Parse(content);
+    }
+}
+
+internal static class WorkItemRelationIdParser
+{
+    public static string? TryParse(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        var match = System.Text.RegularExpressions.Regex.Match(url, @"/workitems/(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value : null;
     }
 }
 

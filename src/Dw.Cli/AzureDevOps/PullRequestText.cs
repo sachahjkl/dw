@@ -25,7 +25,7 @@ internal static class PullRequestText
 ## Résumé
 - Travail réalisé pour `{manifest.Slug}`
 - Dépôt concerné : `{status.Repository}`
-- Work item : `#{manifest.WorkItemId}`
+- Work items : `{string.Join(", ", manifest.AllKnownWorkItemIds.Select(id => $"#{id}"))}`
 
 ## Plan
 {planSection}

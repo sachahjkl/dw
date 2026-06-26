@@ -25,4 +25,12 @@ public sealed class GitBranchNamesTests
 
         Assert.Equal("fix-53635-reprendre-numero-he", subject);
     }
+
+    [Fact]
+    public void Build_uses_all_work_item_ids()
+    {
+        var branch = GitBranchNames.Build("feat", ["11010", "55206", "55207"], "descriptif cours");
+
+        Assert.Equal("feat/11010-55206-55207-descriptif-cours", branch);
+    }
 }

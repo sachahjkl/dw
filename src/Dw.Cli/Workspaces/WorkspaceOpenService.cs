@@ -15,10 +15,10 @@ internal static class WorkspaceDiscoveryService
     public static IReadOnlyList<WorkspaceSummary> Filter(
         IReadOnlyList<WorkspaceSummary> workspaces,
         string? project,
-        string? workItemId)
+        WorkItemSet? workItems)
         => workspaces
             .Where(workspace => string.IsNullOrWhiteSpace(project) || string.Equals(workspace.Manifest.Project, project, StringComparison.OrdinalIgnoreCase))
-            .Where(workspace => string.IsNullOrWhiteSpace(workItemId) || string.Equals(workspace.Manifest.WorkItemId, workItemId, StringComparison.OrdinalIgnoreCase))
+            .Where(workspace => workItems is null || workItems.Ids.All(workspace.Manifest.MatchesWorkItem))
             .ToArray();
 }
 
@@ -79,7 +79,7 @@ internal static class WorkspaceOpenService
 
     internal static string ResolveWorkspace(CommandContext context, string root, WorkspaceOpenOptions options)
     {
-        var workItemId = ResolveWorkItemId(options);
+        var workItems = ResolveWorkItemIds(options);
 
         if (!string.IsNullOrWhiteSpace(options.Workspace))
         {
@@ -89,7 +89,7 @@ internal static class WorkspaceOpenService
         var workspaces = WorkspaceDiscoveryService.Filter(
             WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, root),
             options.Project,
-            workItemId);
+            workItems);
 
         if (workspaces.Count == 0)
         {
@@ -104,20 +104,21 @@ internal static class WorkspaceOpenService
         return AskWorkspace(context, workspaces);
     }
 
-    private static string? ResolveWorkItemId(WorkspaceOpenOptions options)
+    private static WorkItemSet? ResolveWorkItemIds(WorkspaceOpenOptions options)
     {
         if (string.IsNullOrWhiteSpace(options.PositionalWorkItemId))
         {
-            return options.WorkItemId;
+            return WorkItemSet.ParseOptional(options.WorkItemId);
         }
 
-        if (!string.IsNullOrWhiteSpace(options.WorkItemId) &&
-            !string.Equals(options.PositionalWorkItemId, options.WorkItemId, StringComparison.OrdinalIgnoreCase))
+        var positional = WorkItemSet.Parse(options.PositionalWorkItemId);
+        var optional = WorkItemSet.ParseOptional(options.WorkItemId);
+        if (optional is not null && !WorkItemSet.SetEquals(positional, optional))
         {
             throw new DwException("work-item-id et --work-item doivent pointer vers le meme work item.", 2);
         }
 
-        return options.PositionalWorkItemId;
+        return positional;
     }
 
     private static string AskWorkspace(CommandContext context, IReadOnlyList<WorkspaceSummary> workspaces)
@@ -158,7 +159,7 @@ internal static class WorkspaceOpenService
         for (var i = 0; i < workspaces.Count; i++)
         {
             var workspace = workspaces[i];
-            context.Out.WriteLine($"{i + 1}. {workspace.Manifest.Project} / {workspace.Manifest.WorkItemId} / {workspace.Manifest.Type}-{workspace.Manifest.WorkItemId}-{workspace.Manifest.Slug} / {workspace.Manifest.CreatedAt:yyyy-MM-dd}");
+            context.Out.WriteLine($"{i + 1}. {workspace.Manifest.Project} / {workspace.Manifest.DisplayWorkItemIds} / {workspace.Manifest.Type}-{workspace.Manifest.PrimaryWorkItemId}-{workspace.Manifest.Slug} / {workspace.Manifest.CreatedAt:yyyy-MM-dd}");
         }
 
         context.Out.WriteLine();
@@ -168,7 +169,7 @@ internal static class WorkspaceOpenService
         => string.Join(' ',
             workspace.Path,
             workspace.Manifest.Project,
-            workspace.Manifest.WorkItemId,
+            workspace.Manifest.DisplayWorkItemIds,
             workspace.Manifest.TaskId,
             workspace.Manifest.Type,
             workspace.Manifest.Slug,

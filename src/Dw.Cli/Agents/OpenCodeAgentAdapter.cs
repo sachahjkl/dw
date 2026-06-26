@@ -23,6 +23,6 @@ internal sealed class OpenCodeAgentAdapter : IAgentAdapter
 
     public IEnumerable<AgentWorkspaceConfigFile> WorkspaceConfigFiles(AgentWorkspaceConfigRequest request)
     {
-        yield return new AgentWorkspaceConfigFile("AGENTS.md", Templates.WorkspaceAgentsMd(request.WorkItemId, request.Project));
+        yield return new AgentWorkspaceConfigFile("AGENTS.md", Templates.WorkspaceAgentsMd(request.WorkItems, request.Project));
     }
 }

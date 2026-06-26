@@ -90,6 +90,88 @@ public sealed class WorkspaceOpenServiceTests
     }
 
     [Fact]
+    public void ResolveWorkspace_matches_secondary_work_item_id()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var fs = new RealFileSystem();
+            var workspace = Path.Combine(root, "projects", "ha", "workspaces", "feat-11010-new");
+            fs.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(
+                1,
+                "11010",
+                null,
+                "ha",
+                "feat",
+                "new",
+                "feat/11010-new",
+                DateTimeOffset.Parse("2026-06-21T00:00:00Z"),
+                ["front"],
+                "created",
+                WorkItems:
+                [
+                    new WorkspaceWorkItem("11010", "User Story", "Principal", "En réalisation"),
+                    new WorkspaceWorkItem("55206", "Bug", "Secondaire", "En développement")
+                ])));
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            var context = new CommandContext(output, error, new FixedClock(), fs, new NoopProcessRunner());
+
+            var resolved = WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, "ha", "55206", Continue: false));
+
+            Assert.Equal(workspace, resolved);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void ResolveWorkspace_matches_all_requested_work_items()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var fs = new RealFileSystem();
+            var workspace = Path.Combine(root, "projects", "ha", "workspaces", "feat-11010-new");
+            fs.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(
+                1,
+                "11010",
+                null,
+                "ha",
+                "feat",
+                "new",
+                "feat/11010-new",
+                DateTimeOffset.Parse("2026-06-21T00:00:00Z"),
+                ["front"],
+                "created",
+                WorkItems:
+                [
+                    new WorkspaceWorkItem("11010", "User Story", "Principal", "En réalisation"),
+                    new WorkspaceWorkItem("55206", "Bug", "Secondaire", "En développement")
+                ])));
+            using var output = new StringWriter();
+            using var error = new StringWriter();
+            var context = new CommandContext(output, error, new FixedClock(), fs, new NoopProcessRunner());
+
+            var resolved = WorkspaceOpenService.ResolveWorkspace(context, root, new WorkspaceOpenOptions(null, "ha", "55206,11010", Continue: false));
+
+            Assert.Equal(workspace, resolved);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void ResolveWorkspace_rejects_conflicting_positional_and_option_work_item_ids()
     {
         var root = Path.Combine(Path.GetTempPath(), "dw-open-test-" + Guid.NewGuid().ToString("N"));
@@ -244,7 +326,7 @@ public sealed class WorkspaceOpenServiceTests
     [Fact]
     public void AgentRegistry_provides_workspace_config_files_from_adapters()
     {
-        var files = AgentAdapterRegistry.WorkspaceConfigFiles(new AgentWorkspaceConfigRequest(@"S:\workspace", "55222", "ha"));
+        var files = AgentAdapterRegistry.WorkspaceConfigFiles(new AgentWorkspaceConfigRequest(@"S:\workspace", [new WorkspaceWorkItem("55222")], "ha"));
 
         Assert.Contains(files, file => file.RelativePath == "AGENTS.md");
         Assert.Contains(files, file => file.RelativePath == "CLAUDE.md");

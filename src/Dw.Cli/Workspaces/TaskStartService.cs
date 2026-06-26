@@ -6,7 +6,8 @@ internal static class TaskStartService
 {
     public static int Start(CommandContext context, TaskStartRequest request)
     {
-        var workItemId = request.WorkItemId;
+        var workItemsSelection = WorkItemSet.Parse(request.WorkItemId);
+        var workItemId = workItemsSelection.PrimaryId;
         var project = request.Project ?? "default";
         var taskId = request.TaskId;
         var type = request.Type ?? "feat";
@@ -22,22 +23,36 @@ internal static class TaskStartService
             ? null
             : TaskCommand.TryCreateAdoContext(context, workflow, projectConfig, required: false);
         WorkItemSnapshot? workItem = null;
+        IReadOnlyList<WorkspaceWorkItem>? workItems = null;
         IReadOnlyDictionary<string, string>? childTaskIds = null;
 
         if (adoContext is not null)
         {
-            workItem = adoContext.Client.GetWorkItemSnapshotAsync(workItemId, adoContext.Token).GetAwaiter().GetResult();
+            var snapshots = ExpandSelection(adoContext, workItemsSelection, request.WithActiveChildren);
+            RejectFinalStates(snapshots);
+            RejectWorkspaceConflicts(context, root, project, snapshots.Select(snapshot => snapshot.Id));
+            workItem = snapshots[0];
+            workItems = snapshots
+                .Select(snapshot => new WorkspaceWorkItem(snapshot.Id, snapshot.Type, snapshot.Title, snapshot.State))
+                .ToArray();
             context.Out.WriteLine($"ADO item {workItem.Id}: {workItem.Type} - {workItem.Title}");
+            foreach (var additional in snapshots.Skip(1))
+            {
+                context.Out.WriteLine($"ADO item {additional.Id}: {additional.Type} - {additional.Title}");
+            }
             context.Debug($"ADO state courant: {workItem.State ?? "(vide)"}");
 
             if (workflow.TaskStart?.UpdateWorkItemState ?? true)
             {
-                var startState = AdoWorkflowStates.StartState(workItem.Type, workflow.TaskStart);
-                if (!string.IsNullOrWhiteSpace(startState) &&
-                    !string.Equals(workItem.State, startState, StringComparison.OrdinalIgnoreCase))
+                foreach (var snapshot in snapshots)
                 {
-                    TaskCommand.UpdateWorkItemState(adoContext.Client, adoContext.Token, workItem.Id, startState, "dw task start");
-                    context.Out.WriteLine($"ADO item {workItem.Id}: etat -> {startState}");
+                    var startState = AdoWorkflowStates.StartState(snapshot.Type, workflow.TaskStart);
+                    if (!string.IsNullOrWhiteSpace(startState) &&
+                        !string.Equals(snapshot.State, startState, StringComparison.OrdinalIgnoreCase))
+                    {
+                        TaskCommand.UpdateWorkItemState(adoContext.Client, adoContext.Token, snapshot.Id, startState, "dw task start");
+                        context.Out.WriteLine($"ADO item {snapshot.Id}: etat -> {startState}");
+                    }
                 }
             }
 
@@ -52,14 +67,26 @@ internal static class TaskStartService
         }
         else if (!request.SkipAdo && workflow.AzureDevOps is not null)
         {
-            context.Out.WriteLine("ADO ignore: aucun token silencieux disponible. Utiliser dw auth login, DW_ADO_TOKEN, ou --skip-ado.");
+            throw new DwException("ADO requis pour verifier les work items. Utiliser dw auth login, DW_ADO_TOKEN, ou --skip-ado pour bypass explicite.", 2);
+        }
+        else
+        {
+            RejectWorkspaceConflicts(context, root, project, workItemsSelection.Ids);
         }
 
         var slug = TaskCommand.ResolveSlug(request.Slug, workItemId, workItem);
         context.Debug($"Slug normalise: {slug}");
 
-        var subject = GitBranchNames.BuildSubjectName(type, workItemId, slug);
-        var branchName = GitBranchNames.Build(type, workItemId, taskId, slug);
+        workItems ??= workItemsSelection.Ids.Select(id => new WorkspaceWorkItem(id)).ToArray();
+
+        var branchWorkItemIds = workItems.Select(item => item.Id)
+            .Concat(string.IsNullOrWhiteSpace(taskId) ? [] : [taskId])
+            .Concat((childTaskIds ?? new Dictionary<string, string>()).Values.Where(id => !string.IsNullOrWhiteSpace(id)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var subject = GitBranchNames.BuildSubjectName(type, workItems.Select(item => item.Id).ToArray(), slug);
+        var branchName = GitBranchNames.Build(type, branchWorkItemIds, slug);
         var projectRoot = Path.Combine(root, "projects", project);
         var workspace = Path.Combine(projectRoot, "workspaces", subject);
         context.Debug($"Workspace cible: {workspace}");
@@ -87,10 +114,10 @@ internal static class TaskStartService
             results.Add(result);
         }
 
-        var manifest = new WorkspaceManifest(1, workItemId, taskId, project, type, slug, branchName, context.Clock.Now, repositories, "created", workItem?.Type, workItem?.Title, workItem?.State, childTaskIds);
+        var manifest = new WorkspaceManifest(1, workItemId, taskId, project, type, slug, branchName, context.Clock.Now, repositories, "created", workItem?.Type, workItem?.Title, workItem?.State, childTaskIds, workItems);
         context.FileSystem.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(manifest));
-        context.FileSystem.WriteAllText(Path.Combine(workspace, "plan.md"), Templates.PlanMd(workItemId, project));
-        WriteWorkspaceAgentConfigs(context.FileSystem, workspace, workItemId, project);
+        context.FileSystem.WriteAllText(Path.Combine(workspace, "plan.md"), Templates.PlanMd(manifest.ParentWorkItems, project));
+        WriteWorkspaceAgentConfigs(context.FileSystem, workspace, manifest.ParentWorkItems, project);
 
         context.Out.WriteLine($"Workspace cree: {workspace}");
         context.Out.WriteLine($"Branche cible: {branchName}");
@@ -108,9 +135,73 @@ internal static class TaskStartService
         return 0;
     }
 
-    private static void WriteWorkspaceAgentConfigs(IFileSystem fileSystem, string workspace, string workItemId, string project)
+    private static IReadOnlyList<WorkItemSnapshot> ExpandSelection(AdoContext adoContext, WorkItemSet selection, bool withActiveChildren)
     {
-        foreach (var file in AgentAdapterRegistry.WorkspaceConfigFiles(new AgentWorkspaceConfigRequest(workspace, workItemId, project)))
+        var snapshots = selection.Ids
+            .Select(id => adoContext.Client.GetWorkItemSnapshotAsync(id, adoContext.Token).GetAwaiter().GetResult())
+            .ToList();
+
+        if (!withActiveChildren)
+        {
+            return snapshots;
+        }
+
+        var childIds = snapshots
+            .SelectMany(snapshot => adoContext.Client
+                .GetRelatedWorkItemIdsAsync(snapshot.Id, "System.LinkTypes.Hierarchy-Forward", adoContext.Token)
+                .GetAwaiter()
+                .GetResult())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(id => snapshots.All(snapshot => !string.Equals(snapshot.Id, id, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+
+        var childSnapshots = childIds
+            .Select(id => adoContext.Client.GetWorkItemSnapshotAsync(id, adoContext.Token).GetAwaiter().GetResult())
+            .Where(snapshot => !TaskCommand.IsFinalState(snapshot.Type, snapshot.State))
+            .ToArray();
+
+        snapshots.AddRange(childSnapshots);
+        return snapshots;
+    }
+
+    private static void RejectFinalStates(IEnumerable<WorkItemSnapshot> snapshots)
+    {
+        var finalItems = snapshots
+            .Where(snapshot => TaskCommand.IsFinalState(snapshot.Type, snapshot.State))
+            .Select(snapshot => $"#{snapshot.Id} ({snapshot.State})")
+            .ToArray();
+
+        if (finalItems.Length > 0)
+        {
+            throw new DwException($"Impossible de demarrer un workspace avec des work items en etat final: {string.Join(", ", finalItems)}", 2);
+        }
+    }
+
+    private static void RejectWorkspaceConflicts(CommandContext context, string root, string project, IEnumerable<string> workItemIds)
+    {
+        var selection = workItemIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var conflicts = WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, root)
+            .Where(workspace => string.Equals(workspace.Manifest.Project, project, StringComparison.OrdinalIgnoreCase))
+            .Where(workspace => selection.Any(workspace.Manifest.MatchesWorkItem))
+            .Select(workspace => new
+            {
+                workspace.Path,
+                MatchingIds = selection.Where(workspace.Manifest.MatchesWorkItem).ToArray()
+            })
+            .ToArray();
+
+        if (conflicts.Length == 0)
+        {
+            return;
+        }
+
+        var details = string.Join("; ", conflicts.Select(conflict => $"{string.Join(", ", conflict.MatchingIds)} deja present(s) dans {conflict.Path}"));
+        throw new DwException($"Workspace deja existant pour un des work items demandes: {details}", 2);
+    }
+
+    private static void WriteWorkspaceAgentConfigs(IFileSystem fileSystem, string workspace, IReadOnlyList<WorkspaceWorkItem> workItems, string project)
+    {
+        foreach (var file in AgentAdapterRegistry.WorkspaceConfigFiles(new AgentWorkspaceConfigRequest(workspace, workItems, project)))
         {
             fileSystem.WriteAllText(Path.Combine(workspace, file.RelativePath), file.Content);
         }
@@ -125,4 +216,5 @@ internal sealed record TaskStartRequest(
     string? Only,
     string? Slug,
     bool SkipAdo,
-    bool CreateChildTasks);
+    bool CreateChildTasks,
+    bool WithActiveChildren);

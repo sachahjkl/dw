@@ -15,7 +15,7 @@ internal sealed class CodexCliAgentAdapter : IAgentAdapter
 
     public IEnumerable<AgentWorkspaceConfigFile> WorkspaceConfigFiles(AgentWorkspaceConfigRequest request)
     {
-        yield return new AgentWorkspaceConfigFile("AGENTS.md", Templates.WorkspaceAgentsMd(request.WorkItemId, request.Project));
+        yield return new AgentWorkspaceConfigFile("AGENTS.md", Templates.WorkspaceAgentsMd(request.WorkItems, request.Project));
         yield return new AgentWorkspaceConfigFile(Path.Combine(".codex", "config.toml"), Templates.WorkspaceCodexConfig);
     }
 }
