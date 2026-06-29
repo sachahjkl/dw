@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Net;
+using System.Text;
 
 namespace Dw.Cli.Commands;
 
@@ -105,6 +107,62 @@ internal static class AdoCommand
         return 0;
     }
 
+    internal static int Changelog(CommandContext context, string? configuredRoot, string? projectName, string source, string? target, bool fromPullRequests, bool fromGit, string? repository, bool groupByParent, string? format, bool markdownTable, bool idsOnly)
+    {
+        if (fromPullRequests && fromGit)
+        {
+            throw new DwException("Choisir soit --from-pr, soit --from-git, pas les deux.", 2);
+        }
+
+        var mode = fromGit ? ChangelogSourceMode.Git : ChangelogSourceMode.PullRequests;
+        var outputFormat = ParseChangelogFormat(format);
+        if (markdownTable && outputFormat != ChangelogFormat.Markdown)
+        {
+            throw new DwException("L'option --table est uniquement disponible avec --format markdown.", 2);
+        }
+
+        if (idsOnly && markdownTable)
+        {
+            throw new DwException("Les options --ids-only et --table ne peuvent pas etre combinees.", 2);
+        }
+
+        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
+        var projectConfig = ResolveProjectConfig(context, configuredRoot, projectName);
+        using var http = new HttpClient();
+        var client = new AzureDevOpsClient(http, azureDevOps);
+
+        var workItemIds = mode == ChangelogSourceMode.Git
+            ? ExtractWorkItemIdsFromGitRange(context, source, target)
+            : GetWorkItemIdsFromPullRequests(client, token, projectConfig, repository, source);
+
+        if (workItemIds.Count == 0)
+        {
+            context.Out.WriteLine(mode == ChangelogSourceMode.Git
+                ? "Aucun work item detecte dans les messages de commit de la plage git."
+                : "Aucun work item detecte pour les pull requests donnees.");
+            return 0;
+        }
+
+        if (idsOnly)
+        {
+            context.Out.WriteLine(string.Join(' ', workItemIds));
+            return 0;
+        }
+
+        var items = client.GetWorkItemSnapshotsAsync(workItemIds, token).GetAwaiter().GetResult();
+        if (items.Count == 0)
+        {
+            context.Out.WriteLine("Aucun work item resolu dans Azure DevOps.");
+            return 0;
+        }
+
+        var rendered = groupByParent
+            ? RenderGroupedChangelog(GroupWorkItemsByParent(client, token, items), outputFormat, azureDevOps, markdownTable)
+            : RenderFlatChangelog(items.OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase).ToArray(), outputFormat, azureDevOps, markdownTable);
+        context.Out.WriteLine(rendered);
+        return 0;
+    }
+
     internal static int WorkItemContext(CommandContext context, string? configuredRoot, string? projectName, string id, bool summaryOnly, int commentLimit, bool json)
     {
         var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
@@ -148,6 +206,14 @@ internal static class AdoCommand
     }
 
     private static IReadOnlyList<AssignedWorkItemGroup> GroupAssignedItemsByParent(AzureDevOpsClient client, TokenResult token, IReadOnlyList<WorkItemSnapshot> items, string? projectName)
+        => GroupWorkItemsByParent(client, token, items)
+            .Select(group => new AssignedWorkItemGroup(
+                group.Parent,
+                group.Items,
+                $"dw task start {BuildSuggestedStartIds(group.Parent, group.Items)}{ProjectHint(projectName)}"))
+            .ToArray();
+
+    private static IReadOnlyList<WorkItemGroup> GroupWorkItemsByParent(AzureDevOpsClient client, TokenResult token, IReadOnlyList<WorkItemSnapshot> items)
     {
         var groups = new Dictionary<string, List<WorkItemSnapshot>>(StringComparer.OrdinalIgnoreCase);
         var parents = new Dictionary<string, WorkItemSnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -178,15 +244,367 @@ internal static class AdoCommand
         }
 
         return groups
-            .Select(group => new AssignedWorkItemGroup(
+            .Select(group => new WorkItemGroup(
                 parents[group.Key],
                 group.Value
                     .OrderBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
-                    .ToArray(),
-                $"dw task start {BuildSuggestedStartIds(parents[group.Key], group.Value)}{ProjectHint(projectName)}"))
+                    .ToArray()))
             .OrderBy(group => group.Parent.Id, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
+
+    internal static IReadOnlyList<string> ExtractWorkItemIdsFromCommitMessages(string commitLog)
+        => AdoRegexes.WorkItemReference()
+            .Matches(commitLog ?? string.Empty)
+            .Select(match => match.Groups["id"].Value)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static IReadOnlyList<string> ExtractWorkItemIdsFromGitRange(CommandContext context, string from, string? to)
+    {
+        if (string.IsNullOrWhiteSpace(to))
+        {
+            throw new DwException("Le mode --from-git attend 2 refs git: source et target.", 2);
+        }
+
+        var result = context.ProcessRunner.RunAsync("git", ["log", "--format=%B%x1e", $"{from}..{to}"], Environment.CurrentDirectory).GetAwaiter().GetResult();
+        if (result.ExitCode != 0)
+        {
+            throw new DwException($"git log a echoue: {FirstNonEmpty(result.StandardError, result.StandardOutput)}");
+        }
+
+        return ExtractWorkItemIdsFromCommitMessages(result.StandardOutput);
+    }
+
+    private static IReadOnlyList<string> GetWorkItemIdsFromPullRequests(AzureDevOpsClient client, TokenResult token, ProjectConfig? projectConfig, string? repository, string source)
+    {
+        var pullRequestIds = WorkItemSet.Parse(source).Ids;
+        var repositories = ResolveAdoRepositories(projectConfig, repository);
+        if (repositories.Count == 0)
+        {
+            throw new DwException("Le mode PR requiert --repo, ou un --project avec des repositories AzureDevOpsRepository configures.", 2);
+        }
+
+        var workItemIds = new List<string>();
+        foreach (var pullRequestId in pullRequestIds)
+        {
+            if (!int.TryParse(pullRequestId, CultureInfo.InvariantCulture, out var numericPullRequestId))
+            {
+                throw new DwException($"ID de pull request invalide: {pullRequestId}", 2);
+            }
+
+            var matches = repositories
+                .Select(repo => new PullRequestLookup(repo, client.TryGetPullRequestWorkItemIdsAsync(repo, numericPullRequestId, token).GetAwaiter().GetResult()))
+                .Where(result => result.WorkItemIds is not null)
+                .ToArray();
+
+            if (matches.Length == 0)
+            {
+                throw new DwException($"Pull request #{pullRequestId} introuvable dans les repos Azure DevOps testes: {string.Join(", ", repositories)}");
+            }
+
+            if (matches.Length > 1)
+            {
+                throw new DwException($"Pull request #{pullRequestId} trouvee dans plusieurs repos ({string.Join(", ", matches.Select(match => match.Repository))}). Preciser --repo.", 2);
+            }
+
+            workItemIds.AddRange(matches[0].WorkItemIds!);
+        }
+
+        return workItemIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static IReadOnlyList<string> ResolveAdoRepositories(ProjectConfig? projectConfig, string? repository)
+    {
+        if (!string.IsNullOrWhiteSpace(repository))
+        {
+            return repository
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(repo => ResolveAdoRepository(projectConfig, repo))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        return projectConfig?.Repositories.Values
+            .Select(repo => repo.AzureDevOpsRepository)
+            .Where(repo => !string.IsNullOrWhiteSpace(repo))
+            .Cast<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
+    }
+
+    private static string ResolveAdoRepository(ProjectConfig? projectConfig, string repository)
+    {
+        if (projectConfig is not null && projectConfig.Repositories.TryGetValue(repository, out var configured) && !string.IsNullOrWhiteSpace(configured.AzureDevOpsRepository))
+        {
+            return configured.AzureDevOpsRepository;
+        }
+
+        return repository;
+    }
+
+    private static ProjectConfig? ResolveProjectConfig(CommandContext context, string? configuredRoot, string? projectName)
+    {
+        if (string.IsNullOrWhiteSpace(projectName))
+        {
+            return null;
+        }
+
+        var root = RootResolver.Resolve(context, configuredRoot);
+        var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
+        return DevWorkflowConfigLoader.ResolveProject(projects, projectName);
+    }
+
+    private static ChangelogFormat ParseChangelogFormat(string? format)
+        => format?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "raw" => ChangelogFormat.Raw,
+            "markdown" => ChangelogFormat.Markdown,
+            "html" => ChangelogFormat.Html,
+            _ => throw new DwException($"Format de changelog inconnu: {format}", 2)
+        };
+
+    internal static string RenderFlatChangelog(IReadOnlyList<WorkItemSnapshot> items, ChangelogFormat format, AzureDevOpsOptions options, bool markdownTable = false)
+        => format switch
+        {
+            ChangelogFormat.Raw => string.Join(Environment.NewLine, items.Select(item => RenderRawLine(item))),
+            ChangelogFormat.Markdown => markdownTable ? RenderFlatMarkdownTable(items, options) : RenderFlatMarkdown(items, options),
+            ChangelogFormat.Html => RenderFlatHtml(items, options),
+            _ => throw new InvalidOperationException("Format de changelog non pris en charge.")
+        };
+
+    internal static string RenderGroupedChangelog(IReadOnlyList<WorkItemGroup> groups, ChangelogFormat format, AzureDevOpsOptions options, bool markdownTable = false)
+        => format switch
+        {
+            ChangelogFormat.Raw => RenderGroupedRaw(groups),
+            ChangelogFormat.Markdown => markdownTable ? RenderGroupedMarkdownTable(groups, options) : RenderGroupedMarkdown(groups, options),
+            ChangelogFormat.Html => RenderGroupedHtml(groups, options),
+            _ => throw new InvalidOperationException("Format de changelog non pris en charge.")
+        };
+
+    private static string RenderGroupedRaw(IReadOnlyList<WorkItemGroup> groups)
+    {
+        var builder = new StringBuilder();
+        for (var i = 0; i < groups.Count; i++)
+        {
+            var group = groups[i];
+            builder.AppendLine(RenderRawLine(group.Parent));
+            foreach (var item in group.Items)
+            {
+                builder.Append("  - ");
+                builder.AppendLine(RenderRawLine(item));
+            }
+
+            if (i < groups.Count - 1)
+            {
+                builder.AppendLine();
+            }
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string RenderFlatMarkdown(IReadOnlyList<WorkItemSnapshot> items, AzureDevOpsOptions options)
+        => string.Join(Environment.NewLine, new[] { "# Changelog", string.Empty }
+            .Concat(items.Select(item => $"- {RenderMarkdownLine(item, options)}")));
+
+    private static string RenderFlatMarkdownTable(IReadOnlyList<WorkItemSnapshot> items, AzureDevOpsOptions options)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# Changelog");
+        builder.AppendLine();
+        builder.AppendLine("| Work Item | Type | Etat | Titre |");
+        builder.AppendLine("| --- | --- | --- | --- |");
+        foreach (var item in items)
+        {
+            builder.AppendLine($"| {RenderMarkdownLink(item, options)} | {EscapeMarkdownTableCell(item.Type)} | {EscapeMarkdownTableCell(item.State)} | {EscapeMarkdownTableCell(item.Title)} |");
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string RenderGroupedMarkdown(IReadOnlyList<WorkItemGroup> groups, AzureDevOpsOptions options)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# Changelog");
+        builder.AppendLine();
+        for (var i = 0; i < groups.Count; i++)
+        {
+            var group = groups[i];
+            builder.AppendLine($"## {RenderMarkdownLine(group.Parent, options)}");
+            foreach (var item in group.Items)
+            {
+                builder.AppendLine($"- {RenderMarkdownLine(item, options)}");
+            }
+
+            if (i < groups.Count - 1)
+            {
+                builder.AppendLine();
+            }
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string RenderGroupedMarkdownTable(IReadOnlyList<WorkItemGroup> groups, AzureDevOpsOptions options)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("# Changelog");
+        builder.AppendLine();
+        for (var i = 0; i < groups.Count; i++)
+        {
+            var group = groups[i];
+            builder.AppendLine($"## {RenderMarkdownLine(group.Parent, options)}");
+            builder.AppendLine();
+            builder.AppendLine("| Work Item | Type | Etat | Titre |");
+            builder.AppendLine("| --- | --- | --- | --- |");
+
+            if (group.Items.Count == 0)
+            {
+                builder.AppendLine($"| {RenderMarkdownLink(group.Parent, options)} | {EscapeMarkdownTableCell(group.Parent.Type)} | {EscapeMarkdownTableCell(group.Parent.State)} | {EscapeMarkdownTableCell(group.Parent.Title)} |");
+            }
+            else
+            {
+                foreach (var item in group.Items)
+                {
+                    builder.AppendLine($"| {RenderMarkdownLink(item, options)} | {EscapeMarkdownTableCell(item.Type)} | {EscapeMarkdownTableCell(item.State)} | {EscapeMarkdownTableCell(item.Title)} |");
+                }
+            }
+
+            if (i < groups.Count - 1)
+            {
+                builder.AppendLine();
+            }
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string RenderFlatHtml(IReadOnlyList<WorkItemSnapshot> items, AzureDevOpsOptions options)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("<h1>Changelog</h1>");
+        builder.AppendLine("<ul>");
+        foreach (var item in items)
+        {
+            builder.Append("  <li>");
+            builder.Append(RenderHtmlLine(item, options));
+            builder.AppendLine("</li>");
+        }
+
+        builder.Append("</ul>");
+        return builder.ToString();
+    }
+
+    private static string RenderGroupedHtml(IReadOnlyList<WorkItemGroup> groups, AzureDevOpsOptions options)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("<h1>Changelog</h1>");
+        foreach (var group in groups)
+        {
+            builder.Append("<h2>");
+            builder.Append(RenderHtmlLine(group.Parent, options));
+            builder.AppendLine("</h2>");
+            if (group.Items.Count == 0)
+            {
+                continue;
+            }
+
+            builder.AppendLine("<ul>");
+            foreach (var item in group.Items)
+            {
+                builder.Append("  <li>");
+                builder.Append(RenderHtmlLine(item, options));
+                builder.AppendLine("</li>");
+            }
+
+            builder.AppendLine("</ul>");
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    private static string RenderRawLine(WorkItemSnapshot item)
+    {
+        var builder = new StringBuilder();
+        builder.Append('#').Append(item.Id);
+        if (!string.IsNullOrWhiteSpace(item.Type))
+        {
+            builder.Append(" [").Append(item.Type).Append(']');
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.State))
+        {
+            builder.Append(' ').Append(item.State);
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.Title))
+        {
+            builder.Append(" - ").Append(item.Title);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string RenderMarkdownLine(WorkItemSnapshot item, AzureDevOpsOptions options)
+    {
+        var builder = new StringBuilder();
+        builder.Append(RenderMarkdownLink(item, options));
+        if (!string.IsNullOrWhiteSpace(item.Type))
+        {
+            builder.Append(" [").Append(item.Type).Append(']');
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.State))
+        {
+            builder.Append(' ').Append(item.State);
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.Title))
+        {
+            builder.Append(" - ").Append(item.Title);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string RenderMarkdownLink(WorkItemSnapshot item, AzureDevOpsOptions options)
+        => $"[#{item.Id}]({AzureDevOpsUris.WorkItemWebUrl(options, item.Id).AbsoluteUri})";
+
+    private static string EscapeMarkdownTableCell(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Replace("|", "\\|", StringComparison.Ordinal).Replace(Environment.NewLine, "<br />", StringComparison.Ordinal).Replace("\n", "<br />", StringComparison.Ordinal);
+
+    private static string RenderHtmlLine(WorkItemSnapshot item, AzureDevOpsOptions options)
+    {
+        var builder = new StringBuilder();
+        builder.Append("<a href=\"")
+            .Append(WebUtility.HtmlEncode(AzureDevOpsUris.WorkItemWebUrl(options, item.Id).AbsoluteUri))
+            .Append("\">#")
+            .Append(WebUtility.HtmlEncode(item.Id))
+            .Append("</a>");
+        if (!string.IsNullOrWhiteSpace(item.Type))
+        {
+            builder.Append(" [").Append(WebUtility.HtmlEncode(item.Type)).Append(']');
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.State))
+        {
+            builder.Append(' ').Append(WebUtility.HtmlEncode(item.State));
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.Title))
+        {
+            builder.Append(" - ").Append(WebUtility.HtmlEncode(item.Title));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? "erreur inconnue";
 
     private static string BuildSuggestedStartIds(WorkItemSnapshot parent, IReadOnlyList<WorkItemSnapshot> children)
         => string.Join(',', new[] { parent.Id }.Concat(children.Select(item => item.Id)).Distinct(StringComparer.OrdinalIgnoreCase));
@@ -413,3 +831,17 @@ internal static class AdoCommand
 }
 
 internal sealed record AssignedWorkItemGroup(WorkItemSnapshot Parent, IReadOnlyList<WorkItemSnapshot> Items, string SuggestedStartCommand);
+internal sealed record WorkItemGroup(WorkItemSnapshot Parent, IReadOnlyList<WorkItemSnapshot> Items);
+internal sealed record PullRequestLookup(string Repository, IReadOnlyList<string>? WorkItemIds);
+internal enum ChangelogSourceMode
+{
+    PullRequests,
+    Git
+}
+
+internal enum ChangelogFormat
+{
+    Raw,
+    Markdown,
+    Html
+}

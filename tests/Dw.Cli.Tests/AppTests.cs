@@ -61,6 +61,21 @@ public sealed class AppTests
     }
 
     [Fact]
+    public async Task RunAsync_ado_changelog_help_exposes_source_modes_and_formats()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["ado", "changelog", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--from-pr", output);
+        Assert.Contains("--from-git", output);
+        Assert.Contains("--format", output);
+        Assert.Contains("--table", output);
+        Assert.Contains("--ids-only", output);
+        Assert.Contains("source", output);
+        Assert.Contains("target", output);
+    }
+
+    [Fact]
     public async Task RunAsync_task_open_help_exposes_positional_work_item_id()
     {
         var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "open", "--help"]));

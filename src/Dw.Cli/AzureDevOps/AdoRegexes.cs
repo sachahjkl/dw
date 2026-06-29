@@ -37,6 +37,9 @@ internal static partial class AdoRegexes
     [GeneratedRegex(@"^(feat|fix|bug|chore|refactor|test)\(#[0-9]+(?: #[0-9]+)*\)\s?:\s\S.+$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     internal static partial Regex CommitMessage();
 
+    [GeneratedRegex(@"#(?<id>\d+)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    internal static partial Regex WorkItemReference();
+
     [GeneratedRegex(@"Build/Build/(\d+)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     internal static partial Regex BuildArtifact();
 

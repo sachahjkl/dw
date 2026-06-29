@@ -22,6 +22,9 @@ internal static class AzureDevOpsUris
     public static Uri WorkItemApiUrl(AzureDevOpsOptions options, string workItemId)
         => Build(options, $"{ProjectSegment(options)}/_apis/wit/workItems/{workItemId}");
 
+    public static Uri WorkItemWebUrl(AzureDevOpsOptions options, string workItemId)
+        => Build(options, $"{ProjectSegment(options)}/_workitems/edit/{workItemId}");
+
     public static Uri WorkItemComments(AzureDevOpsOptions options, string workItemId, int top, string? continuationToken = null)
     {
         var continuation = string.IsNullOrWhiteSpace(continuationToken)

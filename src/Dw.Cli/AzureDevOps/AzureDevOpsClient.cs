@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -106,6 +107,62 @@ order by [System.ChangedDate] desc
         using var batchDocument = await ReadJsonOrThrow(batchResponse, cancellationToken);
         return batchDocument.RootElement.TryGetProperty("value", out var values) && values.ValueKind == JsonValueKind.Array
             ? values.EnumerateArray().Select(WorkItemSnapshot.From).ToArray()
+            : [];
+    }
+
+    public async Task<IReadOnlyList<WorkItemSnapshot>> GetWorkItemSnapshotsAsync(
+        IReadOnlyList<string> workItemIds,
+        TokenResult token,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = workItemIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => int.Parse(id, CultureInfo.InvariantCulture))
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        using var batchRequest = CreateRequest(HttpMethod.Post, AzureDevOpsUris.WorkItemsBatch(options), token);
+        batchRequest.Content = new StringContent(JsonSerializer.Serialize(new WorkItemsBatchRequest(ids, ["System.Id", "System.WorkItemType", "System.State", "System.Title"]), AppJsonContext.Default.WorkItemsBatchRequest), Encoding.UTF8, "application/json");
+        using var batchResponse = await httpClient.SendAsync(batchRequest, cancellationToken);
+        using var batchDocument = await ReadJsonOrThrow(batchResponse, cancellationToken);
+        var snapshots = batchDocument.RootElement.TryGetProperty("value", out var values) && values.ValueKind == JsonValueKind.Array
+            ? values.EnumerateArray().Select(WorkItemSnapshot.From).ToArray()
+            : [];
+        var byId = snapshots.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
+
+        return workItemIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(byId.ContainsKey)
+            .Select(id => byId[id])
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyList<string>?> TryGetPullRequestWorkItemIdsAsync(
+        string repositoryIdOrName,
+        int pullRequestId,
+        TokenResult token,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest(HttpMethod.Get, AzureDevOpsUris.PullRequestWorkItems(options, repositoryIdOrName, pullRequestId), token);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        using var document = await ReadJsonOrThrow(response, cancellationToken);
+        return document.RootElement.TryGetProperty("value", out var values) && values.ValueKind == JsonValueKind.Array
+            ? values.EnumerateArray()
+                .Select(item => item.TryGetProperty("id", out var idProperty) ? idProperty.GetRawText().Trim('"') : null)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
             : [];
     }
 

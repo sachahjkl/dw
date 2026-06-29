@@ -140,6 +140,17 @@ internal static partial class SystemCommandLineApp
             Flag("--json", "Sortie JSON."));
         AddSubcommands(command,
             Subcommand("assigned", "Liste les work items assignes a @Me.", parse => AdoCommand.Assigned(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), Math.Max(1, parse.GetValue<int?>("--top") ?? 20), parse.GetValue<bool>("--all"), parse.GetValue<bool>("--group-by-parent"), parse.GetValue<bool>("--json"))),
+            Subcommand("changelog", "Genere un changelog de work items depuis des PR ou une plage git.", parse => AdoCommand.Changelog(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("source"), parse.GetValue<string>("target"), parse.GetValue<bool>("--from-pr"), parse.GetValue<bool>("--from-git"), parse.GetValue<string>("--repo"), parse.GetValue<bool>("--group-by-parent"), parse.GetValue<string>("--format"), parse.GetValue<bool>("--table"), parse.GetValue<bool>("--ids-only")),
+                [
+                    Flag("--from-pr", "Interprete source comme une liste d'IDs de pull request Azure DevOps (mode par defaut)."),
+                    Flag("--from-git", "Interprete source et target comme deux refs git delimtant une plage."),
+                    RepoOption(context, "Repo dw a resoudre, ou nom de repo Azure DevOps. Recommande pour les PR si plusieurs repos existent."),
+                    Value("--format", "Format de sortie.", ["raw", "markdown", "html"]),
+                    Flag("--table", "En format markdown, rend le changelog sous forme de tableau."),
+                    Flag("--ids-only", "Affiche uniquement la liste des IDs de work items, separes par des espaces.")
+                ],
+                Argument<string>("source", "Liste d'IDs de PR separes par virgules, ou ref git de depart."),
+                Argument<string?>("target", "Ref git de fin pour --from-git.")),
             Subcommand("work-item", "Affiche un resume de work item.", parse => AdoCommand.WorkItem(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("id"), parse.GetValue<bool>("--json")), WithCompletions(Argument<string>("id", "ID du work item, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
             Subcommand("context", "Affiche le contexte complet d'un work item.", parse => AdoCommand.WorkItemContext(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("id"), parse.GetValue<bool>("--summary"), Math.Max(0, parse.GetValue<int?>("--comments") ?? 200), parse.GetValue<bool>("--json")), WithCompletions(Argument<string>("id", "ID du work item, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))));
         return command;
