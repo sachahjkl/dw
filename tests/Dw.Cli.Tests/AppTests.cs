@@ -172,6 +172,24 @@ public sealed class AppTests
     }
 
     [Fact]
+    public void Completion_ado_changelog_suggests_local_options()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var context = new CommandContext(output, error, new FixedClock(), new RealFileSystem(), new NoopProcessRunner());
+
+        var completions = SystemCommandLineApp.GetCompletionsForTesting(context, "ado changelog --");
+
+        var labels = completions.Select(c => c.Label).ToArray();
+        Assert.Contains("--from-pr", labels);
+        Assert.Contains("--from-git", labels);
+        Assert.Contains("--repo", labels);
+        Assert.Contains("--format", labels);
+        Assert.Contains("--table", labels);
+        Assert.Contains("--ids-only", labels);
+    }
+
+    [Fact]
     public void Completion_sources_use_live_project_and_repository_values()
     {
         var root = Path.Combine(Path.GetTempPath(), "dw-live-completion-test-" + Guid.NewGuid().ToString("N"));
