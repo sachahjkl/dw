@@ -15,19 +15,33 @@ internal sealed class GitRepositoryStatusService(IProcessRunner processRunner, I
             var repoPath = Path.Combine(workspacePath, RepositoryFolder(projectConfig, repository));
             if (!fileSystem.DirectoryExists(repoPath))
             {
-                statuses.Add(new RepositoryStatus(repository, repoPath, false, false, "Dossier absent."));
+                statuses.Add(new RepositoryStatus(repository, repoPath, false, false, false, "Dossier absent."));
                 continue;
             }
 
             var result = await processRunner.RunAsync("git", ["status", "--short"], repoPath);
             if (result.ExitCode != 0)
             {
-                statuses.Add(new RepositoryStatus(repository, repoPath, false, false, result.StandardError.Trim()));
+                statuses.Add(new RepositoryStatus(repository, repoPath, false, false, false, result.StandardError.Trim()));
                 continue;
             }
 
             var output = result.StandardOutput.Trim();
-            statuses.Add(new RepositoryStatus(repository, repoPath, true, output.Length > 0, output));
+            var hasChanges = output.Length > 0;
+            var hasUnpushed = false;
+            var detail = output;
+
+            if (!hasChanges)
+            {
+                var upstreamResult = await processRunner.RunAsync("git", ["rev-list", "--count", "@{u}..HEAD"], repoPath);
+                if (upstreamResult.ExitCode == 0 && int.TryParse(upstreamResult.StandardOutput.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var ahead) && ahead > 0)
+                {
+                    hasUnpushed = true;
+                    detail = $"{ahead} commit(s) non pousse(s).";
+                }
+            }
+
+            statuses.Add(new RepositoryStatus(repository, repoPath, true, hasChanges, hasUnpushed, detail));
         }
 
         return statuses;
@@ -45,4 +59,5 @@ internal sealed record RepositoryStatus(
     string Path,
     bool IsGitRepository,
     bool HasChanges,
+    bool HasUnpushed,
     string Detail);

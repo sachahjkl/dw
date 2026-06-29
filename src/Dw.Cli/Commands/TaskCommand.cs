@@ -61,7 +61,11 @@ internal static class TaskCommand
         PrintStatuses(context, statuses);
 
         var changed = statuses.Where(status => status.IsGitRepository && status.HasChanges).ToList();
-        if (changed.Count == 0)
+        var unpushed = statuses.Where(status => status.IsGitRepository && status.HasUnpushed).ToList();
+        var actionable = changed.Count > 0 ? changed : unpushed;
+        var stageCommit = changed.Count > 0;
+
+        if (actionable.Count == 0)
         {
             context.Out.WriteLine();
             context.Out.WriteLine("Rien a terminer.");
@@ -71,7 +75,9 @@ internal static class TaskCommand
         if (!request.Execute)
         {
             context.Out.WriteLine();
-            context.Out.WriteLine("Dry-run uniquement. Relancer avec --execute pour committer/pousser.");
+            context.Out.WriteLine(stageCommit
+                ? "Dry-run uniquement. Relancer avec --execute pour committer/pousser."
+                : "Dry-run uniquement. Relancer avec --execute pour pousser/creer PR.");
             return 0;
         }
 
@@ -82,7 +88,7 @@ internal static class TaskCommand
 
         if (!request.SkipVerify && (workflow.TaskFinish?.RunVerification ?? true))
         {
-            verificationResults = RunVerification(context, workflow, changed).ToArray();
+            verificationResults = RunVerification(context, workflow, actionable).ToArray();
             var failed = verificationResults.Where(result => result.ExitCode != 0).ToArray();
             if (failed.Length > 0)
             {
@@ -99,15 +105,25 @@ internal static class TaskCommand
             }
         }
 
-        var commitMessage = CommitMessage.Build(manifest, request.Message);
-        foreach (var status in changed)
+        if (stageCommit)
         {
-            RunGitOrThrow(context, status.Path, "add", ".");
-            RunGitOrThrow(context, status.Path, "commit", "-m", commitMessage);
-            RunGitOrThrow(context, status.Path, "push", "-u", "origin", manifest.BranchName);
+            var commitMessage = CommitMessage.Build(manifest, request.Message);
+            foreach (var status in changed)
+            {
+                RunGitOrThrow(context, status.Path, "add", ".");
+                RunGitOrThrow(context, status.Path, "commit", "-m", commitMessage);
+                RunGitOrThrow(context, status.Path, "push", "-u", "origin", manifest.BranchName);
+            }
+        }
+        else
+        {
+            foreach (var status in unpushed)
+            {
+                RunGitOrThrow(context, status.Path, "push", "-u", "origin", manifest.BranchName);
+            }
         }
 
-        context.Out.WriteLine("Commits/push termines.");
+        context.Out.WriteLine(stageCommit ? "Commits/push termines." : "Push termine.");
 
         if (!request.CreatePr)
         {
@@ -126,7 +142,7 @@ internal static class TaskCommand
             throw new DwException("Contexte Azure DevOps indisponible.");
         }
 
-        CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, changed, draft, verificationResults);
+        CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, actionable, draft, verificationResults);
         return 0;
     }
 
@@ -202,9 +218,22 @@ internal static class TaskCommand
         {
             context.Out.WriteLine();
             context.Out.WriteLine($"[{status.Repository}] {status.Path}");
-            context.Out.WriteLine(status.IsGitRepository
-                ? status.HasChanges ? "Changements detectes:" : "Aucun changement."
-                : "Pas un repo Git utilisable.");
+            if (!status.IsGitRepository)
+            {
+                context.Out.WriteLine("Pas un repo Git utilisable.");
+            }
+            else if (status.HasChanges)
+            {
+                context.Out.WriteLine("Changements detectes:");
+            }
+            else if (status.HasUnpushed)
+            {
+                context.Out.WriteLine("Commits non pousses.");
+            }
+            else
+            {
+                context.Out.WriteLine("Aucun changement.");
+            }
 
             if (!string.IsNullOrWhiteSpace(status.Detail))
             {
