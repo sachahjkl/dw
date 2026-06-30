@@ -259,6 +259,8 @@ internal static partial class SystemCommandLineApp
             ProjectOption(context, "Projet dw."),
             DatabaseOption(context, "Base de donnees cible."),
             Value("--env", "Alias legacy de --database."));
+        var sqlArg = Remaining("sql", "Requete SQL SELECT.");
+        sqlArg.CompletionSources.Add(completion => SqlQueryCompletions(context, completion));
         AddSubcommands(command,
             Subcommand("schema", "Liste les tables disponibles.", parse => DbCommand.Schema(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"))),
             Subcommand("describe", "Decrit une table.", parse => DbCommand.Describe(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), parse.GetRequiredValue<string>("table")), WithCompletions(Argument<string>("table", "Nom de table, avec schema optionnel."), completion => TableCompletions(context, completion))),
@@ -271,7 +273,7 @@ internal static partial class SystemCommandLineApp
                 }
 
                 return DbCommand.Query(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), maxRows, parse.GetRequiredValue<string[]>("sql"));
-            }, [OptionalInt("--max-rows", "Nombre maximum de lignes a afficher.")], Remaining("sql", "Requete SQL SELECT.")));
+            }, [OptionalInt("--max-rows", "Nombre maximum de lignes a afficher.")], sqlArg));
         return command;
     }
 

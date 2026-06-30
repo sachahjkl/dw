@@ -130,4 +130,29 @@ internal static partial class SystemCommandLineApp
             documentation: item.Documentation,
             detail: item.Detail));
     }
+
+    private static IEnumerable<CompletionItem> SqlQueryCompletions(CommandContext context, CompletionContext completion)
+        => SafeCompletions(() =>
+        {
+            var parse = completion.ParseResult;
+            var project = parse.GetValue<string>("--project") ?? "default";
+            var database = parse.GetValue<string>("--database") ?? parse.GetValue<string>("--env") ?? "dev";
+            var root = Root(context);
+            var config = DatabasesConfigLoader.Load(context.FileSystem, root);
+            if (!DbCommand.TryResolveConnection(config, project, database, out var connection) || connection is null)
+            {
+                return [];
+            }
+
+            if (connection.Readonly is false || !config.Defaults.Readonly)
+            {
+                return [];
+            }
+
+            var tables = new SqlServerQueryService().ListTablesAsync(connection, config.Defaults).GetAwaiter().GetResult();
+            var word = completion.WordToComplete ?? string.Empty;
+            return tables
+                .Where(table => table.StartsWith(word, StringComparison.OrdinalIgnoreCase))
+                .Select(table => Item(table, "Table SQL"));
+        });
 }
