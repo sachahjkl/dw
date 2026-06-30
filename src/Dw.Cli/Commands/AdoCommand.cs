@@ -107,7 +107,7 @@ internal static class AdoCommand
         return 0;
     }
 
-    internal static int Changelog(CommandContext context, string? configuredRoot, string? projectName, string source, string? target, bool fromPullRequests, bool fromGit, string? repository, bool groupByParent, string? format, bool markdownTable, bool idsOnly)
+    internal static int Changelog(CommandContext context, string? configuredRoot, string? projectName, string ids, bool fromPullRequests, bool fromGit, string? repository, bool groupByParent, string? format, bool markdownTable, bool idsOnly, string? gitTo)
     {
         if (fromPullRequests && fromGit)
         {
@@ -132,8 +132,8 @@ internal static class AdoCommand
         var client = new AzureDevOpsClient(http, azureDevOps);
 
         var workItemIds = mode == ChangelogSourceMode.Git
-            ? ExtractWorkItemIdsFromGitRange(context, source, target)
-            : GetWorkItemIdsFromPullRequests(client, token, projectConfig, repository, source);
+            ? ExtractWorkItemIdsFromGitRange(context, ids, gitTo)
+            : GetWorkItemIdsFromPullRequests(client, token, projectConfig, repository, ids);
 
         if (workItemIds.Count == 0)
         {

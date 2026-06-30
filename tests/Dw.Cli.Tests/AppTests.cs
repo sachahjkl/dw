@@ -71,8 +71,8 @@ public sealed class AppTests
         Assert.Contains("--format", output);
         Assert.Contains("--table", output);
         Assert.Contains("--ids-only", output);
-        Assert.Contains("source", output);
-        Assert.Contains("target", output);
+        Assert.Contains("--git-to", output);
+        Assert.Contains("ids", output);
     }
 
     [Fact]
@@ -187,6 +187,13 @@ public sealed class AppTests
         Assert.Contains("--format", labels);
         Assert.Contains("--table", labels);
         Assert.Contains("--ids-only", labels);
+        Assert.Contains("--group-by-parent", labels);
+        Assert.Contains("--git-to", labels);
+        Assert.DoesNotContain("--comments", labels);
+        Assert.DoesNotContain("--summary", labels);
+        Assert.DoesNotContain("--top", labels);
+        Assert.DoesNotContain("--all", labels);
+        Assert.DoesNotContain("--json", labels);
     }
 
     [Fact]
