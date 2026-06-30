@@ -17,8 +17,8 @@ internal static partial class SystemCommandLineApp
         => SafeCompletions(() =>
         {
             var parse = completion.ParseResult;
-            var project = parse.GetValue<string>("--project") ?? "default";
-            var database = parse.GetValue<string>("--database") ?? parse.GetValue<string>("--env") ?? "dev";
+            var project = parse.GetValue<string>(OptionNames.Project) ?? "default";
+            var database = parse.GetValue<string>(OptionNames.Database) ?? parse.GetValue<string>(OptionNames.Env) ?? "dev";
             var root = Root(context);
             var config = DatabasesConfigLoader.Load(context.FileSystem, root);
             if (!DbCommand.TryResolveConnection(config, project, database, out var connection) || connection is null)
@@ -47,8 +47,8 @@ internal static partial class SystemCommandLineApp
         return SafeCompletions(() =>
         {
             var parse = completion.ParseResult;
-            var project = parse.GetValue<string>("--project") ?? "default";
-            var database = parse.GetValue<string>("--database") ?? parse.GetValue<string>("--env") ?? "dev";
+            var project = parse.GetValue<string>(OptionNames.Project) ?? "default";
+            var database = parse.GetValue<string>(OptionNames.Database) ?? parse.GetValue<string>(OptionNames.Env) ?? "dev";
             var root = Root(context);
             var config = DatabasesConfigLoader.Load(context.FileSystem, root);
             if (!DbCommand.TryResolveConnection(config, project, database, out var connection) || connection is null)

@@ -1,3 +1,5 @@
+using Dw.Cli.Cli;
+
 namespace Dw.Cli.Agents;
 
 internal sealed class CursorAgentAdapter : IAgentAdapter
@@ -9,7 +11,7 @@ internal sealed class CursorAgentAdapter : IAgentAdapter
     public AgentLaunch BuildOpenLaunch(AgentOpenRequest request)
         => new(
             "agent",
-            request.Continue ? ["--workspace", request.Workspace, "--continue"] : ["--workspace", request.Workspace],
+            request.Continue ? [OptionNames.Workspace, request.Workspace, OptionNames.Continue] : [OptionNames.Workspace, request.Workspace],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             request.Workspace);
 

@@ -1,3 +1,5 @@
+using Dw.Cli.Cli;
+
 namespace Dw.Cli.Commands;
 
 internal static class GuideCommand
@@ -9,8 +11,8 @@ internal static class GuideCommand
         context.Out.WriteLine("Guide rapide");
         context.Out.WriteLine();
         context.Out.WriteLine("1. Initialiser un root");
-        context.Out.WriteLine("   dw init --profile ogf --root C:\\Dev\\dw --dry-run");
-        context.Out.WriteLine("   dw init --profile ogf --root C:\\Dev\\dw");
+        context.Out.WriteLine($"   dw init {OptionNames.Profile} ogf {OptionNames.Root} C:\\Dev\\dw {OptionNames.DryRun}");
+        context.Out.WriteLine($"   dw init {OptionNames.Profile} ogf {OptionNames.Root} C:\\Dev\\dw");
         context.Out.WriteLine();
         context.Out.WriteLine("2. Verifier l'environnement");
         context.Out.WriteLine("   dw doctor");
@@ -25,24 +27,24 @@ internal static class GuideCommand
         context.Out.WriteLine("   dw auth status");
         context.Out.WriteLine();
         context.Out.WriteLine("5. Lire un work item sans rien modifier");
-        context.Out.WriteLine("   dw ado work-item 55201 --project ha");
-        context.Out.WriteLine("   dw ado context 55201 --project ha");
+        context.Out.WriteLine($"   dw ado work-item 55201 {OptionNames.Project} ha");
+        context.Out.WriteLine($"   dw ado context 55201 {OptionNames.Project} ha");
         context.Out.WriteLine();
         context.Out.WriteLine("6. Demarrer un workspace de travail");
-        context.Out.WriteLine("   dw task start <workItemId> --project ha --slug \"titre court\" --only front,back");
+        context.Out.WriteLine($"   dw task start <workItemId> {OptionNames.Project} ha {OptionNames.Slug} \"titre court\" {OptionNames.Only} front,back");
         context.Out.WriteLine();
         context.Out.WriteLine("7. Donner le contexte a l'agent");
         context.Out.WriteLine("   dw agent context");
         context.Out.WriteLine();
         context.Out.WriteLine("8. Inspecter la fin en dry-run");
-        context.Out.WriteLine("   dw task finish --workspace <workspace>");
+        context.Out.WriteLine($"   dw task finish {OptionNames.Workspace} <workspace>");
         context.Out.WriteLine();
         context.Out.WriteLine("9. Terminer vraiment quand tout est pret");
-        context.Out.WriteLine("   dw task finish --workspace <workspace> --execute --create-pr");
+        context.Out.WriteLine($"   dw task finish {OptionNames.Workspace} <workspace> {OptionNames.Execute} {OptionNames.CreatePr}");
         context.Out.WriteLine();
         context.Out.WriteLine("Notes");
-        context.Out.WriteLine("- Sans --execute, task finish est toujours un dry-run.");
-        context.Out.WriteLine("- Pour init, --no-save cree les fichiers mais ne modifie pas les settings; --dry-run ne cree rien.");
+        context.Out.WriteLine($"- Sans {OptionNames.Execute}, task finish est toujours un dry-run.");
+        context.Out.WriteLine($"- Pour init, {OptionNames.NoSave} cree les fichiers mais ne modifie pas les settings; {OptionNames.DryRun} ne cree rien.");
         context.Out.WriteLine("- Un task workspace cible un seul projet dw: ha ou he.");
         context.Out.WriteLine("- Les secrets SQL se stockent via dw secret set <key>.");
         context.Out.WriteLine("- Les schemas JSON sont generes dans <root>\\schemas et references par config\\*.json.");

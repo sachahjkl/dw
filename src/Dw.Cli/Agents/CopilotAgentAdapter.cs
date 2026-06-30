@@ -1,3 +1,5 @@
+using Dw.Cli.Cli;
+
 namespace Dw.Cli.Agents;
 
 internal sealed class CopilotAgentAdapter : IAgentAdapter
@@ -7,7 +9,7 @@ internal sealed class CopilotAgentAdapter : IAgentAdapter
     public AgentLaunch BuildOpenLaunch(AgentOpenRequest request)
         => new(
             "copilot",
-            request.Continue ? ["--continue"] : [],
+            request.Continue ? [OptionNames.Continue] : [],
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             request.Workspace);
 

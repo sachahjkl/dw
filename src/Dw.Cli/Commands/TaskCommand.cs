@@ -1,9 +1,8 @@
 using System.Diagnostics;
-using Dw.Cli.Agents;
 
 namespace Dw.Cli.Commands;
 
-internal static class TaskCommand
+internal static partial class TaskCommand
 {
     internal static int AddRepo(CommandContext context, TaskAddRepoOptions options)
     {
@@ -41,150 +40,6 @@ internal static class TaskCommand
         };
         context.FileSystem.WriteAllText(manifestPath, WorkspaceManifestWriter.Serialize(updated));
         context.Out.WriteLine($"Repo ajoute: {repositoryKey} - {result.Status} - {result.Message}");
-        return 0;
-    }
-
-    internal static int Finish(CommandContext context, TaskFinishRequest request)
-    {
-        var workspace = ResolveWorkspacePath(context, request.Workspace, request.Continue);
-        var draft = !request.Ready;
-
-        var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
-        var projectConfig = ResolveProjectConfig(context, manifest.Project);
-        var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
-            .GetStatusesAsync(workspace, projectConfig)
-            .GetAwaiter()
-            .GetResult();
-
-        context.Out.WriteLine($"Workspace: {workspace}");
-        context.Out.WriteLine($"Branche: {manifest.BranchName}");
-        PrintStatuses(context, statuses);
-
-        var changed = statuses.Where(status => status.IsGitRepository && status.HasChanges).ToList();
-        var unpushed = statuses.Where(status => status.IsGitRepository && status.HasUnpushed).ToList();
-        var actionable = changed.Count > 0 ? changed : unpushed;
-        var stageCommit = changed.Count > 0;
-
-        if (actionable.Count == 0)
-        {
-            context.Out.WriteLine();
-            context.Out.WriteLine("Rien a terminer.");
-            return 0;
-        }
-
-        if (!request.Execute)
-        {
-            context.Out.WriteLine();
-            context.Out.WriteLine(stageCommit
-                ? "Dry-run uniquement. Relancer avec --execute pour committer/pousser."
-                : "Dry-run uniquement. Relancer avec --execute pour pousser/creer PR.");
-            return 0;
-        }
-
-        var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
-        var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
-        var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
-        var verificationResults = Array.Empty<VerificationResult>();
-
-        if (!request.SkipVerify && (workflow.TaskFinish?.RunVerification ?? true))
-        {
-            verificationResults = RunVerification(context, workflow, actionable).ToArray();
-            var failed = verificationResults.Where(result => result.ExitCode != 0).ToArray();
-            if (failed.Length > 0)
-            {
-                foreach (var result in failed)
-                {
-                    context.Error.WriteLine($"Verification echouee [{result.Repository}]: {result.Command}");
-                    if (!string.IsNullOrWhiteSpace(result.StandardError))
-                    {
-                        context.Error.WriteLine(result.StandardError.Trim());
-                    }
-                }
-
-                throw new DwException("task finish bloque: verification echouee.");
-            }
-        }
-
-        if (stageCommit)
-        {
-            var commitMessage = CommitMessage.Build(manifest, request.Message);
-            foreach (var status in changed)
-            {
-                RunGitOrThrow(context, status.Path, "add", ".");
-                RunGitOrThrow(context, status.Path, "commit", "-m", commitMessage);
-                RunGitOrThrow(context, status.Path, "push", "-u", "origin", manifest.BranchName);
-            }
-        }
-        else
-        {
-            foreach (var status in unpushed)
-            {
-                RunGitOrThrow(context, status.Path, "push", "-u", "origin", manifest.BranchName);
-            }
-        }
-
-        context.Out.WriteLine(stageCommit ? "Commits/push termines." : "Push termine.");
-
-        if (!request.CreatePr)
-        {
-            context.Out.WriteLine("PR non creee. Relancer avec --create-pr pour ouvrir les PR ADO.");
-            return 0;
-        }
-
-        if (request.SkipAdo)
-        {
-            throw new DwException("--create-pr ne peut pas etre combine avec --skip-ado.", 2);
-        }
-
-        var adoContext = request.SkipAdo ? null : TryCreateAdoContext(context, workflow, projectConfig, required: true);
-        if (adoContext is null)
-        {
-            throw new DwException("Contexte Azure DevOps indisponible.");
-        }
-
-        CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, actionable, draft, verificationResults);
-        return 0;
-    }
-
-    internal static int Commit(CommandContext context, TaskCommitRequest request)
-    {
-        var workspace = ResolveWorkspacePath(context, request.Workspace, request.Continue);
-        var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
-        var projectConfig = ResolveProjectConfig(context, manifest.Project);
-        var statuses = new GitRepositoryStatusService(context.ProcessRunner, context.FileSystem)
-            .GetStatusesAsync(workspace, projectConfig)
-            .GetAwaiter()
-            .GetResult();
-
-        context.Out.WriteLine($"Workspace: {workspace}");
-        context.Out.WriteLine($"Branche: {manifest.BranchName}");
-        PrintStatuses(context, statuses);
-
-        var changed = statuses.Where(status => status.IsGitRepository && status.HasChanges).ToList();
-        if (changed.Count == 0)
-        {
-            context.Out.WriteLine();
-            context.Out.WriteLine("Rien a committer.");
-            return 0;
-        }
-
-        var commitMessage = CommitMessage.Build(manifest, request.Message);
-        context.Out.WriteLine();
-        context.Out.WriteLine($"Message: {commitMessage}");
-
-        if (!request.Execute)
-        {
-            context.Out.WriteLine("Dry-run uniquement. Relancer avec --execute pour committer.");
-            return 0;
-        }
-
-        foreach (var status in changed)
-        {
-            RunGitOrThrow(context, status.Path, "add", ".");
-            RunGitOrThrow(context, status.Path, "commit", "-m", commitMessage);
-        }
-
-        context.Out.WriteLine("Commits termines. Aucun push ni PR creee.");
         return 0;
     }
 
@@ -239,65 +94,6 @@ internal static class TaskCommand
             {
                 context.Out.WriteLine(status.Detail);
             }
-        }
-    }
-
-    private static void CreatePullRequests(
-        CommandContext context,
-        AdoContext adoContext,
-        WorkflowConfig workflow,
-        ProjectConfig? projectConfig,
-        WorkspaceManifest manifest,
-        IReadOnlyList<RepositoryStatus> changed,
-        bool draft,
-        IReadOnlyList<VerificationResult> verificationResults)
-    {
-        foreach (var status in changed)
-        {
-            var repo = projectConfig?.Repositories.GetValueOrDefault(status.Repository);
-            var adoRepo = repo?.AzureDevOpsRepository;
-            if (string.IsNullOrWhiteSpace(adoRepo))
-            {
-                context.Out.WriteLine($"PR ignoree pour {status.Repository}: azureDevOpsRepository manquant.");
-                continue;
-            }
-
-            var target = repo?.PullRequestTargetBranch ?? repo?.DefaultBranch ?? "main";
-            var request = new CreatePullRequestRequest(
-                SourceRefName: $"refs/heads/{manifest.BranchName}",
-                TargetRefName: $"refs/heads/{target}",
-                Title: PullRequestText.Title(manifest),
-                Description: PullRequestText.Description(manifest, status, ReadPlan(context, status.Path), verificationResults),
-                IsDraft: draft,
-                WorkItemRefs: WorkItemRefsFor(manifest));
-
-            using var response = adoContext.Client.CreatePullRequestAsync(adoRepo, request, adoContext.Token).GetAwaiter().GetResult();
-            var url = TryGetString(response.RootElement, "url") ?? "(url non retournee)";
-            var pullRequestId = TryGetInt(response.RootElement, "pullRequestId");
-            if (pullRequestId is not null)
-            {
-                foreach (var id in WorkItemIdsFor(manifest))
-                {
-                    try
-                    {
-                        adoContext.Client.LinkWorkItemToPullRequestAsync(adoRepo, pullRequestId.Value, id, adoContext.Token)
-                            .GetAwaiter()
-                            .GetResult()
-                            .Dispose();
-                    }
-                    catch (DwException ex)
-                    {
-                        context.Out.WriteLine($"Lien PR/work item deja demande a la creation, lien explicite ignore pour #{id}: {ex.Message}");
-                    }
-                }
-            }
-
-            context.Out.WriteLine($"PR creee pour {status.Repository}: {url}");
-        }
-
-        if (workflow.TaskFinish?.UpdateWorkItemState ?? true)
-        {
-            UpdateFinishStates(context, adoContext, workflow, manifest);
         }
     }
 
@@ -410,29 +206,6 @@ internal static class TaskCommand
             token).GetAwaiter().GetResult().Dispose();
     }
 
-    private static void UpdateFinishStates(CommandContext context, AdoContext adoContext, WorkflowConfig workflow, WorkspaceManifest manifest)
-    {
-        foreach (var id in WorkItemIdsFor(manifest))
-        {
-            var item = adoContext.Client.GetWorkItemSnapshotAsync(id, adoContext.Token).GetAwaiter().GetResult();
-            var state = AdoWorkflowStates.FinishState(item.Type ?? manifest.WorkItemType, workflow.TaskFinish);
-            if (string.IsNullOrWhiteSpace(state))
-            {
-                context.Out.WriteLine($"ADO item {id}: etat inchange ({item.Type}).");
-                continue;
-            }
-
-            if (string.Equals(item.State, state, StringComparison.OrdinalIgnoreCase))
-            {
-                context.Out.WriteLine($"ADO item {id}: deja en etat {state}.");
-                continue;
-            }
-
-            UpdateWorkItemState(adoContext.Client, adoContext.Token, id, state, "dw task finish: PR ouverte");
-            context.Out.WriteLine($"ADO item {id}: etat -> {state}");
-        }
-    }
-
     private static IEnumerable<VerificationResult> RunVerification(
         CommandContext context,
         WorkflowConfig workflow,
@@ -504,17 +277,7 @@ internal static class TaskCommand
         return context.ProcessRunner.RunAsync(shell, args, workingDirectory).GetAwaiter().GetResult();
     }
 
-    private static string ReadPlan(CommandContext context, string repositoryPath)
-    {
-        var workspace = Directory.GetParent(repositoryPath)?.FullName ?? repositoryPath;
-        var planPath = Path.Combine(workspace, "plan.md");
-        return context.FileSystem.FileExists(planPath) ? context.FileSystem.ReadAllText(planPath) : string.Empty;
-    }
-
-    private static IReadOnlyList<ResourceRef> WorkItemRefsFor(WorkspaceManifest manifest)
-        => WorkItemIdsFor(manifest).Select(id => new ResourceRef(id)).ToArray();
-
-    private static IReadOnlyList<string> WorkItemIdsFor(WorkspaceManifest manifest)
+    internal static IReadOnlyList<string> WorkItemIdsFor(WorkspaceManifest manifest)
     {
         var ids = manifest.ParentWorkItems
             .Select(item => item.Id)
@@ -543,9 +306,6 @@ internal static class TaskCommand
 
         return value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() : value.GetRawText().Trim('"');
     }
-
-    private static int? TryGetInt(System.Text.Json.JsonElement element, string property)
-        => element.TryGetProperty(property, out var value) && value.TryGetInt32(out var id) ? id : null;
 
     private static ProjectConfig? ResolveProjectConfig(DevWorkflowConfig config, string project)
         => DevWorkflowConfigLoader.ResolveProject(config, project);

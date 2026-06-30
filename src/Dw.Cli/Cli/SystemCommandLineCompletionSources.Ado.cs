@@ -41,7 +41,7 @@ internal static partial class SystemCommandLineApp
             return [];
         }
 
-        var project = completion.ParseResult.GetValue<string>("--project");
+        var project = completion.ParseResult.GetValue<string>(OptionNames.Project);
         try
         {
             var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, null, project);

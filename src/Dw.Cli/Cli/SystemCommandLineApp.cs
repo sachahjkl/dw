@@ -75,23 +75,23 @@ internal static partial class SystemCommandLineApp
     {
         var command = Command("init", "Initialise un root DevWorkflow.");
         AddOptions(command,
-            Value("--profile", "Profil d'initialisation.", ["ogf"]),
-            Value("--root", "Root DevWorkflow a creer."),
-            Flag("--dry-run", "Simule sans ecrire."),
-            Flag("--no-save", "Ne sauvegarde pas le root utilisateur."));
+            Value(OptionNames.Profile, "Profil d'initialisation.", ["ogf"]),
+            Value(OptionNames.Root, "Root DevWorkflow a creer."),
+            Flag(OptionNames.DryRun, "Simule sans ecrire."),
+            Flag(OptionNames.NoSave, "Ne sauvegarde pas le root utilisateur."));
         command.SetAction(parse => InitCommand.Run(context, new InitRequest(
-            parse.GetValue<string>("--root"),
-            parse.GetValue<string>("--profile"),
-            parse.GetValue<bool>("--no-save"),
-            parse.GetValue<bool>("--dry-run"))));
+            parse.GetValue<string>(OptionNames.Root),
+            parse.GetValue<string>(OptionNames.Profile),
+            parse.GetValue<bool>(OptionNames.NoSave),
+            parse.GetValue<bool>(OptionNames.DryRun))));
         return command;
     }
 
     private static Command Doctor(CommandContext context)
     {
         var command = Command("doctor", "Diagnostique l'environnement local.");
-        AddOptions(command, Flag("--fix", "Corrige ce qui peut etre corrige automatiquement."));
-        command.SetAction(parse => DoctorCommand.RunAsync(context, parse.GetValue<bool>("--fix")));
+        AddOptions(command, Flag(OptionNames.Fix, "Corrige ce qui peut etre corrige automatiquement."));
+        command.SetAction(parse => DoctorCommand.RunAsync(context, parse.GetValue<bool>(OptionNames.Fix)));
         return command;
     }
 
@@ -99,9 +99,9 @@ internal static partial class SystemCommandLineApp
     {
         var command = Command("refresh", "Regenere les schemas et contextes agents non destructifs.");
         AddOptions(command,
-            Value("--root", "Root DevWorkflow a utiliser."),
-            Value("--profile", "Profil a utiliser pour les fichiers d'agents.", ["ogf", "default"]));
-        command.SetAction(parse => RefreshCommand.Run(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--profile")));
+            Value(OptionNames.Root, "Root DevWorkflow a utiliser."),
+            Value(OptionNames.Profile, "Profil a utiliser pour les fichiers d'agents.", ["ogf", "default"]));
+        command.SetAction(parse => RefreshCommand.Run(context, parse.GetValue<string>(OptionNames.Root), parse.GetValue<string>(OptionNames.Profile)));
         return command;
     }
 
@@ -109,70 +109,31 @@ internal static partial class SystemCommandLineApp
     {
         var command = Command("agent", "Affiche le contexte ou ouvre un agent.");
         AddOptions(command,
-            Value("--root", "Root DevWorkflow a utiliser."),
-            Value("--workspace", "Chemin explicite du workspace."),
+            Value(OptionNames.Root, "Root DevWorkflow a utiliser."),
+            Value(OptionNames.Workspace, "Chemin explicite du workspace."),
             ProjectOption(context, "Filtre projet dw."),
             WorkItemOption(context, "Filtre work item ADO."),
-            Flag("--continue", "Reprend la derniere session/workspace."),
+            Flag(OptionNames.Continue, "Reprend la derniere session/workspace."),
             AgentOption(),
             RepoOption(context, "Repo cible dans le workspace."));
         AddSubcommands(command,
             Subcommand("context", "Affiche le contexte court pour agents IA.", (_, _) => AgentCommand.WriteContext(context)),
             Subcommand("open", "Ouvre un workspace dans l'agent configure.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse))),
-            Subcommand("config", "Lit ou modifie la configuration agent.", (parse, _) => AgentCommand.ShowConfig(context, parse.GetValue<string>("--root"))),
-            Subcommand("show", "Affiche la configuration courante.", (parse, _) => AgentCommand.ShowConfig(context, parse.GetValue<string>("--root"))),
-            Subcommand("set-default", "Definit l'agent par defaut.", (parse, _) => AgentCommand.SetDefaultAgent(context, parse.GetValue<string>("--root"), parse.GetRequiredValue<string>("agent")), Argument<string>("agent", "Agent a utiliser par defaut.")),
-            Subcommand("doctor", "Verifie les agents disponibles.", (parse, _) => AgentCommand.Doctor(context, parse.GetValue<string>("--agent"))));
-        return command;
-    }
-
-    private static Command Ado(CommandContext context)
-    {
-        var command = Command("ado", "Lit Azure DevOps sans modifier.");
-        AddOptions(command,
-            ProjectOption(context, "Projet dw pour resoudre Azure DevOps."),
-            Value("--root", "Root DevWorkflow a utiliser."));
-        AddSubcommands(command,
-            Subcommand("assigned", "Liste les work items assignes a @Me.", parse => AdoCommand.Assigned(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), Math.Max(1, parse.GetValue<int?>("--top") ?? 20), parse.GetValue<bool>("--all"), parse.GetValue<bool>("--group-by-parent"), parse.GetValue<bool>("--json")),
-                [
-                    OptionalInt("--top", "Nombre maximum d'items."),
-                    Flag("--all", "Inclut aussi les work items deja dans un etat final."),
-                    Flag("--group-by-parent", "Groupe les work items assignes par parent ADO."),
-                    Flag("--json", "Sortie JSON.")
-                ]),
-            Subcommand("changelog", "Genere un changelog de work items depuis des PR ou une plage git.", parse => AdoCommand.Changelog(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("ids"), parse.GetValue<bool>("--from-pr"), parse.GetValue<bool>("--from-git"), parse.GetValue<string>("--repo"), parse.GetValue<bool>("--group-by-parent"), parse.GetValue<string>("--format"), parse.GetValue<bool>("--table"), parse.GetValue<bool>("--ids-only"), parse.GetValue<string>("--git-to")),
-                [
-                    Flag("--from-pr", "Interprete ids comme une liste d'IDs de pull request Azure DevOps (mode par defaut)."),
-                    Flag("--from-git", "Interprete ids et --git-to comme deux refs git."),
-                    RepoOption(context, "Repo dw a resoudre, ou nom de repo Azure DevOps. Recommande pour les PR si plusieurs repos existent."),
-                    Value("--format", "Format de sortie.", ["raw", "markdown", "html"]),
-                    Flag("--table", "En format markdown, rend le changelog sous forme de tableau."),
-                    Flag("--ids-only", "Affiche uniquement la liste des IDs de work items, separes par des espaces."),
-                    Flag("--group-by-parent", "Groupe les work items par parent ADO."),
-                    Value("--git-to", "Ref git de fin pour --from-git.")
-                ],
-                Argument<string>("ids", "IDs de PR separes par virgules, ou ref git de depart pour --from-git.")),
-            Subcommand("work-item", "Affiche un resume de work item.", parse => AdoCommand.WorkItem(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("id"), parse.GetValue<bool>("--json")),
-                [Flag("--json", "Sortie JSON.")],
-                WithCompletions(Argument<string>("id", "ID du work item, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
-            Subcommand("context", "Affiche le contexte complet d'un work item.", parse => AdoCommand.WorkItemContext(context, parse.GetValue<string>("--root"), parse.GetValue<string>("--project"), parse.GetRequiredValue<string>("id"), parse.GetValue<bool>("--summary"), Math.Max(0, parse.GetValue<int?>("--comments") ?? 200), parse.GetValue<bool>("--json")),
-                [
-                    Flag("--summary", "Limite la sortie au resume."),
-                    Value("--comments", "Nombre de commentaires a charger."),
-                    Flag("--json", "Sortie JSON.")
-                ],
-                WithCompletions(Argument<string>("id", "ID du work item, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))));
+            Subcommand("config", "Lit ou modifie la configuration agent.", (parse, _) => AgentCommand.ShowConfig(context, parse.GetValue<string>(OptionNames.Root))),
+            Subcommand("show", "Affiche la configuration courante.", (parse, _) => AgentCommand.ShowConfig(context, parse.GetValue<string>(OptionNames.Root))),
+            Subcommand("set-default", "Definit l'agent par defaut.", (parse, _) => AgentCommand.SetDefaultAgent(context, parse.GetValue<string>(OptionNames.Root), parse.GetRequiredValue<string>("agent")), Argument<string>("agent", "Agent a utiliser par defaut.")),
+            Subcommand("doctor", "Verifie les agents disponibles.", (parse, _) => AgentCommand.Doctor(context, parse.GetValue<string>(OptionNames.Agent))));
         return command;
     }
 
     private static Command Auth(CommandContext context)
     {
         var command = Command("auth", "Gere la connexion Azure DevOps.");
-        AddOptions(command, Value("--root", "Root DevWorkflow a utiliser."));
+        AddOptions(command, Value(OptionNames.Root, "Root DevWorkflow a utiliser."));
         AddSubcommands(command,
-            Subcommand("login", "Connecte Azure DevOps.", (parse, _) => AuthCommand.Login(context, parse.GetValue<string>("--root"))),
-            Subcommand("status", "Affiche l'etat de connexion.", (parse, _) => AuthCommand.Status(context, parse.GetValue<string>("--root"))),
-            Subcommand("logout", "Supprime la connexion locale.", (parse, _) => AuthCommand.Logout(context, parse.GetValue<string>("--root"))));
+            Subcommand("login", "Connecte Azure DevOps.", (parse, _) => AuthCommand.Login(context, parse.GetValue<string>(OptionNames.Root))),
+            Subcommand("status", "Affiche l'etat de connexion.", (parse, _) => AuthCommand.Status(context, parse.GetValue<string>(OptionNames.Root))),
+            Subcommand("logout", "Supprime la connexion locale.", (parse, _) => AuthCommand.Logout(context, parse.GetValue<string>(OptionNames.Root))));
         return command;
     }
 
@@ -181,99 +142,74 @@ internal static partial class SystemCommandLineApp
         var command = Command("task", "Gere les workspaces, worktrees, commits, push et PR.");
         AddOptions(command,
             ProjectOption(context, "Projet dw."),
-            Value("--task", "ID de tache ADO concrete."),
-            Value("--slug", "Texte source du slug."),
-            Value("--type", "Type de branche."),
-            Value("--only", "Repos a creer, separes par virgule."),
+            Value(OptionNames.Task, "ID de tache ADO concrete."),
+            Value(OptionNames.Slug, "Texte source du slug."),
+            Value(OptionNames.Type, "Type de branche."),
+            Value(OptionNames.Only, "Repos a creer, separes par virgule."),
             WorkspaceOption(context, "Chemin explicite du workspace."),
             WorkItemOption(context, "Filtre work item ADO."),
             RepoOption(context, "Repo cible dans le workspace."),
-            Flag("--continue", "Utilise le workspace le plus recent."),
-            Flag("--yes", "Confirme sans prompt."),
-            Flag("--no-sync", "Desactive le sync ADO automatique."),
-            Flag("--json", "Sortie JSON."),
+            Flag(OptionNames.Continue, "Utilise le workspace le plus recent."),
+            Flag(OptionNames.Yes, "Confirme sans prompt."),
+            Flag(OptionNames.NoSync, "Desactive le sync ADO automatique."),
+            Flag(OptionNames.Json, "Sortie JSON."),
             AgentOption(),
-            Flag("--execute", "Execute vraiment l'action."),
-            Value("--message", "Override explicite du message de commit genere."),
-            Flag("--create-pr", "Ouvre une PR apres push."),
-            Flag("--ready", "Cree une PR non draft."),
-            Flag("--skip-ado", "Ignore Azure DevOps."),
-            Flag("--skip-verify", "Ignore les verifications configurees."),
-            Flag("--create-child-tasks", "Cree les taches ADO enfant."),
-            Flag("--with-active-children", "Inclut automatiquement les enfants ADO non finaux du sujet selectionne."));
+            Flag(OptionNames.Execute, "Execute vraiment l'action."),
+            Value(OptionNames.Message, "Override explicite du message de commit genere."),
+            Flag(OptionNames.CreatePr, "Ouvre une PR apres push."),
+            Flag(OptionNames.Ready, "Cree une PR non draft."),
+            Flag(OptionNames.SkipAdo, "Ignore Azure DevOps."),
+            Flag(OptionNames.SkipVerify, "Ignore les verifications configurees."),
+            Flag(OptionNames.CreateChildTasks, "Cree les taches ADO enfant."),
+            Flag(OptionNames.WithActiveChildren, "Inclut automatiquement les enfants ADO non finaux du sujet selectionne."));
         AddSubcommands(command,
             Subcommand("start", "Cree un workspace et des worktrees.", parse => TaskStartService.Start(context, new TaskStartRequest(
                 parse.GetRequiredValue<string>("work-item-id"),
-                parse.GetValue<string>("--project"),
-                parse.GetValue<string>("--task"),
-                parse.GetValue<string>("--type"),
-                parse.GetValue<string>("--only"),
-                parse.GetValue<string>("--slug"),
-                parse.GetValue<bool>("--skip-ado"),
-                parse.GetValue<bool>("--create-child-tasks"),
-                parse.GetValue<bool>("--with-active-children"))), WithCompletions(Argument<string>("work-item-id", "ID du work item parent principal, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
+                parse.GetValue<string>(OptionNames.Project),
+                parse.GetValue<string>(OptionNames.Task),
+                parse.GetValue<string>(OptionNames.Type),
+                parse.GetValue<string>(OptionNames.Only),
+                parse.GetValue<string>(OptionNames.Slug),
+                parse.GetValue<bool>(OptionNames.SkipAdo),
+                parse.GetValue<bool>(OptionNames.CreateChildTasks),
+                parse.GetValue<bool>(OptionNames.WithActiveChildren))), WithCompletions(Argument<string>("work-item-id", "ID du work item parent principal, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
             Subcommand("status", "Liste les chemins des workspaces.", (_, _) => TaskListService.Status(context)),
-            Subcommand("list", "Liste les workspaces avec metadonnees.", parse => TaskListService.List(context, new TaskListOptions(parse.GetValue<string>("--project"), parse.GetValue<string>("--work-item"), parse.GetValue<bool>("--json")))),
-            Subcommand("current", "Affiche le workspace courant.", parse => TaskListService.Current(context, parse.GetValue<bool>("--json"))),
+            Subcommand("list", "Liste les workspaces avec metadonnees.", parse => TaskListService.List(context, new TaskListOptions(parse.GetValue<string>(OptionNames.Project), parse.GetValue<string>(OptionNames.WorkItem), parse.GetValue<bool>(OptionNames.Json)))),
+            Subcommand("current", "Affiche le workspace courant.", parse => TaskListService.Current(context, parse.GetValue<bool>(OptionNames.Json))),
             Subcommand("sync", "Synchronise task.json depuis ADO.", parse => TaskSyncPruneService.Sync(context, OpenOptions(parse))),
-            Subcommand("prune", "Nettoie les workspaces en etat final.", parse => TaskSyncPruneService.Prune(context, new TaskPruneOptions(parse.GetValue<string>("--project"), parse.GetValue<string>("--work-item"), parse.GetValue<bool>("--execute"), parse.GetValue<bool>("--yes"), !parse.GetValue<bool>("--no-sync")))),
-            Subcommand("rename", "Renomme slug, branche et dossier workspace.", parse => TaskRenameService.Rename(context, new TaskRenameOptions(parse.GetRequiredValue<string>("--slug"), OpenOptions(parse), parse.GetValue<bool>("--execute")))),
+            Subcommand("prune", "Nettoie les workspaces en etat final.", parse => TaskSyncPruneService.Prune(context, new TaskPruneOptions(parse.GetValue<string>(OptionNames.Project), parse.GetValue<string>(OptionNames.WorkItem), parse.GetValue<bool>(OptionNames.Execute), parse.GetValue<bool>(OptionNames.Yes), !parse.GetValue<bool>(OptionNames.NoSync)))),
+            Subcommand("rename", "Renomme slug, branche et dossier workspace.", parse => TaskRenameService.Rename(context, new TaskRenameOptions(parse.GetRequiredValue<string>(OptionNames.Slug), OpenOptions(parse), parse.GetValue<bool>(OptionNames.Execute)))),
             Subcommand("open", "Ouvre le workspace dans un agent.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse)), WithCompletions(Argument<string?>("work-item-id", "ID du work item a ouvrir, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
             Subcommand("teardown", "Supprime les worktrees et le workspace.", (parse, _) => WorkspaceTeardownService.Teardown(context, TeardownOptions(parse))),
-            Subcommand("add-repo", "Ajoute un repo au workspace existant.", parse => TaskCommand.AddRepo(context, new TaskAddRepoOptions(parse.GetRequiredValue<string>("repo"), parse.GetValue<string>("--workspace"))), Argument<string>("repo", "Repo a ajouter.")),
+            Subcommand("add-repo", "Ajoute un repo au workspace existant.", parse => TaskCommand.AddRepo(context, new TaskAddRepoOptions(parse.GetRequiredValue<string>("repo"), parse.GetValue<string>(OptionNames.Workspace))), Argument<string>("repo", "Repo a ajouter.")),
             Subcommand("add-work-item", "Ajoute un ou plusieurs work items au workspace existant.", parse => TaskWorkItemService.Add(context, new TaskWorkItemUpdateOptions(parse.GetRequiredValue<string>("ids"), OpenOptions(parse))), WithCompletions(Argument<string>("ids", "ID du work item a ajouter, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
             Subcommand("remove-work-item", "Retire un ou plusieurs work items du workspace existant.", parse => TaskWorkItemService.Remove(context, new TaskWorkItemUpdateOptions(parse.GetRequiredValue<string>("ids"), OpenOptions(parse))), WithCompletions(Argument<string>("ids", "ID du work item a retirer, ou liste separee par virgules."), completion => WorkItemCompletions(context, completion))),
             Subcommand("commit", "Commit intermediaire sans push ni PR.", parse => TaskCommand.Commit(context, new TaskCommitRequest(
-                parse.GetValue<string>("--workspace"),
-                parse.GetValue<bool>("--continue"),
-                parse.GetValue<bool>("--execute"),
-                parse.GetValue<string>("--message")))),
+                parse.GetValue<string>(OptionNames.Workspace),
+                parse.GetValue<bool>(OptionNames.Continue),
+                parse.GetValue<bool>(OptionNames.Execute),
+                parse.GetValue<string>(OptionNames.Message)))),
             Subcommand("finish", "Dry-run ou commit/push/PR.", parse => TaskCommand.Finish(context, new TaskFinishRequest(
-                parse.GetValue<string>("--workspace"),
-                parse.GetValue<bool>("--continue"),
-                parse.GetValue<bool>("--execute"),
-                parse.GetValue<bool>("--create-pr"),
-                parse.GetValue<bool>("--ready"),
-                parse.GetValue<string>("--message"),
-                parse.GetValue<bool>("--skip-verify"),
-                parse.GetValue<bool>("--skip-ado")))));
+                parse.GetValue<string>(OptionNames.Workspace),
+                parse.GetValue<bool>(OptionNames.Continue),
+                parse.GetValue<bool>(OptionNames.Execute),
+                parse.GetValue<bool>(OptionNames.CreatePr),
+                parse.GetValue<bool>(OptionNames.Ready),
+                parse.GetValue<string>(OptionNames.Message),
+                parse.GetValue<bool>(OptionNames.SkipVerify),
+                parse.GetValue<bool>(OptionNames.SkipAdo)))));
         return command;
     }
 
     private static Command Config(CommandContext context)
     {
         var command = Command("config", "Valide et modifie la configuration.");
-        AddOptions(command, Value("--root", "Root a utiliser pour cette commande."));
+        AddOptions(command, Value(OptionNames.Root, "Root a utiliser pour cette commande."));
         AddSubcommands(command,
             Subcommand("show", "Affiche le root configure.", (_, _) => ConfigCommand.Show(context)),
             Subcommand("set-root", "Definit le root DevWorkflow.", (parse, _) => ConfigCommand.SetRoot(context, parse.GetRequiredValue<string>("path")), Argument<string>("path", "Chemin du root DevWorkflow.")),
             Subcommand("set-color", "Definit le mode de couleur du terminal.", (parse, _) => ConfigCommand.SetColor(context, parse.GetRequiredValue<string>("mode")), Argument<string>("mode", "Mode couleur: auto, always, never.")),
-            Subcommand("doctor", "Valide les fichiers config.", (parse, _) => ConfigCommand.Doctor(context, parse.GetValue<string>("--root"))));
-        return command;
-    }
-
-    private static Command Db(CommandContext context)
-    {
-        var command = Command("db", "Explore SQL Server en lecture seule.");
-        AddOptions(command,
-            ProjectOption(context, "Projet dw."),
-            DatabaseOption(context, "Base de donnees cible."),
-            Value("--env", "Alias legacy de --database."));
-        var sqlArg = Remaining("sql", "Requete SQL SELECT.");
-        sqlArg.CompletionSources.Add(completion => SqlQueryCompletions(context, completion));
-        AddSubcommands(command,
-            Subcommand("schema", "Liste les tables disponibles.", parse => DbCommand.Schema(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"))),
-            Subcommand("describe", "Decrit une table.", parse => DbCommand.Describe(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), parse.GetRequiredValue<string>("table")), WithCompletions(Argument<string>("table", "Nom de table, avec schema optionnel."), completion => TableCompletions(context, completion))),
-            Subcommand("query", "Execute une requete SELECT.", (parse, command) =>
-            {
-                var maxRows = parse.GetValue<int?>("--max-rows");
-                if (maxRows is <= 0)
-                {
-                    throw new DwException("--max-rows doit etre superieur a 0.", 2);
-                }
-
-                return DbCommand.Query(context, parse.GetValue<string>("--project"), parse.GetValue<string>("--database"), parse.GetValue<string>("--env"), maxRows, parse.GetRequiredValue<string[]>("sql"));
-            }, [OptionalInt("--max-rows", "Nombre maximum de lignes a afficher.")], sqlArg));
+            Subcommand("doctor", "Valide les fichiers config.", (parse, _) => ConfigCommand.Doctor(context, parse.GetValue<string>(OptionNames.Root))));
         return command;
     }
 
@@ -281,10 +217,10 @@ internal static partial class SystemCommandLineApp
     {
         var command = Command("secret", "Stocke des secrets locaux via Windows Credential Manager.");
         AddOptions(command,
-            Value("--value", "Valeur du secret."),
-            Value("--from-env", "Nom de variable d'environnement source."));
+            Value(OptionNames.Value, "Valeur du secret."),
+            Value(OptionNames.FromEnv, "Nom de variable d'environnement source."));
         AddSubcommands(command,
-            Subcommand("set", "Cree ou remplace un secret.", (parse, _) => SecretCommand.Set(context, parse.GetRequiredValue<string>("key"), parse.GetValue<string>("--value"), parse.GetValue<string>("--from-env")), Argument<string>("key", "Cle du secret.")),
+            Subcommand("set", "Cree ou remplace un secret.", (parse, _) => SecretCommand.Set(context, parse.GetRequiredValue<string>("key"), parse.GetValue<string>(OptionNames.Value), parse.GetValue<string>(OptionNames.FromEnv)), Argument<string>("key", "Cle du secret.")),
             Subcommand("get", "Lit un secret.", (parse, _) => SecretCommand.Get(context, parse.GetRequiredValue<string>("key")), Argument<string>("key", "Cle du secret.")),
             Subcommand("delete", "Supprime un secret.", (parse, _) => SecretCommand.Delete(context, parse.GetRequiredValue<string>("key")), Argument<string>("key", "Cle du secret.")));
         return command;
@@ -294,31 +230,31 @@ internal static partial class SystemCommandLineApp
     {
         var command = Command("upgrade", "Met a jour le binaire dw depuis la derniere release configuree.");
         AddOptions(command,
-            Flag("--check", "Verifie la derniere release sans modifier le binaire."),
-            Value("--rid", "Runtime identifier cible."));
-        command.SetAction(parse => parse.GetValue<bool>("--check")
+            Flag(OptionNames.Check, "Verifie la derniere release sans modifier le binaire."),
+            Value(OptionNames.Rid, "Runtime identifier cible."));
+        command.SetAction(parse => parse.GetValue<bool>(OptionNames.Check)
             ? UpgradeCommand.Check(context)
-            : UpgradeCommand.Run(context, parse.GetValue<string>("--rid")));
+            : UpgradeCommand.Run(context, parse.GetValue<string>(OptionNames.Rid)));
         return command;
     }
 
     private static WorkspaceOpenOptions OpenOptions(ParseResult parse)
         => new(
-            Workspace: parse.GetValue<string>("--workspace"),
-            Project: parse.GetValue<string>("--project"),
-            WorkItemId: parse.GetValue<string>("--work-item"),
-            Continue: parse.GetValue<bool>("--continue"),
+            Workspace: parse.GetValue<string>(OptionNames.Workspace),
+            Project: parse.GetValue<string>(OptionNames.Project),
+            WorkItemId: parse.GetValue<string>(OptionNames.WorkItem),
+            Continue: parse.GetValue<bool>(OptionNames.Continue),
             PositionalWorkItemId: parse.GetValue<string>("work-item-id"),
-            Agent: parse.GetValue<string>("--agent"),
-            Repository: parse.GetValue<string>("--repo"));
+            Agent: parse.GetValue<string>(OptionNames.Agent),
+            Repository: parse.GetValue<string>(OptionNames.Repo));
 
     private static WorkspaceTeardownOptions TeardownOptions(ParseResult parse)
         => new(
-            Workspace: parse.GetValue<string>("--workspace"),
-            Project: parse.GetValue<string>("--project"),
-            WorkItemId: parse.GetValue<string>("--work-item"),
-            Continue: parse.GetValue<bool>("--continue"),
-            Execute: parse.GetValue<bool>("--execute"),
-            Yes: parse.GetValue<bool>("--yes"));
+            Workspace: parse.GetValue<string>(OptionNames.Workspace),
+            Project: parse.GetValue<string>(OptionNames.Project),
+            WorkItemId: parse.GetValue<string>(OptionNames.WorkItem),
+            Continue: parse.GetValue<bool>(OptionNames.Continue),
+            Execute: parse.GetValue<bool>(OptionNames.Execute),
+            Yes: parse.GetValue<bool>(OptionNames.Yes));
 
 }

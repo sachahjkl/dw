@@ -1,0 +1,50 @@
+namespace Dw.Cli.Cli;
+
+internal static class OptionNames
+{
+    public const string Root = "--root";
+    public const string Profile = "--profile";
+    public const string NoSave = "--no-save";
+    public const string DryRun = "--dry-run";
+    public const string Fix = "--fix";
+    public const string Agent = "--agent";
+    public const string Project = "--project";
+    public const string Top = "--top";
+    public const string All = "--all";
+    public const string GroupByParent = "--group-by-parent";
+    public const string Json = "--json";
+    public const string FromPr = "--from-pr";
+    public const string FromGit = "--from-git";
+    public const string Repo = "--repo";
+    public const string Format = "--format";
+    public const string Table = "--table";
+    public const string IdsOnly = "--ids-only";
+    public const string GitTo = "--git-to";
+    public const string Summary = "--summary";
+    public const string Comments = "--comments";
+    public const string Task = "--task";
+    public const string Type = "--type";
+    public const string Only = "--only";
+    public const string Slug = "--slug";
+    public const string SkipAdo = "--skip-ado";
+    public const string CreateChildTasks = "--create-child-tasks";
+    public const string WithActiveChildren = "--with-active-children";
+    public const string WorkItem = "--work-item";
+    public const string Execute = "--execute";
+    public const string Yes = "--yes";
+    public const string NoSync = "--no-sync";
+    public const string Workspace = "--workspace";
+    public const string Continue = "--continue";
+    public const string Message = "--message";
+    public const string CreatePr = "--create-pr";
+    public const string Ready = "--ready";
+    public const string SkipVerify = "--skip-verify";
+    public const string Database = "--database";
+    public const string Env = "--env";
+    public const string MaxRows = "--max-rows";
+    public const string Value = "--value";
+    public const string FromEnv = "--from-env";
+    public const string Check = "--check";
+    public const string Rid = "--rid";
+    public const string EmptyToken = "--empty-token";
+}

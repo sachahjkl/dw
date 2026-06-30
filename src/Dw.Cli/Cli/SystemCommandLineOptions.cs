@@ -37,22 +37,22 @@ internal static partial class SystemCommandLineApp
         };
 
     private static Option<string> AgentOption()
-        => Value("--agent", "Agent a utiliser.", ["opencode", "cursor", "claude", "codex-cli", "codex", "copilot"]);
+        => Value(OptionNames.Agent, "Agent a utiliser.", ["opencode", "cursor", "claude", "codex-cli", "codex", "copilot"]);
 
     private static Option<string> ProjectOption(CommandContext context, string description)
-        => WithCompletions(Value("--project", description), _ => ProjectCompletions(context));
+        => WithCompletions(Value(OptionNames.Project, description), _ => ProjectCompletions(context));
 
     private static Option<string> WorkspaceOption(CommandContext context, string description)
-        => WithCompletions(Value("--workspace", description), _ => WorkspaceCompletions(context));
+        => WithCompletions(Value(OptionNames.Workspace, description), _ => WorkspaceCompletions(context));
 
     private static Option<string> WorkItemOption(CommandContext context, string description)
-        => WithCompletions(Value("--work-item", description), completion => WorkItemCompletions(context, completion));
+        => WithCompletions(Value(OptionNames.WorkItem, description), completion => WorkItemCompletions(context, completion));
 
     private static Option<string> RepoOption(CommandContext context, string description)
-        => WithCompletions(Value("--repo", description), _ => RepositoryCompletions(context));
+        => WithCompletions(Value(OptionNames.Repo, description), _ => RepositoryCompletions(context));
 
     private static Option<string> DatabaseOption(CommandContext context, string description)
-        => WithCompletions(Value("--database", description), _ => DatabaseCompletions(context));
+        => WithCompletions(Value(OptionNames.Database, description), _ => DatabaseCompletions(context));
 
     private static Option<string> WithCompletions(Option<string> option, Func<CompletionContext, IEnumerable<CompletionItem>> completions)
     {

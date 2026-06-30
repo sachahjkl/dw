@@ -17,12 +17,12 @@ internal static partial class SystemCommandLineApp
     private static Command Suggest(CommandContext context)
     {
         var command = Command("suggest", "Affiche les completions avec descriptions pour une ligne donnee.");
-        var format = Value("--format", "Format de sortie: text ou json.", ["text", "json"]);
-        var emptyToken = Flag("--empty-token", "Indique que le curseur est sur un nouveau token vide.");
+        var format = Value(OptionNames.Format, "Format de sortie: text ou json.", ["text", "json"]);
+        var emptyToken = Flag(OptionNames.EmptyToken, "Indique que le curseur est sur un nouveau token vide.");
         command.Add(format);
         command.Add(emptyToken);
         command.Add(Remaining("line", "Ligne de commande partielle, par exemple: task --"));
-        command.SetAction(parse => CompletionSuggest(context, parse.GetRequiredValue<string[]>("line"), parse.GetValue<string>("--format") ?? "text", parse.GetValue<bool>("--empty-token")));
+        command.SetAction(parse => CompletionSuggest(context, parse.GetRequiredValue<string[]>("line"), parse.GetValue<string>(OptionNames.Format) ?? "text", parse.GetValue<bool>(OptionNames.EmptyToken)));
         return command;
     }
 
