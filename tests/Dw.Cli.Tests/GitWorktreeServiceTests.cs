@@ -86,6 +86,11 @@ public sealed class GitWorktreeServiceTests
                 return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
             }
 
+            if (arguments is ["--git-dir", _, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"])
+            {
+                return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
+            }
+
             if (arguments is ["--git-dir", _, "rev-parse", "--verify", "origin/develop"])
             {
                 return Task.FromResult(new ProcessResult(1, string.Empty, "fatal: Needed a single revision"));

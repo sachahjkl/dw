@@ -33,9 +33,21 @@ internal sealed class GitWorktreeService(IProcessRunner processRunner, IFileSyst
             {
                 return GitWorktreeResult.Failed(repositoryKey, clone.StandardError.Trim());
             }
+
+            var fixFetch = await processRunner.RunAsync("git", ["--git-dir", anchorPath, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"], projectRoot);
+            if (fixFetch.ExitCode != 0)
+            {
+                return GitWorktreeResult.Failed(repositoryKey, $"Config fetch echouee: {fixFetch.StandardError.Trim()}");
+            }
         }
         else
         {
+            var ensureFetch = await processRunner.RunAsync("git", ["--git-dir", anchorPath, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"], projectRoot);
+            if (ensureFetch.ExitCode != 0)
+            {
+                return GitWorktreeResult.Failed(repositoryKey, $"Config fetch echouee: {ensureFetch.StandardError.Trim()}");
+            }
+
             var fetch = await processRunner.RunAsync("git", ["--git-dir", anchorPath, "fetch", "--prune", "origin"], projectRoot);
             if (fetch.ExitCode != 0)
             {
