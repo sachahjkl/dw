@@ -97,11 +97,36 @@ public sealed class AdoWorkflowTests
             DateTimeOffset.UtcNow,
             ["front", "back"],
             "created",
-            ChildTaskIds: new Dictionary<string, string>
-            {
-                ["front"] = "55201",
-                ["back"] = "55202"
-            });
+            ChildTasks:
+            [
+                new WorkspaceChildTask("front", "55201"),
+                new WorkspaceChildTask("back", "55202")
+            ]);
+
+        var message = CommitMessage.Build(manifest);
+
+        Assert.Equal("bug(#53020 #55201 #55202): corriger-ouverture-dossier", message);
+    }
+
+    [Fact]
+    public void CommitMessage_builds_expected_business_message_with_multiple_child_tasks_on_same_repo()
+    {
+        var manifest = new WorkspaceManifest(
+            1,
+            "53020",
+            null,
+            "he",
+            "bug",
+            "corriger-ouverture-dossier",
+            "bug/53020-55201-55202-corriger-ouverture-dossier",
+            DateTimeOffset.UtcNow,
+            ["front"],
+            "created",
+            ChildTasks:
+            [
+                new WorkspaceChildTask("front", "55201"),
+                new WorkspaceChildTask("front", "55202")
+            ]);
 
         var message = CommitMessage.Build(manifest);
 

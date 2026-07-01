@@ -24,7 +24,7 @@ internal static class TaskStartService
             : TaskCommand.TryCreateAdoContext(context, workflow, projectConfig, required: false);
         WorkItemSnapshot? workItem = null;
         IReadOnlyList<WorkspaceWorkItem>? workItems = null;
-        IReadOnlyDictionary<string, string>? childTaskIds = null;
+        IReadOnlyList<WorkspaceChildTask>? childTasks = null;
 
         if (adoContext is not null)
         {
@@ -58,10 +58,10 @@ internal static class TaskStartService
 
             if (request.CreateChildTasks || (workflow.TaskStart?.CreateChildTasks ?? false))
             {
-                childTaskIds = TaskCommand.CreateChildTasks(context, adoContext, workItem, repositories);
-                if (string.IsNullOrWhiteSpace(taskId) && childTaskIds.Count == 1)
+                childTasks = TaskCommand.CreateChildTasks(context, adoContext, workItem, repositories);
+                if (string.IsNullOrWhiteSpace(taskId) && childTasks.Count == 1)
                 {
-                    taskId = childTaskIds.Values.First();
+                    taskId = childTasks[0].Id;
                 }
             }
         }
@@ -81,7 +81,7 @@ internal static class TaskStartService
 
         var branchWorkItemIds = workItems.Select(item => item.Id)
             .Concat(string.IsNullOrWhiteSpace(taskId) ? [] : [taskId])
-            .Concat((childTaskIds ?? new Dictionary<string, string>()).Values.Where(id => !string.IsNullOrWhiteSpace(id)))
+            .Concat((childTasks ?? []).Select(task => task.Id).Where(id => !string.IsNullOrWhiteSpace(id)))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -119,7 +119,7 @@ internal static class TaskStartService
             results.Add(result);
         }
 
-        var manifest = new WorkspaceManifest(1, workItemId, taskId, project, type, slug, branchName, context.Clock.Now, repositories, "created", workItem?.Type, workItem?.Title, workItem?.State, childTaskIds, workItems);
+        var manifest = new WorkspaceManifest(1, workItemId, taskId, project, type, slug, branchName, context.Clock.Now, repositories, "created", workItem?.Type, workItem?.Title, workItem?.State, ChildTasks: childTasks, WorkItems: workItems);
         context.FileSystem.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(manifest));
         context.FileSystem.WriteAllText(Path.Combine(workspace, "plan.md"), Templates.PlanMd(manifest.ParentWorkItems, project));
         WriteWorkspaceAgentConfigs(context.FileSystem, workspace, manifest.ParentWorkItems, project);

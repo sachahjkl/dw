@@ -22,11 +22,7 @@ internal static class TaskChildTaskService
             throw new DwException("Le repo de la sous-tache est obligatoire.", 2);
         }
 
-        var existingChildTasks = new Dictionary<string, string>(manifest.ChildTaskIds ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
-        if (existingChildTasks.ContainsKey(repository))
-        {
-            throw new DwException($"Une sous-tache existe deja pour {repository}: #{existingChildTasks[repository]}", 2);
-        }
+        var existingChildTasks = manifest.NormalizedChildTasks.ToList();
 
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
         var workflow = WorkflowConfigStore.Load(context.FileSystem, root);
@@ -34,7 +30,7 @@ internal static class TaskChildTaskService
         var adoContext = TaskCommand.TryCreateAdoContext(context, workflow, projectConfig, required: true)
             ?? throw new DwException("Contexte Azure DevOps indisponible.");
 
-        var childTaskIds = TaskCommand.CreateChildTasks(
+        var childTasks = TaskCommand.CreateChildTasks(
             context,
             adoContext,
             new WorkItemSnapshot(parent.Id, parent.Type, parent.State, parent.Title, null),
@@ -42,14 +38,12 @@ internal static class TaskChildTaskService
             options.Title,
             "dw task create-child-task");
 
-        foreach (var pair in childTaskIds)
-        {
-            existingChildTasks[pair.Key] = pair.Value;
-        }
+        existingChildTasks.AddRange(childTasks);
 
-        var updated = manifest with { ChildTaskIds = existingChildTasks };
+        var created = childTasks[0];
+        var updated = manifest with { ChildTasks = existingChildTasks };
         context.FileSystem.WriteAllText(manifestPath, WorkspaceManifestWriter.Serialize(updated));
-        context.Out.WriteLine($"Sous-tache enregistree dans le workspace: {repository} -> #{existingChildTasks[repository]}");
+        context.Out.WriteLine($"Sous-tache enregistree dans le workspace: {repository} -> #{created.Id}");
         return 0;
     }
 

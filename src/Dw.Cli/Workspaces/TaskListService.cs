@@ -82,7 +82,8 @@ internal static class TaskListService
                 manifest.PrimaryWorkItemId,
                 manifest.ParentWorkItems,
                 manifest.TaskId,
-                manifest.ChildTaskIds,
+                manifest.LegacyChildTaskIds,
+                manifest.NormalizedChildTasks,
                 manifest.BranchName,
                 manifest.Repositories)));
             return 0;
@@ -120,5 +121,6 @@ internal sealed record TaskCurrentItem(
     IReadOnlyList<WorkspaceWorkItem> WorkItems,
     string? TaskId,
     IReadOnlyDictionary<string, string>? ChildTaskIds,
+    IReadOnlyList<WorkspaceChildTask> ChildTasks,
     string Branch,
     IReadOnlyList<string> Repositories);

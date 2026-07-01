@@ -165,7 +165,7 @@ internal static partial class TaskCommand
                 : projectConfig.AzureDevOps.ApiVersion);
     }
 
-    internal static IReadOnlyDictionary<string, string> CreateChildTasks(
+    internal static IReadOnlyList<WorkspaceChildTask> CreateChildTasks(
         CommandContext context,
         AdoContext adoContext,
         WorkItemSnapshot parent,
@@ -173,7 +173,7 @@ internal static partial class TaskCommand
         string? explicitTitle = null,
         string source = "dw task start")
     {
-        var created = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var created = new List<WorkspaceChildTask>();
         foreach (var repository in repositories)
         {
             var title = AdoTaskNaming.ChildTaskTitle(repository, explicitTitle ?? parent.Title ?? $"Work item {parent.Id}");
@@ -188,7 +188,7 @@ internal static partial class TaskCommand
                 ],
                 adoContext.Token).GetAwaiter().GetResult();
             var id = TryGetString(document.RootElement, "id") ?? throw new DwException("ADO n'a pas retourne l'id de la tache creee.");
-            created[repository] = id;
+            created.Add(new WorkspaceChildTask(repository, id, title));
             context.Out.WriteLine($"ADO task creee [{repository}]: #{id} {title}");
         }
 
@@ -291,10 +291,7 @@ internal static partial class TaskCommand
             ids.Add(manifest.TaskId);
         }
 
-        if (manifest.ChildTaskIds is not null)
-        {
-            ids.AddRange(manifest.ChildTaskIds.Values.Where(id => !string.IsNullOrWhiteSpace(id)));
-        }
+        ids.AddRange(manifest.NormalizedChildTasks.Select(task => task.Id).Where(id => !string.IsNullOrWhiteSpace(id)));
 
         return ids.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
@@ -397,7 +394,7 @@ internal static class CommitMessage
     {
         var ids = new[] { manifest.TaskId, manifest.WorkItemId }
             .Concat(manifest.ParentWorkItems.Select(item => item.Id))
-            .Concat((manifest.ChildTaskIds ?? new Dictionary<string, string>()).Values)
+            .Concat(manifest.NormalizedChildTasks.Select(task => task.Id))
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Select(id => $"#{id}")
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -423,7 +420,7 @@ internal static class CommitMessage
     private static string Ids(WorkspaceManifest manifest)
         => string.Join(' ', manifest.ParentWorkItems.Select(item => $"#{item.Id}")
             .Concat(string.IsNullOrWhiteSpace(manifest.TaskId) ? [] : [$"#{manifest.TaskId}"])
-            .Concat((manifest.ChildTaskIds ?? new Dictionary<string, string>()).Values.Select(id => $"#{id}"))
+            .Concat(manifest.NormalizedChildTasks.Select(task => $"#{task.Id}"))
             .Distinct(StringComparer.OrdinalIgnoreCase));
 }
 

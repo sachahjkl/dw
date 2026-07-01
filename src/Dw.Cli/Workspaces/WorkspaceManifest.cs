@@ -17,6 +17,7 @@ internal sealed record WorkspaceManifest(
     string? WorkItemTitle = null,
     string? WorkItemState = null,
     IReadOnlyDictionary<string, string>? ChildTaskIds = null,
+    IReadOnlyList<WorkspaceChildTask>? ChildTasks = null,
     IReadOnlyList<WorkspaceWorkItem>? WorkItems = null)
 {
     public IReadOnlyList<WorkspaceWorkItem> ParentWorkItems
@@ -26,10 +27,18 @@ internal sealed record WorkspaceManifest(
 
     public string DisplayWorkItemIds => string.Join(", ", ParentWorkItems.Select(item => item.Id));
 
+    public IReadOnlyList<WorkspaceChildTask> NormalizedChildTasks
+        => NormalizeChildTasks(ChildTaskIds, ChildTasks);
+
+    public IReadOnlyDictionary<string, string> LegacyChildTaskIds
+        => NormalizedChildTasks
+            .GroupBy(task => task.Repository, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<string> BranchWorkItemIds
         => ParentWorkItems.Select(item => item.Id)
             .Concat(string.IsNullOrWhiteSpace(TaskId) ? [] : [TaskId])
-            .Concat((ChildTaskIds ?? new Dictionary<string, string>()).Values.Where(id => !string.IsNullOrWhiteSpace(id)))
+            .Concat(NormalizedChildTasks.Select(task => task.Id).Where(id => !string.IsNullOrWhiteSpace(id)))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -73,6 +82,40 @@ internal sealed record WorkspaceManifest(
 
         return normalized;
     }
+
+    private static IReadOnlyList<WorkspaceChildTask> NormalizeChildTasks(
+        IReadOnlyDictionary<string, string>? childTaskIds,
+        IReadOnlyList<WorkspaceChildTask>? childTasks)
+    {
+        var normalized = (childTasks ?? [])
+            .Where(task => !string.IsNullOrWhiteSpace(task.Id) && !string.IsNullOrWhiteSpace(task.Repository))
+            .Select((task, index) => new { Task = task, Index = index })
+            .GroupBy(entry => entry.Task.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderBy(entry => entry.Index).First().Task)
+            .ToList();
+
+        if (childTaskIds is null)
+        {
+            return normalized;
+        }
+
+        foreach (var pair in childTaskIds)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key) || string.IsNullOrWhiteSpace(pair.Value))
+            {
+                continue;
+            }
+
+            if (normalized.Any(task => string.Equals(task.Id, pair.Value, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            normalized.Add(new WorkspaceChildTask(pair.Key, pair.Value));
+        }
+
+        return normalized;
+    }
 }
 
 internal sealed record WorkspaceWorkItem(
@@ -80,6 +123,11 @@ internal sealed record WorkspaceWorkItem(
     string? Type = null,
     string? Title = null,
     string? State = null);
+
+internal sealed record WorkspaceChildTask(
+    string Repository,
+    string Id,
+    string? Title = null);
 
 internal static class WorkspaceManifestWriter
 {

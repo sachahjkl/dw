@@ -83,7 +83,7 @@ internal static class TaskWorkItemService
             BranchName = GitBranchNames.Build(manifest.Type,
                 updatedWorkItems.Select(item => item.Id)
                     .Concat(string.IsNullOrWhiteSpace(manifest.TaskId) ? [] : [manifest.TaskId])
-                    .Concat((manifest.ChildTaskIds ?? new Dictionary<string, string>()).Values.Where(id => !string.IsNullOrWhiteSpace(id)))
+                    .Concat(manifest.NormalizedChildTasks.Select(task => task.Id).Where(id => !string.IsNullOrWhiteSpace(id)))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray(),
                 manifest.Slug)
