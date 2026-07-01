@@ -21,9 +21,12 @@ internal static partial class TaskCommand
         var changed = statuses.Where(status => status.IsGitRepository && status.HasChanges).ToList();
         var unpushed = statuses.Where(status => status.IsGitRepository && status.HasUnpushed).ToList();
         var actionable = changed.Count > 0 ? changed : unpushed;
+        var pullRequestCandidates = request.CreatePr
+            ? SelectPullRequestCandidates(context, statuses, actionable, projectConfig)
+            : actionable;
         var stageCommit = changed.Count > 0;
 
-        if (actionable.Count == 0)
+        if (actionable.Count == 0 && pullRequestCandidates.Count == 0)
         {
             context.Out.WriteLine();
             context.Out.WriteLine("Rien a terminer.");
@@ -81,7 +84,18 @@ internal static partial class TaskCommand
             }
         }
 
-        context.Out.WriteLine(stageCommit ? "Commits/push termines." : "Push termine.");
+        if (stageCommit)
+        {
+            context.Out.WriteLine("Commits/push termines.");
+        }
+        else if (unpushed.Count > 0)
+        {
+            context.Out.WriteLine("Push termine.");
+        }
+        else if (request.CreatePr)
+        {
+            context.Out.WriteLine("Aucun commit local a pousser. Verification PR en cours.");
+        }
 
         if (!request.CreatePr)
         {
@@ -100,8 +114,36 @@ internal static partial class TaskCommand
             throw new DwException("Contexte Azure DevOps indisponible.");
         }
 
-        CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, actionable, draft, verificationResults);
+        CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, pullRequestCandidates, draft, verificationResults);
         return 0;
+    }
+
+    internal static IReadOnlyList<RepositoryStatus> SelectPullRequestCandidates(
+        CommandContext context,
+        IReadOnlyList<RepositoryStatus> statuses,
+        IReadOnlyList<RepositoryStatus> actionable,
+        ProjectConfig? projectConfig)
+    {
+        if (actionable.Count > 0)
+        {
+            return actionable;
+        }
+
+        return statuses
+            .Where(status => status.IsGitRepository)
+            .Where(status => HasReviewableCommits(context, status, projectConfig))
+            .ToArray();
+    }
+
+    internal static bool HasReviewableCommits(CommandContext context, RepositoryStatus status, ProjectConfig? projectConfig)
+    {
+        var repo = projectConfig?.Repositories.GetValueOrDefault(status.Repository);
+        var target = repo?.PullRequestTargetBranch ?? repo?.DefaultBranch ?? "main";
+        var comparison = $"origin/{target}..HEAD";
+        var result = context.ProcessRunner.RunAsync("git", ["rev-list", "--count", comparison], status.Path).GetAwaiter().GetResult();
+        return result.ExitCode == 0
+               && int.TryParse(result.StandardOutput.Trim(), CultureInfo.InvariantCulture, out var ahead)
+               && ahead > 0;
     }
 
     private static void CreatePullRequests(
@@ -125,8 +167,16 @@ internal static partial class TaskCommand
             }
 
             var target = repo?.PullRequestTargetBranch ?? repo?.DefaultBranch ?? "main";
+            var sourceRef = $"refs/heads/{manifest.BranchName}";
+            var existing = adoContext.Client.TryFindActivePullRequestAsync(adoRepo, sourceRef, adoContext.Token).GetAwaiter().GetResult();
+            if (existing is not null)
+            {
+                context.Out.WriteLine($"PR deja ouverte pour {status.Repository}: {existing.Url ?? "(url non retournee)"}");
+                continue;
+            }
+
             var request = new CreatePullRequestRequest(
-                SourceRefName: $"refs/heads/{manifest.BranchName}",
+                SourceRefName: sourceRef,
                 TargetRefName: $"refs/heads/{target}",
                 Title: PullRequestText.Title(manifest),
                 Description: PullRequestText.Description(manifest, status, ReadPlan(context, status.Path), verificationResults),

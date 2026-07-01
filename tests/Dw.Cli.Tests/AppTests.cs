@@ -89,6 +89,17 @@ public sealed class AppTests
     }
 
     [Fact]
+    public async Task RunAsync_task_create_child_task_help_exposes_repo_and_title()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "create-child-task", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--repo", output);
+        Assert.Contains("--title", output);
+        Assert.Contains("sous-tache", output);
+    }
+
+    [Fact]
     public async Task RunAsync_exposes_system_commandline_suggestions()
     {
         using var output = new StringWriter();

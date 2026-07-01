@@ -17,9 +17,11 @@ Mandatory rules:
 6. Before working, make sure the initial project setup required by the environment is in place: install or restore dependencies, approve required build scripts, and initialize the basic local prerequisites.
 7. Run `dw task current` before lifecycle actions and before committing to confirm the active workspace.
 8. Update `plan.md` in the task workspace before implementing.
-9. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
-10. For API contract changes, always check both front and back.
-11. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
+9. For `User Story` and `Anomalie`, once `plan.md` is complete and before implementation starts, create the required ADO child tasks with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
+10. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
+11. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
+12. For API contract changes, always check both front and back.
+13. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
 """;
 
     public const string OpenCodeJsonc = """
@@ -51,11 +53,13 @@ Mandatory rules:
 6. Before working, make sure the initial project setup required by the environment is in place: install or restore dependencies, approve required build scripts, and initialize the basic local prerequisites.
 7. Run `dw task current` before lifecycle actions and before committing to confirm the active workspace.
 8. Fill `plan.md` in the task workspace before implementing.
-9. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
-10. Use `dw` commands for ADO lifecycle, Git naming, worktrees, commits and PRs.
-11. For API contract changes, always check both front and back.
-12. Write ADO/PR/commit text in French unless a repository convention says otherwise.
-13. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
+9. For `User Story` and `Anomalie`, once `plan.md` is complete and before implementation starts, create the required ADO child tasks with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
+10. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
+11. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
+12. Use `dw` commands for ADO lifecycle, Git naming, worktrees, commits and PRs.
+13. For API contract changes, always check both front and back.
+14. Write ADO/PR/commit text in French unless a repository convention says otherwise.
+15. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
 """;
 
     public const string BusinessOpenCodeJsonc = """
@@ -97,6 +101,7 @@ Use `dw` for workflow operations:
 - `dw task start <workItemId> --project <name> --slug <slug>` creates a task workspace.
 - `dw task open --workspace <path>` opens a new agent session for a workspace.
 - `dw task open --continue` resumes an existing agent session on the latest workspace.
+- `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"` creates one ADO child task for a `User Story` or `Anomalie` after the plan is written.
 - `dw task commit --continue --execute` creates an intermediate commit without push or PR.
 - `dw task finish --continue --execute --create-pr` is the expected commit/push/PR flow when the user asks to finish.
 - `dw db ...` is the only intended SQL entrypoint and is read-only by default.
@@ -115,10 +120,12 @@ Important rules:
 4. Before working, make sure the initial project setup required by the environment is in place: install or restore dependencies, approve required build scripts, and initialize the basic local prerequisites.
 5. Run `dw task current` before lifecycle actions and before committing to confirm the active workspace.
 6. Update `plan.md` in the task workspace before implementing.
-7. Use `dw task sync --continue` if the local ADO context may be stale.
-8. Use the `dw` CLI for Azure DevOps and worktree operations. Do not use Azure DevOps MCP tools.
-9. Commits are created by `dw task commit` or `dw task finish`; do not create them manually.
-10. Branches and PR titles are created by `dw task start` and `dw task finish`; do not create them manually.
-11. Use `dw` for every ADO, Git naming, PR and worktree operation.
+7. For `User Story` and `Anomalie`, once `plan.md` is complete and before implementation starts, create the required ADO child tasks with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
+8. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
+9. Use `dw task sync --continue` if the local ADO context may be stale.
+10. Use the `dw` CLI for Azure DevOps and worktree operations. Do not use Azure DevOps MCP tools.
+11. Commits are created by `dw task commit` or `dw task finish`; do not create them manually.
+12. Branches and PR titles are created by `dw task start` and `dw task finish`; do not create them manually.
+13. Use `dw` for every ADO, Git naming, PR and worktree operation.
 """;
 }

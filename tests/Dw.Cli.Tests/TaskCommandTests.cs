@@ -61,6 +61,36 @@ public sealed class TaskCommandTests
         Assert.Equal("dotnet test", command);
     }
 
+    [Fact]
+    public void SelectPullRequestCandidates_keeps_actionable_repositories_when_present()
+    {
+        var context = new CommandContext(new StringWriter(), new StringWriter(), new FixedClock(), new RealFileSystem(), new ReviewableBranchProcessRunner());
+        var statuses = new[]
+        {
+            new RepositoryStatus("front", @"C:\ws\front", true, true, false, string.Empty),
+            new RepositoryStatus("back", @"C:\ws\back", true, false, false, string.Empty)
+        };
+
+        var selected = TaskCommand.SelectPullRequestCandidates(context, statuses, [statuses[0]], projectConfig: null);
+
+        Assert.Collection(selected, status => Assert.Equal("front", status.Repository));
+    }
+
+    [Fact]
+    public void SelectPullRequestCandidates_falls_back_to_clean_repositories_with_reviewable_commits()
+    {
+        var context = new CommandContext(new StringWriter(), new StringWriter(), new FixedClock(), new RealFileSystem(), new ReviewableBranchProcessRunner());
+        var statuses = new[]
+        {
+            new RepositoryStatus("front", @"C:\ws\front", true, false, false, string.Empty),
+            new RepositoryStatus("back", @"C:\ws\back", true, false, false, string.Empty)
+        };
+
+        var selected = TaskCommand.SelectPullRequestCandidates(context, statuses, [], projectConfig: null);
+
+        Assert.Collection(selected, status => Assert.Equal("front", status.Repository));
+    }
+
     private sealed class FixedClock : IClock
     {
         public DateTimeOffset Now => new(2026, 6, 22, 12, 0, 0, TimeSpan.Zero);
@@ -85,6 +115,35 @@ public sealed class TaskCommandTests
 
         public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory = null)
             => RunAsync(fileName, string.Join(' ', arguments), workingDirectory);
+
+        public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment)
+            => RunAsync(fileName, arguments, workingDirectory);
+
+        public Task<int> RunInteractiveAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment)
+            => Task.FromResult(0);
+    }
+
+    private sealed class ReviewableBranchProcessRunner : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(string fileName, string arguments, string? workingDirectory = null)
+            => Task.FromResult(new ProcessResult(1, string.Empty, "unexpected command"));
+
+        public Task<ProcessResult> RunAsync(ProcessRequest request)
+            => RunAsync(request.FileName, request.ArgumentString ?? string.Join(' ', request.Arguments ?? Array.Empty<string>()), request.WorkingDirectory);
+
+        public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory = null)
+        {
+            if (fileName == "git"
+                && arguments.Count == 3
+                && arguments[0] == "rev-list"
+                && arguments[1] == "--count")
+            {
+                var output = string.Equals(workingDirectory, @"C:\ws\front", StringComparison.OrdinalIgnoreCase) ? "2" : "0";
+                return Task.FromResult(new ProcessResult(0, output, string.Empty));
+            }
+
+            return Task.FromResult(new ProcessResult(1, string.Empty, "unexpected command"));
+        }
 
         public Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment)
             => RunAsync(fileName, arguments, workingDirectory);

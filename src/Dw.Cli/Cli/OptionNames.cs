@@ -47,4 +47,5 @@ internal static class OptionNames
     public const string Check = "--check";
     public const string Rid = "--rid";
     public const string EmptyToken = "--empty-token";
+    public const string Title = "--title";
 }

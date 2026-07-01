@@ -202,6 +202,36 @@ order by [System.ChangedDate] desc
         return await ReadJsonOrThrow(response, cancellationToken);
     }
 
+    public async Task<PullRequestSummary?> TryFindActivePullRequestAsync(
+        string repositoryIdOrName,
+        string sourceRefName,
+        TokenResult token,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest(HttpMethod.Get, AzureDevOpsUris.PullRequests(options, repositoryIdOrName, sourceRefName, "active"), token);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        using var document = await ReadJsonOrThrow(response, cancellationToken);
+        if (!document.RootElement.TryGetProperty("value", out var values) || values.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in values.EnumerateArray())
+        {
+            var pullRequestId = item.TryGetProperty("pullRequestId", out var idProperty) && idProperty.TryGetInt32(out var id)
+                ? id
+                : 0;
+            var url = item.TryGetProperty("url", out var urlProperty) ? urlProperty.GetString() : null;
+            var source = item.TryGetProperty("sourceRefName", out var sourceProperty) ? sourceProperty.GetString() : null;
+            if (pullRequestId > 0 && string.Equals(source, sourceRefName, StringComparison.OrdinalIgnoreCase))
+            {
+                return new PullRequestSummary(pullRequestId, url);
+            }
+        }
+
+        return null;
+    }
+
     public async Task<JsonDocument> LinkWorkItemToPullRequestAsync(
         string repositoryIdOrName,
         int pullRequestId,
@@ -261,6 +291,8 @@ internal sealed record CreatePullRequestRequest(
     string Description,
     bool IsDraft,
     IReadOnlyList<ResourceRef>? WorkItemRefs = null);
+
+internal sealed record PullRequestSummary(int PullRequestId, string? Url);
 
 internal sealed record ResourceRef(string Id, string? Url = null);
 

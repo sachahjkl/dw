@@ -129,6 +129,27 @@ public sealed class AdoCommandTests
     }
 
     [Fact]
+    public async Task TryFindActivePullRequest_returns_matching_active_pr_for_source_branch()
+    {
+        var handler = new TestAzureDevOpsHttpHandler();
+        handler.SetupGet(
+            "searchCriteria.status=active",
+            HttpStatusCode.OK,
+            """
+            {"value":[{"pullRequestId":42,"sourceRefName":"refs/heads/feat/demo","url":"https://ado/pr/42"}]}
+            """);
+
+        using var httpClient = new HttpClient(handler);
+        var client = new AzureDevOpsClient(httpClient, DefaultOptions);
+
+        var pullRequest = await client.TryFindActivePullRequestAsync("my-repo", "refs/heads/feat/demo", DefaultToken);
+
+        Assert.NotNull(pullRequest);
+        Assert.Equal(42, pullRequest!.PullRequestId);
+        Assert.Equal("https://ado/pr/42", pullRequest.Url);
+    }
+
+    [Fact]
     public void GetWorkItemIdsFromPullRequests_throws_when_pr_not_found()
     {
         var handler = new TestAzureDevOpsHttpHandler();

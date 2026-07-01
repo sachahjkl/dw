@@ -169,20 +169,22 @@ internal static partial class TaskCommand
         CommandContext context,
         AdoContext adoContext,
         WorkItemSnapshot parent,
-        IReadOnlyList<string> repositories)
+        IReadOnlyList<string> repositories,
+        string? explicitTitle = null,
+        string source = "dw task start")
     {
         var created = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var repository in repositories)
         {
-            var title = AdoTaskNaming.ChildTaskTitle(repository, parent.Title ?? $"Work item {parent.Id}");
+            var title = AdoTaskNaming.ChildTaskTitle(repository, explicitTitle ?? parent.Title ?? $"Work item {parent.Id}");
             using var document = adoContext.Client.CreateWorkItemAsync("Task",
                 [
                     new JsonPatchOperation("add", "/fields/System.Title", title),
-                    new JsonPatchOperation("add", "/fields/System.History", DevWorkflowTraceComment(parent.Id, repository)),
+                    new JsonPatchOperation("add", "/fields/System.History", DevWorkflowTraceComment(parent.Id, repository, source)),
                     new JsonPatchOperation("add", "/relations/-", new WorkItemRelationRef(
                         "System.LinkTypes.Hierarchy-Reverse",
                         AzureDevOpsUris.WorkItemApiUrl(adoContext.Options, parent.Id).AbsoluteUri,
-                        new WorkItemRelationAttributes("creation dw task start")))
+                        new WorkItemRelationAttributes($"creation {source}")))
                 ],
                 adoContext.Token).GetAwaiter().GetResult();
             var id = TryGetString(document.RootElement, "id") ?? throw new DwException("ADO n'a pas retourne l'id de la tache creee.");
@@ -193,8 +195,8 @@ internal static partial class TaskCommand
         return created;
     }
 
-    private static string DevWorkflowTraceComment(string parentId, string repository)
-        => $"Créé automatiquement par Dev Workflow {AppVersion.InformationalVersion()} via dw task start. Parent #{parentId}. Repository: {repository}.";
+    private static string DevWorkflowTraceComment(string parentId, string repository, string source)
+        => $"Créé automatiquement par Dev Workflow {AppVersion.InformationalVersion()} via {source}. Parent #{parentId}. Repository: {repository}.";
 
     internal static void UpdateWorkItemState(AzureDevOpsClient client, TokenResult token, string workItemId, string state, string history)
     {

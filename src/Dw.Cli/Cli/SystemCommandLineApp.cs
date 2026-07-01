@@ -224,6 +224,18 @@ internal static partial class SystemCommandLineApp
             Subcommand("add-repo", "Ajoute un repo au workspace existant.", parse => TaskCommand.AddRepo(context, new TaskAddRepoOptions(parse.GetRequiredValue<string>("repo"), parse.GetValue<string>(OptionNames.Workspace))),
                 [WorkspaceOption(context, "Chemin explicite du workspace.")],
                 Argument<string>("repo", "Repo a ajouter.")),
+            Subcommand("create-child-task", "Cree une sous-tache ADO liee au work item principal du workspace.", parse => TaskChildTaskService.Create(context, new TaskChildTaskCreateOptions(
+                    parse.GetRequiredValue<string>(OptionNames.Repo),
+                    parse.GetRequiredValue<string>(OptionNames.Title),
+                    OpenOptions(parse))),
+                [
+                    Value(OptionNames.Repo, "Repo ou domaine de la sous-tache, par exemple front, back, db ou foo."),
+                    Value(OptionNames.Title, "Titre explicite de la sous-tache, sans prefixe [FRONT]/[BACK]."),
+                    WorkspaceOption(context, "Chemin explicite du workspace."),
+                    ProjectOption(context, "Projet dw."),
+                    WorkItemOption(context, "Filtre work item ADO."),
+                    Flag(OptionNames.Continue, "Utilise le workspace le plus recent.")
+                ]),
             Subcommand("add-work-item", "Ajoute un ou plusieurs work items au workspace existant.", parse => TaskWorkItemService.Add(context, new TaskWorkItemUpdateOptions(parse.GetRequiredValue<string>("ids"), OpenOptions(parse))),
                 [
                     WorkspaceOption(context, "Chemin explicite du workspace."),

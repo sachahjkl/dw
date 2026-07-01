@@ -88,6 +88,7 @@ public sealed class AgentCommandTests
         Assert.Contains("plan.md", context);
         Assert.Contains("dw task open --workspace <path>", context);
         Assert.Contains("dw task open --continue", context);
+        Assert.Contains("dw task create-child-task --continue --repo <front|back|db|foo> --title \"<action explicite>\"", context);
         Assert.Contains("dw task commit --continue --execute", context);
         Assert.Contains("dw task finish --continue --execute --create-pr", context);
         Assert.Contains("Do not use Azure DevOps MCP tools", context);

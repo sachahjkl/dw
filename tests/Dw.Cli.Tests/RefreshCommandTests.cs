@@ -41,6 +41,7 @@ public sealed class RefreshCommandTests
             Assert.Contains("dw ado", fs.ReadAllText(Path.Combine(root, "config", "opencode", "AGENTS.md")));
             Assert.NotEqual("stale schema", fs.ReadAllText(Path.Combine(root, "schemas", "projects.schema.json")));
             Assert.Contains("#11010", fs.ReadAllText(Path.Combine(root, "projects", "ha", "workspaces", "feat-11010-demo", "AGENTS.md")));
+            Assert.Contains("dw task create-child-task", fs.ReadAllText(Path.Combine(root, "projects", "ha", "workspaces", "feat-11010-demo", "AGENTS.md")));
             Assert.Equal("my plan", fs.ReadAllText(Path.Combine(root, "projects", "ha", "workspaces", "feat-11010-demo", "plan.md")));
             Assert.Equal("custom workflow", fs.ReadAllText(Path.Combine(root, "config", "workflow.json")));
             Assert.Equal("custom databases", fs.ReadAllText(Path.Combine(root, "config", "databases.json")));

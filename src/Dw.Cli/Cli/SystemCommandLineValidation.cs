@@ -19,6 +19,7 @@ internal static partial class SystemCommandLineApp
             case ("task", "rename"):
             case ("task", "teardown"):
             case ("task", "add-work-item"):
+            case ("task", "create-child-task"):
             case ("task", "remove-work-item"):
                 EnsureWorkspaceSelectionIsUnambiguous(parse);
                 break;

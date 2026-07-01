@@ -39,6 +39,9 @@ internal static class AzureDevOpsUris
     public static Uri PullRequests(AzureDevOpsOptions options, string repositoryIdOrName)
         => Build(options, $"{ProjectSegment(options)}/_apis/git/repositories/{Uri.EscapeDataString(repositoryIdOrName)}/pullrequests?api-version={options.ApiVersion}");
 
+    public static Uri PullRequests(AzureDevOpsOptions options, string repositoryIdOrName, string sourceRefName, string status)
+        => Build(options, $"{ProjectSegment(options)}/_apis/git/repositories/{Uri.EscapeDataString(repositoryIdOrName)}/pullrequests?searchCriteria.status={Uri.EscapeDataString(status)}&searchCriteria.sourceRefName={Uri.EscapeDataString(sourceRefName)}&api-version={options.ApiVersion}");
+
     public static Uri PullRequestWorkItems(AzureDevOpsOptions options, string repositoryIdOrName, int pullRequestId)
         => Build(options, $"{ProjectSegment(options)}/_apis/git/repositories/{Uri.EscapeDataString(repositoryIdOrName)}/pullRequests/{pullRequestId}/workitems?api-version={options.ApiVersion}");
 
