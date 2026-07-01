@@ -111,6 +111,11 @@ internal static class TaskStartService
                 throw new DwException($"Creation worktree impossible pour {repositoryKey}: {result.Message}");
             }
 
+            if (result.Status == GitWorktreeStatus.Prepared)
+            {
+                context.Out.WriteLine($"  fetch refspec configure pour {repositoryKey}");
+            }
+
             results.Add(result);
         }
 
