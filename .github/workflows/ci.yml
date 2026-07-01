@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - master
+    paths-ignore:
+      - VERSION
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows build, tests and artifact
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore .\Dw.slnx
+
+      - name: Build
+        run: dotnet build .\Dw.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test .\Dw.slnx --configuration Release --no-build
+
+      - name: Publish win-x64
+        shell: pwsh
+        run: .\scripts\publish-win-x64.ps1 -Version 0.0.0-ci -Commit $env:GITHUB_SHA
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: dw-win-x64
+          path: artifacts/win-x64/**
+
+  nix:
+    name: Linux Nix build, tests and artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v17
+        with:
+          name: sachahjkl
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ github.event_name == 'pull_request' }}
+
+      - name: Check flake
+        uses: DeterminateSystems/flake-checker-action@main
+
+      - name: Build Nix package
+        run: nix build .#default
+
+      - name: Smoke test with flake app
+        run: nix run .#check
+
+      - name: Publish linux-x64 artifact
+        run: nix develop -c env VERSION=0.0.0-ci COMMIT=${{ github.sha }} bash ./scripts/publish-linux-x64.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: dw-linux-x64
+          path: artifacts/linux-x64/**

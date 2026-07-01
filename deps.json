@@ -1,0 +1,132 @@
+[
+  {
+    "pname": "microsoft.bcl.cryptography",
+    "version": "9.0.13",
+    "hash": "sha256-hV99PbkdG0ONv6avBEdgsOrtSHhZW2v5EQbvkU4qIK0="
+  },
+  {
+    "pname": "microsoft.data.sqlclient.extensions.abstractions",
+    "version": "1.0.0",
+    "hash": "sha256-7Uz5TFKygRoaOF4hDxwV1y5UvOamp8ybha8bJjSJEXg="
+  },
+  {
+    "pname": "microsoft.data.sqlclient.internal.logging",
+    "version": "1.0.0",
+    "hash": "sha256-vT2PzntyVNDTNQ/DoFcAzSzZVDcmko9PVt7C0tD/GTc="
+  },
+  {
+    "pname": "microsoft.data.sqlclient.sni.runtime",
+    "version": "6.0.2",
+    "hash": "sha256-CQuJfjZYoRxfc07cSzUNCOOdzmUJu0p10J+WpcG2BJ0="
+  },
+  {
+    "pname": "microsoft.data.sqlclient",
+    "version": "7.0.1",
+    "hash": "sha256-ev4xIDNgGa08HwFrIILoDYtlT6GSwO+ffoarF2447bo="
+  },
+  {
+    "pname": "microsoft.extensions.caching.abstractions",
+    "version": "9.0.13",
+    "hash": "sha256-A0C1wC+yRo/IEIIag3mpV3E9bn3iAxNvngDz2GfWtu8="
+  },
+  {
+    "pname": "microsoft.extensions.caching.memory",
+    "version": "9.0.13",
+    "hash": "sha256-s+4r1LnVWW+L0GfCcTCPjGGik7u1WSZUzZGjoEHBBmc="
+  },
+  {
+    "pname": "microsoft.extensions.dependencyinjection.abstractions",
+    "version": "10.0.0",
+    "hash": "sha256-9iodXP39YqgxomnOPOxd/mzbG0JfOSXzFoNU3omT2Ps="
+  },
+  {
+    "pname": "microsoft.extensions.logging.abstractions",
+    "version": "10.0.0",
+    "hash": "sha256-BnhgGZc01HwTSxogavq7Ueq4V7iMA3wPnbfRwQ4RhGk="
+  },
+  {
+    "pname": "microsoft.extensions.options",
+    "version": "9.0.13",
+    "hash": "sha256-APBUF6/iavmgUlf7Cf6MGAsLZyuD8xmP8fEkL+iEgaM="
+  },
+  {
+    "pname": "microsoft.extensions.primitives",
+    "version": "9.0.13",
+    "hash": "sha256-3ajLGxAQLWlS9qinZ5TSxDvt0XX+FHcHKcMi1IIkeQs="
+  },
+  {
+    "pname": "microsoft.identity.client.extensions.msal",
+    "version": "4.85.0",
+    "hash": "sha256-52ZQW9XkAiKrY2cmCQ+DoF+KZ+NQXwAow8igEOoQO80="
+  },
+  {
+    "pname": "microsoft.identity.client",
+    "version": "4.85.0",
+    "hash": "sha256-mTsdiY4N/qAZ5H4pWvKsb/4Fc85I5sAxzpAa7yxuL3Q="
+  },
+  {
+    "pname": "microsoft.identitymodel.abstractions",
+    "version": "8.16.0",
+    "hash": "sha256-OpTFQpTtg1A8I1bBIOqv/n9pwYXTqzMI8ZLXLZDti5w="
+  },
+  {
+    "pname": "microsoft.identitymodel.jsonwebtokens",
+    "version": "8.16.0",
+    "hash": "sha256-Cctf2iuIXLMklTuCvzWv721v2mHs0HEBA47BqAKhp9I="
+  },
+  {
+    "pname": "microsoft.identitymodel.logging",
+    "version": "8.16.0",
+    "hash": "sha256-355u+3LIn/QfiCHFMXD+3ipdRTnbXLAQNzC4sWEFapQ="
+  },
+  {
+    "pname": "microsoft.identitymodel.protocols.openidconnect",
+    "version": "8.16.0",
+    "hash": "sha256-SgkwN+uAHQRm1VKoJdrbiMXBNa94nWrL2Pv0BVJh+qY="
+  },
+  {
+    "pname": "microsoft.identitymodel.protocols",
+    "version": "8.16.0",
+    "hash": "sha256-1arWAORCo4ogzYphGkkdamLinl2T9Euhu4BAdf95+ds="
+  },
+  {
+    "pname": "microsoft.identitymodel.tokens",
+    "version": "8.16.0",
+    "hash": "sha256-6s8ZLnKw32W6+KbnahCVe1v9YzpoemnpHNQ3VbFSV4M="
+  },
+  {
+    "pname": "microsoft.sqlserver.server",
+    "version": "1.0.0",
+    "hash": "sha256-mx/iqHmBMwA8Ulot0n6YFVIKsU1Tx7q4Tru7MSjbEgQ="
+  },
+  {
+    "pname": "system.commandline",
+    "version": "3.0.0-preview.5.26302.115",
+    "hash": "sha256-QxN/ltKKsMe9+V1yikv4gn/+EuqjhC8T7g1LZcfiKfw="
+  },
+  {
+    "pname": "system.configuration.configurationmanager",
+    "version": "9.0.13",
+    "hash": "sha256-lqhWlNXWbDPSPoJrk/FIXZ3NcZcaL0gcAYg4E11/9x0="
+  },
+  {
+    "pname": "system.diagnostics.eventlog",
+    "version": "9.0.13",
+    "hash": "sha256-B8xJZFNs4c8HePbnMFV6tLqhcT75Py3FjriCwvmBTAM="
+  },
+  {
+    "pname": "system.identitymodel.tokens.jwt",
+    "version": "8.16.0",
+    "hash": "sha256-wCEkUPnKDjO7Kpfr1vpr5Icvk69gFHgEWcSLbFtD6pg="
+  },
+  {
+    "pname": "system.security.cryptography.pkcs",
+    "version": "9.0.13",
+    "hash": "sha256-y4+E9z/NFofjDU9WeXOdvlIvgYPsZxvBpdnUt/c8mMQ="
+  },
+  {
+    "pname": "system.security.cryptography.protecteddata",
+    "version": "9.0.13",
+    "hash": "sha256-HSIKkJdVSA7ciDjHj5jcr8CyMJanVdixZjDmjGBYsUs="
+  }
+]
