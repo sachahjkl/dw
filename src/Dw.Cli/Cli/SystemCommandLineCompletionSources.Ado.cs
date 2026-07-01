@@ -2,25 +2,28 @@ namespace Dw.Cli.Cli;
 
 internal static partial class SystemCommandLineApp
 {
-    private static IEnumerable<CompletionItem> ProjectCompletions(CommandContext context)
-        => SafeCompletions(() => DevWorkflowConfigLoader.Load(context.FileSystem, Root(context))
+    private static IEnumerable<CompletionItem> ProjectCompletions(CommandContext context, CompletionContext? completion = null)
+        => DynamicCompletions(completion, () => DevWorkflowConfigLoader.Load(context.FileSystem, Root(context))
             .Projects
             .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
             .Select(pair => Item(pair.Key, pair.Value.DisplayName)));
 
-    private static IEnumerable<CompletionItem> WorkspaceCompletions(CommandContext context)
-        => SafeCompletions(() => WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, Root(context))
+    private static IEnumerable<CompletionItem> WorkspaceCompletions(CommandContext context, CompletionContext? completion = null)
+        => DynamicCompletions(completion, () => WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, Root(context))
             .OrderByDescending(workspace => workspace.Manifest.CreatedAt)
             .Select(workspace => Item(workspace.Path, $"{workspace.Manifest.Project} #{workspace.Manifest.DisplayWorkItemIds} {workspace.Manifest.Slug}")));
 
     private static IEnumerable<CompletionItem> WorkItemCompletions(CommandContext context, CompletionContext? completion = null)
-        => SafeCompletions(() => PrefixForMultiValue(WorkspaceWorkItemCompletions(context)
-            .Concat(AssignedWorkItemCompletions(context, completion))
-            .GroupBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First()), completion));
+        => DynamicCompletions(completion, () => WorkItemCompletions(context, completion?.ParseResult, completion?.WordToComplete));
 
-    private static IEnumerable<CompletionItem> RepositoryCompletions(CommandContext context)
-        => SafeCompletions(() => DevWorkflowConfigLoader.Load(context.FileSystem, Root(context))
+    private static IEnumerable<CompletionItem> WorkItemCompletions(CommandContext context, ParseResult? parseResult, string? token)
+        => PrefixForMultiValue(WorkspaceWorkItemCompletions(context)
+            .Concat(AssignedWorkItemCompletions(context, parseResult))
+            .GroupBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First()), token);
+
+    private static IEnumerable<CompletionItem> RepositoryCompletions(CommandContext context, CompletionContext? completion = null)
+        => DynamicCompletions(completion, () => DevWorkflowConfigLoader.Load(context.FileSystem, Root(context))
             .Projects
             .SelectMany(project => project.Value.Repositories.Select(repository => new { repository.Key, Project = project.Key, repository.Value.Folder }))
             .GroupBy(repository => repository.Key, StringComparer.OrdinalIgnoreCase)
@@ -34,14 +37,14 @@ internal static partial class SystemCommandLineApp
             .DistinctBy(workItem => workItem.Id)
             .Select(workItem => Item(workItem.Id, $"{workItem.Project} {workItem.Title}"));
 
-    private static IEnumerable<CompletionItem> AssignedWorkItemCompletions(CommandContext context, CompletionContext? completion)
+    private static IEnumerable<CompletionItem> AssignedWorkItemCompletions(CommandContext context, ParseResult? parseResult)
     {
-        if (completion?.ParseResult is null)
+        if (parseResult is null)
         {
             return [];
         }
 
-        var project = completion.ParseResult.GetValue<string>(OptionNames.Project);
+        var project = parseResult.GetValue<string>(OptionNames.Project);
         try
         {
             var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, null, project);

@@ -2,8 +2,8 @@ namespace Dw.Cli.Cli;
 
 internal static partial class SystemCommandLineApp
 {
-    private static IEnumerable<CompletionItem> DatabaseCompletions(CommandContext context)
-        => SafeCompletions(() =>
+    private static IEnumerable<CompletionItem> DatabaseCompletions(CommandContext context, CompletionContext? completion = null)
+        => DynamicCompletions(completion, () =>
         {
             var config = DatabasesConfigLoader.Load(context.FileSystem, Root(context));
             return config.Globals.Keys
@@ -14,9 +14,11 @@ internal static partial class SystemCommandLineApp
         });
 
     private static IEnumerable<CompletionItem> TableCompletions(CommandContext context, CompletionContext completion)
+        => DynamicCompletions(completion, () => TableCompletions(context, completion.ParseResult));
+
+    private static IEnumerable<CompletionItem> TableCompletions(CommandContext context, ParseResult parse)
         => SafeCompletions(() =>
         {
-            var parse = completion.ParseResult;
             var project = parse.GetValue<string>(OptionNames.Project) ?? "default";
             var database = parse.GetValue<string>(OptionNames.Database) ?? parse.GetValue<string>(OptionNames.Env) ?? "dev";
             var root = Root(context);
@@ -38,6 +40,15 @@ internal static partial class SystemCommandLineApp
     private static IEnumerable<CompletionItem> SqlQueryCompletions(CommandContext context, CompletionContext completion)
     {
         var word = completion.WordToComplete ?? string.Empty;
+        return SqlQueryCompletions(context, completion.ParseResult, word);
+    }
+
+    private static IEnumerable<CompletionItem> SqlQueryCompletions(CommandContext context, ParseResult parse, string word)
+    {
+        if (parse.Tokens.Any(token => token.Value is "--help" or "-h" or "-?"))
+        {
+            return [];
+        }
 
         var keywords = new[] { "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "BETWEEN", "LIKE", "JOIN", "INNER", "LEFT", "RIGHT", "OUTER", "ON", "AS", "ORDER", "BY", "ASC", "DESC", "GROUP", "HAVING", "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE", "TOP", "DISTINCT", "CASE", "WHEN", "THEN", "ELSE", "END", "IS", "NULL", "COUNT", "SUM", "AVG", "MIN", "MAX", "UNION", "ALL", "EXISTS", "WITH", "OFFSET", "FETCH", "NEXT", "ROWS", "CAST", "COALESCE", "CONVERT", "GETDATE", "DATEADD", "DATEDIFF", "YEAR", "MONTH", "DAY" }
             .Where(keyword => keyword.StartsWith(word, StringComparison.OrdinalIgnoreCase))
@@ -46,7 +57,6 @@ internal static partial class SystemCommandLineApp
 
         return SafeCompletions(() =>
         {
-            var parse = completion.ParseResult;
             var project = parse.GetValue<string>(OptionNames.Project) ?? "default";
             var database = parse.GetValue<string>(OptionNames.Database) ?? parse.GetValue<string>(OptionNames.Env) ?? "dev";
             var root = Root(context);

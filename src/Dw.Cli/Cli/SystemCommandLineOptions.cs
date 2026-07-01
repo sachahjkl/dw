@@ -12,7 +12,11 @@ internal static partial class SystemCommandLineApp
     }
 
     private static Option<bool> Flag(string name, string description)
-        => new(name) { Description = description };
+        => new(name)
+        {
+            Arity = ArgumentArity.Zero,
+            Description = description
+        };
 
     private static Option<string> Value(string name, string description, string[]? completions = null)
     {
@@ -40,19 +44,19 @@ internal static partial class SystemCommandLineApp
         => Value(OptionNames.Agent, "Agent a utiliser.", ["opencode", "cursor", "claude", "codex-cli", "codex", "copilot"]);
 
     private static Option<string> ProjectOption(CommandContext context, string description)
-        => WithCompletions(Value(OptionNames.Project, description), _ => ProjectCompletions(context));
+        => Value(OptionNames.Project, description);
 
     private static Option<string> WorkspaceOption(CommandContext context, string description)
-        => WithCompletions(Value(OptionNames.Workspace, description), _ => WorkspaceCompletions(context));
+        => Value(OptionNames.Workspace, description);
 
     private static Option<string> WorkItemOption(CommandContext context, string description)
-        => WithCompletions(Value(OptionNames.WorkItem, description), completion => WorkItemCompletions(context, completion));
+        => Value(OptionNames.WorkItem, description);
 
     private static Option<string> RepoOption(CommandContext context, string description)
-        => WithCompletions(Value(OptionNames.Repo, description), _ => RepositoryCompletions(context));
+        => Value(OptionNames.Repo, description);
 
     private static Option<string> DatabaseOption(CommandContext context, string description)
-        => WithCompletions(Value(OptionNames.Database, description), _ => DatabaseCompletions(context));
+        => Value(OptionNames.Database, description);
 
     private static Option<string> WithCompletions(Option<string> option, Func<CompletionContext, IEnumerable<CompletionItem>> completions)
     {

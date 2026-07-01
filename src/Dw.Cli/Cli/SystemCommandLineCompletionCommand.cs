@@ -60,7 +60,7 @@ internal static partial class SystemCommandLineApp
             commandLine += " ";
         }
 
-        var completions = SortCompletions(GetCompletionsForTesting(context, commandLine), CurrentToken(line, emptyToken));
+        var completions = SortCompletions(FilterCompletionOptions(AddDynamicCompletions(context, line, commandLine, emptyToken, GetCompletionsForTesting(context, commandLine)), line, emptyToken), CurrentToken(line, emptyToken));
         if (completions.Count == 0)
         {
             return 0;
@@ -96,6 +96,214 @@ internal static partial class SystemCommandLineApp
             .OrderBy(completion => IsOption(completion) ? 1 : 0)
             .ThenBy(completion => completion.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static IReadOnlyList<CompletionItem> FilterCompletionOptions(IReadOnlyList<CompletionItem> completions, IReadOnlyList<string> line, bool emptyToken)
+    {
+        var currentToken = CurrentToken(line, emptyToken);
+        var specifiedOptions = line
+            .Where(token => token.StartsWith("-", StringComparison.Ordinal))
+            .Where(token => !string.Equals(token, currentToken, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var excludedOptions = MutuallyExcludedOptions(line, specifiedOptions);
+
+        return completions
+            .Where(completion => !IsOption(completion)
+                || (!specifiedOptions.Contains(completion.Label) && !excludedOptions.Contains(completion.Label)))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<CompletionItem> AddDynamicCompletions(CommandContext context, IReadOnlyList<string> line, string commandLine, bool emptyToken, IReadOnlyList<CompletionItem> completions)
+    {
+        var root = BuildRoot(context);
+        var parse = root.Parse(commandLine, new ParserConfiguration { EnablePosixBundling = false });
+        var dynamicCompletions = ResolveDynamicCompletions(context, line, parse, CurrentToken(line, emptyToken), emptyToken);
+        return completions
+            .Concat(dynamicCompletions)
+            .GroupBy(completion => completion.Label, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+    }
+
+    private static IEnumerable<CompletionItem> ResolveDynamicCompletions(CommandContext context, IReadOnlyList<string> line, ParseResult parse, string currentToken, bool emptyToken)
+    {
+        var valueOption = ExpectedValueOption(line, currentToken, emptyToken);
+        if (string.Equals(valueOption, OptionNames.Project, StringComparison.OrdinalIgnoreCase))
+        {
+            return ProjectCompletions(context);
+        }
+
+        if (string.Equals(valueOption, OptionNames.Workspace, StringComparison.OrdinalIgnoreCase))
+        {
+            return WorkspaceCompletions(context);
+        }
+
+        if (string.Equals(valueOption, OptionNames.Repo, StringComparison.OrdinalIgnoreCase))
+        {
+            return RepositoryCompletions(context);
+        }
+
+        if (string.Equals(valueOption, OptionNames.Database, StringComparison.OrdinalIgnoreCase))
+        {
+            return DatabaseCompletions(context);
+        }
+
+        if (string.Equals(valueOption, OptionNames.WorkItem, StringComparison.OrdinalIgnoreCase))
+        {
+            return WorkItemCompletions(context, parse, currentToken);
+        }
+
+        if (HasCommandPath(line, "task", "start") || HasCommandPath(line, "task", "open") || HasCommandPath(line, "task", "add-work-item") || HasCommandPath(line, "task", "remove-work-item") || HasCommandPath(line, "ado", "work-item") || HasCommandPath(line, "ado", "context"))
+        {
+            return WorkItemCompletions(context, parse, currentToken);
+        }
+
+        if (HasCommandPath(line, "db", "describe"))
+        {
+            return TableCompletions(context, parse);
+        }
+
+        if (HasCommandPath(line, "db", "query"))
+        {
+            return SqlQueryCompletions(context, parse, currentToken);
+        }
+
+        return [];
+    }
+
+    private static string? ExpectedValueOption(IReadOnlyList<string> line, string currentToken, bool emptyToken)
+    {
+        if (line.Count == 0)
+        {
+            return null;
+        }
+
+        if (emptyToken)
+        {
+            var previous = line[^1];
+            return previous.StartsWith("--", StringComparison.Ordinal) ? previous : null;
+        }
+
+        if (currentToken.StartsWith("-", StringComparison.Ordinal) || line.Count < 2)
+        {
+            return null;
+        }
+
+        var candidate = line[^2];
+        return candidate.StartsWith("--", StringComparison.Ordinal) ? candidate : null;
+    }
+
+    private static HashSet<string> MutuallyExcludedOptions(IReadOnlyList<string> line, HashSet<string> specifiedOptions)
+    {
+        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddExclusions(excluded, specifiedOptions, OptionNames.FromPr, OptionNames.FromGit, line, "ado", "changelog");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Table, OptionNames.IdsOnly, line, "ado", "changelog");
+        AddExclusions(excluded, specifiedOptions, OptionNames.CreatePr, OptionNames.SkipAdo, line, "task", "finish");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Database, OptionNames.Env, line, "db", "schema");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Database, OptionNames.Env, line, "db", "describe");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Database, OptionNames.Env, line, "db", "query");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Value, OptionNames.FromEnv, line, "secret", "set");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Check, OptionNames.Rid, line, "upgrade");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "open");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "open");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "open");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "sync");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "sync");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "sync");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "rename");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "rename");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "rename");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "teardown");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "teardown");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "teardown");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "commit");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "finish");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "add-work-item");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "add-work-item");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "add-work-item");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "remove-work-item");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "remove-work-item");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "remove-work-item");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "agent", "open");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "agent", "open");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "agent", "open");
+        AddConditionalExclusions(excluded, specifiedOptions, line);
+        return excluded;
+    }
+
+    private static void AddConditionalExclusions(HashSet<string> excluded, HashSet<string> specifiedOptions, IReadOnlyList<string> line)
+    {
+        if (HasCommandPath(line, "ado", "changelog"))
+        {
+            if (!specifiedOptions.Contains(OptionNames.FromGit))
+            {
+                excluded.Add(OptionNames.GitTo);
+            }
+
+            var format = OptionValue(line, OptionNames.Format);
+            if (!string.IsNullOrWhiteSpace(format) && !string.Equals(format, "markdown", StringComparison.OrdinalIgnoreCase))
+            {
+                excluded.Add(OptionNames.Table);
+            }
+        }
+
+        if (HasCommandPath(line, "task", "finish") && !specifiedOptions.Contains(OptionNames.CreatePr))
+        {
+            excluded.Add(OptionNames.Ready);
+        }
+    }
+
+    private static string? OptionValue(IReadOnlyList<string> line, string optionName)
+    {
+        for (var i = 0; i < line.Count - 1; i++)
+        {
+            if (string.Equals(line[i], optionName, StringComparison.OrdinalIgnoreCase))
+            {
+                var value = line[i + 1];
+                if (!value.StartsWith("-", StringComparison.Ordinal))
+                {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static void AddExclusions(HashSet<string> excluded, HashSet<string> specifiedOptions, string left, string right, IReadOnlyList<string> line, params string[] commandPath)
+    {
+        if (!HasCommandPath(line, commandPath))
+        {
+            return;
+        }
+
+        if (specifiedOptions.Contains(left))
+        {
+            excluded.Add(right);
+        }
+
+        if (specifiedOptions.Contains(right))
+        {
+            excluded.Add(left);
+        }
+    }
+
+    private static bool HasCommandPath(IReadOnlyList<string> line, params string[] commandPath)
+    {
+        if (line.Count < commandPath.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < commandPath.Length; i++)
+        {
+            if (!string.Equals(line[i], commandPath[i], StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsOption(CompletionItem completion)

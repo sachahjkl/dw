@@ -58,6 +58,9 @@ public sealed class AppTests
         Assert.Equal(0, exitCode);
         Assert.Contains("--continue", output);
         Assert.Contains("--create-pr", output);
+        Assert.DoesNotContain("--project", output);
+        Assert.DoesNotContain("--task", output);
+        Assert.DoesNotContain("feat-123-456-demo", output);
     }
 
     [Fact]
@@ -88,11 +91,15 @@ public sealed class AppTests
     [Fact]
     public async Task RunAsync_exposes_system_commandline_suggestions()
     {
-        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["[suggest]", "task --"]));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var context = new CommandContext(output, error, new FixedClock(), new RealFileSystem(), new NoopProcessRunner());
 
-        Assert.Equal(0, exitCode);
-        Assert.Contains("--task", output);
-        Assert.Contains("--create-child-tasks", output);
+        var completions = SystemCommandLineApp.GetCompletionsForTesting(context, "task finish --");
+        var labels = completions.Select(c => c.Label).ToArray();
+
+        Assert.Contains("--workspace", labels);
+        Assert.Contains("--create-pr", labels);
     }
 
     [Fact]
@@ -108,21 +115,21 @@ public sealed class AppTests
     [Fact]
     public async Task RunAsync_completion_suggest_prints_descriptions()
     {
-        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "task", "--"]));
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "task", "finish", "--"]));
 
         Assert.Equal(0, exitCode);
-        Assert.Contains("--task", output);
-        Assert.Contains("ID de tache ADO concrete", output);
+        Assert.Contains("--workspace", output);
+        Assert.Contains("Chemin explicite du workspace", output);
     }
 
     [Fact]
     public async Task RunAsync_completion_suggest_can_emit_json()
     {
-        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--format", "json", "task", "--"]));
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--format", "json", "task", "finish", "--"]));
 
         Assert.Equal(0, exitCode);
-        Assert.Contains("\"label\":\"--task\"", output);
-        Assert.Contains("\"description\":\"ID de tache ADO concrete.\"", output);
+        Assert.Contains("\"label\":\"--workspace\"", output);
+        Assert.Contains("\"description\":\"Chemin explicite du workspace.\"", output);
     }
 
     [Fact]
@@ -158,16 +165,16 @@ public sealed class AppTests
         Assert.Equal(0, exitCode);
         Assert.Contains("start", output);
         Assert.Contains("Cree un workspace et des worktrees", output);
-        Assert.True(output.IndexOf("add-repo", StringComparison.Ordinal) < output.IndexOf("--agent", StringComparison.Ordinal));
+        Assert.True(output.IndexOf("add-repo", StringComparison.Ordinal) < output.IndexOf("--help", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task RunAsync_completion_suggest_dash_token_lists_only_options()
     {
-        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "task", "--"]));
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "task", "finish", "--"]));
 
         Assert.Equal(0, exitCode);
-        Assert.Contains("--agent", output);
+        Assert.Contains("--create-pr", output);
         Assert.DoesNotContain("add-repo", output);
     }
 
@@ -197,7 +204,108 @@ public sealed class AppTests
     }
 
     [Fact]
-    public void Completion_sources_use_live_project_and_repository_values()
+    public async Task RunAsync_completion_suggest_hides_mutually_exclusive_changelog_switches()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--empty-token", "ado", "changelog", "--from-git"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--git-to", output);
+        Assert.DoesNotContain("--from-pr", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_completion_suggest_hides_finish_flags_blocked_by_selected_options()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--empty-token", "task", "finish", "--skip-ado"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain("--create-pr", output);
+        Assert.DoesNotContain("--ready", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_completion_suggest_hides_workspace_when_continue_is_already_selected()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--empty-token", "task", "finish", "--continue"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain("--workspace", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_completion_suggest_hides_table_without_markdown_mode()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--empty-token", "ado", "changelog", "--format", "html"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain("--table", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_completion_suggest_hides_env_when_database_is_selected()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--empty-token", "db", "query", "--database", "dev"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain("--env", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_ado_changelog_rejects_git_to_without_from_git()
+    {
+        var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["ado", "changelog", "123", "--git-to", "main"]));
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--git-to requiert --from-git", error);
+    }
+
+    [Fact]
+    public async Task RunAsync_task_finish_rejects_ready_without_create_pr()
+    {
+        var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["task", "finish", "--ready"]));
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--ready requiert --create-pr", error);
+    }
+
+    [Fact]
+    public async Task RunAsync_db_query_rejects_database_and_env_together()
+    {
+        var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["db", "query", "--database", "dev", "--env", "rec", "select", "1"]));
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--database ne peut pas etre combine avec --env", error);
+    }
+
+    [Fact]
+    public async Task RunAsync_secret_set_rejects_value_and_from_env_together()
+    {
+        var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["secret", "set", "demo", "--value", "x", "--from-env", "DW_DEMO"]));
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--value ne peut pas etre combine avec --from-env", error);
+    }
+
+    [Fact]
+    public async Task RunAsync_task_open_rejects_workspace_with_filters()
+    {
+        var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["task", "open", "123", "--workspace", "C:\\tmp\\ws", "--project", "ha"]));
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--workspace ne peut pas etre combine avec --project", error);
+    }
+
+    [Fact]
+    public async Task RunAsync_upgrade_rejects_check_with_rid()
+    {
+        var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["upgrade", "--check", "--rid", "win-x64"]));
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--check ne peut pas etre combine avec --rid", error);
+    }
+
+    [Fact]
+    public async Task Completion_sources_use_live_project_and_repository_values()
     {
         var root = Path.Combine(Path.GetTempPath(), "dw-live-completion-test-" + Guid.NewGuid().ToString("N"));
         var previousSettings = File.Exists(AppPaths.UserSettingsPath)
@@ -239,16 +347,13 @@ public sealed class AppTests
                 "created",
                 WorkItems: [new WorkspaceWorkItem("123"), new WorkspaceWorkItem("456")])));
 
-            using var output = new StringWriter();
-            using var error = new StringWriter();
-            var context = new CommandContext(output, error, new FixedClock(), new RealFileSystem(), new NoopProcessRunner());
-            var project = SystemCommandLineApp.GetCompletionsForTesting(context, "task start 123 --project ");
-            var repo = SystemCommandLineApp.GetCompletionsForTesting(context, "task open --repo ");
-            var workItem = SystemCommandLineApp.GetCompletionsForTesting(context, "task start 123,");
+            var (_, project, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--format", "json", "--empty-token", "task", "start", "123", "--project"]));
+            var (_, repo, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--format", "json", "--empty-token", "task", "open", "--repo"]));
+            var (_, workItem, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--format", "json", "task", "start", "123,"]));
 
-            Assert.Contains(project, item => item.Label == "ha");
-            Assert.Contains(repo, item => item.Label == "front");
-            Assert.Contains(workItem, item => item.Label == "123,456");
+            Assert.Contains("\"label\":\"ha\"", project);
+            Assert.Contains("\"label\":\"front\"", repo);
+            Assert.Contains("\"label\":\"123,456\"", workItem);
         }
         finally
         {

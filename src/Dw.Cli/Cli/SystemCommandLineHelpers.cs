@@ -32,7 +32,11 @@ internal static partial class SystemCommandLineApp
                 command.Add(option);
             }
 
-            command.SetAction(parse => spec.Handler(parse, command));
+            command.SetAction(parse =>
+            {
+                ValidateCommandInput(parent.Name, spec.Name, parse);
+                return spec.Handler(parse, command);
+            });
             parent.Add(command);
         }
     }
