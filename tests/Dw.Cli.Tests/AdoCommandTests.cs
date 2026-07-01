@@ -150,6 +150,14 @@ public sealed class AdoCommandTests
     }
 
     [Fact]
+    public void DescribeRelationTarget_includes_attachment_url_next_to_name()
+    {
+        var target = AdoCommand.DescribeRelationTarget("AttachedFile", relatedId: null, artifact: null, name: "demande de transport somotha maquette.png", url: "https://dev.azure.com/org/_apis/wit/attachments/123");
+
+        Assert.Equal("demande de transport somotha maquette.png (https://dev.azure.com/org/_apis/wit/attachments/123)", target);
+    }
+
+    [Fact]
     public void GetWorkItemIdsFromPullRequests_throws_when_pr_not_found()
     {
         var handler = new TestAzureDevOpsHttpHandler();

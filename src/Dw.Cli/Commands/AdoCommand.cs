@@ -432,9 +432,7 @@ internal static class AdoCommand
             var comment = TryRelationAttribute(relation, "comment");
             var relatedId = WorkItemIdFromRelationUrl(url);
             var artifact = AdoArtifactLink.TryParse(url);
-            var target = relatedId is not null
-                ? $"#{relatedId} {name ?? rel}"
-                : artifact?.Display ?? name ?? url ?? "(url absente)";
+            var target = DescribeRelationTarget(rel, relatedId, artifact, name, url);
             context.Out.WriteLine($"- {rel}: {target}");
             if (!string.IsNullOrWhiteSpace(comment))
             {
@@ -450,6 +448,29 @@ internal static class AdoCommand
         }
 
         context.Out.WriteLine();
+    }
+
+    internal static string DescribeRelationTarget(string? rel, string? relatedId, AdoArtifactLink? artifact, string? name, string? url)
+    {
+        if (relatedId is not null)
+        {
+            return $"#{relatedId} {name ?? rel}";
+        }
+
+        if (artifact is not null)
+        {
+            return artifact.Display;
+        }
+
+        if (!string.IsNullOrWhiteSpace(rel)
+            && rel.Contains("AttachedFile", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(name)
+            && !string.IsNullOrWhiteSpace(url))
+        {
+            return $"{name} ({url})";
+        }
+
+        return name ?? url ?? "(url absente)";
     }
 
     private static void PrintComments(CommandContext context, AzureDevOpsClient client, string id, int limit, TokenResult token)
