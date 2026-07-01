@@ -51,7 +51,7 @@ internal static class TaskStartService
                         !string.Equals(snapshot.State, startState, StringComparison.OrdinalIgnoreCase))
                     {
                         TaskCommand.UpdateWorkItemState(adoContext.Client, adoContext.Token, snapshot.Id, startState, "dw task start");
-                        context.Out.WriteLine($"ADO item {snapshot.Id}: etat -> {startState}");
+                        context.Out.WriteLine($"ADO item {WorkspaceManifest.FormatWorkItem(new WorkspaceWorkItem(snapshot.Id, snapshot.Type, snapshot.Title, snapshot.State))}: etat -> {startState}");
                     }
                 }
             }

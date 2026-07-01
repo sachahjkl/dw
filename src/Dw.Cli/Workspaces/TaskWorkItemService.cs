@@ -35,7 +35,7 @@ internal static class TaskWorkItemService
             .Concat(snapshots.Select(snapshot => new WorkspaceWorkItem(snapshot.Id, snapshot.Type, snapshot.Title, snapshot.State)))
             .ToArray();
         ApplyUpdate(context, root, workspace, manifestPath, manifest, updatedWorkItems);
-        context.Out.WriteLine($"Work items ajoutes: {string.Join(", ", missingIds)}");
+        context.Out.WriteLine($"Work items ajoutes: {string.Join(", ", snapshots.Select(snapshot => WorkspaceManifest.FormatWorkItem(new WorkspaceWorkItem(snapshot.Id, snapshot.Type, snapshot.Title, snapshot.State))))}");
         return 0;
     }
 
@@ -61,7 +61,7 @@ internal static class TaskWorkItemService
         }
 
         ApplyUpdate(context, root, workspace, manifestPath, manifest, remaining);
-        context.Out.WriteLine($"Work items retires: {string.Join(", ", selection.Ids.Where(manifest.MatchesWorkItem))}");
+        context.Out.WriteLine($"Work items retires: {string.Join(", ", manifest.ParentWorkItems.Where(item => selection.Contains(item.Id)).Select(WorkspaceManifest.FormatWorkItem))}");
         return 0;
     }
 

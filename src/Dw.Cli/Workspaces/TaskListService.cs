@@ -59,10 +59,10 @@ internal static class TaskListService
             return 0;
         }
 
-        context.Out.WriteLine("Project  WorkItem  Created     Branch");
+        context.Out.WriteLine("Project  WorkItems  Created     Branch");
         foreach (var workspace in workspaces)
         {
-            context.Out.WriteLine($"{workspace.Manifest.Project,-8} {workspace.Manifest.DisplayWorkItemIds,-8} {workspace.Manifest.CreatedAt:yyyy-MM-dd}  {workspace.Manifest.BranchName}");
+            context.Out.WriteLine($"{workspace.Manifest.Project,-8} {workspace.Manifest.DisplayWorkItems,-8} {workspace.Manifest.CreatedAt:yyyy-MM-dd}  {workspace.Manifest.BranchName}");
             context.Out.WriteLine($"  {workspace.Path}");
         }
 
@@ -91,7 +91,7 @@ internal static class TaskListService
 
         context.Out.WriteLine($"Workspace: {workspace}");
         context.Out.WriteLine($"Project: {manifest.Project}");
-        context.Out.WriteLine($"Work items: {manifest.DisplayWorkItemIds}");
+        context.Out.WriteLine($"Work items: {manifest.DisplayWorkItems}");
         context.Out.WriteLine($"Branch: {manifest.BranchName}");
         context.Out.WriteLine($"Repos: {string.Join(", ", manifest.Repositories)}");
         return 0;

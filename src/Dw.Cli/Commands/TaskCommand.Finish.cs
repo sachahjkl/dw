@@ -219,20 +219,21 @@ internal static partial class TaskCommand
         {
             var item = adoContext.Client.GetWorkItemSnapshotAsync(id, adoContext.Token).GetAwaiter().GetResult();
             var state = AdoWorkflowStates.FinishState(item.Type ?? manifest.WorkItemType, workflow.TaskFinish);
+            var label = WorkspaceManifest.FormatWorkItem(new WorkspaceWorkItem(item.Id, item.Type, item.Title, item.State));
             if (string.IsNullOrWhiteSpace(state))
             {
-                context.Out.WriteLine($"ADO item {id}: etat inchange ({item.Type}).");
+                context.Out.WriteLine($"ADO item {label}: etat inchange ({item.Type}).");
                 continue;
             }
 
             if (string.Equals(item.State, state, StringComparison.OrdinalIgnoreCase))
             {
-                context.Out.WriteLine($"ADO item {id}: deja en etat {state}.");
+                context.Out.WriteLine($"ADO item {label}: deja en etat {state}.");
                 continue;
             }
 
             UpdateWorkItemState(adoContext.Client, adoContext.Token, id, state, "dw task finish: PR ouverte");
-            context.Out.WriteLine($"ADO item {id}: etat -> {state}");
+            context.Out.WriteLine($"ADO item {label}: etat -> {state}");
         }
     }
 

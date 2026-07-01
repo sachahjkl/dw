@@ -61,7 +61,7 @@ internal static class TaskSyncPruneService
 
         foreach (var candidate in candidates)
         {
-            context.Out.WriteLine($"{candidate.Manifest.Project} / {candidate.Manifest.DisplayWorkItemIds} / {string.Join(", ", candidate.Manifest.ParentWorkItems.Select(item => item.State ?? "?"))}: {candidate.Path}");
+            context.Out.WriteLine($"{candidate.Manifest.Project} / {DisplayWorkItems(candidate.Manifest.ParentWorkItems, includeState: true)}: {candidate.Path}");
             if (options.Execute)
             {
                 WorkspaceTeardownService.Teardown(context, new WorkspaceTeardownOptions(candidate.Path, null, null, Continue: false, Execute: true, Yes: options.Yes), root);
@@ -106,13 +106,28 @@ internal static class TaskSyncPruneService
                     WorkItems = workItems
                 };
                 context.FileSystem.WriteAllText(Path.Combine(workspace.Path, "task.json"), WorkspaceManifestWriter.Serialize(updated));
-                context.Out.WriteLine($"Sync: {workspace.Manifest.DisplayWorkItemIds} -> {string.Join(", ", workItems.Select(item => item.State ?? "?"))}");
+                context.Out.WriteLine($"Sync: {DisplayWorkItems(workItems, includeState: true)}");
             }
             catch (DwException ex)
             {
-                context.Out.WriteLine($"Sync ignoree [{workspace.Manifest.DisplayWorkItemIds}]: {ex.Message}");
+                context.Out.WriteLine($"Sync ignoree [{DisplayWorkItems(workspace.Manifest.ParentWorkItems)}]: {ex.Message}");
             }
         }
+    }
+
+    internal static string DisplayWorkItems(IReadOnlyList<WorkspaceWorkItem> workItems, bool includeState = false)
+        => string.Join(", ", workItems.Select(item => DisplayWorkItem(item, includeState)));
+
+    internal static string DisplayWorkItem(WorkspaceWorkItem item, bool includeState = false)
+    {
+        var title = string.IsNullOrWhiteSpace(item.Title) ? "(sans titre)" : item.Title;
+        if (!includeState)
+        {
+            return $"#{item.Id} {title}";
+        }
+
+        var state = string.IsNullOrWhiteSpace(item.State) ? "?" : item.State;
+        return $"#{item.Id} {title} [{state}]";
     }
 }
 
