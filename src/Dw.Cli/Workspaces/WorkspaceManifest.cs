@@ -27,6 +27,8 @@ internal sealed record WorkspaceManifest(
 
     public string DisplayWorkItemIds => string.Join(", ", ParentWorkItems.Select(item => item.Id));
 
+    public string DisplayWorkItems => string.Join(", ", ParentWorkItems.Select(FormatWorkItem));
+
     public IReadOnlyList<WorkspaceChildTask> NormalizedChildTasks
         => NormalizeChildTasks(ChildTaskIds, ChildTasks);
 
@@ -81,6 +83,12 @@ internal sealed record WorkspaceManifest(
                 : 0);
 
         return normalized;
+    }
+
+    public static string FormatWorkItem(WorkspaceWorkItem item)
+    {
+        var title = string.IsNullOrWhiteSpace(item.Title) ? "(sans titre)" : item.Title;
+        return $"#{item.Id} {title}";
     }
 
     private static IReadOnlyList<WorkspaceChildTask> NormalizeChildTasks(

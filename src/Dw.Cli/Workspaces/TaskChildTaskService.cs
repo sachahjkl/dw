@@ -43,7 +43,7 @@ internal static class TaskChildTaskService
         var created = childTasks[0];
         var updated = manifest with { ChildTasks = existingChildTasks };
         context.FileSystem.WriteAllText(manifestPath, WorkspaceManifestWriter.Serialize(updated));
-        context.Out.WriteLine($"Sous-tache enregistree dans le workspace: {repository} -> #{created.Id}");
+        context.Out.WriteLine($"Sous-tache enregistree dans le workspace: {repository} -> #{created.Id} {created.Title ?? options.Title}");
         return 0;
     }
 

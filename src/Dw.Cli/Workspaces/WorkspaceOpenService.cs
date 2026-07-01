@@ -159,7 +159,7 @@ internal static class WorkspaceOpenService
         for (var i = 0; i < workspaces.Count; i++)
         {
             var workspace = workspaces[i];
-            context.Out.WriteLine($"{i + 1}. {workspace.Manifest.Project} / {workspace.Manifest.DisplayWorkItemIds} / {workspace.Manifest.Type}-{workspace.Manifest.PrimaryWorkItemId}-{workspace.Manifest.Slug} / {workspace.Manifest.CreatedAt:yyyy-MM-dd}");
+            context.Out.WriteLine($"{i + 1}. {workspace.Manifest.Project} / {workspace.Manifest.DisplayWorkItems} / {workspace.Manifest.Type}-{workspace.Manifest.PrimaryWorkItemId}-{workspace.Manifest.Slug} / {workspace.Manifest.CreatedAt:yyyy-MM-dd}");
         }
 
         context.Out.WriteLine();
