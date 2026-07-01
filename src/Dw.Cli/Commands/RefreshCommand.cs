@@ -22,6 +22,7 @@ internal static class RefreshCommand
         SchemaResourceWriter.Write(context.FileSystem, root, overwrite: true);
         WriteRootAgentFiles(context.FileSystem, root, profile);
         RefreshWorkspaceAgentFiles(context.FileSystem, root);
+        EnsureBareRepoFetchRefspecs(context, root);
 
         context.Out.WriteLine($"Root rafraichi: {root}");
         context.Out.WriteLine($"Profil: {profile.Name}");
@@ -64,6 +65,48 @@ internal static class RefreshCommand
                          workspace.Manifest.Project)))
             {
                 fileSystem.WriteAllText(Path.Combine(workspace.Path, file.RelativePath), file.Content);
+            }
+        }
+    }
+
+    private static void EnsureBareRepoFetchRefspecs(CommandContext context, string root)
+    {
+        var projectsRoot = Path.Combine(root, "projects");
+        if (!context.FileSystem.DirectoryExists(projectsRoot))
+        {
+            return;
+        }
+
+        var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
+        foreach (var project in projects.Projects)
+        {
+            var projectRoot = Path.Combine(projectsRoot, project.Key);
+            var reposRoot = Path.Combine(projectRoot, "repositories");
+            if (!context.FileSystem.DirectoryExists(reposRoot))
+            {
+                continue;
+            }
+
+            foreach (var repo in project.Value.Repositories)
+            {
+                var anchorName = string.IsNullOrWhiteSpace(repo.Value.AnchorName)
+                    ? $"{repo.Key}.git"
+                    : repo.Value.AnchorName;
+                var anchorPath = Path.Combine(reposRoot, anchorName);
+                if (!context.FileSystem.DirectoryExists(anchorPath))
+                {
+                    continue;
+                }
+
+                var result = context.ProcessRunner.RunAsync(
+                    "git",
+                    ["--git-dir", anchorPath, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"],
+                    projectRoot).GetAwaiter().GetResult();
+
+                if (result.ExitCode == 0)
+                {
+                    context.Out.WriteLine($"  fetch refspec corrige: {project.Key}/{anchorName}");
+                }
             }
         }
     }
