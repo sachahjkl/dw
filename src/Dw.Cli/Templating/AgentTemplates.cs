@@ -36,8 +36,8 @@ Mandatory rules:
 }
 """;
 
-    public const string OgfAgentsMd = """
-# DevWorkflow OGF Rules
+    public const string BusinessAgentsMd = """
+# DevWorkflow BUSINESS Rules
 
 This workspace is managed by `dw`.
 
@@ -58,7 +58,7 @@ Mandatory rules:
 13. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
 """;
 
-    public const string OgfOpenCodeJsonc = """
+    public const string BusinessOpenCodeJsonc = """
 {
   "$schema": "https://opencode.ai/config.json",
   "instructions": [

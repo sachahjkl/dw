@@ -11,8 +11,8 @@ internal static class GuideCommand
         context.Out.WriteLine("Guide rapide");
         context.Out.WriteLine();
         context.Out.WriteLine("1. Initialiser un root");
-        context.Out.WriteLine($"   dw init {OptionNames.Profile} ogf {OptionNames.Root} C:\\Dev\\dw {OptionNames.DryRun}");
-        context.Out.WriteLine($"   dw init {OptionNames.Profile} ogf {OptionNames.Root} C:\\Dev\\dw");
+       context.Out.WriteLine($"   dw init {OptionNames.Profile} business {OptionNames.Root} C:\\Dev\\dw {OptionNames.DryRun}");
+       context.Out.WriteLine($"   dw init {OptionNames.Profile} business {OptionNames.Root} C:\\Dev\\dw");
         context.Out.WriteLine();
         context.Out.WriteLine("2. Verifier l'environnement");
         context.Out.WriteLine("   dw doctor");

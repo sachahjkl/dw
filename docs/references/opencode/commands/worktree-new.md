@@ -1,5 +1,5 @@
 ---
-description: Cree un nouveau worktree OGF via new-worktree.ps1
+description: Cree un nouveau worktree BUSINESS via new-worktree.ps1
 agent: build
 ---
 

@@ -3,7 +3,7 @@ namespace Dw.Cli.Tests;
 public sealed class AdoWorkflowTests
 {
     [Fact]
-    public void StartState_uses_expected_ogf_defaults()
+    public void StartState_uses_expected_business_defaults()
     {
         Assert.Equal("En réalisation", AdoWorkflowStates.StartState("User Story", null));
         Assert.Equal("En réalisation", AdoWorkflowStates.StartState("Anomalie", null));
@@ -39,7 +39,7 @@ public sealed class AdoWorkflowTests
     }
 
     [Fact]
-    public void CommitMessage_builds_expected_ogf_message_with_parent_and_task_ids()
+    public void CommitMessage_builds_expected_business_message_with_parent_and_task_ids()
     {
         var manifest = new WorkspaceManifest(1, "53115", "53312", "he", "fix", "corriger-le-calcul-des-creneaux", "fix/53115-53312-corriger-le-calcul-des-creneaux", DateTimeOffset.UtcNow, ["back"], "created");
 
@@ -49,7 +49,7 @@ public sealed class AdoWorkflowTests
     }
 
     [Fact]
-    public void CommitMessage_builds_expected_ogf_message_without_task_id()
+    public void CommitMessage_builds_expected_business_message_without_task_id()
     {
         var manifest = new WorkspaceManifest(1, "53020", null, "he", "bug", "corriger-ouverture-dossier", "bug/53020-corriger-ouverture-dossier", DateTimeOffset.UtcNow, ["back"], "created");
 
@@ -59,7 +59,7 @@ public sealed class AdoWorkflowTests
     }
 
     [Fact]
-    public void CommitMessage_builds_expected_ogf_message_with_multiple_parent_ids()
+    public void CommitMessage_builds_expected_business_message_with_multiple_parent_ids()
     {
         var manifest = new WorkspaceManifest(
             1,
@@ -84,7 +84,7 @@ public sealed class AdoWorkflowTests
     }
 
     [Fact]
-    public void CommitMessage_builds_expected_ogf_message_with_child_task_ids()
+    public void CommitMessage_builds_expected_business_message_with_child_task_ids()
     {
         var manifest = new WorkspaceManifest(
             1,
@@ -116,7 +116,7 @@ public sealed class AdoWorkflowTests
     [InlineData("bug(#53098): fiabiliser le retour depuis la fiche personne")]
     [InlineData("test(#52162 #53099) : corriger les mocks de route et d'activité")]
     [InlineData("refactor(#52162 #53099) : simplifier le contrat des permissions connectées")]
-    public void CommitMessage_accepts_observed_ogf_formats(string message)
+    public void CommitMessage_accepts_observed_business_formats(string message)
     {
         Assert.True(CommitMessage.IsWellFormed(message));
     }
@@ -126,7 +126,7 @@ public sealed class AdoWorkflowTests
     [InlineData("fix(#53635 #53890) restaurer l url du hub HE")]
     [InlineData("feat #53882: ajout des agent skills")]
     [InlineData("feat(#53882):")]
-    public void CommitMessage_rejects_non_ogf_formats(string message)
+    public void CommitMessage_rejects_non_business_formats(string message)
     {
         Assert.False(CommitMessage.IsWellFormed(message));
     }

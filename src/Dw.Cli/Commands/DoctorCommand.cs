@@ -24,7 +24,7 @@ internal static class DoctorCommand
 
         if (fix && !context.FileSystem.DirectoryExists(root))
         {
-            InitCommand.Run(context, new InitRequest(root, "ogf", NoSave: false, DryRun: false));
+            InitCommand.Run(context, new InitRequest(root, "business", NoSave: false, DryRun: false));
             checks[0] = checks[0] with { Passed = true };
         }
 

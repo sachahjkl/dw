@@ -12,7 +12,7 @@ Précondition : un worktree du sujet existe déjà (créé via `/ado-bootstrap` 
 Si absent, ne pas exécuter le plan et terminer par : `Étape suivante recommandée : /ado-bootstrap <workItemId>`.
 
 Attendu :
-1. Charger `ogf-workflow` puis `ado-workitem`.
+1. Charger `business-workflow` puis `ado-workitem`.
 2. Faire une vraie analyse du problème avant toute proposition d'exécution.
 3. Lire seulement les références nécessaires pour qualifier le sujet.
 4. Analyser le code concerné (fichiers, flux, cause probable, impacts, risques de régression).

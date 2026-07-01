@@ -11,7 +11,7 @@ public sealed class RefreshCommandTests
             var fs = new RealFileSystem();
             fs.CreateDirectory(Path.Combine(root, "config", "opencode"));
             fs.CreateDirectory(Path.Combine(root, "projects", "ha", "workspaces", "feat-11010-demo"));
-            fs.WriteAllText(Path.Combine(root, "config", "projects.json"), Templates.OgfProjectsJson);
+            fs.WriteAllText(Path.Combine(root, "config", "projects.json"), Templates.BusinessProjectsJson);
             fs.WriteAllText(Path.Combine(root, "config", "workflow.json"), "custom workflow");
             fs.WriteAllText(Path.Combine(root, "config", "databases.json"), "custom databases");
             fs.WriteAllText(Path.Combine(root, "config", "opencode", "AGENTS.md"), "stale agents");

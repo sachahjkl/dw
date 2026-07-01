@@ -100,7 +100,7 @@ Current behavior:
 - move Bug/Task work items to `PR en attente`
 - never move User Story/Anomalie to `PR en attente`
 
-Status: functionally implemented. Remaining work is real-environment validation against OGF Azure DevOps boards/repositories and tuning configured verification commands per repo.
+Status: functionally implemented. Remaining work is real-environment validation against BUSINESS Azure DevOps boards/repositories and tuning configured verification commands per repo.
 
 ## `dw auth`
 

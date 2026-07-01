@@ -17,7 +17,7 @@ This repository currently contains the first vertical slice:
 - `.NET 10` CLI project
 - `dw version`
 - `dw doctor`
-- `dw init` with `default` and `ogf` profiles
+- `dw init` with `default` and `business` profiles
 - `dw agent context`
 - `dw task start/status/finish`
 - Azure DevOps MSAL/PAT auth plumbing
@@ -39,7 +39,7 @@ Run locally:
 
 ```powershell
 dotnet run --project .\src\Dw.Cli -- version
-dotnet run --project .\src\Dw.Cli -- init --profile ogf --root C:\Dev\dw
+dotnet run --project .\src\Dw.Cli -- init --profile business --root C:\Dev\dw
 dotnet run --project .\src\Dw.Cli -- init --root .\.smoke\root --no-save
 dotnet run --project .\src\Dw.Cli -- doctor
 dotnet run --project .\src\Dw.Cli -- agent context

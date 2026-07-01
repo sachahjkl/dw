@@ -1,10 +1,10 @@
 ---
-description: Propose un message de commit OGF
-agent: ogf-text-ops
+description: Propose un message de commit BUSINESS
+agent: business-text-ops
 subtask: true
 ---
 
-Propose un message de commit conforme OGF à partir du contexte courant.
+Propose un message de commit conforme BUSINESS à partir du contexte courant.
 
 Attendu :
 1. Charger `ado-workitem` si un work item est impliqué.

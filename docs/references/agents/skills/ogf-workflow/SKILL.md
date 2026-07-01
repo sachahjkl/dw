@@ -1,6 +1,6 @@
 ---
-name: ogf-workflow
-description: Routage et orchestration du workflow OGF (ADO, Git, HA, HE, conventions de nommage, worktrees).
+name: business-workflow
+description: Routage et orchestration du workflow BUSINESS (ADO, Git, HA, HE, conventions de nommage, worktrees).
 license: MIT
 metadata:
   authors:
@@ -9,9 +9,9 @@ metadata:
   version: '1.0'
 ---
 
-# Workflow OGF
+# Workflow BUSINESS
 
-Ce skill centralise les règles de routage entre les différents contextes métier et techniques d'OGF :
+Ce skill centralise les règles de routage entre les différents contextes métier et techniques de BUSINESS :
 
 - Azure DevOps (work items, états, branches, commits, PR)
 - Projets HA (front Angular / back .NET)
@@ -60,7 +60,7 @@ Identifier la famille de projet à partir du chemin du worktree courant ou des f
 
 ### 4. Frontière avec `ado-workitem`
 
-`ogf-workflow` n'est pas la source de vérité des règles ADO détaillées.
+`business-workflow` n'est pas la source de vérité des règles ADO détaillées.
 
 Le skill `ado-workitem` porte les détails sur :
 
@@ -72,7 +72,7 @@ Le skill `ado-workitem` porte les détails sur :
 - PR et reviewers
 - traçabilité IA
 
-Le rôle de `ogf-workflow` est de dire **quand** charger `ado-workitem` et **quand** charger les skills HA/HE.
+Le rôle de `business-workflow` est de dire **quand** charger `ado-workitem` et **quand** charger les skills HA/HE.
 
 ### 5. Phases d'exécution
 
@@ -109,7 +109,7 @@ Règle de chaînage :
 
 Ordre recommandé :
 
-1. Charger `ogf-workflow` seulement.
+1. Charger `business-workflow` seulement.
 2. Si action ADO/Git, charger `ado-workitem`, puis lire seulement `states.md` et `pr-rules.md`.
 3. Si besoin de nommage, charger `git-naming.md` et/ou `task-naming.md`.
 4. Si besoin worktree, charger `worktree-scripts.md`.

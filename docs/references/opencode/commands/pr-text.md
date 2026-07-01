@@ -1,6 +1,6 @@
 ---
-description: Propose le titre et la description de PR OGF
-agent: ogf-text-ops
+description: Propose le titre et la description de PR BUSINESS
+agent: business-text-ops
 subtask: true
 ---
 

@@ -35,8 +35,8 @@ ERR_PNPM_IGNORED_BUILDS Ignored build scripts
 
 ## Routage
 
-- Règles de routage haut niveau : `C:\Users\froment\.agents\OGF_WORKFLOW.md`
-- Workflow transverse OGF : `C:\Users\froment\.agents\skills\ogf-workflow\SKILL.md`
+- Règles de routage haut niveau : `C:\Users\froment\.agents\BUSINESS_WORKFLOW.md`
+- Workflow transverse BUSINESS : `C:\Users\froment\.agents\skills\business-workflow\SKILL.md`
 - Règles ADO/Git/PR/worktree : `C:\Users\froment\.agents\skills\ado-workitem\SKILL.md`
 - Conventions code HA/HE : skills `ha-*` et `he-*`
 

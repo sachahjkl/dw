@@ -18,7 +18,7 @@ internal sealed record InitProfile(
                 content.Contains("digital-factory-ogf", StringComparison.OrdinalIgnoreCase) ||
                 content.Contains("HOMMAGE", StringComparison.OrdinalIgnoreCase))
             {
-                return Resolve("ogf");
+                return Resolve("business");
             }
         }
 
@@ -27,12 +27,12 @@ internal sealed record InitProfile(
 
     public static InitProfile Resolve(string? name)
     {
-        var normalized = string.IsNullOrWhiteSpace(name) ? "ogf" : name.Trim().ToLowerInvariant();
+        var normalized = string.IsNullOrWhiteSpace(name) ? "business" : name.Trim().ToLowerInvariant();
         return normalized switch
         {
             "default" => new InitProfile("default", Templates.DefaultProjectsJson, Templates.DefaultWorkflowJson, Templates.DefaultDatabasesJson, Templates.AgentsMd, Templates.OpenCodeJsonc),
-            "ogf" => new InitProfile("ogf", Templates.OgfProjectsJson, Templates.OgfWorkflowJson, Templates.OgfDatabasesJson, Templates.OgfAgentsMd, Templates.OgfOpenCodeJsonc),
-            _ => throw new DwException($"Profil init inconnu: {name}. Profils disponibles: ogf, default.", 2)
+            "business" => new InitProfile("business", Templates.BusinessProjectsJson, Templates.BusinessWorkflowJson, Templates.BusinessDatabasesJson, Templates.BusinessAgentsMd, Templates.BusinessOpenCodeJsonc),
+            _ => throw new DwException($"Profil init inconnu: {name}. Profils disponibles: business, default.", 2)
         };
     }
 }

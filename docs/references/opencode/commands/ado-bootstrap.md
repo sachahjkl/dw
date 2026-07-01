@@ -9,7 +9,7 @@ Mode `BOOTSTRAP` sur le work item `$1`.
 `$2` peut contenir un jalon de chaînage automatique parmi : `worktree`, `plan`, `exec`, `pr-plan`, `pr-open`.
 
 Attendu :
-1. Charger `ogf-workflow` puis `ado-workitem`.
+1. Charger `business-workflow` puis `ado-workitem`.
 2. Récupérer le work item, ses enfants utiles, et le contexte minimal nécessaire.
 3. Déterminer le type du sujet, les tâches existantes ou manquantes, la famille probable (`ha` / `he`), et le périmètre probable (`front`, `back`, ou `multi-repo`).
 4. Déterminer le nom de dossier sujet (`SubjectName`) et le nom de branche (`BranchName`) si les informations sont suffisantes.

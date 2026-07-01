@@ -75,7 +75,7 @@ internal static partial class SystemCommandLineApp
     {
         var command = Command("init", "Initialise un root DevWorkflow.");
         AddOptions(command,
-            Value(OptionNames.Profile, "Profil d'initialisation.", ["ogf"]),
+            Value(OptionNames.Profile, "Profil d'initialisation.", ["business"]),
             Value(OptionNames.Root, "Root DevWorkflow a creer."),
             Flag(OptionNames.DryRun, "Simule sans ecrire."),
             Flag(OptionNames.NoSave, "Ne sauvegarde pas le root utilisateur."));
@@ -100,7 +100,7 @@ internal static partial class SystemCommandLineApp
         var command = Command("refresh", "Regenere les schemas et contextes agents non destructifs.");
         AddOptions(command,
             Value(OptionNames.Root, "Root DevWorkflow a utiliser."),
-            Value(OptionNames.Profile, "Profil a utiliser pour les fichiers d'agents.", ["ogf", "default"]));
+            Value(OptionNames.Profile, "Profil a utiliser pour les fichiers d'agents.", ["business", "default"]));
         command.SetAction(parse => RefreshCommand.Run(context, parse.GetValue<string>(OptionNames.Root), parse.GetValue<string>(OptionNames.Profile)));
         return command;
     }

@@ -4,7 +4,7 @@
   "small_model": "github-copilot/gpt-5.4-mini",
   "instructions": [
     "C:\\Users\\froment\\.agents\\CONTEXT.md",
-    "C:\\Users\\froment\\.agents\\OGF_WORKFLOW.md"
+    "C:\\Users\\froment\\.agents\\BUSINESS_WORKFLOW.md"
   ],
   "permission": {
     "websearch": "deny",
@@ -14,8 +14,8 @@
       "*": "ask",
       "explore": "allow",
       "ado-orchestrator": "allow",
-      "ogf-code-reviewer": "allow",
-      "ogf-text-ops": "allow"
+      "business-code-reviewer": "allow",
+      "business-text-ops": "allow"
     },
     "bash": {
       "*": "ask",
@@ -38,8 +38,8 @@
         "task": {
           "*": "ask",
           "explore": "allow",
-          "ogf-code-reviewer": "allow",
-          "ogf-text-ops": "allow"
+          "business-code-reviewer": "allow",
+          "business-text-ops": "allow"
         }
       }
     },
@@ -51,7 +51,7 @@
         "bash": "deny",
         "task": {
           "explore": "allow",
-          "ogf-text-ops": "allow"
+          "business-text-ops": "allow"
         }
       }
     }

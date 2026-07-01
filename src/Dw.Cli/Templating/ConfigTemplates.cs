@@ -32,7 +32,7 @@ internal static partial class Templates
 }
 """;
 
-    public const string OgfProjectsJson = """
+    public const string BusinessProjectsJson = """
 {
   "$schema": "../schemas/projects.schema.json",
   "schema": 1,
@@ -156,7 +156,7 @@ internal static partial class Templates
 }
 """;
 
-    public static string OgfWorkflowJson => $$"""
+    public static string BusinessWorkflowJson => $$"""
 {
   "$schema": "../schemas/workflow.schema.json",
   "schema": 1,
@@ -229,7 +229,7 @@ internal static partial class Templates
 }
 """;
 
-    public const string OgfDatabasesJson = """
+    public const string BusinessDatabasesJson = """
 {
   "$schema": "../schemas/databases.schema.json",
   "schema": 1,

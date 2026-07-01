@@ -1,4 +1,4 @@
-# Workflow OGF pour OpenCode
+# Workflow BUSINESS pour OpenCode
 
 Ce fichier complète `CONTEXT.md` avec un routage haut niveau.
 
@@ -10,7 +10,7 @@ Ce fichier complète `CONTEXT.md` avec un routage haut niveau.
 
 ## Routage minimal
 
-- Sujet ADO / Git / PR / worktree / hotfix -> charger `ogf-workflow`, puis `ado-workitem`.
+- Sujet ADO / Git / PR / worktree / hotfix -> charger `business-workflow`, puis `ado-workitem`.
 - Projet HE -> charger `he-front` ou `he-back` selon le repo.
 - Projet HA -> charger `ha-front` ou `ha-back` selon le repo.
 - Front Angular -> utiliser pnpm, jamais npm.
