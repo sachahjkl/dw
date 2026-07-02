@@ -1,4 +1,5 @@
 using Dw.Cli.Agents;
+using Dw.Cli.Contracts;
 
 namespace Dw.Cli.Workspaces;
 
@@ -123,6 +124,7 @@ internal static class TaskStartService
         context.FileSystem.WriteAllText(Path.Combine(workspace, "task.json"), WorkspaceManifestWriter.Serialize(manifest));
         context.FileSystem.WriteAllText(Path.Combine(workspace, "plan.md"), Templates.PlanMd(manifest.ParentWorkItems, project));
         WriteWorkspaceAgentConfigs(context.FileSystem, workspace, manifest.ParentWorkItems, project);
+        WorkspaceHandoffService.WriteFiles(context.FileSystem, workspace, manifest);
 
         context.Out.WriteLine($"Workspace cree: {workspace}");
         context.Out.WriteLine($"Branche cible: {branchName}");
@@ -133,6 +135,7 @@ internal static class TaskStartService
 
         context.Out.WriteLine("Prochaine etape:");
         context.Out.WriteLine($"  dw task open {workItemId} --project {project}");
+        context.Out.WriteLine("Puis verifier/regler les handoffs generes: handoff-front.md, handoff-back.md, handoff-db.md, ... selon les repos du workspace.");
         context.Out.WriteLine("Puis, pour un commit intermediaire:");
         context.Out.WriteLine("  dw task commit --continue --execute");
         context.Out.WriteLine("Et pour terminer avec push + PR:");
@@ -153,7 +156,7 @@ internal static class TaskStartService
 
         var childIds = snapshots
             .SelectMany(snapshot => adoContext.Client
-                .GetRelatedWorkItemIdsAsync(snapshot.Id, "System.LinkTypes.Hierarchy-Forward", adoContext.Token)
+                .GetRelatedWorkItemIdsAsync(snapshot.Id, WorkflowContracts.Ado.RelationHierarchyForward, adoContext.Token)
                 .GetAwaiter()
                 .GetResult())
             .Distinct(StringComparer.OrdinalIgnoreCase)

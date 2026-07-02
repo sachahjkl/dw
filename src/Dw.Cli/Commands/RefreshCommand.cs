@@ -66,6 +66,8 @@ internal static class RefreshCommand
             {
                 fileSystem.WriteAllText(Path.Combine(workspace.Path, file.RelativePath), file.Content);
             }
+
+            WorkspaceHandoffService.WriteFiles(fileSystem, workspace.Path, workspace.Manifest);
         }
     }
 

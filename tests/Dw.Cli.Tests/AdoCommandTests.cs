@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 
 namespace Dw.Cli.Tests;
 
@@ -348,5 +349,115 @@ public sealed class AdoCommandTests
         var workItemIds = await client.TryGetPullRequestWorkItemIdsAsync("my-repo", 99, DefaultToken);
 
         Assert.Null(workItemIds);
+    }
+
+    [Fact]
+    public void MapAiContextItem_builds_stable_structured_context()
+    {
+        using var document = JsonDocument.Parse(
+            """
+            {
+              "id": 55201,
+              "fields": {
+                "System.Title": "Demande transport SOMOTHA",
+                "System.WorkItemType": "User Story",
+                "System.State": "En realisation",
+                "System.AssignedTo": { "displayName": "Alice Martin" },
+                "System.AreaPath": "HA\\Transport",
+                "System.IterationPath": "HA\\Sprint 42",
+                "System.Tags": "transport; somotha",
+                "System.Description": "<p>Verifier la maquette</p>",
+                "System.CreatedBy": { "displayName": "Bob" },
+                "System.CreatedDate": "2026-07-01T10:00:00Z",
+                "System.ChangedBy": { "displayName": "Claire" },
+                "System.ChangedDate": "2026-07-02T09:00:00Z",
+                "Microsoft.VSTS.Common.Priority": 1,
+                "Microsoft.VSTS.Common.ValueArea": "Business",
+                "Microsoft.VSTS.Common.AcceptanceCriteria": "<div>Respecter le libelle SOMOTHA</div>",
+                "Custom.ProductContext": "<div>Ecran existant</div>"
+              },
+              "relations": [
+                {
+                  "rel": "System.LinkTypes.Hierarchy-Reverse",
+                  "url": "https://dev.azure.com/org/Project/_apis/wit/workItems/54000"
+                },
+                {
+                  "rel": "System.LinkTypes.Hierarchy-Forward",
+                  "url": "https://dev.azure.com/org/Project/_apis/wit/workItems/55202"
+                },
+                {
+                  "rel": "System.LinkTypes.Dependency-Reverse",
+                  "url": "https://dev.azure.com/org/Project/_apis/wit/workItems/55199"
+                },
+                {
+                  "rel": "AttachedFile",
+                  "url": "https://dev.azure.com/org/_apis/wit/attachments/123",
+                  "attributes": {
+                    "name": "maquette transport somotha.png",
+                    "comment": "<p>Source ecran</p>"
+                  }
+                }
+              ]
+            }
+            """);
+
+        var context = AdoCommand.MapAiContextItem(
+            document.RootElement,
+            DefaultOptions,
+            summaryOnly: false,
+            [new AdoAiContextComment("Alice Martin", "2026-07-02T08:00:00Z", "Verifier le screenshot")]);
+
+        Assert.Equal("dw.ado.ai-context.v1", context.SchemaVersion);
+        Assert.Equal("55201", context.WorkItem.Id);
+        Assert.Equal("Demande transport SOMOTHA", context.WorkItem.Title);
+        Assert.Equal(["transport", "somotha"], context.WorkItem.Tags);
+        Assert.Equal("Verifier la maquette", context.Content.Description);
+        Assert.Equal("Respecter le libelle SOMOTHA", context.Content.AcceptanceCriteria);
+        Assert.Equal("Ecran existant", context.Content.ProductContext["ProductContext"]);
+        Assert.Equal(["54000"], context.Links.ParentIds);
+        Assert.Equal(["55202"], context.Links.ChildIds);
+        Assert.Equal(["55199"], context.Links.PredecessorIds);
+        Assert.Single(context.Attachments.Items);
+        Assert.Equal("attachments/ado/55201", context.Attachments.DirectoryHint);
+        Assert.Equal("maquette transport somotha.png", context.Attachments.Items[0].Name);
+        Assert.Equal("Source ecran", context.Attachments.Items[0].Comment);
+        Assert.Single(context.Comments);
+        Assert.Equal("Verifier le screenshot", context.Comments[0].Text);
+        Assert.Contains(context.Relations, relation => relation.Kind == "attachment");
+    }
+
+    [Fact]
+    public void MapAiContextItem_summary_mode_keeps_links_and_attachments_but_hides_relation_details()
+    {
+        using var document = JsonDocument.Parse(
+            """
+            {
+              "id": 55201,
+              "fields": {
+                "System.Title": "Titre",
+                "System.WorkItemType": "Task",
+                "System.State": "New"
+              },
+              "relations": [
+                {
+                  "rel": "System.LinkTypes.Hierarchy-Reverse",
+                  "url": "https://dev.azure.com/org/Project/_apis/wit/workItems/54000"
+                },
+                {
+                  "rel": "AttachedFile",
+                  "url": "https://dev.azure.com/org/_apis/wit/attachments/123",
+                  "attributes": {
+                    "name": "mockup.png"
+                  }
+                }
+              ]
+            }
+            """);
+
+        var context = AdoCommand.MapAiContextItem(document.RootElement, DefaultOptions, summaryOnly: true);
+
+        Assert.Equal(["54000"], context.Links.ParentIds);
+        Assert.Single(context.Attachments.Items);
+        Assert.Empty(context.Relations);
     }
 }

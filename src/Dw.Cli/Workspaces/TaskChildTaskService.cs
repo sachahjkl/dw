@@ -1,3 +1,5 @@
+using Dw.Cli.Contracts;
+
 namespace Dw.Cli.Workspaces;
 
 internal sealed record TaskChildTaskCreateOptions(string Repository, string Title, WorkspaceOpenOptions OpenOptions);
@@ -50,6 +52,6 @@ internal static class TaskChildTaskService
     private static bool RequiresChildTasks(string? workItemType)
     {
         var normalized = (workItemType ?? string.Empty).Trim().ToLowerInvariant();
-        return normalized is "user story" or "anomalie";
+        return normalized is WorkflowContracts.Ado.NormalizedWorkItemTypeUserStory or WorkflowContracts.Ado.NormalizedWorkItemTypeAnomaly;
     }
 }

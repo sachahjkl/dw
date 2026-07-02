@@ -91,6 +91,7 @@ internal static class TaskWorkItemService
 
         context.FileSystem.WriteAllText(manifestPath, WorkspaceManifestWriter.Serialize(updated));
         RewriteAgentConfigs(context.FileSystem, workspace, updated);
+        WorkspaceHandoffService.WriteFiles(context.FileSystem, workspace, updated);
 
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
         var projectConfig = DevWorkflowConfigLoader.ResolveProject(projects, updated.Project);

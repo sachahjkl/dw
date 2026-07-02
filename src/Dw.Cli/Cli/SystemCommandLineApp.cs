@@ -185,6 +185,22 @@ internal static partial class SystemCommandLineApp
                     WorkItemOption(context, "Filtre work item ADO."),
                     Flag(OptionNames.Continue, "Utilise le workspace le plus recent.")
                 ]),
+            Subcommand("preflight", "Verifie les preconditions ADO/workspace avant implementation et decomposition.", parse => TaskPreflightService.Run(context, OpenOptions(parse), parse.GetValue<bool>(OptionNames.Json)),
+                [
+                    WorkspaceOption(context, "Chemin explicite du workspace."),
+                    ProjectOption(context, "Projet dw."),
+                    WorkItemOption(context, "Filtre work item ADO."),
+                    Flag(OptionNames.Continue, "Utilise le workspace le plus recent."),
+                    Flag(OptionNames.Json, "Sortie JSON.")
+                ]),
+            Subcommand("handoff-validate", "Valide les handoffs du workspace avant task finish ou sous-agents.", parse => TaskHandoffValidateService.Run(context, OpenOptions(parse), parse.GetValue<bool>(OptionNames.Json)),
+                [
+                    WorkspaceOption(context, "Chemin explicite du workspace."),
+                    ProjectOption(context, "Projet dw."),
+                    WorkItemOption(context, "Filtre work item ADO."),
+                    Flag(OptionNames.Continue, "Utilise le workspace le plus recent."),
+                    Flag(OptionNames.Json, "Sortie JSON.")
+                ]),
             Subcommand("prune", "Supprime les workspaces dont tous les work items sont dans un etat final.", parse => TaskSyncPruneService.Prune(context, new TaskPruneOptions(parse.GetValue<string>(OptionNames.Project), parse.GetValue<string>(OptionNames.WorkItem), parse.GetValue<bool>(OptionNames.Execute), parse.GetValue<bool>(OptionNames.Yes), !parse.GetValue<bool>(OptionNames.NoSync))),
                 [
                     ProjectOption(context, "Projet dw."),
@@ -237,7 +253,7 @@ internal static partial class SystemCommandLineApp
                     WorkItemOption(context, "Filtre work item ADO."),
                     Flag(OptionNames.Continue, "Utilise le workspace le plus recent.")
                 ]),
-            Subcommand("repo-latest", "Fetch la remote et rebase les repos du workspace courant sur leur upstream ou branche par defaut.", parse => TaskRepoLatestService.Run(context, new TaskRepoLatestOptions(
+            Subcommand("repo-latest", "Fetch la remote et rebase les repos du workspace courant sur la derniere branche source distante configuree.", parse => TaskRepoLatestService.Run(context, new TaskRepoLatestOptions(
                     parse.GetValue<string>(OptionNames.Workspace),
                     parse.GetValue<bool>(OptionNames.Continue),
                     parse.GetValue<string>(OptionNames.Only))),

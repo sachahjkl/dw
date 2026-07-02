@@ -16,6 +16,8 @@ internal static partial class SystemCommandLineApp
                 EnsureWorkspaceSelectionIsUnambiguous(parse, positionalArgumentName: "work-item-id");
                 break;
             case ("task", "sync"):
+            case ("task", "preflight"):
+            case ("task", "handoff-validate"):
             case ("task", "rename"):
             case ("task", "add-work-item"):
             case ("task", "create-child-task"):

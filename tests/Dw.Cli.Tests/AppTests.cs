@@ -79,6 +79,18 @@ public sealed class AppTests
     }
 
     [Fact]
+    public async Task RunAsync_ado_ai_context_help_exposes_structured_context_options()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["ado", "ai-context", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--summary", output);
+        Assert.Contains("--comments", output);
+        Assert.Contains("--include-comments", output);
+        Assert.Contains("structure", output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task RunAsync_task_open_help_exposes_positional_work_item_id()
     {
         var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "open", "--help"]));
@@ -107,6 +119,40 @@ public sealed class AppTests
         Assert.Contains("--repo", output);
         Assert.Contains("--title", output);
         Assert.Contains("sous-tache", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_task_repo_latest_help_exposes_only_option()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "repo-latest", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--only", output);
+        Assert.Contains("branche source distante", output);
+    }
+
+    [Fact]
+    public async Task RunAsync_task_preflight_help_exposes_workspace_and_json_options()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "preflight", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--workspace", output);
+        Assert.Contains("--continue", output);
+        Assert.Contains("--json", output);
+        Assert.Contains("preconditions", output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunAsync_task_handoff_validate_help_exposes_workspace_and_json_options()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "handoff-validate", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--workspace", output);
+        Assert.Contains("--continue", output);
+        Assert.Contains("--json", output);
+        Assert.Contains("handoff", output, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -788,6 +834,65 @@ public sealed class AppTests
                 Assert.Contains("\"label\":\"123\"", output);
                 Assert.DoesNotContain("\"label\":\"456\"", output);
             }
+        }
+        finally
+        {
+            if (previousSettings is null)
+            {
+                File.Delete(AppPaths.UserSettingsPath);
+            }
+            else
+            {
+                File.WriteAllText(AppPaths.UserSettingsPath, previousSettings);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Completion_sources_filter_only_value_for_repo_latest_by_workspace_repositories()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dw-live-completion-only-repolatest-test-" + Guid.NewGuid().ToString("N"));
+        var previousSettings = File.Exists(AppPaths.UserSettingsPath)
+            ? File.ReadAllText(AppPaths.UserSettingsPath)
+            : null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(AppPaths.UserSettingsPath)!);
+            File.WriteAllText(AppPaths.UserSettingsPath, $$"""
+{
+  "root": "{{root.Replace("\\", "\\\\", StringComparison.Ordinal)}}"
+}
+""");
+            Directory.CreateDirectory(Path.Combine(root, "config"));
+            File.WriteAllText(Path.Combine(root, "config", "projects.json"), """
+{
+  "schema": 1,
+  "projects": {
+    "ha": {
+      "displayName": "HA",
+      "repositories": {
+        "front": { "url": "", "defaultBranch": "develop" },
+        "back": { "url": "", "defaultBranch": "develop" },
+        "db": { "url": "", "defaultBranch": "develop" }
+      }
+    }
+  }
+}
+""");
+            Directory.CreateDirectory(Path.Combine(root, "projects", "ha", "workspaces", "feat-123-demo"));
+            File.WriteAllText(Path.Combine(root, "projects", "ha", "workspaces", "feat-123-demo", "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(
+                1, "123", null, "ha", "feat", "demo", "feat/123-demo", DateTimeOffset.UtcNow, ["front", "back"], "created", WorkItems: [new WorkspaceWorkItem("123", "User Story", "Titre HA", "En réalisation")])));
+
+            var (_, only, _) = await CaptureConsole(() => App.RunAsync(["completion", "suggest", "--format", "json", "--empty-token", "task", "repo-latest", "--workspace", Path.Combine(root, "projects", "ha", "workspaces", "feat-123-demo"), "--only"]));
+
+            Assert.Contains("\"label\":\"front\"", only);
+            Assert.Contains("\"label\":\"back\"", only);
+            Assert.DoesNotContain("\"label\":\"db\"", only);
         }
         finally
         {

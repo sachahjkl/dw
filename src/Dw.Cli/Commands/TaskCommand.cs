@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Dw.Cli.Contracts;
 
 namespace Dw.Cli.Commands;
 
@@ -346,11 +347,30 @@ internal static partial class TaskCommand
         }
 
         var normalizedType = (workItemType ?? string.Empty).Trim().ToLowerInvariant();
+        var finalStates = new HashSet<string>(StringComparer.Ordinal)
+        {
+            WorkflowContracts.Ado.NormalizedStateValidated,
+            WorkflowContracts.Ado.NormalizedStateValidatedAscii,
+            WorkflowContracts.Ado.NormalizedStateClosed,
+            WorkflowContracts.Ado.NormalizedStateClosedAscii,
+            WorkflowContracts.Ado.NormalizedStateAbandoned,
+            WorkflowContracts.Ado.NormalizedStateAbandonedAscii
+        };
+        var finalStatesWithoutValidated = new HashSet<string>(StringComparer.Ordinal)
+        {
+            WorkflowContracts.Ado.NormalizedStateClosed,
+            WorkflowContracts.Ado.NormalizedStateClosedAscii,
+            WorkflowContracts.Ado.NormalizedStateAbandoned,
+            WorkflowContracts.Ado.NormalizedStateAbandonedAscii
+        };
+
         return normalizedType switch
         {
-            "user story" or "anomalie" => normalizedState is "validé" or "valide" or "cloturé" or "clôturé" or "abandonné" or "abandonne",
-            "bug" or "activité" or "activite" => normalizedState is "cloturé" or "clôturé" or "abandonné" or "abandonne",
-            _ => normalizedState is "validé" or "valide" or "cloturé" or "clôturé" or "abandonné" or "abandonne"
+            var value when value is WorkflowContracts.Ado.NormalizedWorkItemTypeUserStory or WorkflowContracts.Ado.NormalizedWorkItemTypeAnomaly
+                => finalStates.Contains(normalizedState),
+            var value when value is WorkflowContracts.Ado.NormalizedWorkItemTypeBug or WorkflowContracts.Ado.NormalizedWorkItemTypeActivity or WorkflowContracts.Ado.NormalizedWorkItemTypeActivityAscii
+                => finalStatesWithoutValidated.Contains(normalizedState),
+            _ => finalStates.Contains(normalizedState)
         };
     }
 
@@ -366,7 +386,7 @@ internal static partial class TaskCommand
             return projectConfig.Repositories.Keys.ToArray();
         }
 
-        return ["front", "back"];
+        return [WorkflowContracts.Repositories.Front, WorkflowContracts.Repositories.Back];
     }
 }
 
@@ -432,10 +452,10 @@ internal static class AdoTaskNaming
 {
     public static string ChildTaskTitle(string repository, string title)
     {
-        var prefix = repository.Equals("front", StringComparison.OrdinalIgnoreCase)
-            ? "FRONT"
-            : repository.Equals("back", StringComparison.OrdinalIgnoreCase)
-                ? "BACK"
+        var prefix = repository.Equals(WorkflowContracts.Repositories.Front, StringComparison.OrdinalIgnoreCase)
+            ? WorkflowContracts.Repositories.FrontPrefix
+            : repository.Equals(WorkflowContracts.Repositories.Back, StringComparison.OrdinalIgnoreCase)
+                ? WorkflowContracts.Repositories.BackPrefix
                 : repository.ToUpperInvariant();
 
         return $"[{prefix}] {title}";
@@ -449,11 +469,11 @@ internal static class AdoWorkflowStates
         var normalized = NormalizeType(workItemType);
         return normalized switch
         {
-            "user story" => options?.UserStoryState ?? "En réalisation",
-            "anomalie" => options?.AnomalyState ?? "En réalisation",
-            "bug" => options?.BugState ?? "En développement",
-            "task" => options?.TaskState ?? "En développement",
-            "tache" => options?.TaskState ?? "En développement",
+            WorkflowContracts.Ado.NormalizedWorkItemTypeUserStory => options?.UserStoryState ?? WorkflowContracts.Ado.StateInProgress,
+            WorkflowContracts.Ado.NormalizedWorkItemTypeAnomaly => options?.AnomalyState ?? WorkflowContracts.Ado.StateInProgress,
+            WorkflowContracts.Ado.NormalizedWorkItemTypeBug => options?.BugState ?? WorkflowContracts.Ado.StateDevelopment,
+            WorkflowContracts.Ado.NormalizedWorkItemTypeTask => options?.TaskState ?? WorkflowContracts.Ado.StateDevelopment,
+            WorkflowContracts.Ado.NormalizedWorkItemTypeTaskFr => options?.TaskState ?? WorkflowContracts.Ado.StateDevelopment,
             _ => null
         };
     }
@@ -463,9 +483,9 @@ internal static class AdoWorkflowStates
         var normalized = NormalizeType(workItemType);
         return normalized switch
         {
-            "bug" => options?.BugState ?? "PR en attente",
-            "task" => options?.TaskState ?? "PR en attente",
-            "tache" => options?.TaskState ?? "PR en attente",
+            WorkflowContracts.Ado.NormalizedWorkItemTypeBug => options?.BugState ?? WorkflowContracts.Ado.StatePrPending,
+            WorkflowContracts.Ado.NormalizedWorkItemTypeTask => options?.TaskState ?? WorkflowContracts.Ado.StatePrPending,
+            WorkflowContracts.Ado.NormalizedWorkItemTypeTaskFr => options?.TaskState ?? WorkflowContracts.Ado.StatePrPending,
             _ => null
         };
     }

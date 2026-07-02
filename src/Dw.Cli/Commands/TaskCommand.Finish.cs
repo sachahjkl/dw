@@ -13,10 +13,17 @@ internal static partial class TaskCommand
             .GetStatusesAsync(workspace, projectConfig)
             .GetAwaiter()
             .GetResult();
+        var handoffSummaries = statuses
+            .Where(status => status.IsGitRepository)
+            .ToDictionary(
+                status => status.Repository,
+                status => WorkspaceHandoffService.ReadRequiredSummary(context.FileSystem, workspace, status.Repository),
+                StringComparer.OrdinalIgnoreCase);
 
         context.Out.WriteLine($"Workspace: {workspace}");
         context.Out.WriteLine($"Branche: {manifest.BranchName}");
         PrintStatuses(context, statuses);
+        PrintHandoffSummaries(context, statuses, handoffSummaries);
 
         var changed = statuses.Where(status => status.IsGitRepository && status.HasChanges).ToList();
         var unpushed = statuses.Where(status => status.IsGitRepository && status.HasUnpushed).ToList();
@@ -114,7 +121,7 @@ internal static partial class TaskCommand
             throw new DwException("Contexte Azure DevOps indisponible.");
         }
 
-        CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, pullRequestCandidates, draft, verificationResults);
+        CreatePullRequests(context, adoContext, workflow, projectConfig, manifest, pullRequestCandidates, draft, verificationResults, handoffSummaries);
         return 0;
     }
 
@@ -154,7 +161,8 @@ internal static partial class TaskCommand
         WorkspaceManifest manifest,
         IReadOnlyList<RepositoryStatus> changed,
         bool draft,
-        IReadOnlyList<VerificationResult> verificationResults)
+        IReadOnlyList<VerificationResult> verificationResults,
+        IReadOnlyDictionary<string, WorkspaceHandoffSummary> handoffSummaries)
     {
         foreach (var status in changed)
         {
@@ -179,7 +187,7 @@ internal static partial class TaskCommand
                 SourceRefName: sourceRef,
                 TargetRefName: $"refs/heads/{target}",
                 Title: PullRequestText.Title(manifest),
-                Description: PullRequestText.Description(manifest, status, ReadPlan(context, status.Path), verificationResults),
+                Description: PullRequestText.Description(manifest, status, ReadPlan(context, status.Path), verificationResults, handoffSummaries[status.Repository]),
                 IsDraft: draft,
                 WorkItemRefs: WorkItemRefsFor(manifest));
 
@@ -242,6 +250,35 @@ internal static partial class TaskCommand
         var workspace = Directory.GetParent(repositoryPath)?.FullName ?? repositoryPath;
         var planPath = Path.Combine(workspace, "plan.md");
         return context.FileSystem.FileExists(planPath) ? context.FileSystem.ReadAllText(planPath) : string.Empty;
+    }
+
+    private static void PrintHandoffSummaries(CommandContext context, IReadOnlyList<RepositoryStatus> statuses, IReadOnlyDictionary<string, WorkspaceHandoffSummary> handoffSummaries)
+    {
+        foreach (var status in statuses.Where(status => status.IsGitRepository))
+        {
+            if (!handoffSummaries.TryGetValue(status.Repository, out var summary))
+            {
+                continue;
+            }
+
+            context.Out.WriteLine();
+            context.Out.WriteLine($"[handoff:{summary.Repository}] statut={summary.Status}");
+            PrintSummaryList(context, "fait", summary.Done);
+            PrintSummaryList(context, "decisions", summary.Decisions);
+            PrintSummaryList(context, "risques", summary.Risks);
+            PrintSummaryList(context, "blockers", summary.Blockers);
+            PrintSummaryList(context, "follow-up", summary.FollowUp);
+        }
+    }
+
+    private static void PrintSummaryList(CommandContext context, string label, IReadOnlyList<string> items)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        context.Out.WriteLine($"  {label}: {string.Join(" | ", items)}");
     }
 
     private static IReadOnlyList<ResourceRef> WorkItemRefsFor(WorkspaceManifest manifest)

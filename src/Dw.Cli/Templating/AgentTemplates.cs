@@ -3,27 +3,18 @@ namespace Dw.Cli.Templating;
 internal static partial class Templates
 {
     public const string AgentsMd = """
-# DevWorkflow Rules
+# DevWorkflow Global Rules
 
-This workspace is managed by `dw`.
+This root is managed by `dw`.
 
-Mandatory rules:
+Global rules:
 
-1. Use `dw agent context` before starting an AI workflow.
-2. Use Azure DevOps work items as the source of truth for task state.
-3. Use `dw ado ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
-4. Read the work item with `dw ado work-item <id> --project <name>` before coding, then use `dw ado context <id> --project <name>` when more detail is needed.
-5. Use `dw db schema`, `dw db describe <table>` and `dw db query ...` whenever database context can clarify the change.
-6. Before working, make sure the initial project setup required by the environment is in place: install or restore dependencies, approve required build scripts, and initialize the basic local prerequisites.
-7. Run `dw task current` before lifecycle actions and before committing to confirm the active workspace.
-8. Update `plan.md` in the task workspace before implementing.
-9. For `User Story` and `Anomalie`, once `plan.md` is complete and before implementation starts, create at least one ADO child task, then as many as needed from the plan, with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
-10. Multiple child tasks can target the same domain/repo when the plan needs it, for example several `front` tasks.
-11. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
-12. Write all user-facing and project-facing text in French: plans, comments, commit/PR text, task titles, progress summaries and final explanations. Internal reasoning can stay in any language.
-13. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
-14. For API contract changes, always check both front and back.
-15. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
+1. Use Azure DevOps work items as the source of truth.
+2. Use only `dw ado ...`, `dw auth ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
+3. Once inside a task workspace, follow the local `AGENTS.md` there as the primary execution contract.
+4. Write all user-facing and project-facing text in French unless a repository convention says otherwise.
+5. Do not normalize business labels or domain wording from ADO, screenshots, mockups, attachments or project text. Preserve the exact terms unless the user explicitly asks to rename them.
+6. Treat screenshots, mockups and attachments as factual source material. If something is ambiguous, ask the user instead of guessing.
 """;
 
     public const string OpenCodeJsonc = """
@@ -41,29 +32,18 @@ Mandatory rules:
 """;
 
     public const string BusinessAgentsMd = """
-# DevWorkflow BUSINESS Rules
+# DevWorkflow BUSINESS Global Rules
 
-This workspace is managed by `dw`.
+This root is managed by `dw`.
 
-Mandatory rules:
+Global rules:
 
-1. Run `dw agent context` before starting an AI workflow.
-2. Use Azure DevOps work items as the source of truth.
-3. Use only `dw ado ...`, `dw auth ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
-4. Read the work item with `dw ado work-item <id> --project <name>` before coding, then use `dw ado context <id> --project <name>` for the full context.
-5. Use `dw db schema`, `dw db describe <table>` and `dw db query ...` whenever database context can clarify the change.
-6. Before working, make sure the initial project setup required by the environment is in place: install or restore dependencies, approve required build scripts, and initialize the basic local prerequisites.
-7. Run `dw task current` before lifecycle actions and before committing to confirm the active workspace.
-8. Fill `plan.md` in the task workspace before implementing.
-9. For `User Story` and `Anomalie`, once `plan.md` is complete and before implementation starts, create at least one ADO child task, then as many as needed from the plan, with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
-10. Multiple child tasks can target the same domain/repo when the plan needs it, for example several `front` tasks.
-11. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
-12. Write all user-facing and project-facing text in French: plans, comments, commit/PR text, task titles, progress summaries and final explanations. Internal reasoning can stay in any language.
-13. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
-14. Use `dw` commands for ADO lifecycle, Git naming, worktrees, commits and PRs.
-15. For API contract changes, always check both front and back.
-16. Write ADO/PR/commit text in French unless a repository convention says otherwise.
-17. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
+1. Use Azure DevOps work items as the source of truth.
+2. Use only `dw ado ...`, `dw auth ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
+3. Once inside a task workspace, follow the local `AGENTS.md` there as the primary execution contract.
+4. Write all user-facing and project-facing text in French unless a repository convention says otherwise.
+5. Do not normalize business labels or domain wording from ADO, screenshots, mockups, attachments or project text. Preserve the exact terms unless the user explicitly asks to rename them.
+6. Treat screenshots, mockups and attachments as factual source material. If something is ambiguous, ask the user instead of guessing.
 """;
 
     public const string BusinessOpenCodeJsonc = """
@@ -91,7 +71,9 @@ Use `dw` for workflow operations:
 - `dw auth login` connects Azure DevOps when the silent token is unavailable.
 - `dw ado assigned --project <name>` lists assigned work items.
 - `dw ado work-item <workItemId> --project <name>` reads a work item summary.
-- `dw ado context <workItemId> --project <name>` reads the full work item context.
+- `dw ado ai-context <workItemId> --project <name>` reads the deterministic structured work item context for AI consumption.
+- `dw task preflight --continue` checks deterministic blockers/warnings before implementation or child-task decomposition.
+- `dw task handoff-validate --continue` validates handoff contracts before `task finish` or sub-agent execution.
 - `dw db schema --project <name> --database <name>` lists database objects when SQL context matters.
 - `dw db describe --project <name> --database <name> <table>` shows table columns.
 - `dw db query --project <name> --database <name> --max-rows <n> select ...` runs read-only SQL queries.
@@ -119,7 +101,7 @@ Current configured root:
 Important rules:
 
 1. Azure DevOps work items are the source of truth.
-2. Read the work item with `dw ado work-item` before coding and use `dw ado context` when you need the full context.
+2. Read the work item with `dw ado work-item` before coding, then run `dw ado ai-context` before acting on ADO context.
 3. Use `dw db schema`, `dw db describe` and `dw db query` when database context can clarify the change.
 4. Before working, make sure the initial project setup required by the environment is in place: install or restore dependencies, approve required build scripts, and initialize the basic local prerequisites.
 5. Run `dw task current` before lifecycle actions and before committing to confirm the active workspace.
@@ -128,10 +110,15 @@ Important rules:
 8. Multiple child tasks can target the same domain/repo when the plan needs it, for example several `front` tasks.
 9. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
 10. Write all user-facing and project-facing text in French: plans, comments, commit/PR text, task titles, progress summaries and final explanations. Internal reasoning can stay in any language.
-11. Use `dw task sync --continue` if the local ADO context may be stale.
-12. Use the `dw` CLI for Azure DevOps and worktree operations. Do not use Azure DevOps MCP tools.
-13. Commits are created by `dw task commit` or `dw task finish`; do not create them manually.
-14. Branches and PR titles are created by `dw task start` and `dw task finish`; do not create them manually.
-15. Use `dw` for every ADO, Git naming, PR and worktree operation.
+11. Run `dw task preflight --continue` before implementation, child-task creation, or other irreversible work. If it reports blockers or warnings, surface them to the user before forcing ahead.
+12. Use `dw task sync --continue` if the local ADO context may be stale.
+13. Use the `dw` CLI for Azure DevOps and worktree operations. Do not use Azure DevOps MCP tools.
+14. Commits are created by `dw task commit` or `dw task finish`; do not create them manually.
+15. Branches and PR titles are created by `dw task start` and `dw task finish`; do not create them manually.
+16. Use `dw` for every ADO, Git naming, PR and worktree operation.
+17. Do not normalize business labels or domain wording from ADO, screenshots, mockups or project text. Preserve the exact terms unless the user explicitly asks to rename them.
+18. Treat screenshots, mockups and attachments as factual source material. If something is ambiguous, ask the user instead of guessing.
+19. When the plan can be split by domain, structure it explicitly for front, back, db or other repos, then use sub-agents for independent tracks whenever possible.
+20. Use proportionate sub-agents/models: small tasks on lighter agents, cross-repo or ambiguous tasks on stronger agents.
 """;
 }

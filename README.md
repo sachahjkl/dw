@@ -285,8 +285,54 @@ Task workspaces are created under project folders:
         feat-27485-descriptif-cours/
           task.json
           plan.md
+          AGENTS.md
+          handoff-front.md
+          handoff-back.md
           front/
           back/
+```
+
+## Workflow
+
+The intended end-to-end flow is:
+
+1. `dw task start ...` creates the workspace, agent files and handoffs.
+2. The AI reads `dw ado work-item` and `dw ado ai-context`.
+3. The AI runs `dw task preflight --continue` before implementation or child-task creation.
+4. The plan is written in `plan.md` and split by domain when useful.
+5. Domain handoffs such as `handoff-front.md`, `handoff-back.md`, `handoff-db.md` guide sub-agents.
+6. The AI implements, verifies, commits with `dw task commit`, then finishes with `dw task finish`.
+
+```mermaid
+flowchart TD
+    A[ADO Work Item] --> B[dw task start]
+    B --> C[Workspace Created]
+    C --> C1[task.json]
+    C --> C2[plan.md]
+    C --> C3[AGENTS.md]
+    C --> C4[handoff-front/back/db.md]
+
+    C --> D[AI reads dw ado work-item]
+    D --> E[AI reads dw ado ai-context]
+    E --> F[AI runs dw task preflight]
+
+    F -->|blocking or warning| G[AI surfaces checks to user]
+    G --> H{Proceed?}
+    H -->|no| I[Clarify or wait]
+    H -->|yes| J[Write plan.md]
+    F -->|clean| J
+
+    J --> K[Split work by domain]
+    K --> L[Create child tasks if needed]
+    K --> M[Launch sub-agents on independent tracks]
+
+    L --> N[Implement in repos]
+    M --> N
+    N --> O[Update handoff summary blocks]
+    O --> P[Run verification]
+    P --> Q[dw task commit]
+    Q --> R[dw task finish]
+    R --> S[Push + PR + ADO updates]
 ```
 
 ## Non-Negotiable Rules

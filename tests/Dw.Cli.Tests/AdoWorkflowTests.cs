@@ -155,4 +155,32 @@ public sealed class AdoWorkflowTests
     {
         Assert.False(CommitMessage.IsWellFormed(message));
     }
+
+    [Fact]
+    public void PullRequestText_renders_structured_handoff_section()
+    {
+        var handoff = new WorkspaceHandoffSummary(
+            Repository: "front",
+            Status: "done",
+            Done: ["Implémenter le composant"],
+            Decisions: ["Conserver le libellé métier"],
+            Risks: ["Régression responsive"],
+            Blockers: [],
+            FollowUp: ["Valider avec le user"],
+            VerificationCommands: ["pnpm test"],
+            ManualChecks: ["Comparer au screenshot"],
+            Files: ["front/src/app.ts"],
+            Screenshots: ["mockup.png"],
+            Attachments: ["ado/55201/mockup.png"]);
+
+        var rendered = PullRequestText.StructuredHandoffSection(handoff);
+
+        Assert.Contains("### Statut", rendered);
+        Assert.Contains("`done`", rendered);
+        Assert.Contains("Implémenter le composant", rendered);
+        Assert.Contains("Conserver le libellé métier", rendered);
+        Assert.Contains("Régression responsive", rendered);
+        Assert.Contains("Comparer au screenshot", rendered);
+        Assert.Contains("front/src/app.ts", rendered);
+    }
 }

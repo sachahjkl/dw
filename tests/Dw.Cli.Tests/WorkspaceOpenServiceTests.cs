@@ -338,6 +338,86 @@ public sealed class WorkspaceOpenServiceTests
     }
 
     [Fact]
+    public void Workspace_handoff_template_contains_structured_summary_contract()
+    {
+        var manifest = new WorkspaceManifest(
+            1,
+            "53020",
+            null,
+            "ha",
+            "feat",
+            "demo",
+            "feat/53020-demo",
+            DateTimeOffset.UtcNow,
+            ["front", "back"],
+            "created",
+            ChildTasks:
+            [
+                new WorkspaceChildTask("front", "55201", "[FRONT] Ajouter le formulaire")
+            ],
+            WorkItems:
+            [
+                new WorkspaceWorkItem("53020", "User Story", "Titre", "En réalisation")
+            ]);
+
+        var handoff = Templates.HandoffMd(manifest, "front");
+
+        Assert.Contains("# Handoff front", handoff);
+        Assert.Contains("`feat/53020-demo`", handoff);
+        Assert.Contains("`#53020`", handoff);
+        Assert.Contains("`#55201` [FRONT] Ajouter le formulaire", handoff);
+        Assert.Contains("## Synthèse structurée attendue", handoff);
+        Assert.Contains("status: todo", handoff);
+        Assert.Contains("repository: front", handoff);
+    }
+
+    [Fact]
+    public void Workspace_handoff_parser_reads_structured_summary_block()
+    {
+        var text = """
+# Handoff front
+
+```yaml
+status: done
+repository: front
+summary:
+  done:
+    - Implémenter le composant
+  decisions:
+    - Garder le label métier exact
+  risks: []
+  blockers: []
+  follow_up:
+    - Vérifier le responsive
+verification:
+  commands:
+    - pnpm test
+  manual_checks:
+    - Vérifier le screenshot de référence
+artifacts:
+  files:
+    - front/src/app.ts
+  screenshots:
+    - maquette-front.png
+  attachments:
+    - ado/55201/mockup.png
+```
+""";
+
+        var ok = WorkspaceHandoffService.TryParseSummary(text, "front", out var summary, out var error);
+
+        Assert.True(ok, error);
+        Assert.NotNull(summary);
+        Assert.Equal("done", summary!.Status);
+        Assert.Equal(["Implémenter le composant"], summary.Done);
+        Assert.Equal(["Garder le label métier exact"], summary.Decisions);
+        Assert.Equal(["Vérifier le responsive"], summary.FollowUp);
+        Assert.Equal(["pnpm test"], summary.VerificationCommands);
+        Assert.Equal(["Vérifier le screenshot de référence"], summary.ManualChecks);
+        Assert.Equal(["front/src/app.ts"], summary.Files);
+    }
+
+    [Fact]
     public void Codex_continue_uses_resume_last_with_cd()
     {
         var adapter = AgentAdapterRegistry.Resolve("codex");

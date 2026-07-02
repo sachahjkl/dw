@@ -18,6 +18,9 @@ namespace Dw.Cli.Serialization;
 [JsonSerializable(typeof(ResourceRef[]))]
 [JsonSerializable(typeof(WorkItemRelationRef))]
 [JsonSerializable(typeof(WorkItemRelationAttributes))]
+[JsonSerializable(typeof(AdoAiContextItem[]))]
+[JsonSerializable(typeof(TaskPreflightReport))]
+[JsonSerializable(typeof(TaskHandoffValidationReport))]
 [JsonSerializable(typeof(TaskListItem[]))]
 [JsonSerializable(typeof(CompletionSuggestion[]))]
 [JsonSourceGenerationOptions(

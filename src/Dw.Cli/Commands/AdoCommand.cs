@@ -1,11 +1,14 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dw.Cli.Cli;
+using Dw.Cli.Contracts;
 
 namespace Dw.Cli.Commands;
 
 internal static class AdoCommand
 {
+    private const string AiContextSchemaVersion = WorkflowContracts.Schemas.AdoAiContext;
+
     internal static int Assigned(CommandContext context, string? configuredRoot, string? projectName, int top, bool includeFinalStates, bool groupByParent, bool json)
     {
         var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
@@ -204,6 +207,20 @@ internal static class AdoCommand
         return 0;
     }
 
+    internal static int AiContext(CommandContext context, string? configuredRoot, string? projectName, string id, bool summaryOnly, int commentLimit, bool includeComments)
+    {
+        var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, configuredRoot, projectName);
+        using var http = new HttpClient();
+        var client = new AzureDevOpsClient(http, azureDevOps);
+        var selection = WorkItemSet.Parse(id);
+        var items = selection.Ids
+            .Select(itemId => BuildAiContextItem(client, token, azureDevOps, itemId, summaryOnly, includeComments ? commentLimit : 0))
+            .ToArray();
+
+        context.Out.WriteLine(JsonSerializer.Serialize(items, AppJsonContext.Default.AdoAiContextItemArray));
+        return 0;
+    }
+
     private static IReadOnlyList<AssignedWorkItemGroup> GroupAssignedItemsByParent(AzureDevOpsClient client, TokenResult token, IReadOnlyList<WorkItemSnapshot> items, string? projectName)
         => GroupWorkItemsByParent(client, token, items)
             .Select(group => new AssignedWorkItemGroup(
@@ -219,7 +236,7 @@ internal static class AdoCommand
 
         foreach (var item in items)
         {
-            var parentId = client.GetRelatedWorkItemIdsAsync(item.Id, "System.LinkTypes.Hierarchy-Reverse", token).GetAwaiter().GetResult().FirstOrDefault();
+            var parentId = client.GetRelatedWorkItemIdsAsync(item.Id, WorkflowContracts.Ado.RelationHierarchyReverse, token).GetAwaiter().GetResult().FirstOrDefault();
             if (string.IsNullOrWhiteSpace(parentId))
             {
                 parentId = item.Id;
@@ -361,6 +378,192 @@ internal static class AdoCommand
     private static string BuildSuggestedStartIds(WorkItemSnapshot parent, IReadOnlyList<WorkItemSnapshot> children)
         => string.Join(',', new[] { parent.Id }.Concat(children.Select(item => item.Id)).Distinct(StringComparer.OrdinalIgnoreCase));
 
+    private static AdoAiContextItem BuildAiContextItem(AzureDevOpsClient client, TokenResult token, AzureDevOpsOptions azureDevOps, string workItemId, bool summaryOnly, int commentLimit)
+    {
+        using var document = client.GetWorkItemExpandedAsync(workItemId, token).GetAwaiter().GetResult();
+        var id = document.RootElement.GetProperty("id").GetInt32().ToString(CultureInfo.InvariantCulture);
+        var comments = commentLimit > 0 ? LoadComments(client, id, commentLimit, token) : [];
+        return MapAiContextItem(document.RootElement, azureDevOps, summaryOnly, comments);
+    }
+
+    internal static AdoAiContextItem MapAiContextItem(JsonElement root, AzureDevOpsOptions azureDevOps, bool summaryOnly, IReadOnlyList<AdoAiContextComment>? comments = null)
+    {
+        var fields = root.GetProperty("fields");
+        var id = root.GetProperty("id").GetInt32().ToString(CultureInfo.InvariantCulture);
+        var parsedRelations = ParseRelations(root);
+        var attachmentDirectory = AttachmentDirectoryHint(id);
+        var attachmentMetadata = parsedRelations
+            .Where(relation => relation.Kind == "attachment")
+            .Select(relation => new AdoAiContextAttachment(
+                relation.Name,
+                relation.Url,
+                relation.Comment,
+                attachmentDirectory))
+            .ToArray();
+
+        return new AdoAiContextItem(
+            SchemaVersion: AiContextSchemaVersion,
+            WorkItem: new AdoAiContextWorkItem(
+                Id: id,
+                Url: WorkItemWebUrl(azureDevOps, id),
+                Title: FieldText(fields, "System.Title"),
+                Type: FieldText(fields, "System.WorkItemType"),
+                State: FieldText(fields, "System.State"),
+                AssignedTo: IdentityText(fields, "System.AssignedTo"),
+                AreaPath: FieldText(fields, "System.AreaPath"),
+                IterationPath: FieldText(fields, "System.IterationPath"),
+                Tags: SplitTags(FieldText(fields, "System.Tags"))),
+            Core: new AdoAiContextCore(
+                CreatedBy: IdentityText(fields, "System.CreatedBy"),
+                CreatedDate: FieldText(fields, "System.CreatedDate"),
+                ChangedBy: IdentityText(fields, "System.ChangedBy"),
+                ChangedDate: FieldText(fields, "System.ChangedDate"),
+                Priority: FieldText(fields, "Microsoft.VSTS.Common.Priority"),
+                ValueArea: FieldText(fields, "Microsoft.VSTS.Common.ValueArea")),
+            Content: new AdoAiContextContent(
+                Description: CleanText(FieldText(fields, "System.Description")),
+                AcceptanceCriteria: CleanText(FieldText(fields, "Microsoft.VSTS.Common.AcceptanceCriteria")),
+                ProductContext: ExtractProductContext(fields)),
+            Links: new AdoAiContextLinks(
+                ParentIds: parsedRelations.Where(relation => relation.Kind == "parent" && relation.WorkItemId is not null).Select(relation => relation.WorkItemId!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                ChildIds: parsedRelations.Where(relation => relation.Kind == "child" && relation.WorkItemId is not null).Select(relation => relation.WorkItemId!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                PredecessorIds: parsedRelations.Where(relation => relation.Kind == "predecessor" && relation.WorkItemId is not null).Select(relation => relation.WorkItemId!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                SuccessorIds: parsedRelations.Where(relation => relation.Kind == "successor" && relation.WorkItemId is not null).Select(relation => relation.WorkItemId!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()),
+            Attachments: new AdoAiContextAttachments(
+                DirectoryHint: attachmentDirectory,
+                Items: attachmentMetadata),
+            Relations: summaryOnly ? [] : parsedRelations,
+            Comments: comments ?? []);
+    }
+
+    private static string? WorkItemWebUrl(AzureDevOpsOptions azureDevOps, string id)
+        => string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(azureDevOps.Project)
+            ? null
+            : AzureDevOpsUris.WorkItemWebUrl(azureDevOps, id).ToString();
+
+    private static string AttachmentDirectoryHint(string workItemId)
+        => $"{WorkflowContracts.Workspace.AttachmentDirectoryPrefix}{workItemId}";
+
+    private static IReadOnlyList<string> SplitTags(string? tags)
+        => string.IsNullOrWhiteSpace(tags)
+            ? []
+            : tags.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static IReadOnlyDictionary<string, string> ExtractProductContext(JsonElement fields)
+        => fields.EnumerateObject()
+            .Where(property => IsContextField(property.Name))
+            .ToDictionary(
+                property => FriendlyFieldName(property.Name),
+                property => CleanText(ElementText(property.Value)) ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<AdoAiContextRelation> ParseRelations(JsonElement root)
+    {
+        if (!root.TryGetProperty("relations", out var relations) || relations.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        return relations.EnumerateArray()
+            .Select(ParseRelation)
+            .ToArray();
+    }
+
+    private static AdoAiContextRelation ParseRelation(JsonElement relation)
+    {
+        var rel = relation.TryGetProperty("rel", out var relProperty) ? relProperty.GetString() : null;
+        var url = relation.TryGetProperty("url", out var urlProperty) ? urlProperty.GetString() : null;
+        var name = TryRelationAttribute(relation, "name");
+        var comment = CleanText(TryRelationAttribute(relation, "comment"));
+        var relatedId = WorkItemIdFromRelationUrl(url);
+        var artifact = AdoArtifactLink.TryParse(url);
+
+        return new AdoAiContextRelation(
+            Kind: RelationKind(rel, relatedId, url),
+            Rel: rel,
+            WorkItemId: relatedId,
+            Name: name,
+            Url: url,
+            Comment: comment,
+            Artifact: artifact?.Display,
+            Display: DescribeRelationTarget(rel, relatedId, artifact, name, url));
+    }
+
+    private static string RelationKind(string? rel, string? relatedId, string? url)
+    {
+        if (!string.IsNullOrWhiteSpace(rel))
+        {
+            if (rel.Contains("Hierarchy-Reverse", StringComparison.OrdinalIgnoreCase))
+            {
+                return "parent";
+            }
+
+            if (rel.Contains("Hierarchy-Forward", StringComparison.OrdinalIgnoreCase))
+            {
+                return "child";
+            }
+
+            if (rel.Contains("Dependency-Reverse", StringComparison.OrdinalIgnoreCase))
+            {
+                return "predecessor";
+            }
+
+            if (rel.Contains("Dependency-Forward", StringComparison.OrdinalIgnoreCase))
+            {
+                return "successor";
+            }
+
+            if (rel.Contains(WorkflowContracts.Ado.RelationAttachedFile, StringComparison.OrdinalIgnoreCase))
+            {
+                return "attachment";
+            }
+        }
+
+        if (relatedId is not null)
+        {
+            return "work-item";
+        }
+
+        return !string.IsNullOrWhiteSpace(url) ? "artifact" : "relation";
+    }
+
+    private static IReadOnlyList<AdoAiContextComment> LoadComments(AzureDevOpsClient client, string id, int limit, TokenResult token)
+    {
+        var comments = new List<AdoAiContextComment>();
+        string? continuation = null;
+        do
+        {
+            var top = Math.Min(100, limit - comments.Count);
+            using var response = client.GetWorkItemCommentsAsync(id, top, continuation, token).GetAwaiter().GetResult();
+            if (response.RootElement.TryGetProperty("comments", out var array) && array.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var comment in array.EnumerateArray())
+                {
+                    comments.Add(new AdoAiContextComment(
+                        Author: IdentityFromElement(comment, "createdBy"),
+                        CreatedDate: comment.TryGetProperty("createdDate", out var dateProperty) ? dateProperty.GetString() : null,
+                        Text: CleanText(comment.TryGetProperty("text", out var textProperty) ? textProperty.GetString() : null)));
+                    if (comments.Count >= limit)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            continuation = response.RootElement.TryGetProperty("continuationToken", out var tokenProperty)
+                ? tokenProperty.GetString()
+                : null;
+        }
+        while (!string.IsNullOrWhiteSpace(continuation) && comments.Count < limit);
+
+        return comments;
+    }
+
+    private static string? CleanText(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? null
+            : HtmlTextCleaner.StripMarkup(value).Trim();
+
     private static void PrintHeader(CommandContext context, JsonElement root, JsonElement fields)
     {
         context.Out.WriteLine($"# Work Item #{root.GetProperty("id").GetInt32()}");
@@ -463,7 +666,7 @@ internal static class AdoCommand
         }
 
         if (!string.IsNullOrWhiteSpace(rel)
-            && rel.Contains("AttachedFile", StringComparison.OrdinalIgnoreCase)
+            && rel.Contains(WorkflowContracts.Ado.RelationAttachedFile, StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(name)
             && !string.IsNullOrWhiteSpace(url))
         {
@@ -606,6 +809,62 @@ internal static class AdoCommand
 internal sealed record AssignedWorkItemGroup(WorkItemSnapshot Parent, IReadOnlyList<WorkItemSnapshot> Items, string SuggestedStartCommand);
 internal sealed record WorkItemGroup(WorkItemSnapshot Parent, IReadOnlyList<WorkItemSnapshot> Items);
 internal sealed record PullRequestLookup(string Repository, IReadOnlyList<string>? WorkItemIds);
+internal sealed record AdoAiContextItem(
+    string SchemaVersion,
+    AdoAiContextWorkItem WorkItem,
+    AdoAiContextCore Core,
+    AdoAiContextContent Content,
+    AdoAiContextLinks Links,
+    AdoAiContextAttachments Attachments,
+    IReadOnlyList<AdoAiContextRelation> Relations,
+    IReadOnlyList<AdoAiContextComment> Comments);
+internal sealed record AdoAiContextWorkItem(
+    string Id,
+    string? Url,
+    string? Title,
+    string? Type,
+    string? State,
+    string? AssignedTo,
+    string? AreaPath,
+    string? IterationPath,
+    IReadOnlyList<string> Tags);
+internal sealed record AdoAiContextCore(
+    string? CreatedBy,
+    string? CreatedDate,
+    string? ChangedBy,
+    string? ChangedDate,
+    string? Priority,
+    string? ValueArea);
+internal sealed record AdoAiContextContent(
+    string? Description,
+    string? AcceptanceCriteria,
+    IReadOnlyDictionary<string, string> ProductContext);
+internal sealed record AdoAiContextLinks(
+    IReadOnlyList<string> ParentIds,
+    IReadOnlyList<string> ChildIds,
+    IReadOnlyList<string> PredecessorIds,
+    IReadOnlyList<string> SuccessorIds);
+internal sealed record AdoAiContextAttachments(
+    string DirectoryHint,
+    IReadOnlyList<AdoAiContextAttachment> Items);
+internal sealed record AdoAiContextAttachment(
+    string? Name,
+    string? Url,
+    string? Comment,
+    string DirectoryHint);
+internal sealed record AdoAiContextRelation(
+    string Kind,
+    string? Rel,
+    string? WorkItemId,
+    string? Name,
+    string? Url,
+    string? Comment,
+    string? Artifact,
+    string Display);
+internal sealed record AdoAiContextComment(
+    string? Author,
+    string? CreatedDate,
+    string? Text);
 internal enum ChangelogSourceMode
 {
     PullRequests,

@@ -258,6 +258,12 @@ internal static partial class SystemCommandLineApp
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "sync");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "sync");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "sync");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "preflight");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "preflight");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "preflight");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "handoff-validate");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "handoff-validate");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "handoff-validate");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "rename");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "rename");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "rename");

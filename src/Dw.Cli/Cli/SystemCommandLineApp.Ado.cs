@@ -44,6 +44,15 @@ internal static partial class SystemCommandLineApp
                     Value(OptionNames.Comments, "Nombre de commentaires a charger."),
                     Flag(OptionNames.Json, "Sortie JSON.")
                 ],
+                Argument<string>("id", "ID du work item, ou liste separee par virgules.")),
+            Subcommand("ai-context", "Affiche un contexte ADO structure et stable pour consommation IA/scripts.", parse => AdoCommand.AiContext(context, parse.GetValue<string>(OptionNames.Root), parse.GetValue<string>(OptionNames.Project), parse.GetRequiredValue<string>("id"), parse.GetValue<bool>(OptionNames.Summary), Math.Max(0, parse.GetValue<int?>(OptionNames.Comments) ?? 200), parse.GetValue<bool>(OptionNames.IncludeComments)),
+                [
+                    ProjectOption(context, "Projet dw pour resoudre Azure DevOps."),
+                    Value(OptionNames.Root, "Root DevWorkflow a utiliser."),
+                    Flag(OptionNames.Summary, "Limite la sortie au resume structure, sans relations detaillees."),
+                    Value(OptionNames.Comments, "Nombre maximum de commentaires a charger quand --include-comments est utilise."),
+                    Flag(OptionNames.IncludeComments, "Inclut les commentaires dans la sortie structuree.")
+                ],
                 Argument<string>("id", "ID du work item, ou liste separee par virgules.")));
         return command;
     }

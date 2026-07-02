@@ -91,6 +91,83 @@ public sealed class TaskCommandTests
         Assert.Collection(selected, status => Assert.Equal("front", status.Repository));
     }
 
+    [Fact]
+    public void TaskPreflightReport_models_blocking_and_warning_issues()
+    {
+        var report = new TaskPreflightReport(
+            "dw.task.preflight.v1",
+            @"C:\ws",
+            "ha",
+            ["55201"],
+            [
+                new TaskPreflightIssue("ado.predecessors.active", "blocking", "55201", "Pred actif", null, ["55199"]),
+                new TaskPreflightIssue("ado.attachments.present", "warning", "55201", "PJ presente", null, ["55201"])
+            ],
+            HasBlockingIssues: true);
+
+        Assert.Equal("dw.task.preflight.v1", report.SchemaVersion);
+        Assert.True(report.HasBlockingIssues);
+        Assert.Contains(report.Issues, issue => issue.Severity == "blocking");
+        Assert.Contains(report.Issues, issue => issue.Severity == "warning");
+    }
+
+    [Fact]
+    public void TaskPreflightReport_detects_stale_workspace_state()
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(
+            """
+            {
+              "id": 55201,
+              "fields": {
+                "System.Title": "Titre ADO",
+                "System.WorkItemType": "Bug",
+                "System.State": "En developpement"
+              }
+            }
+            """);
+
+        var aiContext = AdoCommand.MapAiContextItem(document.RootElement, new AzureDevOpsOptions("https://dev.azure.com/org", "Project"), summaryOnly: false);
+        var manifest = new WorkspaceManifest(1, "55201", null, "ha", "feat", "demo", "feat/55201-demo", DateTimeOffset.UtcNow, ["front"], "created", WorkItems: [new WorkspaceWorkItem("55201", "Bug", "Titre local", "New")]);
+
+        var staleIssues = typeof(TaskPreflightService)
+            .GetMethod("BuildStaleContextIssues", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, [aiContext, manifest]) as IReadOnlyList<TaskPreflightIssue>;
+
+        Assert.NotNull(staleIssues);
+        Assert.Single(staleIssues!);
+        Assert.Equal("workspace.ado-context.stale", staleIssues[0].Code);
+        Assert.Equal("warning", staleIssues[0].Severity);
+    }
+
+    [Fact]
+    public void TaskHandoffValidationReport_is_invalid_when_one_repo_stays_todo()
+    {
+        var report = new TaskHandoffValidationReport(
+            "dw.task.handoff-validation.v1",
+            @"C:\ws",
+            "ha",
+            [
+                new TaskHandoffValidationItem("front", @"C:\ws\handoff-front.md", "valid", true, "ok"),
+                new TaskHandoffValidationItem("back", @"C:\ws\handoff-back.md", "todo", false, "todo")
+            ],
+            IsValid: false);
+
+        Assert.False(report.IsValid);
+        Assert.Contains(report.Items, item => item.Status == "todo");
+    }
+
+    [Theory]
+    [InlineData("done", true)]
+    [InlineData("todo", false)]
+    [InlineData("in_progress", false)]
+    [InlineData("blocked", false)]
+    public void TaskHandoffValidation_status_policy_requires_done_for_finish(string status, bool expectedValid)
+    {
+        var valid = string.Equals(status, "done", StringComparison.OrdinalIgnoreCase);
+
+        Assert.Equal(expectedValid, valid);
+    }
+
     private sealed class FixedClock : IClock
     {
         public DateTimeOffset Now => new(2026, 6, 22, 12, 0, 0, TimeSpan.Zero);

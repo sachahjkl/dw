@@ -22,6 +22,7 @@ internal static class OptionNames
     public const string GitTo = "--git-to";
     public const string Summary = "--summary";
     public const string Comments = "--comments";
+    public const string IncludeComments = "--include-comments";
     public const string Task = "--task";
     public const string Type = "--type";
     public const string Only = "--only";
