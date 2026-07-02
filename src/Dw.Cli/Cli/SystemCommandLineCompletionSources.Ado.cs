@@ -3,59 +3,23 @@ namespace Dw.Cli.Cli;
 internal static partial class SystemCommandLineApp
 {
     private static IEnumerable<CompletionItem> ProjectCompletions(CommandContext context, CompletionContext? completion = null)
-        => DynamicCompletions(completion, () => DevWorkflowConfigLoader.Load(context.FileSystem, Root(context))
-            .Projects
-            .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(pair => Item(pair.Key, pair.Value.DisplayName)));
+        => DynamicCompletions(completion, () => CompleteProjects(context));
 
     private static IEnumerable<CompletionItem> WorkspaceCompletions(CommandContext context, CompletionContext? completion = null)
-        => DynamicCompletions(completion, () => WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, Root(context))
-            .OrderByDescending(workspace => workspace.Manifest.CreatedAt)
-            .Select(workspace => Item(workspace.Path, $"{workspace.Manifest.Project} #{workspace.Manifest.DisplayWorkItemIds} {workspace.Manifest.Slug}")));
+        => DynamicCompletions(completion, () => WorkspaceCompletions(context, completion?.ParseResult));
+
+    private static IEnumerable<CompletionItem> WorkspaceCompletions(CommandContext context, ParseResult? parseResult)
+        => CompleteWorkspaces(context, Filters(parseResult));
 
     private static IEnumerable<CompletionItem> WorkItemCompletions(CommandContext context, CompletionContext? completion = null)
         => DynamicCompletions(completion, () => WorkItemCompletions(context, completion?.ParseResult, completion?.WordToComplete));
 
     private static IEnumerable<CompletionItem> WorkItemCompletions(CommandContext context, ParseResult? parseResult, string? token)
-        => PrefixForMultiValue(WorkspaceWorkItemCompletions(context)
-            .Concat(AssignedWorkItemCompletions(context, parseResult))
-            .GroupBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First()), token);
+        => CompleteWorkItems(context, Filters(parseResult, token));
 
     private static IEnumerable<CompletionItem> RepositoryCompletions(CommandContext context, CompletionContext? completion = null)
-        => DynamicCompletions(completion, () => DevWorkflowConfigLoader.Load(context.FileSystem, Root(context))
-            .Projects
-            .SelectMany(project => project.Value.Repositories.Select(repository => new { repository.Key, Project = project.Key, repository.Value.Folder }))
-            .GroupBy(repository => repository.Key, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(group => Item(group.Key, string.Join(", ", group.Select(repository => $"{repository.Project}/{repository.Folder ?? repository.Key}")))));
+        => DynamicCompletions(completion, () => RepositoryCompletions(context, completion?.ParseResult));
 
-    private static IEnumerable<CompletionItem> WorkspaceWorkItemCompletions(CommandContext context)
-        => WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, Root(context))
-            .OrderByDescending(workspace => workspace.Manifest.CreatedAt)
-            .SelectMany(workspace => workspace.Manifest.ParentWorkItems.Select(item => new { item.Id, workspace.Manifest.Project, item.Title }))
-            .DistinctBy(workItem => workItem.Id)
-            .Select(workItem => Item(workItem.Id, $"{workItem.Project} {workItem.Title}"));
-
-    private static IEnumerable<CompletionItem> AssignedWorkItemCompletions(CommandContext context, ParseResult? parseResult)
-    {
-        if (parseResult is null)
-        {
-            return [];
-        }
-
-        var project = parseResult.GetValue<string>(OptionNames.Project);
-        try
-        {
-            var (_, azureDevOps, token) = AdoClientFactory.CreateInputs(context, null, project);
-            using var http = new HttpClient();
-            var client = new AzureDevOpsClient(http, azureDevOps);
-            return AdoCommand.FilterAssignedItems(client.GetAssignedWorkItemsAsync(100, token).GetAwaiter().GetResult(), includeFinalStates: false)
-                .Select(item => Item(item.Id, $"{project ?? "ado"} {item.Title}"));
-        }
-        catch
-        {
-            return [];
-        }
-    }
+    private static IEnumerable<CompletionItem> RepositoryCompletions(CommandContext context, ParseResult? parseResult)
+        => CompleteRepositories(context, Filters(parseResult, includeWorkItems: false));
 }

@@ -89,6 +89,7 @@ public sealed class WorkspaceOpenServiceTests
         }
     }
 
+
     [Fact]
     public void ResolveWorkspace_matches_secondary_work_item_id()
     {
@@ -408,4 +409,5 @@ public sealed class WorkspaceOpenServiceTests
             return Task.FromResult(0);
         }
     }
+
 }

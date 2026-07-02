@@ -6,7 +6,6 @@ internal static partial class SystemCommandLineApp
     {
         foreach (var option in options)
         {
-            option.Recursive = true;
             command.Add(option);
         }
     }

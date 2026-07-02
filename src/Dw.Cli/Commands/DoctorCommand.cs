@@ -52,52 +52,31 @@ internal static class DoctorCommand
         string name,
         string remediation,
         Func<string, bool>? validator = null)
-        => await CheckCommand(context, [fileName], arguments, name, remediation, validator);
-
-    private static async Task<DoctorCheck> CheckCommand(
-        CommandContext context,
-        IReadOnlyList<string> fileNames,
-        string arguments,
-        string name,
-        string remediation,
-        Func<string, bool>? validator = null)
     {
-        foreach (var fileName in fileNames)
+        try
         {
-            try
-            {
-                var result = await context.ProcessRunner.RunAsync(fileName, arguments);
-                var output = (result.StandardOutput + Environment.NewLine + result.StandardError).Trim();
-                var passed = result.ExitCode == 0 && (validator?.Invoke(output) ?? true);
-                var firstLine = output.Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-                if (passed)
-                {
-                    return new DoctorCheck(name, true, firstLine ?? fileName, remediation);
-                }
-            }
-            catch
-            {
-                // Try next executable name, e.g. npm.cmd on Windows.
-            }
+            var result = await context.ProcessRunner.RunAsync(fileName, arguments);
+            var output = (result.StandardOutput + Environment.NewLine + result.StandardError).Trim();
+            var passed = result.ExitCode == 0 && (validator?.Invoke(output) ?? true);
+            var firstLine = output.Split([Environment.NewLine], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            return passed
+                ? new DoctorCheck(name, true, firstLine ?? fileName, remediation)
+                : new DoctorCheck(name, false, null, remediation);
         }
-
-        return new DoctorCheck(name, false, null, remediation);
+        catch
+        {
+            return new DoctorCheck(name, false, null, remediation);
+        }
     }
 
     private static async Task<DoctorCheck> CheckNodePackageManager(CommandContext context)
     {
         var remediation = "Installer pnpm, ou Node.js/npm si pnpm est indisponible.";
-        var candidates = OperatingSystem.IsWindows()
-            ? new[]
-            {
-                (FileName: "cmd", Arguments: "/c pnpm --version", DetailPrefix: "pnpm"),
-                (FileName: "cmd", Arguments: "/c npm --version", DetailPrefix: "npm")
-            }
-            :
-            [
-                (FileName: "pnpm", Arguments: "--version", DetailPrefix: "pnpm"),
-                (FileName: "npm", Arguments: "--version", DetailPrefix: "npm")
-            ];
+        var candidates = new[]
+        {
+            (FileName: "pnpm", Arguments: "--version", DetailPrefix: "pnpm"),
+            (FileName: "npm", Arguments: "--version", DetailPrefix: "npm")
+        };
 
         foreach (var candidate in candidates)
         {

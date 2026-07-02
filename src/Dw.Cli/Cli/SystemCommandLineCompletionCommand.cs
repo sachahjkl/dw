@@ -29,7 +29,11 @@ internal static partial class SystemCommandLineApp
     private static int CompletionShow(CommandContext context)
     {
         context.Out.WriteLine("Installer l'integration shell dw:");
+        context.Out.WriteLine("PowerShell - session courante:");
         context.Out.WriteLine("  dw completion install powershell | Invoke-Expression");
+        context.Out.WriteLine("PowerShell - installation persistante:");
+        context.Out.WriteLine("  dw completion install powershell >> $PROFILE");
+        context.Out.WriteLine("  . $PROFILE");
         context.Out.WriteLine("Fallback lisible:");
         context.Out.WriteLine("  dw completion suggest task --");
         context.Out.WriteLine("Directive native System.CommandLine:");
@@ -60,7 +64,8 @@ internal static partial class SystemCommandLineApp
             commandLine += " ";
         }
 
-        var completions = SortCompletions(FilterCompletionOptions(AddDynamicCompletions(context, line, commandLine, emptyToken, GetCompletionsForTesting(context, commandLine)), line, emptyToken), CurrentToken(line, emptyToken));
+        var parseLine = ParseableCommandLine(commandLine, line, emptyToken);
+        var completions = SortCompletions(FilterCompletionOptions(AddDynamicCompletions(context, line, parseLine, emptyToken, GetCompletionsForTesting(context, parseLine)), line, emptyToken), CurrentToken(line, emptyToken));
         if (completions.Count == 0)
         {
             return 0;
@@ -125,9 +130,45 @@ internal static partial class SystemCommandLineApp
             .ToArray();
     }
 
+    private static string ParseableCommandLine(string commandLine, IReadOnlyList<string> line, bool emptyToken)
+    {
+        if (!emptyToken || line.Count == 0)
+        {
+            return commandLine;
+        }
+
+        var previous = line[^1];
+        return previous.StartsWith("--", StringComparison.Ordinal) && OptionExpectsValue(previous)
+            ? commandLine + "__dw_completion__"
+            : commandLine;
+    }
+
+    private static bool OptionExpectsValue(string option)
+        => option is OptionNames.Project
+            or OptionNames.Workspace
+            or OptionNames.Repo
+            or OptionNames.Database
+            or OptionNames.WorkItem
+            or OptionNames.Root
+            or OptionNames.Profile
+            or OptionNames.Task
+            or OptionNames.Type
+            or OptionNames.Only
+            or OptionNames.Slug
+            or OptionNames.Message
+            or OptionNames.Env
+            or OptionNames.Comments
+            or OptionNames.GitTo
+            or OptionNames.Value
+            or OptionNames.FromEnv
+            or OptionNames.Rid
+            or OptionNames.Title
+            or OptionNames.Format;
+
     private static IEnumerable<CompletionItem> ResolveDynamicCompletions(CommandContext context, IReadOnlyList<string> line, ParseResult parse, string currentToken, bool emptyToken)
     {
         var valueOption = ExpectedValueOption(line, currentToken, emptyToken);
+        var filters = Filters(parse, currentToken);
         if (string.Equals(valueOption, OptionNames.Project, StringComparison.OrdinalIgnoreCase))
         {
             return ProjectCompletions(context);
@@ -135,27 +176,27 @@ internal static partial class SystemCommandLineApp
 
         if (string.Equals(valueOption, OptionNames.Workspace, StringComparison.OrdinalIgnoreCase))
         {
-            return WorkspaceCompletions(context);
+            return WorkspaceCompletions(context, parse);
         }
 
         if (string.Equals(valueOption, OptionNames.Repo, StringComparison.OrdinalIgnoreCase))
         {
-            return RepositoryCompletions(context);
+            return RepositoryCompletions(context, parse);
         }
 
         if (string.Equals(valueOption, OptionNames.Database, StringComparison.OrdinalIgnoreCase))
         {
-            return DatabaseCompletions(context);
+            return DatabaseCompletions(context, parse);
         }
 
         if (string.Equals(valueOption, OptionNames.WorkItem, StringComparison.OrdinalIgnoreCase))
         {
-            return WorkItemCompletions(context, parse, currentToken);
+            return CompleteWorkItems(context, filters);
         }
 
         if (HasCommandPath(line, "task", "start") || HasCommandPath(line, "task", "open") || HasCommandPath(line, "task", "add-work-item") || HasCommandPath(line, "task", "remove-work-item") || HasCommandPath(line, "ado", "work-item") || HasCommandPath(line, "ado", "context"))
         {
-            return WorkItemCompletions(context, parse, currentToken);
+            return CompleteWorkItems(context, filters);
         }
 
         if (HasCommandPath(line, "db", "describe"))

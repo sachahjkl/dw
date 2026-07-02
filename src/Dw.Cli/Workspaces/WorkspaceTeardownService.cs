@@ -71,6 +71,7 @@ internal static class WorkspaceTeardownService
     private static bool Confirm(CommandContext context, string workspace)
     {
         context.Out.Write($"Confirmer suppression de {workspace} ? [y/N] ");
+        context.Out.Flush();
         var input = Console.ReadLine()?.Trim();
         return string.Equals(input, "y", StringComparison.OrdinalIgnoreCase)
                || string.Equals(input, "yes", StringComparison.OrdinalIgnoreCase)

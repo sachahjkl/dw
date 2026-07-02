@@ -3,15 +3,10 @@ namespace Dw.Cli.Cli;
 internal static partial class SystemCommandLineApp
 {
     private static IEnumerable<CompletionItem> DatabaseCompletions(CommandContext context, CompletionContext? completion = null)
-        => DynamicCompletions(completion, () =>
-        {
-            var config = DatabasesConfigLoader.Load(context.FileSystem, Root(context));
-            return config.Globals.Keys
-                .Concat(config.Projects.SelectMany(project => project.Value.Databases.Keys))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                .Select(name => Item(name, "Base configuree dans databases.json"));
-        });
+        => DynamicCompletions(completion, () => DatabaseCompletions(context, completion?.ParseResult));
+
+    private static IEnumerable<CompletionItem> DatabaseCompletions(CommandContext context, ParseResult? parseResult)
+        => CompleteDatabases(context, Filters(parseResult, includeWorkItems: false));
 
     private static IEnumerable<CompletionItem> TableCompletions(CommandContext context, CompletionContext completion)
         => DynamicCompletions(completion, () => TableCompletions(context, completion.ParseResult));

@@ -73,7 +73,7 @@ internal static partial class SystemCommandLineApp
 
     private static Command Init(CommandContext context)
     {
-        var command = Command("init", "Initialise un root DevWorkflow.");
+        var command = Command("init", "Initialise un root DevWorkflow local avec configs, schemas et instructions agents.");
         AddOptions(command,
             Value(OptionNames.Profile, "Profil d'initialisation.", ["business"]),
             Value(OptionNames.Root, "Root DevWorkflow a creer."),
@@ -89,7 +89,7 @@ internal static partial class SystemCommandLineApp
 
     private static Command Doctor(CommandContext context)
     {
-        var command = Command("doctor", "Diagnostique l'environnement local.");
+        var command = Command("doctor", "Diagnostique les prerequis machine et la configuration locale du workflow.");
         AddOptions(command, Flag(OptionNames.Fix, "Corrige ce qui peut etre corrige automatiquement."));
         command.SetAction(parse => DoctorCommand.RunAsync(context, parse.GetValue<bool>(OptionNames.Fix)));
         return command;
@@ -97,7 +97,7 @@ internal static partial class SystemCommandLineApp
 
     private static Command Refresh(CommandContext context)
     {
-        var command = Command("refresh", "Regenere les schemas et contextes agents non destructifs.");
+        var command = Command("refresh", "Regenere les schemas et contextes agents sans toucher aux fichiers utilisateurs.");
         AddOptions(command,
             Value(OptionNames.Root, "Root DevWorkflow a utiliser."),
             Value(OptionNames.Profile, "Profil a utiliser pour les fichiers d'agents.", ["business", "default"]));
@@ -107,7 +107,7 @@ internal static partial class SystemCommandLineApp
 
     private static Command Agent(CommandContext context)
     {
-        var command = Command("agent", "Affiche le contexte ou ouvre un agent.");
+        var command = Command("agent", "Affiche le contexte workflow pour IA, ouvre un agent, ou gere sa configuration.");
         AddSubcommands(command,
             Subcommand("context", "Affiche le contexte court pour agents IA.", (_, _) => AgentCommand.WriteContext(context)),
             Subcommand("open", "Ouvre un workspace dans l'agent configure.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse)),
@@ -133,7 +133,7 @@ internal static partial class SystemCommandLineApp
 
     private static Command Auth(CommandContext context)
     {
-        var command = Command("auth", "Gere la connexion Azure DevOps.");
+        var command = Command("auth", "Gere la connexion Azure DevOps utilisee par les commandes ado/task.");
         AddSubcommands(command,
             Subcommand("login", "Connecte Azure DevOps.", (parse, _) => AuthCommand.Login(context, parse.GetValue<string>(OptionNames.Root)),
                 [Value(OptionNames.Root, "Root DevWorkflow a utiliser.")]),
@@ -146,9 +146,9 @@ internal static partial class SystemCommandLineApp
 
     private static Command Task(CommandContext context)
     {
-        var command = Command("task", "Gere les workspaces, worktrees, commits, push et PR.");
+        var command = Command("task", "Gere le cycle de travail: workspace, worktrees, plan, commits, push, PR et cleanup.");
         AddSubcommands(command,
-            Subcommand("start", "Cree un workspace et des worktrees.", parse => TaskStartService.Start(context, new TaskStartRequest(
+            Subcommand("start", "Cree le workspace de travail, les worktrees associes et le contexte initial.", parse => TaskStartService.Start(context, new TaskStartRequest(
                 parse.GetRequiredValue<string>("work-item-id"),
                 parse.GetValue<string>(OptionNames.Project),
                 parse.GetValue<string>(OptionNames.Task),
@@ -169,23 +169,23 @@ internal static partial class SystemCommandLineApp
                     Flag(OptionNames.WithActiveChildren, "Inclut automatiquement les enfants ADO non finaux du sujet selectionne.")
                 ],
                 Argument<string>("work-item-id", "ID du work item parent principal, ou liste separee par virgules.")),
-            Subcommand("status", "Liste les chemins des workspaces.", (_, _) => TaskListService.Status(context)),
-            Subcommand("list", "Liste les workspaces avec metadonnees.", parse => TaskListService.List(context, new TaskListOptions(parse.GetValue<string>(OptionNames.Project), parse.GetValue<string>(OptionNames.WorkItem), parse.GetValue<bool>(OptionNames.Json))),
+            Subcommand("status", "Liste rapidement les chemins de workspaces detectes.", (_, _) => TaskListService.Status(context)),
+            Subcommand("list", "Liste les workspaces avec projet, work items, branche et metadonnees utiles.", parse => TaskListService.List(context, new TaskListOptions(parse.GetValue<string>(OptionNames.Project), parse.GetValue<string>(OptionNames.WorkItem), parse.GetValue<bool>(OptionNames.Json))),
                 [
                     ProjectOption(context, "Projet dw."),
                     WorkItemOption(context, "Filtre work item ADO."),
                     Flag(OptionNames.Json, "Sortie JSON.")
                 ]),
-            Subcommand("current", "Affiche le workspace courant.", parse => TaskListService.Current(context, parse.GetValue<bool>(OptionNames.Json)),
+            Subcommand("current", "Affiche le workspace courant et son contexte principal.", parse => TaskListService.Current(context, parse.GetValue<bool>(OptionNames.Json)),
                 [Flag(OptionNames.Json, "Sortie JSON.")]),
-            Subcommand("sync", "Synchronise task.json depuis ADO.", parse => TaskSyncPruneService.Sync(context, OpenOptions(parse)),
+            Subcommand("sync", "Rafraichit le contexte ADO local du workspace dans task.json.", parse => TaskSyncPruneService.Sync(context, OpenOptions(parse)),
                 [
                     WorkspaceOption(context, "Chemin explicite du workspace."),
                     ProjectOption(context, "Projet dw."),
                     WorkItemOption(context, "Filtre work item ADO."),
                     Flag(OptionNames.Continue, "Utilise le workspace le plus recent.")
                 ]),
-            Subcommand("prune", "Nettoie les workspaces en etat final.", parse => TaskSyncPruneService.Prune(context, new TaskPruneOptions(parse.GetValue<string>(OptionNames.Project), parse.GetValue<string>(OptionNames.WorkItem), parse.GetValue<bool>(OptionNames.Execute), parse.GetValue<bool>(OptionNames.Yes), !parse.GetValue<bool>(OptionNames.NoSync))),
+            Subcommand("prune", "Supprime les workspaces dont tous les work items sont dans un etat final.", parse => TaskSyncPruneService.Prune(context, new TaskPruneOptions(parse.GetValue<string>(OptionNames.Project), parse.GetValue<string>(OptionNames.WorkItem), parse.GetValue<bool>(OptionNames.Execute), parse.GetValue<bool>(OptionNames.Yes), !parse.GetValue<bool>(OptionNames.NoSync))),
                 [
                     ProjectOption(context, "Projet dw."),
                     WorkItemOption(context, "Filtre work item ADO."),
@@ -202,7 +202,7 @@ internal static partial class SystemCommandLineApp
                     Flag(OptionNames.Continue, "Utilise le workspace le plus recent."),
                     Flag(OptionNames.Execute, "Execute vraiment l'action.")
                 ]),
-            Subcommand("open", "Ouvre le workspace dans un agent.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse)),
+            Subcommand("open", "Ouvre ou reprend le workspace dans l'agent choisi pour travailler dessus.", (parse, _) => WorkspaceOpenService.Open(context, OpenOptions(parse)),
                 [
                     WorkspaceOption(context, "Chemin explicite du workspace."),
                     ProjectOption(context, "Projet dw."),
@@ -252,7 +252,7 @@ internal static partial class SystemCommandLineApp
                     Flag(OptionNames.Continue, "Utilise le workspace le plus recent.")
                 ],
                 Argument<string>("ids", "ID du work item a retirer, ou liste separee par virgules.")),
-            Subcommand("commit", "Commit intermediaire sans push ni PR.", parse => TaskCommand.Commit(context, new TaskCommitRequest(
+            Subcommand("commit", "Cree un commit intermediaire dans le workspace sans push ni PR.", parse => TaskCommand.Commit(context, new TaskCommitRequest(
                 parse.GetValue<string>(OptionNames.Workspace),
                 parse.GetValue<bool>(OptionNames.Continue),
                 parse.GetValue<bool>(OptionNames.Execute),
@@ -263,7 +263,7 @@ internal static partial class SystemCommandLineApp
                     Flag(OptionNames.Execute, "Execute vraiment l'action."),
                     Value(OptionNames.Message, "Override explicite du message de commit genere.")
                 ]),
-            Subcommand("finish", "Dry-run ou commit/push/PR.", parse => TaskCommand.Finish(context, new TaskFinishRequest(
+            Subcommand("finish", "Prepare ou execute la fin du workflow: verification, commit, push et eventuelle PR.", parse => TaskCommand.Finish(context, new TaskFinishRequest(
                 parse.GetValue<string>(OptionNames.Workspace),
                 parse.GetValue<bool>(OptionNames.Continue),
                 parse.GetValue<bool>(OptionNames.Execute),
