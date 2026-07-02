@@ -91,6 +91,7 @@ public sealed class AgentCommandTests
         Assert.Contains("dw task create-child-task --continue --repo <front|back|db|foo> --title \"<action explicite>\"", context);
         Assert.Contains("dw task commit --continue --execute", context);
         Assert.Contains("dw task finish --continue --execute --create-pr", context);
+        Assert.Contains("Write all user-facing and project-facing text in French", context);
         Assert.Contains("Do not use Azure DevOps MCP tools", context);
         Assert.Contains("do not create them manually", context);
         Assert.Contains("Use `dw` for every ADO, Git naming, PR and worktree operation", context);

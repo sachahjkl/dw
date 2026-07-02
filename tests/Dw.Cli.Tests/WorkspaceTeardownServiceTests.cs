@@ -54,7 +54,7 @@ public sealed class WorkspaceTeardownServiceTests
             var processRunner = new CapturingProcessRunner();
             var context = new CommandContext(output, error, new FixedClock(), fs, processRunner);
 
-            var exitCode = WorkspaceTeardownService.Teardown(context, new WorkspaceTeardownOptions(workspace, null, null, Continue: false, Execute: false, Yes: false), root);
+            var exitCode = WorkspaceTeardownService.Teardown(context, new WorkspaceTeardownOptions(workspace, null, null, Continue: false, PositionalWorkItemId: null, Execute: false, Yes: false), root);
 
             Assert.Equal(0, exitCode);
             Assert.Empty(processRunner.Calls);
@@ -105,7 +105,7 @@ public sealed class WorkspaceTeardownServiceTests
             var processRunner = new CapturingProcessRunner();
             var context = new CommandContext(output, error, new FixedClock(), fs, processRunner);
 
-            var exitCode = WorkspaceTeardownService.Teardown(context, new WorkspaceTeardownOptions(workspace, null, null, Continue: false, Execute: true, Yes: true), root);
+            var exitCode = WorkspaceTeardownService.Teardown(context, new WorkspaceTeardownOptions(workspace, null, null, Continue: false, PositionalWorkItemId: null, Execute: true, Yes: true), root);
 
             Assert.Equal(0, exitCode);
             Assert.Contains(processRunner.Calls, call => call.SequenceEqual(["--git-dir", anchor, "worktree", "remove", "--force", Path.Combine(workspace, "front")]));

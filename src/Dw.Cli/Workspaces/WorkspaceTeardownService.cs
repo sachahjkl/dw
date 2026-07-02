@@ -5,6 +5,7 @@ internal sealed record WorkspaceTeardownOptions(
     string? Project,
     string? WorkItemId,
     bool Continue,
+    string? PositionalWorkItemId,
     bool Execute,
     bool Yes);
 
@@ -23,7 +24,7 @@ internal static class WorkspaceTeardownService
         var workspace = WorkspaceOpenService.ResolveWorkspace(
             context,
             root,
-            new WorkspaceOpenOptions(options.Workspace, options.Project, options.WorkItemId, options.Continue));
+            new WorkspaceOpenOptions(options.Workspace, options.Project, options.WorkItemId, options.Continue, options.PositionalWorkItemId));
         var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(workspace, "task.json"));
         var config = DevWorkflowConfigLoader.Load(context.FileSystem, root);
         var projectConfig = DevWorkflowConfigLoader.ResolveProject(config, manifest.Project);

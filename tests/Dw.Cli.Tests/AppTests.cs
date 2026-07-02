@@ -89,6 +89,16 @@ public sealed class AppTests
     }
 
     [Fact]
+    public async Task RunAsync_task_teardown_help_exposes_positional_work_item_id()
+    {
+        var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "teardown", "--help"]));
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("work-item-id", output);
+        Assert.Contains("--work-item", output);
+    }
+
+    [Fact]
     public async Task RunAsync_task_create_child_task_help_exposes_repo_and_title()
     {
         var (exitCode, output, _) = await CaptureConsole(() => App.RunAsync(["task", "create-child-task", "--help"]));
@@ -358,6 +368,15 @@ public sealed class AppTests
     }
 
     [Fact]
+    public async Task RunAsync_task_teardown_rejects_workspace_with_positional_work_item_id()
+    {
+        var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["task", "teardown", "123", "--workspace", "C:\\tmp\\ws"]));
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("--workspace ne peut pas etre combine avec <work-item-id>", error);
+    }
+
+    [Fact]
     public async Task RunAsync_upgrade_rejects_check_with_rid()
     {
         var (exitCode, _, error) = await CaptureConsole(() => App.RunAsync(["upgrade", "--check", "--rid", "win-x64"]));
@@ -617,6 +636,158 @@ public sealed class AppTests
             Assert.Contains("\"label\":\"ha-dev\"", database);
             Assert.Contains("\"label\":\"shared\"", database);
             Assert.DoesNotContain("\"label\":\"he-dev\"", database);
+        }
+        finally
+        {
+            if (previousSettings is null)
+            {
+                File.Delete(AppPaths.UserSettingsPath);
+            }
+            else
+            {
+                File.WriteAllText(AppPaths.UserSettingsPath, previousSettings);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Completion_sources_filter_workspace_value_across_workspace_commands()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dw-live-completion-workspace-commands-test-" + Guid.NewGuid().ToString("N"));
+        var previousSettings = File.Exists(AppPaths.UserSettingsPath)
+            ? File.ReadAllText(AppPaths.UserSettingsPath)
+            : null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(AppPaths.UserSettingsPath)!);
+            File.WriteAllText(AppPaths.UserSettingsPath, $$"""
+{
+  "root": "{{root.Replace("\\", "\\\\", StringComparison.Ordinal)}}"
+}
+""");
+            Directory.CreateDirectory(Path.Combine(root, "config"));
+            File.WriteAllText(Path.Combine(root, "config", "projects.json"), """
+{
+  "schema": 1,
+  "projects": {
+    "ha": {
+      "displayName": "HA",
+      "repositories": {
+        "front": { "url": "", "defaultBranch": "develop" }
+      }
+    },
+    "he": {
+      "displayName": "HE",
+      "repositories": {
+        "back": { "url": "", "defaultBranch": "main" }
+      }
+    }
+  }
+}
+""");
+            Directory.CreateDirectory(Path.Combine(root, "projects", "ha", "workspaces", "feat-123-demo"));
+            Directory.CreateDirectory(Path.Combine(root, "projects", "he", "workspaces", "feat-456-demo"));
+            File.WriteAllText(Path.Combine(root, "projects", "ha", "workspaces", "feat-123-demo", "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(
+                1, "123", null, "ha", "feat", "demo", "feat/123-demo", DateTimeOffset.UtcNow, ["front"], "created", WorkItems: [new WorkspaceWorkItem("123", "User Story", "Titre HA", "En réalisation")])));
+            File.WriteAllText(Path.Combine(root, "projects", "he", "workspaces", "feat-456-demo", "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(
+                1, "456", null, "he", "feat", "demo", "feat/456-demo", DateTimeOffset.UtcNow, ["back"], "created", WorkItems: [new WorkspaceWorkItem("456", "User Story", "Titre HE", "En réalisation")])));
+
+            var commands = new[]
+            {
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "task", "sync", "--project", "ha", "--workspace" },
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "task", "rename", "--project", "ha", "--workspace" },
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "task", "teardown", "123", "--project", "ha", "--workspace" },
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "task", "create-child-task", "--project", "ha", "--workspace" },
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "agent", "open", "123", "--project", "ha", "--workspace" }
+            };
+
+            foreach (var command in commands)
+            {
+                var (_, output, _) = await CaptureConsole(() => App.RunAsync(command));
+                Assert.Contains("feat-123-demo", output);
+                Assert.DoesNotContain("feat-456-demo", output);
+            }
+        }
+        finally
+        {
+            if (previousSettings is null)
+            {
+                File.Delete(AppPaths.UserSettingsPath);
+            }
+            else
+            {
+                File.WriteAllText(AppPaths.UserSettingsPath, previousSettings);
+            }
+
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Completion_sources_filter_work_item_value_across_workspace_commands()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "dw-live-completion-workitem-commands-test-" + Guid.NewGuid().ToString("N"));
+        var previousSettings = File.Exists(AppPaths.UserSettingsPath)
+            ? File.ReadAllText(AppPaths.UserSettingsPath)
+            : null;
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(AppPaths.UserSettingsPath)!);
+            File.WriteAllText(AppPaths.UserSettingsPath, $$"""
+{
+  "root": "{{root.Replace("\\", "\\\\", StringComparison.Ordinal)}}"
+}
+""");
+            Directory.CreateDirectory(Path.Combine(root, "config"));
+            File.WriteAllText(Path.Combine(root, "config", "projects.json"), """
+{
+  "schema": 1,
+  "projects": {
+    "ha": {
+      "displayName": "HA",
+      "repositories": {
+        "front": { "url": "", "defaultBranch": "develop" }
+      }
+    },
+    "he": {
+      "displayName": "HE",
+      "repositories": {
+        "back": { "url": "", "defaultBranch": "main" }
+      }
+    }
+  }
+}
+""");
+            Directory.CreateDirectory(Path.Combine(root, "projects", "ha", "workspaces", "feat-123-demo"));
+            Directory.CreateDirectory(Path.Combine(root, "projects", "he", "workspaces", "feat-456-demo"));
+            File.WriteAllText(Path.Combine(root, "projects", "ha", "workspaces", "feat-123-demo", "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(
+                1, "123", null, "ha", "feat", "demo", "feat/123-demo", DateTimeOffset.UtcNow, ["front"], "created", WorkItems: [new WorkspaceWorkItem("123", "User Story", "Titre HA", "En réalisation")])));
+            File.WriteAllText(Path.Combine(root, "projects", "he", "workspaces", "feat-456-demo", "task.json"), WorkspaceManifestWriter.Serialize(new WorkspaceManifest(
+                1, "456", null, "he", "feat", "demo", "feat/456-demo", DateTimeOffset.UtcNow, ["back"], "created", WorkItems: [new WorkspaceWorkItem("456", "User Story", "Titre HE", "En réalisation")])));
+
+            var commands = new[]
+            {
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "task", "sync", "--project", "ha", "--work-item" },
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "task", "rename", "--project", "ha", "--work-item" },
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "task", "teardown", "--project", "ha", "--work-item" },
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "task", "create-child-task", "--project", "ha", "--work-item" },
+                new[] { "completion", "suggest", "--format", "json", "--empty-token", "agent", "open", "--project", "ha", "--work-item" }
+            };
+
+            foreach (var command in commands)
+            {
+                var (_, output, _) = await CaptureConsole(() => App.RunAsync(command));
+                Assert.Contains("\"label\":\"123\"", output);
+                Assert.DoesNotContain("\"label\":\"456\"", output);
+            }
         }
         finally
         {

@@ -16,7 +16,7 @@ internal static class DoctorCommand
         var commandCheckTasks = new[]
         {
             CheckCommand(context, "git", "--version", "Git", "Installer Git puis relancer dw doctor"),
-            CheckCommand(context, "dotnet", "--list-runtimes", ".NET 10 runtime", "Installer .NET 10 Runtime: https://dotnet.microsoft.com/download/dotnet/10.0", output => output.Contains("Microsoft.NETCore.App 10.", StringComparison.OrdinalIgnoreCase)),
+            CheckCommand(context, "dotnet", "--list-runtimes", ".NET 10 runtime", "Installer .NET 10 Runtime: https://dotnet.microsoft.com/download/dotnet/10.0", HasDotNet10Runtime),
             CheckNodePackageManager(context),
             CheckCommand(context, "opencode", "--version", "OpenCode", "Installer OpenCode selon la procedure d'equipe, puis verifier le PATH")
         };
@@ -98,6 +98,15 @@ internal static class DoctorCommand
 
         return new DoctorCheck("pnpm/npm", false, null, remediation);
     }
+
+    internal static bool HasDotNet10Runtime(string output)
+        => (output ?? string.Empty)
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => line.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Any(parts => parts.Length >= 2
+                && string.Equals(parts[0], "Microsoft.NETCore.App", StringComparison.OrdinalIgnoreCase)
+                && parts[1].Contains("10.", StringComparison.Ordinal));
 
     private static DoctorCheck CheckDefaultAgent(CommandContext context, string root)
     {

@@ -46,6 +46,7 @@ public sealed class InitCommandTests
             Assert.Contains("initial project setup", opencodeInstructions);
             Assert.Contains("plan.md", opencodeInstructions);
             Assert.Contains("dw task commit", opencodeInstructions);
+            Assert.Contains("Write all user-facing and project-facing text in French", opencodeInstructions);
             Assert.Contains("do not use Azure DevOps MCP tools", opencodeInstructions);
             Assert.Contains("Use `dw` commands for ADO lifecycle", opencodeInstructions);
             Assert.DoesNotContain("skills", opencodeInstructions, StringComparison.OrdinalIgnoreCase);

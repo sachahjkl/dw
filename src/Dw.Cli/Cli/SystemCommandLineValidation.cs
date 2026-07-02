@@ -17,11 +17,14 @@ internal static partial class SystemCommandLineApp
                 break;
             case ("task", "sync"):
             case ("task", "rename"):
-            case ("task", "teardown"):
             case ("task", "add-work-item"):
             case ("task", "create-child-task"):
+            case ("task", "repo-latest"):
             case ("task", "remove-work-item"):
                 EnsureWorkspaceSelectionIsUnambiguous(parse);
+                break;
+            case ("task", "teardown"):
+                EnsureWorkspaceSelectionIsUnambiguous(parse, positionalArgumentName: "work-item-id");
                 break;
             case ("task", "commit"):
                 EnsureMutuallyExclusive(parse, OptionNames.Workspace, OptionNames.Continue);

@@ -150,6 +150,30 @@ public sealed class AdoCommandTests
     }
 
     [Fact]
+    public async Task CreateWorkItem_can_assign_to_me_when_requested_in_patch()
+    {
+        var handler = new TestAzureDevOpsHttpHandler();
+        handler.SetupPost(
+            "$Task?api-version=",
+            HttpStatusCode.OK,
+            """
+            {"id":55201}
+            """);
+
+        using var httpClient = new HttpClient(handler);
+        var client = new AzureDevOpsClient(httpClient, DefaultOptions);
+
+        using var _ = await client.CreateWorkItemAsync("Task",
+            [
+                new JsonPatchOperation("add", "/fields/System.Title", "[FRONT] Ajouter le formulaire"),
+                new JsonPatchOperation("add", "/fields/System.AssignedTo", "@Me")
+            ],
+            DefaultToken);
+
+        Assert.Contains(handler.CapturedBodies, body => body.Contains("System.AssignedTo", StringComparison.Ordinal) && body.Contains("@Me", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DescribeRelationTarget_includes_attachment_url_next_to_name()
     {
         var target = AdoCommand.DescribeRelationTarget("AttachedFile", relatedId: null, artifact: null, name: "demande de transport somotha maquette.png", url: "https://dev.azure.com/org/_apis/wit/attachments/123");

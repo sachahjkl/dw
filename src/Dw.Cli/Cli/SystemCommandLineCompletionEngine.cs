@@ -2,12 +2,13 @@ namespace Dw.Cli.Cli;
 
 internal static partial class SystemCommandLineApp
 {
-    private sealed record CompletionFilters(string? Project, WorkItemSet? WorkItems, string? Token);
+    private sealed record CompletionFilters(string? Project, WorkItemSet? WorkItems, string? Workspace, string? Token);
 
     private static CompletionFilters Filters(ParseResult? parseResult, string? token = null, bool includeWorkItems = true)
         => new(
             parseResult?.GetValue<string>(OptionNames.Project),
             includeWorkItems ? WorkItemSet.ParseOptional(parseResult?.GetValue<string>(OptionNames.WorkItem)) : null,
+            parseResult?.GetValue<string>(OptionNames.Workspace),
             token);
 
     private static IEnumerable<CompletionItem> CompleteProjects(CommandContext context)
@@ -34,6 +35,29 @@ internal static partial class SystemCommandLineApp
             .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
             .Select(group => Item(group.Key, string.Join(", ", group.Select(repository => $"{repository.Project}/{repository.Folder ?? repository.Key}"))));
 
+    private static IEnumerable<CompletionItem> CompleteWorkspaceRepositories(CommandContext context, CompletionFilters filters)
+    {
+        IEnumerable<WorkspaceSummary> workspaces;
+        if (!string.IsNullOrWhiteSpace(filters.Workspace))
+        {
+            var manifest = WorkspaceManifestReader.Read(context.FileSystem, Path.Combine(filters.Workspace, "task.json"));
+            workspaces = [new WorkspaceSummary(filters.Workspace, manifest)];
+        }
+        else
+        {
+            workspaces = WorkspaceDiscoveryService.Filter(
+                WorkspaceDiscoveryService.FindWorkspaces(context.FileSystem, Root(context)),
+                filters.Project,
+                filters.WorkItems);
+        }
+
+        return workspaces
+            .SelectMany(workspace => workspace.Manifest.Repositories.Select(repository => new { Repository = repository, workspace.Manifest.Project }))
+            .GroupBy(entry => entry.Repository, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => Item(group.Key, string.Join(", ", group.Select(entry => entry.Project))));
+    }
+
     private static IEnumerable<CompletionItem> CompleteWorkItems(CommandContext context, CompletionFilters filters)
         => PrefixForMultiValue(WorkspaceWorkItemCompletions(context, filters)
             .Concat(AssignedWorkItemCompletions(context, filters))
@@ -53,6 +77,11 @@ internal static partial class SystemCommandLineApp
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .Select(name => Item(name, "Base configuree dans databases.json"));
     }
+
+    private static IEnumerable<CompletionItem> CompleteRepositorySelection(CommandContext context, CompletionFilters filters, bool workspaceScoped)
+        => PrefixForMultiValue(
+            workspaceScoped ? CompleteWorkspaceRepositories(context, filters) : CompleteRepositories(context, filters),
+            filters.Token);
 
     private static IEnumerable<CompletionItem> WorkspaceWorkItemCompletions(CommandContext context, CompletionFilters filters)
         => WorkspaceDiscoveryService.Filter(

@@ -43,7 +43,7 @@ internal static partial class TaskCommand
         return 0;
     }
 
-    private static string ResolveWorkspacePath(CommandContext context, string? workspace, bool useLatestWorkspace)
+    internal static string ResolveWorkspacePathForWorkspaceCommand(CommandContext context, string? workspace, bool useLatestWorkspace)
     {
         if (!string.IsNullOrWhiteSpace(workspace))
         {
@@ -60,7 +60,10 @@ internal static partial class TaskCommand
                ?? throw new DwException("Aucun workspace task trouve depuis le dossier courant. Utiliser --workspace ou --continue.", 2);
     }
 
-    private static ProjectConfig? ResolveProjectConfig(CommandContext context, string project)
+    private static string ResolveWorkspacePath(CommandContext context, string? workspace, bool useLatestWorkspace)
+        => ResolveWorkspacePathForWorkspaceCommand(context, workspace, useLatestWorkspace);
+
+    internal static ProjectConfig? ResolveProjectConfig(CommandContext context, string project)
     {
         var root = UserSettingsStore.Load(context.FileSystem).Root ?? AppPaths.DefaultRoot;
         var projects = DevWorkflowConfigLoader.Load(context.FileSystem, root);
@@ -180,6 +183,7 @@ internal static partial class TaskCommand
             using var document = adoContext.Client.CreateWorkItemAsync("Task",
                 [
                     new JsonPatchOperation("add", "/fields/System.Title", title),
+                    new JsonPatchOperation("add", "/fields/System.AssignedTo", "@Me"),
                     new JsonPatchOperation("add", "/fields/System.History", DevWorkflowTraceComment(parent.Id, repository, source)),
                     new JsonPatchOperation("add", "/relations/-", new WorkItemRelationRef(
                         "System.LinkTypes.Hierarchy-Reverse",

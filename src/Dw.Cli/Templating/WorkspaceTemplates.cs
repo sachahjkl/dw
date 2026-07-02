@@ -24,11 +24,12 @@ Rules:
 7. If the primary work item is a `User Story` or an `Anomalie`, once `plan.md` is complete and before implementation starts, create at least one ADO child task, then as many as needed from the plan, with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
 8. Multiple child tasks can target the same domain/repo when the plan needs it, for example several `front` tasks.
 9. For these child tasks, use explicit French titles without the prefix in the command. `dw` adds the prefix automatically, for example `[FRONT] Ajouter le formulaire`, `[BACK] Ajouter endpoint`, `[DB] Ajouter vue`, `[FOO] Faire ...`.
-10. Do not skip this child-task creation step for `User Story` / `Anomalie`: the plan must drive the child-task breakdown before implementation.
-11. Use `dw task sync --continue` before lifecycle decisions if the local ADO context may be stale.
-12. Use `dw task commit` for intermediate commits.
-13. Use `dw task finish` for final push/PR workflows.
-14. Use `dw task teardown` or `dw task prune` for cleanup.
+10. Write all user-facing and project-facing text in French: plans, comments, commit/PR text, task titles, progress summaries and final explanations. Internal reasoning can stay in any language.
+11. Do not skip this child-task creation step for `User Story` / `Anomalie`: the plan must drive the child-task breakdown before implementation.
+12. Use `dw task sync --continue` before lifecycle decisions if the local ADO context may be stale.
+13. Use `dw task commit` for intermediate commits.
+14. Use `dw task finish` for final push/PR workflows.
+15. Use `dw task teardown` or `dw task prune` for cleanup.
 """;
 
     public static string WorkspaceClaudeMd(IReadOnlyList<WorkspaceWorkItem> workItems, string project)

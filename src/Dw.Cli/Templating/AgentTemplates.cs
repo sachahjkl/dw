@@ -20,9 +20,10 @@ Mandatory rules:
 9. For `User Story` and `Anomalie`, once `plan.md` is complete and before implementation starts, create at least one ADO child task, then as many as needed from the plan, with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
 10. Multiple child tasks can target the same domain/repo when the plan needs it, for example several `front` tasks.
 11. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
-12. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
-13. For API contract changes, always check both front and back.
-14. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
+12. Write all user-facing and project-facing text in French: plans, comments, commit/PR text, task titles, progress summaries and final explanations. Internal reasoning can stay in any language.
+13. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
+14. For API contract changes, always check both front and back.
+15. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
 """;
 
     public const string OpenCodeJsonc = """
@@ -57,11 +58,12 @@ Mandatory rules:
 9. For `User Story` and `Anomalie`, once `plan.md` is complete and before implementation starts, create at least one ADO child task, then as many as needed from the plan, with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
 10. Multiple child tasks can target the same domain/repo when the plan needs it, for example several `front` tasks.
 11. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
-12. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
-13. Use `dw` commands for ADO lifecycle, Git naming, worktrees, commits and PRs.
-14. For API contract changes, always check both front and back.
-15. Write ADO/PR/commit text in French unless a repository convention says otherwise.
-16. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
+12. Write all user-facing and project-facing text in French: plans, comments, commit/PR text, task titles, progress summaries and final explanations. Internal reasoning can stay in any language.
+13. If the local ADO context may be stale, use `dw task sync --continue` before acting on ADO state.
+14. Use `dw` commands for ADO lifecycle, Git naming, worktrees, commits and PRs.
+15. For API contract changes, always check both front and back.
+16. Write ADO/PR/commit text in French unless a repository convention says otherwise.
+17. Use `dw task commit` for intermediate commits and `dw task finish` for final push/PR.
 """;
 
     public const string BusinessOpenCodeJsonc = """
@@ -125,10 +127,11 @@ Important rules:
 7. For `User Story` and `Anomalie`, once `plan.md` is complete and before implementation starts, create at least one ADO child task, then as many as needed from the plan, with `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"`.
 8. Multiple child tasks can target the same domain/repo when the plan needs it, for example several `front` tasks.
 9. Child-task titles must be explicit and written without the prefix in the command; `dw` adds `[FRONT]`, `[BACK]`, `[DB]`, `[FOO]` automatically.
-10. Use `dw task sync --continue` if the local ADO context may be stale.
-11. Use the `dw` CLI for Azure DevOps and worktree operations. Do not use Azure DevOps MCP tools.
-12. Commits are created by `dw task commit` or `dw task finish`; do not create them manually.
-13. Branches and PR titles are created by `dw task start` and `dw task finish`; do not create them manually.
-14. Use `dw` for every ADO, Git naming, PR and worktree operation.
+10. Write all user-facing and project-facing text in French: plans, comments, commit/PR text, task titles, progress summaries and final explanations. Internal reasoning can stay in any language.
+11. Use `dw task sync --continue` if the local ADO context may be stale.
+12. Use the `dw` CLI for Azure DevOps and worktree operations. Do not use Azure DevOps MCP tools.
+13. Commits are created by `dw task commit` or `dw task finish`; do not create them manually.
+14. Branches and PR titles are created by `dw task start` and `dw task finish`; do not create them manually.
+15. Use `dw` for every ADO, Git naming, PR and worktree operation.
 """;
 }

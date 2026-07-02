@@ -220,7 +220,8 @@ internal static partial class SystemCommandLineApp
                     Flag(OptionNames.Continue, "Utilise le workspace le plus recent."),
                     Flag(OptionNames.Execute, "Execute vraiment l'action."),
                     Flag(OptionNames.Yes, "Confirme sans prompt.")
-                ]),
+                ],
+                Argument<string?>("work-item-id", "ID du work item a supprimer, ou liste separee par virgules.")),
             Subcommand("add-repo", "Ajoute un repo au workspace existant.", parse => TaskCommand.AddRepo(context, new TaskAddRepoOptions(parse.GetRequiredValue<string>("repo"), parse.GetValue<string>(OptionNames.Workspace))),
                 [WorkspaceOption(context, "Chemin explicite du workspace.")],
                 Argument<string>("repo", "Repo a ajouter.")),
@@ -235,6 +236,15 @@ internal static partial class SystemCommandLineApp
                     ProjectOption(context, "Projet dw."),
                     WorkItemOption(context, "Filtre work item ADO."),
                     Flag(OptionNames.Continue, "Utilise le workspace le plus recent.")
+                ]),
+            Subcommand("repo-latest", "Fetch la remote et rebase les repos du workspace courant sur leur upstream ou branche par defaut.", parse => TaskRepoLatestService.Run(context, new TaskRepoLatestOptions(
+                    parse.GetValue<string>(OptionNames.Workspace),
+                    parse.GetValue<bool>(OptionNames.Continue),
+                    parse.GetValue<string>(OptionNames.Only))),
+                [
+                    WorkspaceOption(context, "Chemin explicite du workspace."),
+                    Flag(OptionNames.Continue, "Utilise le workspace le plus recent."),
+                    Value(OptionNames.Only, "Repos du workspace a synchroniser, separes par virgule.")
                 ]),
             Subcommand("add-work-item", "Ajoute un ou plusieurs work items au workspace existant.", parse => TaskWorkItemService.Add(context, new TaskWorkItemUpdateOptions(parse.GetRequiredValue<string>("ids"), OpenOptions(parse))),
                 [
@@ -344,6 +354,7 @@ internal static partial class SystemCommandLineApp
             Project: parse.GetValue<string>(OptionNames.Project),
             WorkItemId: parse.GetValue<string>(OptionNames.WorkItem),
             Continue: parse.GetValue<bool>(OptionNames.Continue),
+            PositionalWorkItemId: parse.GetValue<string>("work-item-id"),
             Execute: parse.GetValue<bool>(OptionNames.Execute),
             Yes: parse.GetValue<bool>(OptionNames.Yes));
 

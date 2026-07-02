@@ -64,7 +64,7 @@ internal static class TaskSyncPruneService
             context.Out.WriteLine($"{candidate.Manifest.Project} / {DisplayWorkItems(candidate.Manifest.ParentWorkItems, includeState: true)}: {candidate.Path}");
             if (options.Execute)
             {
-                WorkspaceTeardownService.Teardown(context, new WorkspaceTeardownOptions(candidate.Path, null, null, Continue: false, Execute: true, Yes: options.Yes), root);
+                WorkspaceTeardownService.Teardown(context, new WorkspaceTeardownOptions(candidate.Path, null, null, Continue: false, PositionalWorkItemId: null, Execute: true, Yes: options.Yes), root);
             }
         }
 

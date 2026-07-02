@@ -184,6 +184,13 @@ internal static partial class SystemCommandLineApp
             return RepositoryCompletions(context, parse);
         }
 
+        if (string.Equals(valueOption, OptionNames.Only, StringComparison.OrdinalIgnoreCase))
+        {
+            return HasCommandPath(line, "task", "repo-latest")
+                ? CompleteRepositorySelection(context, filters, workspaceScoped: true)
+                : CompleteRepositorySelection(context, filters, workspaceScoped: false);
+        }
+
         if (string.Equals(valueOption, OptionNames.Database, StringComparison.OrdinalIgnoreCase))
         {
             return DatabaseCompletions(context, parse);
@@ -265,6 +272,7 @@ internal static partial class SystemCommandLineApp
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "create-child-task");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "create-child-task");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "create-child-task");
+        AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "repo-latest");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Project, line, "task", "remove-work-item");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.WorkItem, line, "task", "remove-work-item");
         AddExclusions(excluded, specifiedOptions, OptionNames.Workspace, OptionNames.Continue, line, "task", "remove-work-item");

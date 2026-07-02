@@ -8,8 +8,10 @@ public sealed class TestAzureDevOpsHttpHandler : HttpMessageHandler
 {
     private readonly List<(Predicate<HttpRequestMessage> Match, Func<HttpResponseMessage> CreateResponse)> _handlers = [];
     private readonly List<HttpRequestMessage> _capturedRequests = [];
+    private readonly List<string> _capturedBodies = [];
 
     public IReadOnlyList<HttpRequestMessage> CapturedRequests => _capturedRequests;
+    public IReadOnlyList<string> CapturedBodies => _capturedBodies;
 
     public void SetupGet(string pathContains, HttpStatusCode statusCode, string responseJson)
     {
@@ -34,6 +36,7 @@ public sealed class TestAzureDevOpsHttpHandler : HttpMessageHandler
         CancellationToken cancellationToken)
     {
         _capturedRequests.Add(request);
+        _capturedBodies.Add(request.Content is null ? string.Empty : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult());
         foreach (var (match, createResponse) in _handlers)
         {
             if (match(request))
