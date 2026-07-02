@@ -63,3 +63,10 @@
 - `dw init` writes schemas next to generated config
 - GitHub Actions .NET build/test/publish
 - GitHub Actions Nix flake check
+
+## Phase 7 - Rust Rewrite Bootstrap
+
+- dedicated `rust/` workspace kept side by side with `.NET`
+- Cargo workspace aligned with target architecture
+- Phase 0 feasibility notes for ADO, SQL, upgrade and Windows validation
+- no release cutover before parity gates are validated

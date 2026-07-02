@@ -122,8 +122,20 @@
         devShells.default = pkgs.mkShell {
           packages = [
             dotnet
+            pkgs.cargo
             pkgs.git
+            pkgs.rustc
+            pkgs.clippy
+            pkgs.rust-analyzer
+            pkgs.rustfmt
+            pkgs.openssl
+            pkgs.pkg-config
           ];
+
+          env = {
+            CARGO_TERM_COLOR = "always";
+            RUST_BACKTRACE = "1";
+          };
 
           shellHook = ''
             ${dotnetEnv}
@@ -135,6 +147,16 @@
             echo "  nix run .#publish-linux-x64"
             echo "  nix run .#set-version"
             echo "  nix run .#set-version -- 2026.06.20.2"
+            echo "  cargo run --manifest-path rust/Cargo.toml -p dw-cli -- version"
+            echo "  cargo test --manifest-path rust/Cargo.toml"
+            echo "  cargo fmt --all"
+            echo "  cargo clippy --workspace --all-targets"
+            echo ""
+            echo "Rust toolchain:"
+            echo "  rustc: $(rustc --version)"
+            echo "  cargo: $(cargo --version)"
+            echo "  rustfmt: $(rustfmt --version)"
+            echo "  clippy: $(cargo clippy --version)"
             echo ""
             echo "For release artifacts with explicit metadata:"
             echo "  nix develop -c env VERSION=2026.06.20.1 COMMIT=abc1234 bash ./scripts/publish-linux-x64.sh"

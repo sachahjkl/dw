@@ -29,6 +29,27 @@ This repository currently contains the first vertical slice:
 - reference skills under `docs/references`
 - command specification under `docs/architecture/010-command-spec.md`
 
+## Rust Rewrite
+
+The Rust rewrite lives under `rust/` during migration.
+
+- the current `.NET` implementation remains the reference behavior
+- the Rust workspace is developed side by side for parity checks
+- no large file move happens before the final cutover phase
+
+Current bootstrap scope under `rust/`:
+
+- Cargo workspace and target crate layout
+- Phase 0 feasibility notes and Windows checklist
+- minimal CLI seams for ADO auth-env detection and SQL readonly guard
+
+When Rust is available locally:
+
+```bash
+cargo run --manifest-path rust/Cargo.toml -p dw-cli -- version
+cargo run --manifest-path rust/Cargo.toml -p dw-cli -- phase0 status
+```
+
 ## Build
 
 ```powershell
