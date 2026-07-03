@@ -16,6 +16,8 @@ use dw_workspace::{
 };
 use std::path::Path;
 
+use crate::render::{print_styled, print_styled_lines};
+
 pub struct FinishArgs {
     pub workspace: Option<String>,
     pub r#continue: bool,
@@ -102,60 +104,29 @@ pub fn handle(args: FinishArgs) -> Result<()> {
         });
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        println!("Workspace: {workspace}");
-        println!("Branche: {}", manifest.branch_name);
-        for (target, status) in &statuses {
-            print_repository_status(&target.repository, status);
-        }
-        println!();
-        println!(
-            "Handoff validation: {}",
-            if handoff.is_valid { "OK" } else { "KO" }
-        );
-        for item in &handoff.items {
-            println!("- [{}] {}: {}", item.status, item.repository, item.message);
-        }
-        if !changed.is_empty() {
-            println!();
-            println!("Message: {commit_message}");
-        }
-        if create_pr {
-            println!();
-            if pull_request_candidates.is_empty() {
-                println!("PR: aucun depot candidat detecte.");
-            } else {
-                for candidate in &pull_request_candidates {
-                    println!(
-                        "PR: {} -> {}",
-                        candidate.repository, candidate.target_branch
-                    );
-                }
-            }
-        }
+        print_styled_lines(&finish_summary_lines(FinishSummary {
+            workspace: &workspace,
+            branch_name: &manifest.branch_name,
+            statuses: &statuses,
+            handoff: &handoff,
+            commit_message: &commit_message,
+            has_changes: !changed.is_empty(),
+            create_pr,
+            pull_request_candidates: &pull_request_candidates,
+        }));
     }
 
     if changed.is_empty() && unpushed.is_empty() && pull_request_candidates.is_empty() {
         if !json {
-            println!();
-            println!("Rien a terminer.");
+            print_styled("");
+            print_styled("Rien a terminer.");
         }
         return Ok(());
     }
     if !execute {
         if !json {
-            println!();
-            println!(
-                "{}",
-                if !create_pr {
-                    if changed.is_empty() {
-                        "Dry-run uniquement. Relancer avec --execute --skip-ado pour pousser."
-                    } else {
-                        "Dry-run uniquement. Relancer avec --execute --skip-ado pour committer/pousser."
-                    }
-                } else {
-                    "Dry-run uniquement. Relancer avec --execute pour pousser/creer PR."
-                }
-            );
+            print_styled("");
+            print_styled(finish_dry_run_hint(changed.is_empty(), create_pr));
         }
         return Ok(());
     }
@@ -189,27 +160,27 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             push_repository(&target.path, &manifest.branch_name)?;
         }
         if !json {
-            println!("Commits/push termines.");
+            print_styled("Commits/push termines.");
         }
     } else {
         for (target, _) in &unpushed {
             push_repository(&target.path, &manifest.branch_name)?;
         }
         if !json {
-            println!("Push termine.");
+            print_styled("Push termine.");
         }
     }
     if !create_pr {
         if !json {
-            println!("PR non creee. Relancer avec --create-pr pour ouvrir les PR ADO.");
+            print_styled("PR non creee. Relancer avec --create-pr pour ouvrir les PR ADO.");
         }
         return Ok(());
     }
 
     if !changed.is_empty() && !json {
-        println!("Commits/push termines. Creation PR en cours.");
+        print_styled("Commits/push termines. Creation PR en cours.");
     } else if changed.is_empty() && unpushed.is_empty() && !json {
-        println!("Aucun commit local a pousser. Verification PR en cours.");
+        print_styled("Aucun commit local a pousser. Verification PR en cours.");
     }
 
     let mut options = resolve_ado_options(&projects, &workflow, &manifest.project)?;
@@ -222,10 +193,10 @@ pub fn handle(args: FinishArgs) -> Result<()> {
 
     for candidate in &pull_request_candidates {
         let Some(ado_repository) = candidate.ado_repository.as_ref() else {
-            println!(
+            print_styled(&format!(
                 "PR ignoree pour {}: azureDevOpsRepository manquant.",
                 candidate.repository
-            );
+            ));
             continue;
         };
         if let Some(existing) = try_find_active_pull_request_authenticated(
@@ -234,11 +205,11 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             &source_ref,
             &token,
         )? {
-            println!(
+            print_styled(&format!(
                 "PR deja ouverte pour {}: {}",
                 candidate.repository,
                 existing.url.as_deref().unwrap_or("(url non retournee)")
-            );
+            ));
             continue;
         }
         let handoff_summary = read_handoff_summary(Path::new(&workspace), &candidate.repository)?;
@@ -267,18 +238,18 @@ pub fn handle(args: FinishArgs) -> Result<()> {
                     &id,
                     &token,
                 ) {
-                    println!(
+                    print_styled(&format!(
                         "Lien PR/work item deja demande a la creation, lien explicite ignore pour #{}: {}",
                         id, error
-                    );
+                    ));
                 }
             }
         }
-        println!(
+        print_styled(&format!(
             "PR creee pour {}: {}",
             candidate.repository,
             created.url.as_deref().unwrap_or("(url non retournee)")
-        );
+        ));
     }
 
     if finish_options.update_work_item_state {
@@ -301,11 +272,11 @@ pub fn handle(args: FinishArgs) -> Result<()> {
                     .unwrap_or_default()
             );
             let Some(state) = state else {
-                println!(
+                print_styled(&format!(
                     "ADO item {}: etat inchange ({}).",
                     label,
                     item.kind.as_deref().unwrap_or("type inconnu")
-                );
+                ));
                 continue;
             };
             if item
@@ -313,7 +284,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
                 .as_deref()
                 .is_some_and(|current| current.eq_ignore_ascii_case(&state))
             {
-                println!("ADO item {label}: deja en etat {state}.");
+                print_styled(&format!("ADO item {label}: deja en etat {state}."));
                 continue;
             }
             update_work_item_state_authenticated(
@@ -323,26 +294,193 @@ pub fn handle(args: FinishArgs) -> Result<()> {
                 "dw task finish: PR ouverte",
                 &token,
             )?;
-            println!("ADO item {label}: etat -> {state}");
+            print_styled(&format!("ADO item {label}: etat -> {state}"));
         }
     }
 
     Ok(())
 }
 
-fn print_repository_status(repository: &str, status: &dw_git::RepositoryStatus) {
-    println!();
-    println!("[{repository}] {}", status.path);
-    if !status.is_git_repository {
-        println!("Pas un repo Git utilisable.");
-    } else if status.has_changes {
-        println!("Changements detectes:");
-    } else if status.has_unpushed {
-        println!("Commits non pousses.");
-    } else {
-        println!("Aucun changement.");
+struct FinishSummary<'a> {
+    workspace: &'a str,
+    branch_name: &'a str,
+    statuses: &'a [(&'a dw_workspace::TaskCommitTarget, dw_git::RepositoryStatus)],
+    handoff: &'a dw_contracts::TaskHandoffValidationReport,
+    commit_message: &'a str,
+    has_changes: bool,
+    create_pr: bool,
+    pull_request_candidates: &'a [dw_workspace::PullRequestCandidate],
+}
+
+fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
+    let mut lines = vec![
+        format!("Workspace: {}", summary.workspace),
+        format!("Branche: {}", summary.branch_name),
+    ];
+
+    for (target, status) in summary.statuses {
+        lines.extend(repository_status_lines(&target.repository, status));
     }
+
+    lines.push(String::new());
+    lines.push(format!(
+        "Handoff validation: {}",
+        if summary.handoff.is_valid { "OK" } else { "KO" }
+    ));
+    for item in &summary.handoff.items {
+        lines.push(format!(
+            "- [{}] {}: {}",
+            item.status, item.repository, item.message
+        ));
+    }
+    if summary.has_changes {
+        lines.push(String::new());
+        lines.push(format!("Message: {}", summary.commit_message));
+    }
+    if summary.create_pr {
+        lines.push(String::new());
+        if summary.pull_request_candidates.is_empty() {
+            lines.push("PR: aucun depot candidat detecte.".into());
+        } else {
+            for candidate in summary.pull_request_candidates {
+                lines.push(format!(
+                    "PR: {} -> {}",
+                    candidate.repository, candidate.target_branch
+                ));
+            }
+        }
+    }
+
+    lines
+}
+
+fn repository_status_lines(repository: &str, status: &dw_git::RepositoryStatus) -> Vec<String> {
+    let mut lines = vec![
+        String::new(),
+        format!("[{repository}] {}", status.path),
+        repository_status_label(status).into(),
+    ];
     if !status.detail.trim().is_empty() {
-        println!("{}", status.detail);
+        lines.push(status.detail.clone());
+    }
+    lines
+}
+
+fn repository_status_label(status: &dw_git::RepositoryStatus) -> &'static str {
+    if !status.is_git_repository {
+        "Pas un repo Git utilisable."
+    } else if status.has_changes {
+        "Changements detectes:"
+    } else if status.has_unpushed {
+        "Commits non pousses."
+    } else {
+        "Aucun changement."
+    }
+}
+
+fn finish_dry_run_hint(no_changes: bool, create_pr: bool) -> &'static str {
+    if create_pr {
+        "Dry-run uniquement. Relancer avec --execute pour pousser/creer PR."
+    } else if no_changes {
+        "Dry-run uniquement. Relancer avec --execute --skip-ado pour pousser."
+    } else {
+        "Dry-run uniquement. Relancer avec --execute --skip-ado pour committer/pousser."
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dw_contracts::{
+        HANDOFF_VALIDATION_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport,
+    };
+
+    #[test]
+    fn finish_dry_run_hint_matches_action() {
+        assert_eq!(
+            finish_dry_run_hint(false, false),
+            "Dry-run uniquement. Relancer avec --execute --skip-ado pour committer/pousser."
+        );
+        assert_eq!(
+            finish_dry_run_hint(true, false),
+            "Dry-run uniquement. Relancer avec --execute --skip-ado pour pousser."
+        );
+        assert_eq!(
+            finish_dry_run_hint(false, true),
+            "Dry-run uniquement. Relancer avec --execute pour pousser/creer PR."
+        );
+    }
+
+    #[test]
+    fn repository_status_lines_include_detail_when_present() {
+        let status = dw_git::RepositoryStatus {
+            path: "/tmp/repo".into(),
+            is_git_repository: true,
+            has_changes: true,
+            has_unpushed: false,
+            detail: " M src/lib.rs".into(),
+        };
+
+        let lines = repository_status_lines("front", &status);
+
+        assert!(lines.contains(&"[front] /tmp/repo".into()));
+        assert!(lines.contains(&"Changements detectes:".into()));
+        assert!(lines.contains(&" M src/lib.rs".into()));
+    }
+
+    #[test]
+    fn finish_summary_lines_include_handoff_and_pr_candidates() {
+        let target = dw_workspace::TaskCommitTarget {
+            repository: "front".into(),
+            path: "/tmp/repo".into(),
+        };
+        let status = dw_git::RepositoryStatus {
+            path: "/tmp/repo".into(),
+            is_git_repository: true,
+            has_changes: true,
+            has_unpushed: false,
+            detail: String::new(),
+        };
+        let statuses = vec![(&target, status)];
+        let handoff = TaskHandoffValidationReport {
+            schema_version: HANDOFF_VALIDATION_VERSION.into(),
+            workspace: "/tmp/ws".into(),
+            project: "ha".into(),
+            is_valid: true,
+            items: vec![TaskHandoffValidationItem {
+                repository: "front".into(),
+                path: "/tmp/ws/handoff-front.md".into(),
+                status: "done".into(),
+                valid: true,
+                message: "OK".into(),
+                done_count: 1,
+                decision_count: 0,
+                risk_count: 0,
+                blocker_count: 0,
+                follow_up_count: 0,
+            }],
+        };
+        let pull_request_candidates = vec![dw_workspace::PullRequestCandidate {
+            repository: "front".into(),
+            path: "/tmp/repo".into(),
+            ado_repository: Some("front".into()),
+            target_branch: "develop".into(),
+        }];
+
+        let lines = finish_summary_lines(FinishSummary {
+            workspace: "/tmp/ws",
+            branch_name: "feat/42-demo",
+            statuses: &statuses,
+            handoff: &handoff,
+            commit_message: "feat(42): demo",
+            has_changes: true,
+            create_pr: true,
+            pull_request_candidates: &pull_request_candidates,
+        });
+
+        assert!(lines.contains(&"Handoff validation: OK".into()));
+        assert!(lines.contains(&"- [done] front: OK".into()));
+        assert!(lines.contains(&"Message: feat(42): demo".into()));
+        assert!(lines.contains(&"PR: front -> develop".into()));
     }
 }
