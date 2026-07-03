@@ -12,10 +12,7 @@ use catalog::{
     option_allowed, option_requires_value, options_for_path, root_command_labels,
     subcommands_for_path,
 };
-use values::{
-    database_values, env_values, project_values, repository_values, work_item_values,
-    workspace_values,
-};
+use values::{database_values, env_values, project_values};
 
 pub fn generate_completion(shell: Shell) {
     let mut command = Cli::command();
@@ -126,15 +123,20 @@ fn complete_option_value(option: &str, words: &[String], current: &str) -> Vec<C
     let root = option_value(words, "--root").unwrap_or_else(|| resolve_root(None));
     let values = match option {
         "--project" => project_values(&root),
-        "--repo" | "--only" => {
-            repository_values(&root, option_value(words, "--project").as_deref(), words)
-        }
-        "--workspace" => workspace_values(
+        "--repo" | "--only" => dw_task::completion::repository_values(
+            &root,
+            option_value(words, "--project").as_deref(),
+            option_value(words, "--workspace").as_deref(),
+        ),
+        "--workspace" => dw_task::completion::workspace_values(
             &root,
             option_value(words, "--project").as_deref(),
             option_value(words, "--work-item").as_deref(),
         ),
-        "--work-item" => work_item_values(&root, option_value(words, "--project").as_deref()),
+        "--work-item" => dw_task::completion::work_item_values(
+            &root,
+            option_value(words, "--project").as_deref(),
+        ),
         "--database" => database_values(&root, option_value(words, "--project").as_deref()),
         "--env" => env_values(&root, option_value(words, "--project").as_deref()),
         "--max-rows" => vec!["50".into(), "100".into(), "500".into(), "1000".into()],
