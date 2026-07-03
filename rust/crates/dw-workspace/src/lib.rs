@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 mod finish;
+mod start;
 mod templates;
 
 pub use finish::{
@@ -23,6 +24,7 @@ pub use finish::{
     read_handoff_summary, read_plan, run_verification, select_pull_request_candidates,
     structured_handoff_section, task_finish_options,
 };
+pub use start::{TaskStartOptions, start_state, task_start_options};
 use templates::{handoff_markdown, plan_markdown};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -1,16 +1,17 @@
 use crate::write_workspace_agent_configs;
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
-use dw_ado::auth::require_token;
+use dw_ado::update_work_item_state_authenticated;
+use dw_ado::{AzureDevOpsOptions, auth::AdoToken, auth::require_token};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_workspace::{
-    TaskStartPlan, TaskStartRequest, execute_task_start, execute_task_start_with_work_items,
-    plan_task_start,
+    TaskStartOptions, TaskStartPlan, TaskStartRequest, WorkspaceWorkItem, execute_task_start,
+    execute_task_start_with_work_items, plan_task_start, start_state, task_start_options,
 };
 
 use self::ado::load_start_work_items;
 use self::interactive::{interactive_repositories, interactive_start_selection};
-use crate::render::print_styled_lines;
+use crate::render::{print_styled, print_styled_lines};
 
 mod ado;
 mod interactive;
@@ -52,7 +53,7 @@ pub fn handle(args: StartArgs) -> Result<()> {
     let project = selection.project;
     let selected_work_item_id = selection.work_item_id;
     let only = interactive_repositories(only, &projects, project.as_deref());
-    let ado_work_items = if skip_ado {
+    let ado_context = if skip_ado {
         None
     } else if with_active_children || execute {
         let project_key = project.as_deref().unwrap_or("default");
@@ -61,11 +62,16 @@ pub fn handle(args: StartArgs) -> Result<()> {
             ado_options.project = project_key.to_string();
         }
         let token = require_token(load_auth_options(Some(&root))?)?;
+        Some((ado_options, token))
+    } else {
+        None
+    };
+    let ado_work_items = if let Some((ado_options, token)) = ado_context.as_ref() {
         Some(load_start_work_items(
-            &ado_options,
+            ado_options,
             &selected_work_item_id,
             with_active_children,
-            &token,
+            token,
         )?)
     } else {
         None
@@ -111,6 +117,10 @@ pub fn handle(args: StartArgs) -> Result<()> {
                     })
                     .collect()
             };
+            if let Some((ado_options, token)) = ado_context.as_ref() {
+                let start_options = task_start_options(&workflow);
+                update_start_states(ado_options, token, &work_items, &start_options)?;
+            }
             execute_task_start_with_work_items(&plan, work_items)?
         };
         write_workspace_agent_configs(&plan.workspace, &manifest)?;
@@ -120,6 +130,52 @@ pub fn handle(args: StartArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn update_start_states(
+    options: &AzureDevOpsOptions,
+    token: &AdoToken,
+    work_items: &[WorkspaceWorkItem],
+    start_options: &TaskStartOptions,
+) -> Result<()> {
+    if !start_options.update_work_item_state {
+        return Ok(());
+    }
+
+    for item in work_items {
+        let Some(state) = start_state(item.kind.as_deref(), start_options) else {
+            continue;
+        };
+        if item
+            .state
+            .as_deref()
+            .is_some_and(|current| current.eq_ignore_ascii_case(&state))
+        {
+            continue;
+        }
+        update_work_item_state_authenticated(options, &item.id, &state, "dw task start", token)?;
+        print_styled(&format!(
+            "ADO item {}: état -> {}",
+            display_workspace_work_item(item),
+            state
+        ));
+    }
+    Ok(())
+}
+
+fn display_workspace_work_item(item: &WorkspaceWorkItem) -> String {
+    format!(
+        "#{}{}{}",
+        item.id,
+        item.kind
+            .as_ref()
+            .map(|kind| format!(" [{kind}]"))
+            .unwrap_or_default(),
+        item.title
+            .as_ref()
+            .map(|title| format!(" {title}"))
+            .unwrap_or_default()
+    )
 }
 
 fn planned_workspace_lines(plan: &TaskStartPlan) -> Vec<String> {
@@ -193,6 +249,21 @@ mod tests {
             lines
                 .iter()
                 .any(|line| line.starts_with("Prochaine étape conseillée"))
+        );
+    }
+
+    #[test]
+    fn display_workspace_work_item_includes_type_and_title() {
+        let item = WorkspaceWorkItem {
+            id: "42".into(),
+            kind: Some("Bug".into()),
+            title: Some("Corriger l'export".into()),
+            state: Some("Nouveau".into()),
+        };
+
+        assert_eq!(
+            display_workspace_work_item(&item),
+            "#42 [Bug] Corriger l'export"
         );
     }
 }
