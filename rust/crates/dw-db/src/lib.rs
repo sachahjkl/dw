@@ -1,3 +1,4 @@
+pub mod commands;
 mod config;
 mod guard;
 mod query;

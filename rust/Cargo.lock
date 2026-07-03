@@ -1270,6 +1270,7 @@ dependencies = [
 name = "dw-db"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "dw-config",
  "dw-secret",
  "serde",
