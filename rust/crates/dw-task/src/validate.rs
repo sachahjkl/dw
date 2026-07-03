@@ -103,7 +103,11 @@ pub fn handoff_validate(args: HandoffValidateArgs) -> Result<()> {
 
 fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     let mut lines = vec![
-        format!("Preflight workspace: {}", report.workspace),
+        format!(
+            "Preflight: {}",
+            validation_status_label(!report.has_blocking_issues)
+        ),
+        format!("Workspace: {}", report.workspace),
         format!("Projet: {}", report.project),
         format!(
             "Work items: {}",
@@ -118,14 +122,19 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     ];
 
     if report.issues.is_empty() {
-        lines.push("Aucun warning ni blocage détecté.".into());
+        lines.push("✓ Aucun warning ni blocage détecté.".into());
         return lines;
     }
 
+    lines.push(format!("Issues: {}", report.issues.len()));
+    lines.push(String::new());
     for issue in &report.issues {
         lines.push(format!(
-            "- [{}] {}: {}",
-            issue.severity, issue.code, issue.message
+            "{} [{}] {}: {}",
+            severity_icon(&issue.severity),
+            issue.severity,
+            issue.code,
+            issue.message
         ));
         if let Some(details) = &issue.details {
             lines.push(format!("  {details}"));
@@ -145,15 +154,27 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
 
 fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String> {
     let mut lines = vec![
-        format!("Handoff validation: {}", report.workspace),
+        format!(
+            "Handoff validation: {}",
+            validation_status_label(report.is_valid)
+        ),
+        format!("Workspace: {}", report.workspace),
         format!("Projet: {}", report.project),
+        format!(
+            "Handoffs: {}/{} valides",
+            report.items.iter().filter(|item| item.valid).count(),
+            report.items.len()
+        ),
         String::new(),
     ];
 
     for item in &report.items {
         lines.push(format!(
-            "- [{}] {}: {}",
-            item.status, item.repository, item.message
+            "{} [{}] {}: {}",
+            handoff_status_icon(&item.status, item.valid),
+            item.status,
+            item.repository,
+            item.message
         ));
         if item.valid {
             lines.push(format!(
@@ -175,6 +196,29 @@ fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String>
     }
 
     lines
+}
+
+fn validation_status_label(valid: bool) -> &'static str {
+    if valid { "✓ OK" } else { "✕ À corriger" }
+}
+
+fn severity_icon(severity: &str) -> &'static str {
+    match severity.to_ascii_lowercase().as_str() {
+        "blocking" | "error" => "✕",
+        "warning" | "warn" => "!",
+        _ => "-",
+    }
+}
+
+fn handoff_status_icon(status: &str, valid: bool) -> &'static str {
+    if valid {
+        return "✓";
+    }
+    match status.to_ascii_lowercase().as_str() {
+        "missing" | "invalid" | "blocked" => "✕",
+        "todo" | "in_progress" => "!",
+        _ => "-",
+    }
 }
 
 fn discover_ai_context_files(workspace: &str) -> Vec<String> {
@@ -233,8 +277,10 @@ mod tests {
 
         let lines = preflight_lines(&report);
 
-        assert_eq!(lines[0], "Preflight workspace: /tmp/ws");
-        assert!(lines.contains(&"- [blocking] missing_attachment: Piece jointe manquante".into()));
+        assert_eq!(lines[0], "Preflight: ✕ À corriger");
+        assert!(lines.contains(&"Workspace: /tmp/ws".into()));
+        assert!(lines.contains(&"Issues: 1".into()));
+        assert!(lines.contains(&"✕ [blocking] missing_attachment: Piece jointe manquante".into()));
         assert!(lines.contains(
             &"Blocages détectés: demander confirmation utilisateur avant de forcer l'implémentation."
                 .into()
@@ -264,7 +310,9 @@ mod tests {
 
         let lines = handoff_validation_lines(&report);
 
-        assert!(lines.contains(&"- [done] front: OK".into()));
+        assert_eq!(lines[0], "Handoff validation: ✕ À corriger");
+        assert!(lines.contains(&"Handoffs: 1/1 valides".into()));
+        assert!(lines.contains(&"✓ [done] front: OK".into()));
         assert!(lines.contains(&"  done=2 decisions=1 risks=0 blockers=0 follow_up=1".into()));
         assert!(
             lines
