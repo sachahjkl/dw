@@ -3,6 +3,7 @@ use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::get_work_item_snapshots_authenticated;
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
+use dw_ui::multiselect_optional;
 use dw_workspace::{
     display_work_items, execute_work_item_update,
     parse_work_item_ids as parse_workspace_work_item_ids, plan_add_work_item_snapshots,
@@ -31,7 +32,7 @@ pub struct AddWorkItemArgs {
 
 #[derive(Debug, Clone)]
 pub struct RemoveWorkItemArgs {
-    pub work_item_ids: String,
+    pub work_item_ids: Option<String>,
     pub workspace: Option<String>,
     pub root: Option<String>,
     pub project: Option<String>,
@@ -186,6 +187,13 @@ pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
         positional_work_item.as_deref(),
         r#continue,
     )?;
+    let current_manifest = read_manifest_path(
+        &Path::new(&workspace)
+            .join("task.json")
+            .display()
+            .to_string(),
+    )?;
+    let work_item_ids = resolve_remove_work_item_ids(work_item_ids, &current_manifest, json)?;
     let (manifest, plan) = plan_remove_work_items(&root, &workspace, &work_item_ids)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
@@ -200,6 +208,73 @@ pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn resolve_remove_work_item_ids(
+    explicit: Option<String>,
+    manifest: &dw_workspace::WorkspaceManifest,
+    json: bool,
+) -> Result<String> {
+    if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
+        return Ok(ids);
+    }
+    if json {
+        return Err(anyhow::anyhow!(
+            "Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`."
+        ));
+    }
+
+    let choices = removable_work_item_choices(manifest);
+    let Some(selected) = multiselect_optional("Work items à retirer", choices)? else {
+        return Err(anyhow::anyhow!(
+            "Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`."
+        ));
+    };
+    if selected.is_empty() {
+        return Err(anyhow::anyhow!("Aucun work item sélectionné."));
+    }
+
+    Ok(selected
+        .iter()
+        .map(|label| work_item_id_from_choice(label))
+        .collect::<Vec<_>>()
+        .join(","))
+}
+
+fn removable_work_item_choices(manifest: &dw_workspace::WorkspaceManifest) -> Vec<String> {
+    manifest
+        .parent_work_items()
+        .iter()
+        .map(display_remove_work_item_choice)
+        .collect()
+}
+
+fn display_remove_work_item_choice(item: &dw_workspace::WorkspaceWorkItem) -> String {
+    format!(
+        "#{}{}{}{}",
+        item.id,
+        item.kind
+            .as_ref()
+            .map(|kind| format!(" [{kind}]"))
+            .unwrap_or_default(),
+        item.state
+            .as_ref()
+            .map(|state| format!(" ({state})"))
+            .unwrap_or_default(),
+        item.title
+            .as_ref()
+            .map(|title| format!(" {title}"))
+            .unwrap_or_default()
+    )
+}
+
+fn work_item_id_from_choice(label: &str) -> String {
+    label
+        .trim_start_matches('#')
+        .split_whitespace()
+        .next()
+        .unwrap_or(label)
+        .to_string()
 }
 
 fn work_item_update_plan_lines(
@@ -261,5 +336,46 @@ mod tests {
         assert!(
             lines.contains(&"À faire   : dw task add-work-item/remove-work-item --execute".into())
         );
+    }
+
+    #[test]
+    fn removable_work_item_choices_include_context() {
+        let manifest = dw_workspace::WorkspaceManifest {
+            schema: 1,
+            project: "ha".into(),
+            work_item_id: "1".into(),
+            task_id: None,
+            kind: "feature".into(),
+            slug: "parent".into(),
+            branch_name: "feature/1-parent".into(),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            repositories: Vec::new(),
+            status: "active".into(),
+            work_item_type: Some("User Story".into()),
+            work_item_title: Some("Parent".into()),
+            work_item_state: Some("Active".into()),
+            child_task_ids: None,
+            child_tasks: None,
+            work_items: Some(vec![
+                dw_workspace::WorkspaceWorkItem {
+                    id: "1".into(),
+                    kind: Some("User Story".into()),
+                    title: Some("Parent".into()),
+                    state: Some("Active".into()),
+                },
+                dw_workspace::WorkspaceWorkItem {
+                    id: "2".into(),
+                    kind: Some("Bug".into()),
+                    title: Some("Secondaire".into()),
+                    state: Some("New".into()),
+                },
+            ]),
+        };
+
+        let choices = removable_work_item_choices(&manifest);
+
+        assert_eq!(choices[0], "#1 [User Story] (Active) Parent");
+        assert_eq!(choices[1], "#2 [Bug] (New) Secondaire");
+        assert_eq!(work_item_id_from_choice(&choices[1]), "2");
     }
 }

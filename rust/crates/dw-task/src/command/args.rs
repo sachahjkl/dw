@@ -311,7 +311,7 @@ pub enum TaskCommand {
     #[command(about = "Retire des work items du workspace task courant.")]
     RemoveWorkItem {
         #[arg(help = "IDs de work items à retirer, séparés par virgules.")]
-        work_item_ids: String,
+        work_item_ids: Option<String>,
         #[arg(long, help = "Chemin du workspace à modifier.")]
         workspace: Option<String>,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]

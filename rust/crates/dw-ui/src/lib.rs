@@ -51,6 +51,18 @@ pub fn multiselect_or_require_flag(
         .prompt()?)
 }
 
+pub fn multiselect_optional(prompt: &str, options: Vec<String>) -> Result<Option<Vec<String>>> {
+    if !is_stdin_interactive() || options.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        MultiSelect::new(prompt, options)
+            .with_help_message("Espace pour sélectionner, Entrée pour valider.")
+            .prompt()?,
+    ))
+}
+
 pub fn select_optional(prompt: &str, options: Vec<String>) -> Result<Option<String>> {
     if !is_stdin_interactive() || options.is_empty() {
         return Ok(None);
