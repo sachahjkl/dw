@@ -6,6 +6,13 @@ use crate::cli::{Cli, CompletionOutput};
 use dw_config::{load_databases_config, load_projects_config, resolve_project, resolve_root};
 use dw_workspace::{read_manifest_path, task_list};
 
+mod catalog;
+
+use catalog::{
+    option_allowed, option_requires_value, options_for_path, root_command_labels,
+    subcommands_for_path,
+};
+
 pub fn generate_completion(shell: Shell) {
     let mut command = Cli::command();
     generate(shell, &mut command, "dw", &mut std::io::stdout());
@@ -111,38 +118,6 @@ fn option_waiting_for_value(words: &[String]) -> Option<&str> {
     option_requires_value(previous).then_some(previous)
 }
 
-fn option_requires_value(option: &str) -> bool {
-    matches!(
-        option,
-        "--project"
-            | "--repo"
-            | "--workspace"
-            | "--work-item"
-            | "--only"
-            | "--database"
-            | "--env"
-            | "--max-rows"
-            | "--format"
-            | "--type"
-            | "--agent"
-            | "--root"
-            | "--rid"
-            | "--slug"
-            | "--task"
-            | "--title"
-            | "--message"
-            | "--profile"
-            | "--sql"
-            | "--value"
-            | "--from-env"
-            | "--top"
-            | "--comments"
-            | "--organization"
-            | "--state"
-            | "--ai-context-file"
-    )
-}
-
 fn complete_option_value(option: &str, words: &[String], current: &str) -> Vec<CompletionItem> {
     let root = option_value(words, "--root").unwrap_or_else(|| resolve_root(None));
     let values = match option {
@@ -217,31 +192,6 @@ fn complete_options(words: &[String]) -> Vec<CompletionItem> {
         .collect()
 }
 
-fn option_allowed(option: &str, selected: &[&str]) -> bool {
-    let conflicts = match option {
-        "--workspace" => &["--project", "--work-item", "--continue"][..],
-        "--project" | "--work-item" | "--continue" => &["--workspace"][..],
-        "--database" => &["--env"][..],
-        "--env" => &["--database"][..],
-        "--from-pr" => &["--from-git"][..],
-        "--from-git" => &["--from-pr"][..],
-        "--value" => &["--from-env"][..],
-        "--from-env" => &["--value"][..],
-        "--check" => &["--rid"][..],
-        "--rid" => &["--check"][..],
-        _ => &[][..],
-    };
-    if conflicts.iter().any(|conflict| selected.contains(conflict)) {
-        return false;
-    }
-    match option {
-        "--ready" => selected.contains(&"--create-pr"),
-        "--git-to" => selected.contains(&"--from-git"),
-        "--table" => selected.contains(&"--format"),
-        _ => true,
-    }
-}
-
 fn command_path(words: &[String]) -> Vec<&str> {
     let mut path = Vec::new();
     let mut index = 0;
@@ -269,275 +219,21 @@ fn command_path(words: &[String]) -> Vec<&str> {
     path
 }
 
-fn options_for_path(path: &[&str]) -> Vec<&'static str> {
-    match path {
-        ["init"] => vec!["--profile", "--root", "--dry-run", "--no-save"],
-        ["refresh"] => vec!["--root", "--profile"],
-        ["doctor"] => vec!["--fix"],
-        ["upgrade"] => vec!["--check", "--rid"],
-        ["completion", "complete"] => vec!["--format"],
-        ["completion", _] => Vec::new(),
-        ["auth", _] => vec!["--root"],
-        ["secret", "set"] => vec!["--value", "--from-env"],
-        ["secret", _] => Vec::new(),
-        ["config", "show"] | ["config", "doctor"] => vec!["--root", "--json"],
-        ["config", "set-root"] | ["config", "set-color"] => Vec::new(),
-        ["task", "start"] => vec![
-            "--root",
-            "--project",
-            "--task",
-            "--type",
-            "--only",
-            "--slug",
-            "--skip-ado",
-            "--json",
-            "--execute",
-        ],
-        ["task", "open"] => vec![
-            "--workspace",
-            "--root",
-            "--project",
-            "--work-item",
-            "--continue",
-            "--repo",
-            "--agent",
-            "--json",
-        ],
-        ["agent", "open"] => vec![
-            "--workspace",
-            "--root",
-            "--project",
-            "--work-item",
-            "--continue",
-            "--repo",
-            "--agent",
-        ],
-        ["task", "sync"] => vec![
-            "--workspace",
-            "--root",
-            "--project",
-            "--work-item",
-            "--continue",
-            "--json",
-        ],
-        ["task", "rename"] => vec![
-            "--workspace",
-            "--root",
-            "--project",
-            "--work-item",
-            "--continue",
-            "--json",
-            "--execute",
-        ],
-        ["task", "teardown"] => vec![
-            "--workspace",
-            "--root",
-            "--project",
-            "--work-item",
-            "--continue",
-            "--execute",
-            "--yes",
-            "--json",
-        ],
-        ["task", "create-child-task"] => vec![
-            "--repo",
-            "--title",
-            "--workspace",
-            "--root",
-            "--project",
-            "--work-item",
-            "--continue",
-            "--json",
-        ],
-        ["task", "repo-latest"] => vec!["--workspace", "--continue", "--only", "--root", "--json"],
-        ["task", "commit"] => vec![
-            "--workspace",
-            "--continue",
-            "--root",
-            "--execute",
-            "--message",
-            "--json",
-        ],
-        ["task", "add-work-item"] => vec![
-            "--workspace",
-            "--root",
-            "--project",
-            "--work-item",
-            "--continue",
-            "--skip-ado",
-            "--type",
-            "--title",
-            "--state",
-            "--execute",
-            "--json",
-        ],
-        ["task", "remove-work-item"] => vec![
-            "--workspace",
-            "--root",
-            "--project",
-            "--work-item",
-            "--continue",
-            "--execute",
-            "--json",
-        ],
-        ["task", "add-repo"] => vec!["--workspace", "--root", "--execute", "--json"],
-        ["task", "finish"] => vec![
-            "--workspace",
-            "--continue",
-            "--root",
-            "--execute",
-            "--message",
-            "--create-pr",
-            "--ready",
-            "--skip-verify",
-            "--skip-ado",
-            "--json",
-        ],
-        ["task", "status"] => vec!["--root"],
-        ["task", "list"] => vec!["--root", "--project", "--work-item", "--json"],
-        ["task", "current"] => vec!["--json"],
-        ["task", "preflight"] => vec!["--workspace", "--ai-context-file", "--json"],
-        ["task", "handoff-validate"] => vec!["--workspace", "--json"],
-        ["task", "prune"] => vec![
-            "--root",
-            "--project",
-            "--work-item",
-            "--execute",
-            "--yes",
-            "--no-sync",
-            "--json",
-        ],
-        ["ado", "changelog"] => vec![
-            "--root",
-            "--project",
-            "--from-pr",
-            "--from-git",
-            "--repo",
-            "--group-by-parent",
-            "--format",
-            "--table",
-            "--ids-only",
-            "--git-to",
-        ],
-        ["ado", "assigned"] => vec![
-            "--root",
-            "--project",
-            "--top",
-            "--all",
-            "--group-by-parent",
-            "--json",
-        ],
-        ["ado", "work-item"] => vec!["--root", "--project", "--json"],
-        ["ado", "context"] => vec!["--root", "--project", "--summary", "--comments", "--json"],
-        ["ado", "ai-context"] => vec![
-            "--root",
-            "--organization",
-            "--project",
-            "--summary",
-            "--comments",
-            "--include-comments",
-        ],
-        ["db", "guard"] => vec!["--sql"],
-        ["db", "query"] => vec![
-            "--sql",
-            "--project",
-            "--database",
-            "--env",
-            "--max-rows",
-            "--json",
-        ],
-        ["db", "schema"] | ["db", "describe"] => vec!["--project", "--database", "--env", "--json"],
-        ["agent", "config"] | ["agent", "show"] => vec!["--root"],
-        ["agent", "set-default"] => vec!["--root"],
-        ["agent", "doctor"] => vec!["--agent"],
-        _ => vec!["--help"],
-    }
-}
-
 fn complete_subcommands(words: &[String]) -> Vec<CompletionItem> {
-    match command_path(words).as_slice() {
-        [] | [""] => root_commands(),
-        ["task"] => [
-            "start",
-            "status",
-            "list",
-            "current",
-            "sync",
-            "preflight",
-            "handoff-validate",
-            "prune",
-            "rename",
-            "open",
-            "teardown",
-            "add-repo",
-            "create-child-task",
-            "repo-latest",
-            "add-work-item",
-            "remove-work-item",
-            "commit",
-            "finish",
-        ]
-        .into_iter()
+    subcommands_for_path(&command_path(words))
+        .unwrap_or_default()
+        .iter()
+        .copied()
         .map(simple_completion)
-        .collect(),
-        ["ado"] => [
-            "assigned",
-            "changelog",
-            "work-item",
-            "context",
-            "ai-context",
-        ]
-        .into_iter()
-        .map(simple_completion)
-        .collect(),
-        ["db"] => ["schema", "describe", "query", "guard"]
-            .into_iter()
-            .map(simple_completion)
-            .collect(),
-        ["agent"] => ["context", "open", "config", "show", "set-default", "doctor"]
-            .into_iter()
-            .map(simple_completion)
-            .collect(),
-        ["auth"] => ["login", "status", "logout"]
-            .into_iter()
-            .map(simple_completion)
-            .collect(),
-        ["config"] => ["show", "set-root", "set-color", "doctor"]
-            .into_iter()
-            .map(simple_completion)
-            .collect(),
-        ["completion"] => ["show", "generate", "install"]
-            .into_iter()
-            .map(simple_completion)
-            .collect(),
-        ["secret"] => ["set", "get", "delete"]
-            .into_iter()
-            .map(simple_completion)
-            .collect(),
-        _ => Vec::new(),
-    }
+        .collect()
 }
 
 fn root_commands() -> Vec<CompletionItem> {
-    [
-        "version",
-        "guide",
-        "doctor",
-        "init",
-        "refresh",
-        "agent",
-        "auth",
-        "completion",
-        "config",
-        "ado",
-        "db",
-        "secret",
-        "upgrade",
-        "task",
-    ]
-    .into_iter()
-    .map(simple_completion)
-    .collect()
+    root_command_labels()
+        .iter()
+        .copied()
+        .map(simple_completion)
+        .collect()
 }
 
 fn simple_completion(label: &str) -> CompletionItem {
