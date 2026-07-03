@@ -29,19 +29,7 @@ pub fn render_work_item_snapshots(
             lines.push("---".into());
             lines.push(String::new());
         }
-        lines.push(theme.success(&format!("#{}", item.id)));
-        lines.push(format!(
-            "Type: {}",
-            item.kind.as_deref().unwrap_or("inconnu")
-        ));
-        lines.push(format!(
-            "État: {}",
-            item.state.as_deref().unwrap_or("inconnu")
-        ));
-        lines.push(format!(
-            "Titre: {}",
-            item.title.as_deref().unwrap_or("inconnu")
-        ));
+        lines.push(format_work_item_snapshot(item, theme));
         lines.push(String::new());
         lines.push(format!(
             "Contexte complet: {}",
@@ -49,6 +37,19 @@ pub fn render_work_item_snapshots(
         ));
     }
     lines.join("\n")
+}
+
+fn format_work_item_snapshot(item: &WorkItemSnapshot, theme: &TerminalTheme) -> String {
+    format!(
+        "{} {} {}",
+        theme.success(&format!("#{}", item.id)),
+        theme.dim(&format!(
+            "[{} / {}]",
+            item.kind.as_deref().unwrap_or("type inconnu"),
+            item.state.as_deref().unwrap_or("état inconnu")
+        )),
+        item.title.as_deref().unwrap_or("(sans titre)")
+    )
 }
 
 #[cfg(test)]
@@ -69,6 +70,7 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
+        assert!(output.contains("#7 [type inconnu / état inconnu] (sans titre)"));
         assert!(output.contains("Contexte complet: dw ado context 7 --project ha"));
     }
 }

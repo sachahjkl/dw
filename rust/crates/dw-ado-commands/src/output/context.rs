@@ -15,19 +15,7 @@ pub fn render_context_items(
             lines.push(String::new());
         }
 
-        lines.push(theme.success(&format!("#{}", item.work_item.id)));
-        lines.push(format!(
-            "Type: {}",
-            item.work_item.kind.as_deref().unwrap_or("inconnu")
-        ));
-        lines.push(format!(
-            "État: {}",
-            item.work_item.state.as_deref().unwrap_or("inconnu")
-        ));
-        lines.push(format!(
-            "Titre: {}",
-            item.work_item.title.as_deref().unwrap_or("inconnu")
-        ));
+        lines.push(format_context_header(item, theme));
         lines.push(format!(
             "Assigné à: {}",
             item.work_item
@@ -35,6 +23,11 @@ pub fn render_context_items(
                 .as_deref()
                 .unwrap_or("non assigné")
         ));
+        if let Some(metadata) = work_item_metadata(item)
+            && !metadata.is_empty()
+        {
+            lines.push(format!("Métadonnées: {metadata}"));
+        }
 
         if let Some(description) = &item.content.description
             && !description.trim().is_empty()
@@ -42,6 +35,33 @@ pub fn render_context_items(
             lines.push(String::new());
             lines.push(theme.bold("Description:"));
             lines.push(description.trim().into());
+        }
+
+        if let Some(acceptance_criteria) = &item.content.acceptance_criteria
+            && !acceptance_criteria.trim().is_empty()
+        {
+            lines.push(String::new());
+            lines.push(theme.bold("Critères d'acceptation:"));
+            lines.push(acceptance_criteria.trim().into());
+        }
+
+        if !item.attachments.items.is_empty() {
+            lines.push(String::new());
+            lines.push(theme.bold(&format!(
+                "Pièces jointes ({})",
+                item.attachments.items.len()
+            )));
+            lines.push(format!("  Dossier: {}", item.attachments.directory_hint));
+            for attachment in &item.attachments.items {
+                lines.push(format!(
+                    "- {}",
+                    attachment
+                        .name
+                        .as_deref()
+                        .or(attachment.url.as_deref())
+                        .unwrap_or("pièce jointe sans nom")
+                ));
+            }
         }
 
         if !item.relations.is_empty() {
@@ -84,6 +104,43 @@ pub fn render_context_items(
     lines.join("\n")
 }
 
+fn format_context_header(item: &AdoAiContextItem, theme: &TerminalTheme) -> String {
+    format!(
+        "{} {} {}",
+        theme.success(&format!("#{}", item.work_item.id)),
+        theme.dim(&format!(
+            "[{} / {}]",
+            item.work_item.kind.as_deref().unwrap_or("type inconnu"),
+            item.work_item.state.as_deref().unwrap_or("état inconnu")
+        )),
+        item.work_item.title.as_deref().unwrap_or("(sans titre)")
+    )
+}
+
+fn work_item_metadata(item: &AdoAiContextItem) -> Option<String> {
+    let mut values = Vec::new();
+    if let Some(area) = item
+        .work_item
+        .area_path
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        values.push(format!("area={area}"));
+    }
+    if let Some(iteration) = item
+        .work_item
+        .iteration_path
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        values.push(format!("iteration={iteration}"));
+    }
+    if !item.work_item.tags.is_empty() {
+        values.push(format!("tags={}", item.work_item.tags.join(", ")));
+    }
+    (!values.is_empty()).then(|| values.join(" | "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,9 +157,9 @@ mod tests {
                     kind: Some("Bug".into()),
                     state: Some("Actif".into()),
                     assigned_to: Some("Sacha".into()),
-                    area_path: None,
-                    iteration_path: None,
-                    tags: vec![],
+                    area_path: Some("Produit\\Backlog".into()),
+                    iteration_path: Some("Sprint 1".into()),
+                    tags: vec!["urgent".into()],
                 },
                 core: dw_contracts::AdoAiContextCore {
                     created_by: None,
@@ -114,7 +171,7 @@ mod tests {
                 },
                 content: dw_contracts::AdoAiContextContent {
                     description: Some("Description courte".into()),
-                    acceptance_criteria: None,
+                    acceptance_criteria: Some("Critère A".into()),
                     product_context: Default::default(),
                 },
                 links: dw_contracts::AdoAiContextLinks {
@@ -125,7 +182,12 @@ mod tests {
                 },
                 attachments: dw_contracts::AdoAiContextAttachments {
                     directory_hint: "attachments/ado/42".into(),
-                    items: vec![],
+                    items: vec![dw_contracts::AdoAiContextAttachment {
+                        name: Some("capture.png".into()),
+                        url: Some("https://example.invalid/capture.png".into()),
+                        comment: None,
+                        directory_hint: "attachments/ado/42".into(),
+                    }],
                 },
                 relations: vec![dw_contracts::AdoAiContextRelation {
                     kind: "Parent".into(),
@@ -148,8 +210,16 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("#42"));
+        assert!(output.contains("#42 [Bug / Actif] Corriger"));
+        assert!(
+            output
+                .contains("Métadonnées: area=Produit\\Backlog | iteration=Sprint 1 | tags=urgent")
+        );
         assert!(output.contains("Description courte"));
+        assert!(output.contains("Critères d'acceptation:"));
+        assert!(output.contains("Critère A"));
+        assert!(output.contains("Pièces jointes (1)"));
+        assert!(output.contains("capture.png"));
         assert!(output.contains("- Parent 1"));
         assert!(output.contains("- Bob: OK"));
         assert!(output.contains("dw ado ai-context 42 --project ha"));
