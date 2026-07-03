@@ -35,6 +35,7 @@ pub fn options_for(subcommand: &str) -> Vec<&'static str> {
             "--slug",
             "--skip-ado",
             "--with-active-children",
+            "--create-child-tasks",
             "--json",
             "--execute",
         ],
@@ -116,8 +117,9 @@ pub fn option_allowed(option: &str, selected: &[&str]) -> bool {
     let conflicts = match option {
         "--workspace" => &["--project", "--work-item", "--continue"][..],
         "--project" | "--work-item" | "--continue" => &["--workspace"][..],
-        "--skip-ado" => &["--with-active-children"][..],
+        "--skip-ado" => &["--with-active-children", "--create-child-tasks"][..],
         "--with-active-children" => &["--skip-ado"][..],
+        "--create-child-tasks" => &["--skip-ado"][..],
         _ => &[][..],
     };
     if conflicts.iter().any(|conflict| selected.contains(conflict)) {

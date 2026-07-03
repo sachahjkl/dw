@@ -320,6 +320,7 @@ mod tests {
         let initial = labels(complete_words(&words(&["task", "start", "--"])));
         assert!(initial.contains(&"--skip-ado".into()));
         assert!(initial.contains(&"--with-active-children".into()));
+        assert!(initial.contains(&"--create-child-tasks".into()));
 
         let offline = labels(complete_words(&words(&[
             "task",
@@ -328,6 +329,7 @@ mod tests {
             "--",
         ])));
         assert!(!offline.contains(&"--with-active-children".into()));
+        assert!(!offline.contains(&"--create-child-tasks".into()));
 
         let with_children = labels(complete_words(&words(&[
             "task",

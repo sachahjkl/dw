@@ -1,8 +1,12 @@
 use anyhow::Result;
 use dw_ado::{
     AzureDevOpsOptions, RELATION_HIERARCHY_FORWARD, WorkItemSnapshot, auth::AdoToken,
-    get_related_work_item_ids, get_work_item_snapshots_authenticated, is_final_state,
+    create_child_task_authenticated, get_related_work_item_ids,
+    get_work_item_snapshots_authenticated, is_final_state,
 };
+use dw_workspace::{WorkspaceChildTask, WorkspaceWorkItem};
+
+use crate::render::print_styled;
 
 pub(super) fn load_start_work_items(
     options: &AzureDevOpsOptions,
@@ -32,6 +36,49 @@ pub(super) fn load_start_work_items(
     };
 
     Ok(merge_start_snapshots(snapshots, child_snapshots))
+}
+
+pub(super) fn create_start_child_tasks(
+    options: &AzureDevOpsOptions,
+    token: &AdoToken,
+    parent: Option<&WorkspaceWorkItem>,
+    repositories: &[String],
+) -> Result<Vec<WorkspaceChildTask>> {
+    let Some(parent) = parent else {
+        return Ok(Vec::new());
+    };
+    let parent_snapshot = WorkItemSnapshot {
+        id: parent.id.clone(),
+        kind: parent.kind.clone(),
+        state: parent.state.clone(),
+        title: parent.title.clone(),
+        url: None,
+    };
+    let mut created = Vec::new();
+    for repository in repositories {
+        let title = child_task_title(
+            repository,
+            parent.title.as_deref().unwrap_or(parent.id.as_str()),
+        );
+        let result = create_child_task_authenticated(
+            options,
+            &parent_snapshot,
+            repository,
+            &title,
+            "dw task start",
+            token,
+        )?;
+        print_styled(&format!(
+            "ADO task créée [{}]: #{} {}",
+            repository, result.id, result.title
+        ));
+        created.push(WorkspaceChildTask {
+            repository: repository.clone(),
+            id: result.id,
+            title: Some(result.title),
+        });
+    }
+    Ok(created)
 }
 
 fn active_child_ids(
@@ -92,6 +139,17 @@ fn parse_selected_work_item_ids(value: &str) -> Vec<String> {
         .filter(|id| !id.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn child_task_title(repository: &str, title: &str) -> String {
+    let normalized = repository.to_ascii_lowercase();
+    let prefix = match normalized.as_str() {
+        "front" => "FRONT",
+        "back" => "BACK",
+        "sql" | "db" | "database" => "SQL",
+        other => other,
+    };
+    format!("[{}] {}", prefix.to_ascii_uppercase(), title)
 }
 
 #[cfg(test)]
@@ -163,5 +221,15 @@ mod tests {
             parse_selected_work_item_ids("42, 43,,44"),
             vec!["42", "43", "44"]
         );
+    }
+
+    #[test]
+    fn child_task_title_uses_domain_prefix() {
+        assert_eq!(
+            child_task_title("front", "Créer l'écran"),
+            "[FRONT] Créer l'écran"
+        );
+        assert_eq!(child_task_title("db", "Migrer"), "[SQL] Migrer");
+        assert_eq!(child_task_title("ops", "Déployer"), "[OPS] Déployer");
     }
 }

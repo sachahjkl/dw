@@ -6,10 +6,11 @@ use dw_ado::{AzureDevOpsOptions, auth::AdoToken, auth::require_token};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_workspace::{
     TaskStartOptions, TaskStartPlan, TaskStartRequest, WorkspaceWorkItem, execute_task_start,
-    execute_task_start_with_work_items, plan_task_start, start_state, task_start_options,
+    execute_task_start_with_work_items_and_child_tasks, plan_task_start,
+    start_plan_with_child_tasks, start_state, task_start_options,
 };
 
-use self::ado::load_start_work_items;
+use self::ado::{create_start_child_tasks, load_start_work_items};
 use self::interactive::{interactive_repositories, interactive_start_selection};
 use crate::render::{print_styled, print_styled_lines};
 
@@ -27,6 +28,7 @@ pub struct StartArgs {
     pub slug: Option<String>,
     pub skip_ado: bool,
     pub with_active_children: bool,
+    pub create_child_tasks: bool,
     pub json: bool,
     pub execute: bool,
 }
@@ -42,6 +44,7 @@ pub fn handle(args: StartArgs) -> Result<()> {
         slug,
         skip_ado,
         with_active_children,
+        create_child_tasks,
         json,
         execute,
     } = args;
@@ -87,7 +90,7 @@ pub fn handle(args: StartArgs) -> Result<()> {
                 .join(",")
         })
         .unwrap_or_else(|| selected_work_item_id.clone());
-    let plan = plan_task_start(TaskStartRequest {
+    let mut plan = plan_task_start(TaskStartRequest {
         root: &root,
         projects: &projects,
         work_item_id: &planned_work_item_id,
@@ -119,9 +122,24 @@ pub fn handle(args: StartArgs) -> Result<()> {
             };
             if let Some((ado_options, token)) = ado_context.as_ref() {
                 let start_options = task_start_options(&workflow);
+                let child_tasks = if create_child_tasks || start_options.create_child_tasks {
+                    create_start_child_tasks(
+                        ado_options,
+                        token,
+                        work_items.first(),
+                        &plan.repositories,
+                    )?
+                } else {
+                    Vec::new()
+                };
+                if !child_tasks.is_empty() {
+                    plan = start_plan_with_child_tasks(plan, &child_tasks);
+                }
                 update_start_states(ado_options, token, &work_items, &start_options)?;
+                execute_task_start_with_work_items_and_child_tasks(&plan, work_items, child_tasks)?
+            } else {
+                execute_task_start_with_work_items_and_child_tasks(&plan, work_items, Vec::new())?
             }
-            execute_task_start_with_work_items(&plan, work_items)?
         };
         write_workspace_agent_configs(&plan.workspace, &manifest)?;
         print_styled_lines(&created_workspace_lines(&plan));

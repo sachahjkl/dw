@@ -1113,6 +1113,14 @@ pub fn execute_task_start_with_work_items(
     plan: &TaskStartPlan,
     work_items: Vec<WorkspaceWorkItem>,
 ) -> Result<WorkspaceManifest, WorkspaceError> {
+    execute_task_start_with_work_items_and_child_tasks(plan, work_items, Vec::new())
+}
+
+pub fn execute_task_start_with_work_items_and_child_tasks(
+    plan: &TaskStartPlan,
+    work_items: Vec<WorkspaceWorkItem>,
+    child_tasks: Vec<WorkspaceChildTask>,
+) -> Result<WorkspaceManifest, WorkspaceError> {
     let workspace = Path::new(&plan.workspace);
     fs::create_dir_all(workspace)
         .map_err(|_| WorkspaceError::MissingWorkspace(plan.workspace.clone()))?;
@@ -1154,7 +1162,11 @@ pub fn execute_task_start_with_work_items(
         work_item_title: first.title.clone(),
         work_item_state: first.state.clone(),
         child_task_ids: None,
-        child_tasks: None,
+        child_tasks: if child_tasks.is_empty() {
+            None
+        } else {
+            Some(child_tasks)
+        },
         work_items: Some(work_items),
     };
 
@@ -1172,6 +1184,38 @@ pub fn execute_task_start_with_work_items(
     }
 
     Ok(manifest)
+}
+
+pub fn start_plan_with_child_tasks(
+    mut plan: TaskStartPlan,
+    child_tasks: &[WorkspaceChildTask],
+) -> TaskStartPlan {
+    if plan.task_id.as_ref().is_none_or(|id| id.trim().is_empty())
+        && child_tasks.len() == 1
+        && !child_tasks[0].id.trim().is_empty()
+    {
+        plan.task_id = Some(child_tasks[0].id.clone());
+    }
+
+    let mut branch_work_item_ids = plan.work_item_ids.clone();
+    if let Some(task_id) = plan.task_id.as_ref().filter(|id| !id.trim().is_empty())
+        && !branch_work_item_ids
+            .iter()
+            .any(|id| id.eq_ignore_ascii_case(task_id))
+    {
+        branch_work_item_ids.push(task_id.clone());
+    }
+    for child_task in child_tasks {
+        if !child_task.id.trim().is_empty()
+            && !branch_work_item_ids
+                .iter()
+                .any(|id| id.eq_ignore_ascii_case(&child_task.id))
+        {
+            branch_work_item_ids.push(child_task.id.clone());
+        }
+    }
+    plan.branch_name = build_branch_name(&plan.kind, &branch_work_item_ids, &plan.slug);
+    plan
 }
 
 pub fn build_preflight_report_from_ai_context_files(
@@ -2580,6 +2624,74 @@ artifacts:
         let handoff_text = fs::read_to_string(workspace.join("handoff-front.md"))
             .expect("handoff should be readable");
         assert!(handoff_text.contains("## Synthèse structurée attendue"));
+    }
+
+    #[test]
+    fn start_plan_with_child_tasks_updates_branch_and_task_id() {
+        let plan = TaskStartPlan {
+            work_item_ids: vec!["123".into()],
+            primary_work_item_id: "123".into(),
+            project: "ha".into(),
+            task_id: None,
+            kind: "feat".into(),
+            slug: "demo".into(),
+            branch_name: "feat/123-demo".into(),
+            subject_name: "feat-123-demo".into(),
+            workspace: "/tmp/workspace".into(),
+            repositories: vec!["front".into()],
+            repository_folders: BTreeMap::from([("front".into(), "front".into())]),
+        };
+
+        let updated = start_plan_with_child_tasks(
+            plan,
+            &[WorkspaceChildTask {
+                repository: "front".into(),
+                id: "456".into(),
+                title: Some("[FRONT] Demo".into()),
+            }],
+        );
+
+        assert_eq!(updated.task_id.as_deref(), Some("456"));
+        assert_eq!(updated.branch_name, "feat/123-456-demo");
+    }
+
+    #[test]
+    fn execute_task_start_writes_child_tasks() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        let plan = TaskStartPlan {
+            work_item_ids: vec!["123".into()],
+            primary_work_item_id: "123".into(),
+            project: "ha".into(),
+            task_id: Some("456".into()),
+            kind: "feat".into(),
+            slug: "demo".into(),
+            branch_name: "feat/123-456-demo".into(),
+            subject_name: "feat-123-demo".into(),
+            workspace: workspace.display().to_string(),
+            repositories: vec!["front".into()],
+            repository_folders: BTreeMap::from([("front".into(), "front".into())]),
+        };
+
+        let manifest = execute_task_start_with_work_items_and_child_tasks(
+            &plan,
+            vec![WorkspaceWorkItem {
+                id: "123".into(),
+                kind: Some("User Story".into()),
+                title: Some("Demo".into()),
+                state: Some("En réalisation".into()),
+            }],
+            vec![WorkspaceChildTask {
+                repository: "front".into(),
+                id: "456".into(),
+                title: Some("[FRONT] Demo".into()),
+            }],
+        )
+        .expect("start should execute");
+
+        assert_eq!(manifest.normalized_child_tasks().len(), 1);
+        assert_eq!(manifest.all_known_work_item_ids(), vec!["123", "456"]);
+        assert_eq!(manifest.branch_name, "feat/123-456-demo");
     }
 
     #[test]

@@ -94,6 +94,12 @@ pub enum TaskCommand {
             help = "Inclure automatiquement les enfants ADO non finaux du sujet sélectionné."
         )]
         with_active_children: bool,
+        #[arg(
+            long = "create-child-tasks",
+            conflicts_with = "skip_ado",
+            help = "Créer une sous-tâche ADO par repository inclus avant de créer le workspace."
+        )]
+        create_child_tasks: bool,
         #[arg(long, help = "Émet le plan ou résultat en JSON déterministe.")]
         json: bool,
         #[arg(
