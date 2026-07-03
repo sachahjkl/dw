@@ -194,7 +194,7 @@ fn option_value(words: &[String], option: &str) -> Option<String> {
 fn selected_options(words: &[String]) -> Vec<&str> {
     words
         .iter()
-        .filter(|word| word.starts_with("--"))
+        .filter(|word| word.starts_with("--") && word.as_str() != "--")
         .map(String::as_str)
         .collect()
 }
@@ -239,12 +239,30 @@ fn option_allowed(option: &str, selected: &[&str]) -> bool {
 }
 
 fn command_path(words: &[String]) -> Vec<&str> {
-    words
-        .iter()
-        .filter(|word| !word.starts_with('-'))
-        .take(2)
-        .map(String::as_str)
-        .collect()
+    let mut path = Vec::new();
+    let mut index = 0;
+    while index < words.len() && path.len() < 2 {
+        let word = words[index].as_str();
+        if word == "--" {
+            index += 1;
+            continue;
+        }
+        if word.starts_with("--") {
+            if option_requires_value(word)
+                && words
+                    .get(index + 1)
+                    .is_some_and(|value| !value.starts_with('-'))
+            {
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+        path.push(word);
+        index += 1;
+    }
+    path
 }
 
 fn options_for_path(path: &[&str]) -> Vec<&'static str> {
@@ -676,6 +694,20 @@ mod tests {
 
         let upgrade = labels(complete_words(&words(&["upgrade", "--check", "--"])));
         assert!(!upgrade.contains(&"--rid".into()));
+    }
+
+    #[test]
+    fn command_path_ignores_option_values() {
+        let init = labels(complete_words(&words(&["init", "--root", "/tmp/dw", "--"])));
+        assert!(init.contains(&"--profile".into()));
+        assert!(init.contains(&"--dry-run".into()));
+        assert!(!init.contains(&"--root".into()));
+
+        let task = labels(complete_words(&words(&[
+            "task", "start", "42", "--root", "/tmp/dw", "--",
+        ])));
+        assert!(task.contains(&"--project".into()));
+        assert!(!task.contains(&"--help".into()));
     }
 
     #[test]
