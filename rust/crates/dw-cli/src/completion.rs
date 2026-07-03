@@ -127,6 +127,15 @@ fn option_requires_value(option: &str) -> bool {
             | "--task"
             | "--title"
             | "--message"
+            | "--profile"
+            | "--sql"
+            | "--value"
+            | "--from-env"
+            | "--top"
+            | "--comments"
+            | "--organization"
+            | "--state"
+            | "--ai-context-file"
     )
 }
 
@@ -212,6 +221,10 @@ fn option_allowed(option: &str, selected: &[&str]) -> bool {
         "--env" => &["--database"][..],
         "--from-pr" => &["--from-git"][..],
         "--from-git" => &["--from-pr"][..],
+        "--value" => &["--from-env"][..],
+        "--from-env" => &["--value"][..],
+        "--check" => &["--rid"][..],
+        "--rid" => &["--check"][..],
         _ => &[][..],
     };
     if conflicts.iter().any(|conflict| selected.contains(conflict)) {
@@ -236,6 +249,17 @@ fn command_path(words: &[String]) -> Vec<&str> {
 
 fn options_for_path(path: &[&str]) -> Vec<&'static str> {
     match path {
+        ["init"] => vec!["--profile", "--root", "--dry-run", "--no-save"],
+        ["refresh"] => vec!["--root", "--profile"],
+        ["doctor"] => vec!["--fix"],
+        ["upgrade"] => vec!["--check", "--rid"],
+        ["completion", "complete"] => vec!["--format"],
+        ["completion", _] => Vec::new(),
+        ["auth", _] => vec!["--root"],
+        ["secret", "set"] => vec!["--value", "--from-env"],
+        ["secret", _] => Vec::new(),
+        ["config", "show"] | ["config", "doctor"] => vec!["--root", "--json"],
+        ["config", "set-root"] | ["config", "set-color"] => Vec::new(),
         ["task", "start"] => vec![
             "--root",
             "--project",
@@ -266,22 +290,75 @@ fn options_for_path(path: &[&str]) -> Vec<&'static str> {
             "--repo",
             "--agent",
         ],
-        ["task", "sync"]
-        | ["task", "rename"]
-        | ["task", "teardown"]
-        | ["task", "create-child-task"] => vec![
+        ["task", "sync"] => vec![
             "--workspace",
             "--root",
             "--project",
             "--work-item",
             "--continue",
-            "--repo",
-            "--title",
+            "--json",
+        ],
+        ["task", "rename"] => vec![
+            "--workspace",
+            "--root",
+            "--project",
+            "--work-item",
+            "--continue",
             "--json",
             "--execute",
+        ],
+        ["task", "teardown"] => vec![
+            "--workspace",
+            "--root",
+            "--project",
+            "--work-item",
+            "--continue",
+            "--execute",
             "--yes",
+            "--json",
+        ],
+        ["task", "create-child-task"] => vec![
+            "--repo",
+            "--title",
+            "--workspace",
+            "--root",
+            "--project",
+            "--work-item",
+            "--continue",
+            "--json",
         ],
         ["task", "repo-latest"] => vec!["--workspace", "--continue", "--only", "--root", "--json"],
+        ["task", "commit"] => vec![
+            "--workspace",
+            "--continue",
+            "--root",
+            "--execute",
+            "--message",
+            "--json",
+        ],
+        ["task", "add-work-item"] => vec![
+            "--workspace",
+            "--root",
+            "--project",
+            "--work-item",
+            "--continue",
+            "--skip-ado",
+            "--type",
+            "--title",
+            "--state",
+            "--execute",
+            "--json",
+        ],
+        ["task", "remove-work-item"] => vec![
+            "--workspace",
+            "--root",
+            "--project",
+            "--work-item",
+            "--continue",
+            "--execute",
+            "--json",
+        ],
+        ["task", "add-repo"] => vec!["--workspace", "--root", "--execute", "--json"],
         ["task", "finish"] => vec![
             "--workspace",
             "--continue",
@@ -292,6 +369,20 @@ fn options_for_path(path: &[&str]) -> Vec<&'static str> {
             "--ready",
             "--skip-verify",
             "--skip-ado",
+            "--json",
+        ],
+        ["task", "status"] => vec!["--root"],
+        ["task", "list"] => vec!["--root", "--project", "--work-item", "--json"],
+        ["task", "current"] => vec!["--json"],
+        ["task", "preflight"] => vec!["--workspace", "--ai-context-file", "--json"],
+        ["task", "handoff-validate"] => vec!["--workspace", "--json"],
+        ["task", "prune"] => vec![
+            "--root",
+            "--project",
+            "--work-item",
+            "--execute",
+            "--yes",
+            "--no-sync",
             "--json",
         ],
         ["ado", "changelog"] => vec![
@@ -306,14 +397,25 @@ fn options_for_path(path: &[&str]) -> Vec<&'static str> {
             "--ids-only",
             "--git-to",
         ],
-        ["ado", _] => vec![
+        ["ado", "assigned"] => vec![
             "--root",
+            "--project",
+            "--top",
+            "--all",
+            "--group-by-parent",
+            "--json",
+        ],
+        ["ado", "work-item"] => vec!["--root", "--project", "--json"],
+        ["ado", "context"] => vec!["--root", "--project", "--summary", "--comments", "--json"],
+        ["ado", "ai-context"] => vec![
+            "--root",
+            "--organization",
             "--project",
             "--summary",
             "--comments",
             "--include-comments",
-            "--json",
         ],
+        ["db", "guard"] => vec!["--sql"],
         ["db", "query"] => vec![
             "--sql",
             "--project",
@@ -322,17 +424,10 @@ fn options_for_path(path: &[&str]) -> Vec<&'static str> {
             "--max-rows",
             "--json",
         ],
-        ["db", _] => vec!["--project", "--database", "--env", "--json"],
-        ["config", _] => vec!["--root", "--json"],
-        ["task", _] => vec![
-            "--root",
-            "--project",
-            "--work-item",
-            "--workspace",
-            "--continue",
-            "--execute",
-            "--json",
-        ],
+        ["db", "schema"] | ["db", "describe"] => vec!["--project", "--database", "--env", "--json"],
+        ["agent", "config"] | ["agent", "show"] => vec!["--root"],
+        ["agent", "set-default"] => vec!["--root"],
+        ["agent", "doctor"] => vec!["--agent"],
         _ => vec!["--help"],
     }
 }
@@ -543,6 +638,44 @@ mod tests {
         assert!(values.contains(&"--workspace".into()));
         assert!(values.contains(&"--agent".into()));
         assert!(!values.contains(&"--json".into()));
+    }
+
+    #[test]
+    fn db_guard_completion_only_offers_sql() {
+        let values = labels(complete_words(&words(&["db", "guard", "--"])));
+
+        assert_eq!(values, vec!["--sql"]);
+    }
+
+    #[test]
+    fn config_set_commands_do_not_offer_show_options() {
+        let set_root = labels(complete_words(&words(&["config", "set-root", "--"])));
+        let set_color = labels(complete_words(&words(&["config", "set-color", "--"])));
+
+        assert!(set_root.is_empty());
+        assert!(set_color.is_empty());
+    }
+
+    #[test]
+    fn secret_set_value_and_from_env_conflict() {
+        let initial = labels(complete_words(&words(&["secret", "set", "--"])));
+        assert!(initial.contains(&"--value".into()));
+        assert!(initial.contains(&"--from-env".into()));
+
+        let with_value = labels(complete_words(&words(&[
+            "secret", "set", "--value", "secret", "--",
+        ])));
+        assert!(!with_value.contains(&"--from-env".into()));
+    }
+
+    #[test]
+    fn top_level_command_options_are_specific() {
+        let init = labels(complete_words(&words(&["init", "--"])));
+        assert!(init.contains(&"--dry-run".into()));
+        assert!(init.contains(&"--no-save".into()));
+
+        let upgrade = labels(complete_words(&words(&["upgrade", "--check", "--"])));
+        assert!(!upgrade.contains(&"--rid".into()));
     }
 
     #[test]
