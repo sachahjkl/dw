@@ -48,12 +48,146 @@ impl TerminalTheme {
         self.paint(anstyle::AnsiColor::Magenta.on_default(), text)
     }
 
+    pub fn cyan(&self, text: &str) -> String {
+        self.paint(anstyle::AnsiColor::Cyan.on_default(), text)
+    }
+
+    pub fn dim(&self, text: &str) -> String {
+        self.paint(anstyle::Effects::DIMMED.into(), text)
+    }
+
+    pub fn bold(&self, text: &str) -> String {
+        self.paint(anstyle::Effects::BOLD.into(), text)
+    }
+
+    pub fn style_line(&self, line: &str, is_error: bool) -> String {
+        if line.is_empty() || is_json_like(line) {
+            return line.into();
+        }
+
+        if is_error || line.starts_with_ignore_ascii_case("Erreur") {
+            return self.bold(&self.error(line));
+        }
+
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("# ") || trimmed.starts_with("## ") {
+            return self.bold(&self.cyan(line));
+        }
+
+        let styled = line
+            .replace(": Done", &format!(": {}", self.bold(&self.success("Done"))))
+            .replace("Done:", &format!("{}:", self.bold(&self.success("Done"))));
+
+        if starts_with_any_ignore_ascii_case(
+            &styled,
+            &[
+                "Dry-run",
+                "Relancer",
+                "Teardown dry-run",
+                "PR non creee",
+                "Teardown annule",
+            ],
+        ) {
+            return self.warning(&styled);
+        }
+
+        if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+            let indent_length = line.len() - trimmed.len();
+            let indent = &line[..indent_length];
+            return format!("{indent}{}{}", self.dim(&trimmed[..2]), &trimmed[2..]);
+        }
+
+        if let Some(separator_index) = styled.find(':')
+            && separator_index > 0
+            && separator_index <= 40
+        {
+            let label = &styled[..separator_index];
+            let suffix = &styled[separator_index..];
+            if !label.contains("//") && !label.contains('\\') {
+                return format!("{}{}", self.bold(&self.cyan(label)), suffix);
+            }
+        }
+
+        if is_success_status_line(&styled) {
+            return self.success(&styled);
+        }
+
+        if starts_with_any_ignore_ascii_case(
+            &styled,
+            &["Aucun", "Sync ignoree", "PR ignoree", "ADO ignore"],
+        ) {
+            return self.warning(&styled);
+        }
+
+        if starts_with_any_ignore_ascii_case(
+            &styled,
+            &[
+                "Prochaine etape",
+                "Puis, pour",
+                "Et pour terminer",
+                "Workspaces disponibles",
+                "Project  WorkItem",
+                "Preparation de l'upgrade",
+                "Schemas et contextes agents regeneres",
+            ],
+        ) {
+            return self.bold(&self.cyan(&styled));
+        }
+
+        if trimmed.starts_with_ignore_ascii_case("dw ") {
+            return self.bold(&styled);
+        }
+
+        styled
+    }
+
     fn paint(&self, style: anstyle::Style, text: &str) -> String {
         if self.enabled {
             format!("{}{}{}", style.render(), text, style.render_reset())
         } else {
             text.into()
         }
+    }
+}
+
+fn is_json_like(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('{') || trimmed.starts_with('[') || trimmed.starts_with('"')
+}
+
+fn is_success_status_line(line: &str) -> bool {
+    starts_with_any_ignore_ascii_case(
+        line,
+        &[
+            "Workspace cree",
+            "Workspace renomme",
+            "Workspace synchronise",
+            "Workspace supprime",
+            "Repo ajoute",
+            "Work items ajoutes",
+            "Work items retires",
+            "Binaire remplace",
+            "Commits/push termines",
+            "PR creee",
+            "Root rafraichi",
+        ],
+    ) || (line.starts_with_ignore_ascii_case("Repo ") && line.contains(':'))
+}
+
+fn starts_with_any_ignore_ascii_case(value: &str, prefixes: &[&str]) -> bool {
+    prefixes
+        .iter()
+        .any(|prefix| value.starts_with_ignore_ascii_case(prefix))
+}
+
+trait StartsWithIgnoreAsciiCase {
+    fn starts_with_ignore_ascii_case(&self, prefix: &str) -> bool;
+}
+
+impl StartsWithIgnoreAsciiCase for str {
+    fn starts_with_ignore_ascii_case(&self, prefix: &str) -> bool {
+        self.get(..prefix.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
     }
 }
 
@@ -77,5 +211,34 @@ mod tests {
     fn always_emits_ansi() {
         let theme = TerminalTheme::new(ColorMode::Always, false, false);
         assert!(theme.error("ERR").contains("\u{1b}"));
+    }
+
+    #[test]
+    fn style_line_colors_status_lines() {
+        let theme = TerminalTheme::new(ColorMode::Always, false, false);
+        let styled = theme.style_line("Workspace cree: S:/dw", false);
+
+        assert!(styled.contains("\u{1b}"));
+        assert!(styled.contains("Workspace cree"));
+    }
+
+    #[test]
+    fn style_line_preserves_json_lines() {
+        let theme = TerminalTheme::new(ColorMode::Always, false, false);
+
+        assert_eq!(
+            theme.style_line(r#"{"schema":1}"#, false),
+            r#"{"schema":1}"#
+        );
+    }
+
+    #[test]
+    fn style_line_keeps_plain_when_color_disabled() {
+        let theme = TerminalTheme::plain();
+
+        assert_eq!(
+            theme.style_line("Workspace cree: S:/dw", false),
+            "Workspace cree: S:/dw"
+        );
     }
 }

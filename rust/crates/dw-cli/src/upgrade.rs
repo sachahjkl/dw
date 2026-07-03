@@ -1,8 +1,10 @@
 use anyhow::{Result, anyhow};
 use dw_config::{WorkflowConfig, load_user_settings, load_workflow_config, resolve_root};
+use dw_ui::{ColorMode, TerminalTheme};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::IsTerminal;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
@@ -171,7 +173,7 @@ fn run_upgrade(
         ));
     }
     let executable_path = std::env::current_exe()?;
-    println!("Preparation de l'upgrade...");
+    print_styled("Preparation de l'upgrade...");
     let temp_asset = download_asset(client, asset)?;
     let hash = file_sha256(&temp_asset)?;
     if !hash.eq_ignore_ascii_case(&asset.sha256) {
@@ -281,7 +283,7 @@ fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<()> 
         permissions.set_mode(0o755);
         fs::set_permissions(executable_path, permissions)?;
     }
-    println!("Binaire remplace: {}", executable_path.display());
+    print_styled(&format!("Binaire remplace: {}", executable_path.display()));
     Ok(())
 }
 
@@ -308,11 +310,23 @@ fn replace_windows_executable(executable_path: &Path, replacement: &Path) -> Res
         .arg("/c")
         .arg(&script)
         .spawn()?;
-    println!(
+    print_styled(&format!(
         "Remplacement programme au prochain relachement du binaire: {}",
         executable_path.display()
-    );
+    ));
     Ok(())
+}
+
+fn print_styled(line: &str) {
+    println!("{}", terminal_theme().style_line(line, false));
+}
+
+fn terminal_theme() -> TerminalTheme {
+    TerminalTheme::new(
+        ColorMode::Auto,
+        std::io::stdout().is_terminal(),
+        std::env::var_os("NO_COLOR").is_some(),
+    )
 }
 
 pub(crate) fn windows_replacement_script(
