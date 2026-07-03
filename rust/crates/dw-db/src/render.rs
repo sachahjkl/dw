@@ -33,9 +33,9 @@ pub fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) ->
     let widths = column_widths(&columns, &rows);
     let mut lines = Vec::new();
 
+    lines.push(theme.bold(&theme.cyan("DB query")));
     lines.push(format!(
-        "{} {}",
-        theme.cyan("SQL"),
+        "Résultat  : {}",
         theme.bold(&row_count_label(result))
     ));
     lines.push(render_separator(&widths));
@@ -66,31 +66,24 @@ pub fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) ->
 }
 
 pub fn render_sql_guard(result: &SqlGuardResult, theme: &TerminalTheme) -> String {
-    let mut lines = vec![format!(
-        "{} {}",
-        theme.cyan("SQL guard"),
-        status_label(result, theme)
-    )];
+    let mut lines = vec![theme.bold(&theme.cyan("DB guard"))];
+    lines.push(format!("Statut    : {}", status_label(result, theme)));
     if result.is_allowed {
+        lines.push(format!("Décision  : {}", theme.success("✓")));
+        lines.push("Message   : Requête autorisée en lecture seule.".into());
         lines.push(format!(
-            "{} Requête autorisée en lecture seule.",
-            theme.success("✓")
-        ));
-        lines.push(format!(
-            "  {}",
+            "Détail    : {}",
             theme.dim("Aucune exécution n'a été lancée par cette commande.")
         ));
     } else {
+        lines.push(format!("Décision  : {}", theme.error("!")));
+        lines.push("Message   : Requête bloquée avant exécution.".into());
         lines.push(format!(
-            "{} Requête bloquée avant exécution.",
-            theme.error("!")
-        ));
-        lines.push(format!(
-            "  Raison: {}",
+            "Raison    : {}",
             result.reason.as_deref().unwrap_or("raison inconnue")
         ));
         lines.push(format!(
-            "  {}",
+            "À faire   : {}",
             theme.warning("Utiliser uniquement SELECT/WITH ou les commandes d'introspection.")
         ));
     }
@@ -208,7 +201,8 @@ mod tests {
 
         let output = render_query_result_table(&result, &TerminalTheme::plain());
 
-        assert!(output.contains("SQL 1 ligne affichée, résultat tronqué"));
+        assert!(output.contains("DB query"));
+        assert!(output.contains("Résultat  : 1 ligne affichée, résultat tronqué"));
         assert!(output.contains("| Id | Name |"));
         assert!(output.contains("| 1  | NULL |"));
         assert!(output.contains("Résultat tronqué après 1 ligne(s)."));
@@ -237,8 +231,10 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("SQL guard autorisé"));
-        assert!(output.contains("✓ Requête autorisée en lecture seule."));
+        assert!(output.contains("DB guard"));
+        assert!(output.contains("Statut    : autorisé"));
+        assert!(output.contains("Décision  : ✓"));
+        assert!(output.contains("Message   : Requête autorisée en lecture seule."));
         assert!(output.contains("Aucune exécution n'a été lancée"));
     }
 
@@ -252,9 +248,11 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("SQL guard bloqué"));
-        assert!(output.contains("! Requête bloquée avant exécution."));
-        assert!(output.contains("Raison: Mot-clé SQL interdit"));
+        assert!(output.contains("DB guard"));
+        assert!(output.contains("Statut    : bloqué"));
+        assert!(output.contains("Décision  : !"));
+        assert!(output.contains("Message   : Requête bloquée avant exécution."));
+        assert!(output.contains("Raison    : Mot-clé SQL interdit"));
         assert!(output.contains("Utiliser uniquement SELECT/WITH"));
     }
 }
