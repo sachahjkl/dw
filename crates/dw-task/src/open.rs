@@ -123,14 +123,15 @@ pub fn open_workspace(args: OpenWorkspaceArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut command = std::process::Command::new(&launch.file_name);
-    command
-        .args(&launch.arguments)
-        .current_dir(&launch.working_directory);
-    for (key, value) in &launch.environment {
-        command.env(key, value);
-    }
-    let status = command.status()?;
+    let status = dw_process::status(
+        &launch.file_name,
+        &launch.arguments,
+        Some(&launch.working_directory),
+        launch
+            .environment
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    )?;
     if !status.success() {
         return Err(anyhow::anyhow!("agent exited with status {status}"));
     }

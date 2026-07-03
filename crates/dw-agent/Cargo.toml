@@ -11,6 +11,7 @@ anyhow.workspace = true
 clap.workspace = true
 dw-config = { path = "../dw-config" }
 dw-contracts = { path = "../dw-contracts" }
+dw-process = { path = "../dw-process" }
 dw-ui = { path = "../dw-ui" }
 dw-workspace = { path = "../dw-workspace" }
 serde.workspace = true

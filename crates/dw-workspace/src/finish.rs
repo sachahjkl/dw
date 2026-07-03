@@ -388,10 +388,7 @@ fn resolve_node_package_manager_command(command: &str) -> String {
 }
 
 fn command_available(command: &str) -> bool {
-    Command::new(command)
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
+    dw_process::command_available(command, &["--version"])
 }
 
 fn run_shell(path: &str, command: &str) -> std::io::Result<std::process::Output> {

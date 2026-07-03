@@ -10,6 +10,7 @@ members = [
   "crates/dw-db",
   "crates/dw-doctor",
   "crates/dw-git",
+  "crates/dw-process",
   "crates/dw-secret",
   "crates/dw-task",
   "crates/dw-upgrade",

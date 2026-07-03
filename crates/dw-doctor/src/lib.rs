@@ -5,7 +5,6 @@ use dw_config::{
 };
 use dw_ui::{ColorMode, TerminalTheme};
 use std::path::Path;
-use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DoctorCheck {
@@ -172,7 +171,7 @@ fn check_command(
     remediation: &str,
     validator: impl Fn(&str) -> bool,
 ) -> DoctorCheck {
-    let Ok(output) = Command::new(file_name).args(arguments).output() else {
+    let Ok(output) = dw_process::output(file_name, arguments.iter().copied()) else {
         return failed_check(name, remediation);
     };
     let combined = format!(
@@ -195,7 +194,7 @@ fn check_command(
 fn check_node_package_manager() -> DoctorCheck {
     let remediation = "Installer pnpm, ou Node.js/npm si pnpm est indisponible.";
     for (file_name, detail_prefix) in [("pnpm", "pnpm"), ("npm", "npm")] {
-        let Ok(output) = Command::new(file_name).arg("--version").output() else {
+        let Ok(output) = dw_process::output(file_name, ["--version"]) else {
             continue;
         };
         let combined = format!(

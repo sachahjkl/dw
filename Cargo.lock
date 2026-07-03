@@ -826,6 +826,7 @@ dependencies = [
  "clap",
  "dw-config",
  "dw-contracts",
+ "dw-process",
  "dw-ui",
  "dw-workspace",
  "serde",
@@ -915,6 +916,7 @@ dependencies = [
  "anyhow",
  "dw-agent",
  "dw-config",
+ "dw-process",
  "dw-ui",
 ]
 
@@ -926,6 +928,10 @@ dependencies = [
  "deunicode",
  "serde",
 ]
+
+[[package]]
+name = "dw-process"
+version = "0.1.0"
 
 [[package]]
 name = "dw-secret"
@@ -952,6 +958,7 @@ dependencies = [
  "dw-config",
  "dw-contracts",
  "dw-git",
+ "dw-process",
  "dw-ui",
  "dw-workspace",
  "inquire",
@@ -993,6 +1000,7 @@ dependencies = [
  "dw-config",
  "dw-contracts",
  "dw-git",
+ "dw-process",
  "serde",
  "serde_json",
  "tempfile",

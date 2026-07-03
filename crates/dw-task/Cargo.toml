@@ -14,6 +14,7 @@ dw-agent = { path = "../dw-agent" }
 dw-config = { path = "../dw-config" }
 dw-contracts = { path = "../dw-contracts" }
 dw-git = { path = "../dw-git" }
+dw-process = { path = "../dw-process" }
 dw-ui = { path = "../dw-ui" }
 dw-workspace = { path = "../dw-workspace" }
 inquire.workspace = true

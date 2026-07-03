@@ -3,7 +3,6 @@ use anyhow::Result;
 use clap::Subcommand;
 use dw_config::{default_agent, resolve_root, set_default_agent};
 use dw_ui::TerminalTheme;
-use std::process::Command;
 
 #[derive(Debug, Subcommand)]
 pub enum AgentCommand {
@@ -240,10 +239,7 @@ fn launch_probe(agent: AgentKind) -> crate::AgentLaunch {
 }
 
 fn command_available(file_name: &str, arguments: &[&str]) -> bool {
-    Command::new(file_name)
-        .args(arguments)
-        .output()
-        .is_ok_and(|output| output.status.success())
+    dw_process::command_available(file_name, arguments)
 }
 
 #[cfg(test)]
