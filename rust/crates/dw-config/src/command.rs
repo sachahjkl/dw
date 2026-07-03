@@ -75,11 +75,11 @@ pub fn handle_config(command: ConfigCommand) -> Result<()> {
             }
         }
         ConfigCommand::SetRoot { path } => {
-            print_styled("Config mise à jour");
+            print_styled("Configuration mise à jour");
             print_styled(&format!("Root      : {}", set_user_root(&path)?));
         }
         ConfigCommand::SetColor { mode } => {
-            print_styled("Config mise à jour");
+            print_styled("Configuration mise à jour");
             print_styled(&format!("Couleur   : {}", set_color_mode(&mode)?));
         }
     }
@@ -154,10 +154,10 @@ fn refresh_report_lines(report: &RefreshReport) -> Vec<String> {
 
 fn config_show_lines(report: &crate::ConfigShow) -> Vec<String> {
     vec![
-        "Config DevWorkflow".into(),
+        "Configuration DevWorkflow".into(),
         format!("Root      : {}", report.root),
         format!("Couleur   : {}", report.color),
-        format!("Settings  : {}", report.settings_path),
+        format!("Réglages  : {}", report.settings_path),
         String::new(),
         "Fichiers".into(),
         config_file_line("projects", &report.projects_path, report.projects_exists),
@@ -168,7 +168,7 @@ fn config_show_lines(report: &crate::ConfigShow) -> Vec<String> {
 
 fn config_doctor_lines(report: &crate::ConfigDoctorReport) -> Vec<String> {
     let mut lines = vec![
-        "Doctor config".into(),
+        "Diagnostic configuration".into(),
         format!(
             "Statut    : {}",
             if report.passed {
@@ -179,7 +179,7 @@ fn config_doctor_lines(report: &crate::ConfigDoctorReport) -> Vec<String> {
         ),
         format!("Root      : {}", report.root),
         String::new(),
-        "Checks".into(),
+        "Vérifications".into(),
     ];
     for check in &report.checks {
         lines.push(config_check_line(check));
@@ -227,10 +227,10 @@ mod tests {
 
         let lines = config_doctor_lines(&report);
 
-        assert_eq!(lines[0], "Doctor config");
+        assert_eq!(lines[0], "Diagnostic configuration");
         assert_eq!(lines[1], "Statut    : à corriger");
         assert_eq!(lines[2], "Root      : /tmp/dw");
-        assert_eq!(lines[4], "Checks");
+        assert_eq!(lines[4], "Vérifications");
         assert_eq!(lines[5], "! /tmp/dw/config/projects.json");
         assert_eq!(lines[6], "  Détail  : fichier absent");
         assert_eq!(
@@ -255,10 +255,10 @@ mod tests {
 
         let lines = config_show_lines(&report);
 
-        assert_eq!(lines[0], "Config DevWorkflow");
+        assert_eq!(lines[0], "Configuration DevWorkflow");
         assert_eq!(lines[1], "Root      : /tmp/dw");
         assert_eq!(lines[2], "Couleur   : auto");
-        assert_eq!(lines[3], "Settings  : /tmp/settings.json");
+        assert_eq!(lines[3], "Réglages  : /tmp/settings.json");
         assert_eq!(lines[5], "Fichiers");
         assert_eq!(lines[6], "! projects : /tmp/dw/config/projects.json");
         assert_eq!(lines[7], "✓ workflow : /tmp/dw/config/workflow.json");
