@@ -1,10 +1,12 @@
 use crate::{
-    DatabaseSelection, QueryResult, describe_table_sql, query_sql_server, render_query_result_tsv,
-    resolve_connection, schema_sql, validate_read_only_sql,
+    DatabaseSelection, QueryResult, describe_table_sql, query_sql_server,
+    render_query_result_table, render_query_result_tsv, resolve_connection, schema_sql,
+    validate_read_only_sql,
 };
 use anyhow::Result;
 use dw_config::{load_databases_config, resolve_root};
 use dw_ui::TerminalTheme;
+use std::io::IsTerminal;
 
 #[derive(Debug, Clone)]
 pub struct GuardArgs {
@@ -110,6 +112,11 @@ fn execute_db_query(
 fn print_db_result(result: &QueryResult, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(result)?);
+    } else if std::io::stdout().is_terminal() {
+        println!(
+            "{}",
+            render_query_result_table(result, &TerminalTheme::stdout_auto())
+        );
     } else {
         println!("{}", render_query_result_tsv(result));
     }

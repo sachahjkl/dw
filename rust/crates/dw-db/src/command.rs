@@ -69,6 +69,7 @@ pub enum DbCommand {
         )]
         env: Option<String>,
         #[arg(long = "max-rows", help = "Nombre maximum de lignes à afficher.")]
+        #[arg(value_parser = parse_positive_usize)]
         max_rows: Option<usize>,
         #[arg(long, help = "Émettre le résultat JSON déterministe.")]
         json: bool,
@@ -122,4 +123,26 @@ pub fn handle_db(command: DbCommand) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn parse_positive_usize(value: &str) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| "--max-rows doit être un entier positif.".to_string())?;
+    if parsed == 0 {
+        return Err("--max-rows doit être supérieur à 0.".into());
+    }
+    Ok(parsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_positive_usize;
+
+    #[test]
+    fn max_rows_rejects_zero_and_non_numeric_values() {
+        assert_eq!(parse_positive_usize("25").expect("valid"), 25);
+        assert!(parse_positive_usize("0").is_err());
+        assert!(parse_positive_usize("wat").is_err());
+    }
 }

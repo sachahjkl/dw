@@ -1,4 +1,7 @@
 use crate::query::QueryResult;
+use dw_ui::TerminalTheme;
+
+const MAX_CELL_WIDTH: usize = 48;
 
 pub fn render_query_result_tsv(result: &QueryResult) -> String {
     let mut lines = vec![result.columns.join("\t")];
@@ -14,6 +17,127 @@ pub fn render_query_result_tsv(result: &QueryResult) -> String {
         format!("-- {} rows", result.rows.len())
     });
     lines.join("\n")
+}
+
+pub fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) -> String {
+    let columns = if result.columns.is_empty() {
+        vec!["Result".to_string()]
+    } else {
+        result.columns.clone()
+    };
+    let rows = if result.columns.is_empty() && result.rows.is_empty() {
+        Vec::new()
+    } else {
+        result.rows.clone()
+    };
+    let widths = column_widths(&columns, &rows);
+    let mut lines = Vec::new();
+
+    lines.push(format!(
+        "{} {}",
+        theme.cyan("SQL"),
+        theme.bold(&row_count_label(result))
+    ));
+    lines.push(render_separator(&widths));
+    lines.push(render_row(
+        &columns
+            .iter()
+            .map(|column| Some(column.as_str()))
+            .collect::<Vec<_>>(),
+        &widths,
+        Some(theme),
+    ));
+    lines.push(render_separator(&widths));
+    lines.extend(rows.iter().map(|row| {
+        let cells = row
+            .iter()
+            .map(|value| value.as_deref())
+            .collect::<Vec<Option<&str>>>();
+        render_row(&cells, &widths, None)
+    }));
+    lines.push(render_separator(&widths));
+    if result.truncated {
+        lines.push(theme.warning(&format!(
+            "Résultat tronqué après {} ligne(s). Relancer avec --max-rows pour élargir.",
+            result.rows.len()
+        )));
+    }
+    lines.join("\n")
+}
+
+fn row_count_label(result: &QueryResult) -> String {
+    let suffix = if result.rows.len() > 1 { "s" } else { "" };
+    if result.truncated {
+        format!(
+            "{} ligne{suffix} affichée{suffix}, résultat tronqué",
+            result.rows.len()
+        )
+    } else {
+        format!("{} ligne{suffix}", result.rows.len())
+    }
+}
+
+fn column_widths(columns: &[String], rows: &[Vec<Option<String>>]) -> Vec<usize> {
+    columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            let row_width = rows
+                .iter()
+                .filter_map(|row| row.get(index))
+                .map(|value| display_cell(value.as_deref()).chars().count())
+                .max()
+                .unwrap_or(0);
+            column
+                .chars()
+                .count()
+                .max(row_width)
+                .clamp(1, MAX_CELL_WIDTH)
+        })
+        .collect()
+}
+
+fn render_separator(widths: &[usize]) -> String {
+    let cells = widths
+        .iter()
+        .map(|width| "-".repeat(width + 2))
+        .collect::<Vec<_>>();
+    format!("+{}+", cells.join("+"))
+}
+
+fn render_row(cells: &[Option<&str>], widths: &[usize], theme: Option<&TerminalTheme>) -> String {
+    let rendered = widths
+        .iter()
+        .enumerate()
+        .map(|(index, width)| {
+            let value = display_cell(cells.get(index).copied().flatten());
+            let value = truncate_cell(&value, *width);
+            let padded = format!(" {value:<width$} ");
+            if let Some(theme) = theme {
+                theme.bold(&padded)
+            } else if cells.get(index).copied().flatten().is_none() {
+                TerminalTheme::plain().dim(&padded)
+            } else {
+                padded
+            }
+        })
+        .collect::<Vec<_>>();
+    format!("|{}|", rendered.join("|"))
+}
+
+fn display_cell(value: Option<&str>) -> String {
+    value
+        .filter(|value| !value.is_empty())
+        .unwrap_or("NULL")
+        .replace(['\n', '\r'], " ")
+}
+
+fn truncate_cell(value: &str, width: usize) -> String {
+    if value.chars().count() <= width {
+        return value.into();
+    }
+    let take = width.saturating_sub(1);
+    format!("{}…", value.chars().take(take).collect::<String>())
 }
 
 #[cfg(test)]
@@ -32,5 +156,34 @@ mod tests {
             render_query_result_tsv(&result),
             "Id\tName\n1\tNULL\n-- 1 rows (truncated)"
         );
+    }
+
+    #[test]
+    fn renders_terminal_table_with_summary_and_truncation_hint() {
+        let result = QueryResult {
+            columns: vec!["Id".into(), "Name".into()],
+            rows: vec![vec![Some("1".into()), None]],
+            truncated: true,
+        };
+
+        let output = render_query_result_table(&result, &TerminalTheme::plain());
+
+        assert!(output.contains("SQL 1 ligne affichée, résultat tronqué"));
+        assert!(output.contains("| Id | Name |"));
+        assert!(output.contains("| 1  | NULL |"));
+        assert!(output.contains("Résultat tronqué après 1 ligne(s)."));
+    }
+
+    #[test]
+    fn terminal_table_truncates_wide_cells() {
+        let result = QueryResult {
+            columns: vec!["Value".into()],
+            rows: vec![vec![Some("x".repeat(80))]],
+            truncated: false,
+        };
+
+        let output = render_query_result_table(&result, &TerminalTheme::plain());
+
+        assert!(output.contains('…'));
     }
 }
