@@ -1,6 +1,8 @@
 use crate::cli::*;
+use crate::completion::{
+    generate_completion, print_completion_complete, print_completion_install, print_completion_show,
+};
 use crate::doctor::{run_agent_doctor, run_doctor};
-use crate::simple_handlers::{handle_completion, handle_upgrade};
 use crate::version::informational_version;
 use anyhow::Result;
 use dw_agent::agent_context;
@@ -108,7 +110,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Command::Ado { command } => dw_ado_commands::command::handle_ado(command)?,
         Command::Db { command } => dw_db::command::handle_db(command)?,
         Command::Secret { command } => dw_secret::command::handle_secret(command)?,
-        Command::Upgrade { check, rid } => handle_upgrade(check, rid)?,
+        Command::Upgrade { check, rid } => crate::upgrade::handle_upgrade(check, rid)?,
         Command::Task { command } => dw_task::command::handle_task(command)?,
     }
 
@@ -117,4 +119,14 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
 
 fn print_styled(line: &str) {
     println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
+}
+
+fn handle_completion(command: CompletionCommand) -> Result<()> {
+    match command {
+        CompletionCommand::Show => print_completion_show(),
+        CompletionCommand::Generate { shell } => generate_completion(shell),
+        CompletionCommand::Install { shell } => print_completion_install(shell),
+        CompletionCommand::Complete { format, words } => print_completion_complete(format, words)?,
+    }
+    Ok(())
 }

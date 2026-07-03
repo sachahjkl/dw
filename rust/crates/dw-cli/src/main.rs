@@ -4,7 +4,6 @@ mod cli;
 mod completion;
 mod doctor;
 mod handlers;
-mod simple_handlers;
 mod upgrade;
 mod version;
 

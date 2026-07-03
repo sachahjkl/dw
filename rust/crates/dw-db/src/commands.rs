@@ -4,6 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use dw_config::{load_databases_config, resolve_root};
+use dw_ui::TerminalTheme;
 
 #[derive(Debug, Clone)]
 pub struct GuardArgs {
@@ -39,14 +40,7 @@ pub struct QueryArgs {
 
 pub fn guard(args: GuardArgs) {
     let result = validate_read_only_sql(&args.sql);
-    if result.is_allowed {
-        println!("SQL autorisee.");
-    } else {
-        println!(
-            "SQL bloquee: {}",
-            result.reason.unwrap_or_else(|| "raison inconnue".into())
-        );
-    }
+    print_styled(&guard_summary(&result));
 }
 
 pub fn schema(args: SchemaArgs) -> Result<()> {
@@ -122,6 +116,24 @@ fn print_db_result(result: &QueryResult, json: bool) -> Result<()> {
     Ok(())
 }
 
+fn guard_summary(result: &crate::SqlGuardResult) -> String {
+    if result.is_allowed {
+        "SQL autorisee.".into()
+    } else {
+        format!(
+            "SQL bloquee: {}",
+            result
+                .reason
+                .clone()
+                .unwrap_or_else(|| "raison inconnue".into())
+        )
+    }
+}
+
+fn print_styled(line: &str) {
+    println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +152,18 @@ mod tests {
 
         assert!(sql.contains("TABLE_SCHEMA = 'audit'"));
         assert!(sql.contains("TABLE_NAME = 'Events'"));
+    }
+
+    #[test]
+    fn guard_summary_reports_allowed_and_blocked_sql() {
+        assert_eq!(
+            guard_summary(&validate_read_only_sql("select 1")),
+            "SQL autorisee."
+        );
+
+        let blocked = guard_summary(&validate_read_only_sql("drop table dbo.Users"));
+
+        assert!(blocked.starts_with("SQL bloquee: "));
+        assert!(blocked.contains("SELECT/WITH"));
     }
 }
