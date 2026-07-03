@@ -15,9 +15,10 @@ pub fn render_context_items(
             lines.push(String::new());
         }
 
-        lines.push(format_context_header(item, theme));
+        lines.push("ADO context".into());
+        lines.extend(format_context_header(item, theme));
         lines.push(format!(
-            "Assigné à: {}",
+            "Assigné   : {}",
             item.work_item
                 .assigned_to
                 .as_deref()
@@ -33,7 +34,7 @@ pub fn render_context_items(
             && !description.trim().is_empty()
         {
             lines.push(String::new());
-            lines.push(theme.bold("Description:"));
+            lines.push(theme.bold("Description"));
             lines.push(description.trim().into());
         }
 
@@ -41,7 +42,7 @@ pub fn render_context_items(
             && !acceptance_criteria.trim().is_empty()
         {
             lines.push(String::new());
-            lines.push(theme.bold("Critères d'acceptation:"));
+            lines.push(theme.bold("Critères d'acceptation"));
             lines.push(acceptance_criteria.trim().into());
         }
 
@@ -51,7 +52,7 @@ pub fn render_context_items(
                 "Pièces jointes ({})",
                 item.attachments.items.len()
             )));
-            lines.push(format!("  Dossier: {}", item.attachments.directory_hint));
+            lines.push(format!("Dossier   : {}", item.attachments.directory_hint));
             for attachment in &item.attachments.items {
                 lines.push(format!(
                     "- {}",
@@ -66,23 +67,15 @@ pub fn render_context_items(
 
         if !item.relations.is_empty() {
             lines.push(String::new());
-            lines.push(theme.bold("Relations:"));
+            lines.push(theme.bold("Relations"));
             for relation in &item.relations {
-                lines.push(format!(
-                    "- {} {}",
-                    relation.kind,
-                    relation
-                        .work_item_id
-                        .as_deref()
-                        .or(relation.url.as_deref())
-                        .unwrap_or("")
-                ));
+                lines.push(format!("- {}", relation_display(relation)));
             }
         }
 
         if comment_limit != 0 && !item.comments.is_empty() {
             lines.push(String::new());
-            lines.push(theme.bold("Commentaires:"));
+            lines.push(theme.bold("Commentaires"));
             for comment in item.comments.iter().take(comment_limit.max(0) as usize) {
                 lines.push(format!(
                     "- {}: {}",
@@ -94,7 +87,7 @@ pub fn render_context_items(
 
         lines.push(String::new());
         lines.push(format!(
-            "AI context: {}",
+            "Contexte IA: {}",
             theme.command(&format!(
                 "dw ado ai-context {} --project {}",
                 item.work_item.id, project
@@ -104,17 +97,25 @@ pub fn render_context_items(
     lines.join("\n")
 }
 
-fn format_context_header(item: &AdoAiContextItem, theme: &TerminalTheme) -> String {
-    format!(
-        "{} {} {}",
-        theme.success(&format!("#{}", item.work_item.id)),
-        theme.dim(&format!(
-            "[{} / {}]",
-            item.work_item.kind.as_deref().unwrap_or("type inconnu"),
+fn format_context_header(item: &AdoAiContextItem, theme: &TerminalTheme) -> Vec<String> {
+    vec![
+        format!(
+            "Item      : {}",
+            theme.success(&format!("#{}", item.work_item.id))
+        ),
+        format!(
+            "Type      : {}",
+            item.work_item.kind.as_deref().unwrap_or("type inconnu")
+        ),
+        format!(
+            "État      : {}",
             item.work_item.state.as_deref().unwrap_or("état inconnu")
-        )),
-        item.work_item.title.as_deref().unwrap_or("(sans titre)")
-    )
+        ),
+        format!(
+            "Titre     : {}",
+            item.work_item.title.as_deref().unwrap_or("(sans titre)")
+        ),
+    ]
 }
 
 fn work_item_metadata(item: &AdoAiContextItem) -> Option<String> {
@@ -139,6 +140,21 @@ fn work_item_metadata(item: &AdoAiContextItem) -> Option<String> {
         values.push(format!("tags={}", item.work_item.tags.join(", ")));
     }
     (!values.is_empty()).then(|| values.join(" | "))
+}
+
+fn relation_display(relation: &dw_contracts::AdoAiContextRelation) -> String {
+    if !relation.display.trim().is_empty() {
+        return relation.display.clone();
+    }
+    format!(
+        "{} {}",
+        relation.kind,
+        relation
+            .work_item_id
+            .as_deref()
+            .or(relation.url.as_deref())
+            .unwrap_or("")
+    )
 }
 
 #[cfg(test)]
@@ -210,18 +226,25 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("#42 [Bug / Actif] Corriger"));
+        assert!(output.contains("ADO context"));
+        assert!(output.contains("Item      : #42"));
+        assert!(output.contains("Type      : Bug"));
+        assert!(output.contains("État      : Actif"));
+        assert!(output.contains("Titre     : Corriger"));
+        assert!(output.contains("Assigné   : Sacha"));
         assert!(
             output
                 .contains("Métadonnées: area=Produit\\Backlog | iteration=Sprint 1 | tags=urgent")
         );
         assert!(output.contains("Description courte"));
-        assert!(output.contains("Critères d'acceptation:"));
+        assert!(output.contains("Critères d'acceptation"));
         assert!(output.contains("Critère A"));
         assert!(output.contains("Pièces jointes (1)"));
+        assert!(output.contains("Dossier   : attachments/ado/42"));
         assert!(output.contains("capture.png"));
-        assert!(output.contains("- Parent 1"));
+        assert!(output.contains("- Parent #1"));
         assert!(output.contains("- Bob: OK"));
+        assert!(output.contains("Contexte IA: dw ado ai-context 42 --project ha"));
         assert!(output.contains("dw ado ai-context 42 --project ha"));
     }
 }
