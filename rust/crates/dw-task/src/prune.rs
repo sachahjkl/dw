@@ -9,7 +9,7 @@ use dw_workspace::{
     filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
 };
 
-use crate::render::print_styled;
+use crate::render::{print_styled, print_styled_lines};
 
 pub struct PruneArgs {
     pub root: Option<String>,
@@ -48,17 +48,12 @@ pub fn handle(args: PruneArgs) -> Result<()> {
     } else if candidates.is_empty() {
         print_styled("Aucun workspace éligible au prune.");
     } else {
-        for candidate in &candidates {
-            print_styled(&prune_candidate_line(candidate));
-        }
+        print_styled_lines(&prune_candidate_lines(&candidates));
     }
 
     if candidates.is_empty() || !execute {
         if !candidates.is_empty() && !json {
-            print_styled("");
-            print_styled(
-                "Prévisualisation uniquement. Relancer avec --execute --yes pour supprimer les workspaces éligibles.",
-            );
+            print_styled("Relancer  : dw task prune --execute --yes");
         }
         return Ok(());
     }
@@ -138,11 +133,28 @@ fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary], json: bool) {
 
 fn prune_candidate_line(candidate: &WorkspaceSummary) -> String {
     format!(
-        "{} / {}: {}",
+        "{} / {}",
         candidate.manifest.project,
-        display_work_items(&candidate.manifest.parent_work_items(), true),
-        candidate.path
+        display_work_items(&candidate.manifest.parent_work_items(), true)
     )
+}
+
+fn prune_candidate_lines(candidates: &[WorkspaceSummary]) -> Vec<String> {
+    let mut lines = vec![
+        "Task prune".into(),
+        "Mode      : prévisualisation".into(),
+        format!("Candidats : {}", candidates.len()),
+    ];
+    for candidate in candidates {
+        lines.push(String::new());
+        lines.push(format!("Workspace : {}", candidate.path));
+        lines.push(format!("Items     : {}", prune_candidate_line(candidate)));
+        lines.push(format!(
+            "Repos     : {}",
+            candidate.manifest.repositories.join(", ")
+        ));
+    }
+    lines
 }
 
 #[cfg(test)]
@@ -176,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn prune_candidate_line_includes_project_items_and_path() {
+    fn prune_candidate_line_includes_project_and_items() {
         let candidate = WorkspaceSummary {
             path: "/tmp/dw/projects/ha/workspaces/feat-1-done".into(),
             manifest: WorkspaceManifest {
@@ -199,10 +211,41 @@ mod tests {
             },
         };
 
-        assert_eq!(
-            prune_candidate_line(&candidate),
-            "ha / #1 Done [Valide]: /tmp/dw/projects/ha/workspaces/feat-1-done"
-        );
+        assert_eq!(prune_candidate_line(&candidate), "ha / #1 Done [Valide]");
+    }
+
+    #[test]
+    fn prune_candidate_lines_render_preview_summary() {
+        let candidate = WorkspaceSummary {
+            path: "/tmp/dw/projects/ha/workspaces/feat-1-done".into(),
+            manifest: WorkspaceManifest {
+                schema: 1,
+                work_item_id: "1".into(),
+                task_id: None,
+                project: "ha".into(),
+                kind: "feat".into(),
+                slug: "done".into(),
+                branch_name: "feat/1-done".into(),
+                created_at: "2026-07-02T10:00:00Z".into(),
+                repositories: vec!["front".into(), "back".into()],
+                status: "created".into(),
+                work_item_type: Some("User Story".into()),
+                work_item_title: Some("Done".into()),
+                work_item_state: Some("Valide".into()),
+                child_task_ids: None,
+                child_tasks: None,
+                work_items: None,
+            },
+        };
+
+        let lines = prune_candidate_lines(&[candidate]);
+
+        assert_eq!(lines[0], "Task prune");
+        assert_eq!(lines[1], "Mode      : prévisualisation");
+        assert_eq!(lines[2], "Candidats : 1");
+        assert!(lines.contains(&"Workspace : /tmp/dw/projects/ha/workspaces/feat-1-done".into()));
+        assert!(lines.contains(&"Items     : ha / #1 Done [Valide]".into()));
+        assert!(lines.contains(&"Repos     : front, back".into()));
     }
 
     fn unique_temp_root() -> std::path::PathBuf {
