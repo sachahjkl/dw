@@ -1,4 +1,5 @@
 mod agent_config;
+pub mod command;
 pub mod finish;
 pub mod lifecycle;
 pub mod open;

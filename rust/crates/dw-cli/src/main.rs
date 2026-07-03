@@ -7,7 +7,6 @@ mod db;
 mod doctor;
 mod handlers;
 mod simple_handlers;
-mod task;
 mod upgrade;
 mod version;
 

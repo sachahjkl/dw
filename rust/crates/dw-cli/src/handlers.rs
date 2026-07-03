@@ -81,7 +81,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 repo,
                 agent,
                 root,
-            } => crate::task::open_workspace(crate::task::OpenWorkspaceArgs {
+            } => dw_task::command::open_workspace(dw_task::command::OpenWorkspaceArgs {
                 workspace,
                 project,
                 work_item,
@@ -111,7 +111,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Command::Db { command } => crate::db::handle_db(command)?,
         Command::Secret { command } => handle_secret(command)?,
         Command::Upgrade { check, rid } => handle_upgrade(check, rid)?,
-        Command::Task { command } => crate::task::handle_task(command)?,
+        Command::Task { command } => dw_task::command::handle_task(command)?,
     }
 
     Ok(())

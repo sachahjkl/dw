@@ -1319,6 +1319,7 @@ name = "dw-task"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "dw-ado",
  "dw-agent",
  "dw-config",
