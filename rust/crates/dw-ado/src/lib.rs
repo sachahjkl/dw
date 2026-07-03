@@ -188,9 +188,16 @@ pub fn get_work_item_expanded(
 pub fn get_work_item_comments(
     options: &AzureDevOpsOptions,
     work_item_id: &str,
+    limit: i32,
     token: &AdoToken,
 ) -> Result<Vec<AdoAiContextComment>, AdoError> {
-    let root = get_json_authenticated(&work_item_comments_url(options, work_item_id, 200), token)?;
+    if limit <= 0 {
+        return Ok(Vec::new());
+    }
+    let root = get_json_authenticated(
+        &work_item_comments_url(options, work_item_id, limit as u32),
+        token,
+    )?;
     Ok(root
         .get("comments")
         .or_else(|| root.get("value"))
@@ -212,10 +219,12 @@ pub fn get_ai_context(
     options: &AzureDevOpsOptions,
     work_item_id: &str,
     summary_only: bool,
+    comment_limit: i32,
     token: &AdoToken,
 ) -> Result<AdoAiContextItem, AdoError> {
     let expanded = get_work_item_expanded(options, work_item_id, token)?;
-    let comments = get_work_item_comments(options, work_item_id, token).unwrap_or_default();
+    let comments =
+        get_work_item_comments(options, work_item_id, comment_limit, token).unwrap_or_default();
     Ok(map_ai_context_item(
         &expanded,
         options,
@@ -767,6 +776,20 @@ mod tests {
         assert_eq!(
             expanded_work_item_url(&options, "12345"),
             "https://dev.azure.com/org/Project X/_apis/wit/workitems/12345?$expand=all&api-version=7.1"
+        );
+    }
+
+    #[test]
+    fn comments_url_uses_requested_limit() {
+        let options = AzureDevOpsOptions {
+            organization: "https://dev.azure.com/org/".into(),
+            project: "Project X".into(),
+            api_version: default_api_version(),
+        };
+
+        assert_eq!(
+            work_item_comments_url(&options, "12345", 7),
+            "https://dev.azure.com/org/Project X/_apis/wit/workItems/12345/comments?$top=7&api-version=7.1"
         );
     }
 

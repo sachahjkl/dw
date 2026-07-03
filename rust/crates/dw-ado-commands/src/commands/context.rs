@@ -24,6 +24,7 @@ pub struct AiContextArgs {
     pub project: Option<String>,
     pub id: String,
     pub summary: bool,
+    pub comments: i32,
     pub include_comments: bool,
 }
 
@@ -53,7 +54,7 @@ pub fn handle_context(args: ContextArgs) -> Result<()> {
     } else {
         let items = ids
             .iter()
-            .map(|item_id| get_ai_context(&options, item_id, summary, &token))
+            .map(|item_id| get_ai_context(&options, item_id, summary, comments, &token))
             .collect::<Result<Vec<_>, _>>()?;
         print_context_items(&items, comments, &project_key);
     }
@@ -67,6 +68,7 @@ pub fn handle_ai_context(args: AiContextArgs) -> Result<()> {
         project,
         id,
         summary,
+        comments,
         include_comments,
     } = args;
     let root = resolve_root(root.as_deref());
@@ -74,7 +76,15 @@ pub fn handle_ai_context(args: AiContextArgs) -> Result<()> {
     let token = require_token(load_auth_options(Some(&root))?)?;
     let contexts = parse_work_item_ids_as_strings(&id)?
         .iter()
-        .map(|item_id| get_ai_context(&options, item_id, summary, &token))
+        .map(|item_id| {
+            get_ai_context(
+                &options,
+                item_id,
+                summary,
+                if include_comments { comments } else { 0 },
+                &token,
+            )
+        })
         .map(|context| {
             context.map(|context| {
                 if include_comments {

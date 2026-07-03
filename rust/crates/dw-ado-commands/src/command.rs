@@ -79,7 +79,7 @@ pub enum AdoCommand {
     },
     #[command(about = "Affiche un résumé lisible de work items Azure DevOps.")]
     WorkItem {
-        #[arg(help = "ID du work item Azure DevOps.")]
+        #[arg(help = "ID du work item Azure DevOps, ou liste séparée par virgules.")]
         id: String,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]
         root: Option<String>,
@@ -88,9 +88,11 @@ pub enum AdoCommand {
         #[arg(long, help = "Émettre la réponse JSON déterministe.")]
         json: bool,
     },
-    #[command(about = "Affiche le contexte détaillé d'un work item pour lecture humaine.")]
+    #[command(
+        about = "Affiche le contexte détaillé d'un ou plusieurs work items pour lecture humaine."
+    )]
     Context {
-        #[arg(help = "ID du work item Azure DevOps.")]
+        #[arg(help = "ID du work item Azure DevOps, ou liste séparée par virgules.")]
         id: String,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]
         root: Option<String>,
@@ -107,9 +109,11 @@ pub enum AdoCommand {
         #[arg(long, help = "Émettre la réponse JSON déterministe.")]
         json: bool,
     },
-    #[command(about = "Émet le contexte IA structuré et déterministe d'un work item.")]
+    #[command(
+        about = "Émet le contexte IA structuré et déterministe d'un ou plusieurs work items."
+    )]
     AiContext {
-        #[arg(help = "ID du work item Azure DevOps.")]
+        #[arg(help = "ID du work item Azure DevOps, ou liste séparée par virgules.")]
         id: String,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]
         root: Option<String>,
@@ -207,7 +211,7 @@ pub fn handle_ado(command: AdoCommand) -> Result<()> {
             project,
             id,
             summary,
-            comments: _,
+            comments,
             include_comments,
         } => commands::context::handle_ai_context(commands::context::AiContextArgs {
             root,
@@ -215,6 +219,7 @@ pub fn handle_ado(command: AdoCommand) -> Result<()> {
             project,
             id,
             summary,
+            comments,
             include_comments,
         })?,
     }
