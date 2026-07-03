@@ -6,13 +6,11 @@ use crate::cli::{Cli, CompletionOutput};
 use dw_config::resolve_root;
 
 mod catalog;
-mod values;
 
 use catalog::{
     option_allowed, option_requires_value, options_for_path, root_command_labels,
     subcommands_for_path,
 };
-use values::{database_values, env_values, project_values};
 
 pub fn generate_completion(shell: Shell) {
     let mut command = Cli::command();
@@ -121,41 +119,8 @@ fn option_waiting_for_value(words: &[String]) -> Option<&str> {
 
 fn complete_option_value(option: &str, words: &[String], current: &str) -> Vec<CompletionItem> {
     let root = option_value(words, "--root").unwrap_or_else(|| resolve_root(None));
-    let values = match option {
-        "--project" => project_values(&root),
-        "--repo" | "--only" => dw_task::completion::repository_values(
-            &root,
-            option_value(words, "--project").as_deref(),
-            option_value(words, "--workspace").as_deref(),
-        ),
-        "--workspace" => dw_task::completion::workspace_values(
-            &root,
-            option_value(words, "--project").as_deref(),
-            option_value(words, "--work-item").as_deref(),
-        ),
-        "--work-item" => dw_task::completion::work_item_values(
-            &root,
-            option_value(words, "--project").as_deref(),
-        ),
-        "--database" => database_values(&root, option_value(words, "--project").as_deref()),
-        "--env" => env_values(&root, option_value(words, "--project").as_deref()),
-        "--max-rows" => vec!["50".into(), "100".into(), "500".into(), "1000".into()],
-        "--format" => vec!["raw".into(), "markdown".into(), "html".into()],
-        "--type" => vec![
-            "feature".into(),
-            "bugfix".into(),
-            "hotfix".into(),
-            "chore".into(),
-        ],
-        "--agent" => vec![
-            "opencode".into(),
-            "cursor".into(),
-            "claude".into(),
-            "codex".into(),
-            "copilot".into(),
-        ],
-        _ => Vec::new(),
-    };
+    let path = command_path(words);
+    let values = values_for_path(&path, option, words, &root);
     values
         .into_iter()
         .filter(|value| value.starts_with(current))
@@ -164,6 +129,36 @@ fn complete_option_value(option: &str, words: &[String], current: &str) -> Vec<C
             description: String::new(),
         })
         .collect()
+}
+
+fn values_for_path(path: &[&str], option: &str, words: &[String], root: &str) -> Vec<String> {
+    let project = option_value(words, "--project");
+    let workspace = option_value(words, "--workspace");
+    let work_item = option_value(words, "--work-item");
+    match path {
+        ["task", _] | ["agent", "open"] => dw_task::completion::values_for(
+            option,
+            root,
+            project.as_deref(),
+            workspace.as_deref(),
+            work_item.as_deref(),
+        )
+        .unwrap_or_default(),
+        ["ado", _] => dw_ado_commands::completion::values_for(option, root).unwrap_or_default(),
+        ["db", _] => {
+            dw_db::completion::values_for(option, root, project.as_deref()).unwrap_or_default()
+        }
+        ["config", _] => match option {
+            "--root" => Vec::new(),
+            _ => Vec::new(),
+        },
+        ["agent", _] => dw_agent::completion::values_for(option).unwrap_or_default(),
+        ["completion", "complete"] if option == "--format" => vec!["bash".into(), "json".into()],
+        ["init"] | ["refresh"] if option == "--profile" => {
+            vec!["business".into(), "default".into()]
+        }
+        _ => Vec::new(),
+    }
 }
 
 fn option_value(words: &[String], option: &str) -> Option<String> {
@@ -190,7 +185,7 @@ fn complete_options(words: &[String]) -> Vec<CompletionItem> {
     options_for_path(&path)
         .into_iter()
         .filter(|option| !selected.contains(option))
-        .filter(|option| option_allowed(option, &selected))
+        .filter(|option| option_allowed(&path, option, &selected))
         .map(|label| CompletionItem {
             label: label.into(),
             description: String::new(),
@@ -396,6 +391,18 @@ mod tests {
     }
 
     #[test]
+    fn completion_complete_format_offers_completion_formats() {
+        let values = labels(complete_words(&words(&[
+            "completion",
+            "complete",
+            "--format",
+            "",
+        ])));
+
+        assert_eq!(values, vec!["bash", "json"]);
+    }
+
+    #[test]
     fn project_values_come_from_live_config() {
         let root = temp_root("completion-projects");
         fs::create_dir_all(root.join("config")).expect("config dir");
@@ -412,7 +419,7 @@ mod tests {
             root.to_str().expect("root"),
             "--project",
         ])));
-        assert_eq!(values, vec!["dw".to_string(), "ha".to_string()]);
+        assert_eq!(values, vec!["ha".to_string(), "dw".to_string()]);
     }
 
     fn words(values: &[&str]) -> Vec<String> {

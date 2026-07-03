@@ -17,3 +17,29 @@ pub fn options_for(subcommand: &str) -> Vec<&'static str> {
         _ => Vec::new(),
     }
 }
+
+pub fn option_requires_value(option: &str) -> bool {
+    matches!(
+        option,
+        "--sql" | "--project" | "--database" | "--env" | "--max-rows"
+    )
+}
+
+pub fn option_allowed(option: &str, selected: &[&str]) -> bool {
+    let conflicts = match option {
+        "--database" => &["--env"][..],
+        "--env" => &["--database"][..],
+        _ => &[][..],
+    };
+    !conflicts.iter().any(|conflict| selected.contains(conflict))
+}
+
+pub fn values_for(option: &str, root: &str, project: Option<&str>) -> Option<Vec<String>> {
+    match option {
+        "--project" => Some(dw_config::completion::project_values(root)),
+        "--database" => Some(dw_config::completion::database_values(root, project)),
+        "--env" => Some(dw_config::completion::env_values(root, project)),
+        "--max-rows" => Some(vec!["50".into(), "100".into(), "500".into(), "1000".into()]),
+        _ => None,
+    }
+}

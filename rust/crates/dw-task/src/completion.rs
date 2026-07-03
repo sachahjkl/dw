@@ -91,6 +91,70 @@ pub fn options_for(subcommand: &str) -> Vec<&'static str> {
     }
 }
 
+pub fn option_requires_value(option: &str) -> bool {
+    matches!(
+        option,
+        "--root"
+            | "--project"
+            | "--task"
+            | "--type"
+            | "--only"
+            | "--slug"
+            | "--repo"
+            | "--agent"
+            | "--workspace"
+            | "--work-item"
+            | "--message"
+            | "--title"
+            | "--state"
+            | "--ai-context-file"
+    )
+}
+
+pub fn option_allowed(option: &str, selected: &[&str]) -> bool {
+    let conflicts = match option {
+        "--workspace" => &["--project", "--work-item", "--continue"][..],
+        "--project" | "--work-item" | "--continue" => &["--workspace"][..],
+        _ => &[][..],
+    };
+    if conflicts.iter().any(|conflict| selected.contains(conflict)) {
+        return false;
+    }
+    match option {
+        "--ready" => selected.contains(&"--create-pr"),
+        _ => true,
+    }
+}
+
+pub fn values_for(
+    option: &str,
+    root: &str,
+    project: Option<&str>,
+    workspace: Option<&str>,
+    work_item: Option<&str>,
+) -> Option<Vec<String>> {
+    match option {
+        "--project" => Some(dw_config::completion::project_values(root)),
+        "--repo" | "--only" => Some(repository_values(root, project, workspace)),
+        "--workspace" => Some(workspace_values(root, project, work_item)),
+        "--work-item" => Some(work_item_values(root, project)),
+        "--type" => Some(vec![
+            "feature".into(),
+            "bugfix".into(),
+            "hotfix".into(),
+            "chore".into(),
+        ]),
+        "--agent" => Some(vec![
+            "opencode".into(),
+            "cursor".into(),
+            "claude".into(),
+            "codex".into(),
+            "copilot".into(),
+        ]),
+        _ => None,
+    }
+}
+
 pub fn agent_open_options() -> Vec<&'static str> {
     workspace_resolution_options(&["--repo", "--agent"])
 }

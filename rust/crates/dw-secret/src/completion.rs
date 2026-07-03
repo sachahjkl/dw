@@ -9,3 +9,16 @@ pub fn options_for(subcommand: &str) -> Vec<&'static str> {
         _ => Vec::new(),
     }
 }
+
+pub fn option_requires_value(option: &str) -> bool {
+    matches!(option, "--value" | "--from-env")
+}
+
+pub fn option_allowed(option: &str, selected: &[&str]) -> bool {
+    let conflicts = match option {
+        "--value" => &["--from-env"][..],
+        "--from-env" => &["--value"][..],
+        _ => &[][..],
+    };
+    !conflicts.iter().any(|conflict| selected.contains(conflict))
+}

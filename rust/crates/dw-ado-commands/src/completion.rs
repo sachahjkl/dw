@@ -43,3 +43,41 @@ pub fn options_for(subcommand: &str) -> Vec<&'static str> {
         _ => Vec::new(),
     }
 }
+
+pub fn option_requires_value(option: &str) -> bool {
+    matches!(
+        option,
+        "--root"
+            | "--project"
+            | "--repo"
+            | "--format"
+            | "--git-to"
+            | "--top"
+            | "--comments"
+            | "--organization"
+    )
+}
+
+pub fn option_allowed(option: &str, selected: &[&str]) -> bool {
+    let conflicts = match option {
+        "--from-pr" => &["--from-git"][..],
+        "--from-git" => &["--from-pr"][..],
+        _ => &[][..],
+    };
+    if conflicts.iter().any(|conflict| selected.contains(conflict)) {
+        return false;
+    }
+    match option {
+        "--git-to" => selected.contains(&"--from-git"),
+        "--table" => selected.contains(&"--format"),
+        _ => true,
+    }
+}
+
+pub fn values_for(option: &str, root: &str) -> Option<Vec<String>> {
+    match option {
+        "--project" => Some(dw_config::completion::project_values(root)),
+        "--format" => Some(vec!["raw".into(), "markdown".into(), "html".into()]),
+        _ => None,
+    }
+}

@@ -10,3 +10,24 @@ pub fn options_for(subcommand: &str) -> Vec<&'static str> {
         _ => Vec::new(),
     }
 }
+
+pub fn option_requires_value(option: &str) -> bool {
+    matches!(option, "--root" | "--agent")
+}
+
+pub fn option_allowed(_option: &str, _selected: &[&str]) -> bool {
+    true
+}
+
+pub fn values_for(option: &str) -> Option<Vec<String>> {
+    match option {
+        "--agent" => Some(vec![
+            "opencode".into(),
+            "cursor".into(),
+            "claude".into(),
+            "codex".into(),
+            "copilot".into(),
+        ]),
+        _ => None,
+    }
+}

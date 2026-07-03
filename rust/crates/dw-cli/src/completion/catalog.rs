@@ -1,57 +1,22 @@
 pub(super) fn option_requires_value(option: &str) -> bool {
-    matches!(
-        option,
-        "--project"
-            | "--repo"
-            | "--workspace"
-            | "--work-item"
-            | "--only"
-            | "--database"
-            | "--env"
-            | "--max-rows"
-            | "--format"
-            | "--type"
-            | "--agent"
-            | "--root"
-            | "--rid"
-            | "--slug"
-            | "--task"
-            | "--title"
-            | "--message"
-            | "--profile"
-            | "--sql"
-            | "--value"
-            | "--from-env"
-            | "--top"
-            | "--comments"
-            | "--organization"
-            | "--state"
-            | "--ai-context-file"
-    )
+    root_option_requires_value(option)
+        || dw_task::completion::option_requires_value(option)
+        || dw_ado_commands::completion::option_requires_value(option)
+        || dw_db::completion::option_requires_value(option)
+        || dw_config::completion::option_requires_value(option)
+        || dw_secret::completion::option_requires_value(option)
+        || dw_agent::completion::option_requires_value(option)
 }
 
-pub(super) fn option_allowed(option: &str, selected: &[&str]) -> bool {
-    let conflicts = match option {
-        "--workspace" => &["--project", "--work-item", "--continue"][..],
-        "--project" | "--work-item" | "--continue" => &["--workspace"][..],
-        "--database" => &["--env"][..],
-        "--env" => &["--database"][..],
-        "--from-pr" => &["--from-git"][..],
-        "--from-git" => &["--from-pr"][..],
-        "--value" => &["--from-env"][..],
-        "--from-env" => &["--value"][..],
-        "--check" => &["--rid"][..],
-        "--rid" => &["--check"][..],
-        _ => &[][..],
-    };
-    if conflicts.iter().any(|conflict| selected.contains(conflict)) {
-        return false;
-    }
-    match option {
-        "--ready" => selected.contains(&"--create-pr"),
-        "--git-to" => selected.contains(&"--from-git"),
-        "--table" => selected.contains(&"--format"),
-        _ => true,
+pub(super) fn option_allowed(path: &[&str], option: &str, selected: &[&str]) -> bool {
+    match path {
+        ["task", _] | ["agent", "open"] => dw_task::completion::option_allowed(option, selected),
+        ["ado", _] => dw_ado_commands::completion::option_allowed(option, selected),
+        ["db", _] => dw_db::completion::option_allowed(option, selected),
+        ["config", _] => dw_config::completion::option_allowed(option, selected),
+        ["secret", _] => dw_secret::completion::option_allowed(option, selected),
+        ["agent", _] => dw_agent::completion::option_allowed(option, selected),
+        _ => root_option_allowed(option, selected),
     }
 }
 
@@ -107,4 +72,17 @@ pub(super) fn root_command_labels() -> &'static [&'static str] {
         "upgrade",
         "task",
     ]
+}
+
+fn root_option_requires_value(option: &str) -> bool {
+    matches!(option, "--root" | "--profile" | "--rid" | "--format")
+}
+
+fn root_option_allowed(option: &str, selected: &[&str]) -> bool {
+    let conflicts = match option {
+        "--check" => &["--rid"][..],
+        "--rid" => &["--check"][..],
+        _ => &[][..],
+    };
+    !conflicts.iter().any(|conflict| selected.contains(conflict))
 }
