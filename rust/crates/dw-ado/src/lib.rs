@@ -2,6 +2,7 @@ pub mod auth;
 mod auth_browser;
 mod changelog;
 mod http;
+mod json;
 mod urls;
 mod wiql;
 
@@ -29,6 +30,7 @@ use http::{
     patch_json_authenticated_with_content_type, patch_json_with_content_type, post_json,
     post_json_authenticated, post_json_with_content_type,
 };
+use json::{clean_text, element_text, field_text, identity_text, work_item_id_from_relation_url};
 use urls::organization_name;
 pub use urls::{
     active_pull_requests_url, create_work_item_url, expanded_work_item_url,
@@ -887,33 +889,6 @@ fn distinct_relation_ids(relations: &[AdoAiContextRelation], kind: &str) -> Vec<
     ids
 }
 
-fn field_text(fields: &Value, name: &str) -> Option<String> {
-    fields.get(name).and_then(|value| element_text(Some(value)))
-}
-
-fn identity_text(value: Option<&Value>) -> Option<String> {
-    let value = value?;
-    value
-        .get("displayName")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .or_else(|| element_text(Some(value)))
-}
-
-fn element_text(value: Option<&Value>) -> Option<String> {
-    match value? {
-        Value::String(value) => Some(value.clone()),
-        Value::Number(value) => Some(value.to_string()),
-        Value::Bool(value) => Some(value.to_string()),
-        Value::Object(object) => object
-            .get("displayName")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        Value::Null => None,
-        other => Some(other.to_string()),
-    }
-}
-
 fn split_tags(tags: Option<String>) -> Vec<String> {
     tags.unwrap_or_default()
         .split(';')
@@ -951,29 +926,6 @@ fn friendly_field_name(field_name: &str) -> String {
         .replace("System.", "")
         .replace("Microsoft.VSTS.Common.", "")
         .replace("Custom.", "")
-}
-
-fn work_item_id_from_relation_url(url: &str) -> Option<String> {
-    let marker = "/workItems/";
-    let index = url.find(marker)?;
-    let id = &url[index + marker.len()..];
-    Some(id.split(['/', '?']).next()?.to_string())
-}
-
-fn clean_text(value: Option<String>) -> Option<String> {
-    let value = value?;
-    let mut in_tag = false;
-    let mut out = String::new();
-    for c in value.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(c),
-            _ => {}
-        }
-    }
-    let trimmed = out.replace("&nbsp;", " ").trim().to_string();
-    (!trimmed.is_empty()).then_some(trimmed)
 }
 
 #[cfg(test)]
