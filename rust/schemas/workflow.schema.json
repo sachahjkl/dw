@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sachahjkl/dw/schemas/workflow.schema.json",
+  "title": "dw workflow configuration",
+  "type": "object",
+  "required": ["schema", "branchPrefixes", "azureDevOps", "auth", "updates"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "const": 1
+    },
+    "branchPrefixes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "worktreeFolders": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "agent": {
+      "type": "object",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": ["opencode", "cursor", "cursor-agent", "agent", "claude", "codex-cli", "codex", "copilot"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "azureDevOps": {
+      "type": "object",
+      "required": ["organizationUrl", "apiVersion"],
+      "properties": {
+        "organizationUrl": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "apiVersion": {
+          "type": "string",
+          "default": "7.1"
+        }
+      },
+      "additionalProperties": false
+    },
+    "taskStart": {
+      "type": "object",
+      "properties": {
+        "updateWorkItemState": {
+          "type": "boolean"
+        },
+        "createChildTasks": {
+          "type": "boolean"
+        },
+        "userStoryState": {
+          "type": "string"
+        },
+        "anomalyState": {
+          "type": "string"
+        },
+        "bugState": {
+          "type": "string"
+        },
+        "taskState": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "taskFinish": {
+      "type": "object",
+      "properties": {
+        "runVerification": {
+          "type": "boolean"
+        },
+        "updateWorkItemState": {
+          "type": "boolean"
+        },
+        "bugState": {
+          "type": "string"
+        },
+        "taskState": {
+          "type": "string"
+        },
+        "verificationCommands": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "auth": {
+      "type": "object",
+      "required": ["tenantId", "clientId", "scopes"],
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "clientId": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "updates": {
+      "type": "object",
+      "required": ["owner", "repository", "includePrerelease", "assetName"],
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "includePrerelease": {
+          "type": "boolean"
+        },
+        "assetName": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

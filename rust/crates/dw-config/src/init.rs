@@ -155,19 +155,19 @@ fn write_schemas(root: &str, overwrite: bool) -> std::io::Result<()> {
     for (file_name, content) in [
         (
             "projects.schema.json",
-            include_str!("../../../../schemas/projects.schema.json"),
+            include_str!("../../../schemas/projects.schema.json"),
         ),
         (
             "workflow.schema.json",
-            include_str!("../../../../schemas/workflow.schema.json"),
+            include_str!("../../../schemas/workflow.schema.json"),
         ),
         (
             "databases.schema.json",
-            include_str!("../../../../schemas/databases.schema.json"),
+            include_str!("../../../schemas/databases.schema.json"),
         ),
         (
             "release.schema.json",
-            include_str!("../../../../schemas/release.schema.json"),
+            include_str!("../../../schemas/release.schema.json"),
         ),
     ] {
         write_file(path(root, &["schemas", file_name]), content, overwrite)?;
