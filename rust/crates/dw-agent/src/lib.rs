@@ -236,7 +236,7 @@ pub fn workspace_config_files(
         },
         AgentWorkspaceConfigFile {
             relative_path: ".codex/config.toml".into(),
-            content: "# Project-local Codex config placeholder.\n# Primary execution instructions are loaded from AGENTS.md in this workspace.\n".into(),
+            content: "# Configuration Codex locale au projet.\n# Les instructions d'exécution principales sont chargées depuis AGENTS.md dans ce workspace.\n".into(),
         },
         AgentWorkspaceConfigFile {
             relative_path: ".github/copilot-instructions.md".into(),
@@ -247,46 +247,46 @@ pub fn workspace_config_files(
 
 pub fn agent_context(root: &str) -> String {
     format!(
-        r#"# DevWorkflow agent context
+        r#"# Contexte agent DevWorkflow
 
-You are working inside a DevWorkflow-managed environment.
+Tu travailles dans un environnement géré par DevWorkflow.
 
-Use `dw` for workflow operations:
+Utilise `dw` pour les opérations du workflow:
 
-- `dw doctor` checks local prerequisites.
-- `dw auth login` connects Azure DevOps when the silent token is unavailable.
-- `dw ado assigned --project <name>` lists assigned work items.
-- `dw ado work-item <workItemId> --project <name>` reads a work item summary.
-- `dw ado ai-context <workItemId> --project <name>` reads the deterministic structured work item context for AI consumption.
-- `dw task current` prints the active task workspace and branch.
-- `dw task sync --continue` refreshes `task.json` from ADO when the local context may be stale.
-- `dw task preflight --continue` checks deterministic blockers/warnings before implementation or child-task decomposition.
-- `dw task handoff-validate --continue` validates handoff contracts before `task finish` or sub-agent execution.
-- `dw task open --workspace <path>` opens a new agent session for a workspace.
-- `dw task open --continue` resumes an existing agent session on the latest workspace.
-- `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"` creates ADO child tasks after the plan is written.
-- `dw task commit --continue --execute` creates an intermediate commit without push or PR.
-- `dw task finish --continue --execute --create-pr` is the expected commit/push/PR flow when finishing.
-- `dw db schema`, `dw db describe` and `dw db query` are the SQL entrypoints and are read-only by default.
+- `dw doctor` vérifie les prérequis locaux.
+- `dw auth login` connecte Azure DevOps quand la connexion silencieuse est indisponible.
+- `dw ado assigned --project <name>` liste les work items assignés.
+- `dw ado work-item <workItemId> --project <name>` lit le résumé d'un work item.
+- `dw ado ai-context <workItemId> --project <name>` lit le contexte work item structuré et déterministe pour usage IA.
+- `dw task current` affiche le workspace task actif et la branche.
+- `dw task sync --continue` rafraîchit `task.json` depuis ADO quand le contexte local peut être obsolète.
+- `dw task preflight --continue` vérifie les blocages et alertes déterministes avant implémentation ou découpage en child tasks.
+- `dw task handoff-validate --continue` valide les contrats handoff avant `task finish` ou exécution de sub-agents.
+- `dw task open --workspace <path>` ouvre une nouvelle session agent pour un workspace.
+- `dw task open --continue` reprend une session agent existante sur le workspace le plus récent.
+- `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"` crée des child tasks ADO après rédaction du plan.
+- `dw task commit --continue --execute` crée un commit intermédiaire sans push ni PR.
+- `dw task finish --continue --execute --create-pr` est le flow commit/push/PR attendu en fin de travail.
+- `dw db schema`, `dw db describe` et `dw db query` sont les points d'entrée SQL et restent read-only par défaut.
 
-Current configured root:
+Root configuré courant:
 
 ```text
 {root}
 ```
 
-Important rules:
+Règles importantes:
 
-1. Azure DevOps work items are the source of truth.
-2. Use `dw` for every ADO, Git naming, PR and worktree operation.
-3. Do not use Azure DevOps MCP tools.
-4. Read the work item with `dw ado work-item` before coding, then run `dw ado ai-context` before acting on ADO context.
-5. Before working, make sure the initial project setup required by the environment is in place: `pnpm install`, `pnpm approve-builds --all`, `npm install` fallback, or `dotnet restore` as appropriate.
-6. Update `plan.md` before implementing.
-7. Write all user-facing and project-facing text in French.
-8. Do not normalize business labels or domain wording from ADO, screenshots, mockups or project text.
-9. Treat screenshots, mockups and attachments as factual source material.
-10. Branches, commits and PR titles are created by `dw`; do not create them manually.
+1. Les work items Azure DevOps sont la source de vérité.
+2. Utiliser `dw` pour toute opération ADO, nommage Git, PR et worktree.
+3. Ne pas utiliser les outils MCP Azure DevOps.
+4. Lire le work item avec `dw ado work-item` avant de coder, puis lancer `dw ado ai-context` avant d'agir sur le contexte ADO.
+5. Avant de travailler, vérifier que le setup initial requis par l'environnement est fait: `pnpm install`, `pnpm approve-builds --all`, `npm install` en fallback, ou `dotnet restore` selon le projet.
+6. Mettre à jour `plan.md` avant d'implémenter.
+7. Écrire tout texte utilisateur/projet en français.
+8. Ne pas normaliser les labels métier ni le vocabulaire de domaine issus d'ADO, des screenshots, mockups ou textes projet.
+9. Traiter les screenshots, mockups et attachments comme sources factuelles.
+10. Les branches, commits et titres de PR sont créés par `dw`; ne pas les créer manuellement.
 "#
     )
 }
@@ -311,7 +311,7 @@ fn workspace_agents_md(work_items: &[WorkspaceWorkItemRef], project: &str) -> St
         .join("\n");
 
     format!(
-        "# DevWorkflow Workspace\n\nThis workspace is managed by `dw`.\n\nContext:\n\n- Project: `{project}`\n- Work items:\n{items}\n\nRules:\n\n1. Run `dw task current` to identify the current task workspace.\n2. Read each work item with `dw ado work-item <id> --project {project}` before coding.\n3. Read `dw ado ai-context <id> --project {project}` before acting on ADO context.\n4. Use `dw db schema`, `dw db describe` and `dw db query` when database context can clarify the change.\n5. Before working, make sure the initial project setup required by the environment is in place.\n6. Fill `plan.md` before implementing.\n7. Run `dw task preflight --continue` before implementation, child-task creation, or other irreversible work.\n8. Run `dw task handoff-validate --continue` before launching sub-agents and before `dw task finish`.\n9. If the primary work item is a `User Story` or an `Anomalie`, once `plan.md` is complete and before implementation starts, create at least one ADO child task, then as many as needed from the plan, with `dw task create-child-task --continue --repo <front|back|db|foo> --title \"<action explicite>\"`.\n10. Write all user-facing and project-facing text in French: plans, comments, commit/PR text, task titles, progress summaries and final explanations.\n11. Structure the plan explicitly by domain when possible: front, back, db or other repos. Use sub-agents for independent tracks whenever possible.\n12. Use `dw task sync --continue` before lifecycle decisions if the local ADO context may be stale.\n13. Use `dw task commit` for intermediate commits.\n14. Use `dw task finish` for final push/PR workflows.\n15. Use `dw task teardown` or `dw task prune` for cleanup.\n"
+        "# Workspace DevWorkflow\n\nCe workspace est géré par `dw`.\n\nContexte:\n\n- Project: `{project}`\n- Work items:\n{items}\n\nRègles:\n\n1. Lancer `dw task current` pour identifier le workspace task courant.\n2. Lire chaque work item avec `dw ado work-item <id> --project {project}` avant de coder.\n3. Lire `dw ado ai-context <id> --project {project}` avant d'agir sur le contexte ADO.\n4. Utiliser `dw db schema`, `dw db describe` et `dw db query` quand le contexte base de données peut clarifier le changement.\n5. Avant de travailler, vérifier que le setup initial requis par l'environnement est en place.\n6. Remplir `plan.md` avant d'implémenter.\n7. Lancer `dw task preflight --continue` avant implémentation, création de child tasks ou autre action irréversible.\n8. Lancer `dw task handoff-validate --continue` avant de lancer des sub-agents et avant `dw task finish`.\n9. Si le work item principal est une `User Story` ou une `Anomalie`, une fois `plan.md` complet et avant le début de l'implémentation, créer au moins une child task ADO, puis autant que nécessaire depuis le plan, avec `dw task create-child-task --continue --repo <front|back|db|foo> --title \"<action explicite>\"`.\n10. Écrire tout texte utilisateur/projet en français: plans, commentaires, messages de commit/PR, titres des tasks, synthèses d'avancement et explications finales.\n11. Structurer le plan explicitement par domaine quand c'est possible: front, back, db ou autres repositories. Utiliser des sub-agents pour les chantiers indépendants quand c'est possible.\n12. Utiliser `dw task sync --continue` avant les décisions de cycle de vie si le contexte ADO local peut être obsolète.\n13. Utiliser `dw task commit` pour les commits intermédiaires.\n14. Utiliser `dw task finish` pour les flows finaux push/PR.\n15. Utiliser `dw task teardown` ou `dw task prune` pour le nettoyage.\n"
     )
 }
 
@@ -397,7 +397,7 @@ mod tests {
             .find(|file| file.relative_path == "AGENTS.md")
             .expect("AGENTS.md should exist");
 
-        assert!(agents.content.contains("# DevWorkflow Workspace"));
+        assert!(agents.content.contains("# Workspace DevWorkflow"));
         assert!(agents.content.contains("#11010"));
         assert!(agents.content.contains("dw task create-child-task"));
         assert!(agents.content.contains("dw task preflight --continue"));
@@ -409,7 +409,7 @@ mod tests {
         assert!(
             agents
                 .content
-                .contains("Use sub-agents for independent tracks whenever possible")
+                .contains("Utiliser des sub-agents pour les chantiers indépendants")
         );
     }
 }

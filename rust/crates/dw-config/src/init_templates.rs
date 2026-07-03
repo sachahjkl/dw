@@ -15,8 +15,8 @@ pub(crate) struct InitProfile {
     pub(crate) opencode_jsonc: &'static str,
 }
 
-pub(crate) const WORKSPACE_CODEX_CONFIG: &str = r#"# Project-local Codex config placeholder.
-# Primary execution instructions are loaded from AGENTS.md in this workspace.
+pub(crate) const WORKSPACE_CODEX_CONFIG: &str = r#"# Configuration Codex locale au projet.
+# Les instructions d'exécution principales sont chargées depuis AGENTS.md dans ce workspace.
 "#;
 
 pub(crate) fn resolve_profile(name: &str) -> std::io::Result<InitProfile> {
@@ -285,32 +285,32 @@ const BUSINESS_DATABASES_JSON: &str = r#"{
 }
 "#;
 
-const AGENTS_MD: &str = r#"# DevWorkflow Global Rules
+const AGENTS_MD: &str = r#"# Règles globales DevWorkflow
 
-This root is managed by `dw`.
+Ce root est géré par `dw`.
 
-Global rules:
+Règles globales:
 
-1. Use Azure DevOps work items as the source of truth.
-2. Use only `dw ado ...`, `dw auth ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
-3. Once inside a task workspace, follow the local `AGENTS.md` there as the primary execution contract.
-4. Write all user-facing and project-facing text in French unless a repository convention says otherwise.
-5. Do not normalize business labels or domain wording from ADO, screenshots, mockups, attachments or project text. Preserve the exact terms unless the user explicitly asks to rename them.
-6. Treat screenshots, mockups and attachments as factual source material. If something is ambiguous, ask the user instead of guessing.
+1. Utiliser les work items Azure DevOps comme source de vérité.
+2. Utiliser uniquement `dw ado ...`, `dw auth ...` et `dw task ...` pour les opérations Azure DevOps/worktree; ne pas utiliser les outils MCP Azure DevOps.
+3. Une fois dans un workspace task, suivre le `AGENTS.md` local comme contrat d'exécution principal.
+4. Écrire tout texte utilisateur/projet en français, sauf convention contraire d'un repository.
+5. Ne pas normaliser les labels métier ni le vocabulaire de domaine issus d'ADO, des screenshots, mockups, attachments ou textes projet. Préserver les termes exacts sauf demande explicite de renommage.
+6. Traiter les screenshots, mockups et attachments comme sources factuelles. Si un point est ambigu, demander à l'utilisateur au lieu de deviner.
 "#;
 
-const BUSINESS_AGENTS_MD: &str = r#"# DevWorkflow BUSINESS Global Rules
+const BUSINESS_AGENTS_MD: &str = r#"# Règles globales DevWorkflow BUSINESS
 
-This root is managed by `dw`.
+Ce root est géré par `dw`.
 
-Global rules:
+Règles globales:
 
-1. Use Azure DevOps work items as the source of truth.
-2. Use only `dw ado ...`, `dw auth ...` and `dw task ...` for Azure DevOps/worktree operations; do not use Azure DevOps MCP tools.
-3. Once inside a task workspace, follow the local `AGENTS.md` there as the primary execution contract.
-4. Write all user-facing and project-facing text in French unless a repository convention says otherwise.
-5. Do not normalize business labels or domain wording from ADO, screenshots, mockups, attachments or project text. Preserve the exact terms unless the user explicitly asks to rename them.
-6. Treat screenshots, mockups and attachments as factual source material. If something is ambiguous, ask the user instead of guessing.
+1. Utiliser les work items Azure DevOps comme source de vérité.
+2. Utiliser uniquement `dw ado ...`, `dw auth ...` et `dw task ...` pour les opérations Azure DevOps/worktree; ne pas utiliser les outils MCP Azure DevOps.
+3. Une fois dans un workspace task, suivre le `AGENTS.md` local comme contrat d'exécution principal.
+4. Écrire tout texte utilisateur/projet en français, sauf convention contraire d'un repository.
+5. Ne pas normaliser les labels métier ni le vocabulaire de domaine issus d'ADO, des screenshots, mockups, attachments ou textes projet. Préserver les termes exacts sauf demande explicite de renommage.
+6. Traiter les screenshots, mockups et attachments comme sources factuelles. Si un point est ambigu, demander à l'utilisateur au lieu de deviner.
 "#;
 
 const OPENCODE_JSONC: &str = r#"{
