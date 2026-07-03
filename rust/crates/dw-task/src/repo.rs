@@ -14,6 +14,7 @@ use dw_workspace::{
 use self::render::{
     add_repo_plan_lines, commit_status_lines, repo_latest_header_lines, teardown_plan_lines,
 };
+use crate::interactive::confirm_or_require_flag;
 use crate::render::{print_styled, print_styled_lines};
 
 mod render;
@@ -241,10 +242,14 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
         return Ok(());
     }
 
-    if !yes {
-        return Err(anyhow::anyhow!(
-            "Suppression destructive refusée: ajouter --yes avec --execute."
-        ));
+    if !yes
+        && !confirm_or_require_flag(
+            "--yes",
+            &format!("Supprimer ce workspace et ses worktrees ?\n{workspace}"),
+        )?
+    {
+        print_styled("Suppression annulée.");
+        return Ok(());
     }
 
     execute_task_teardown(&workspace, &steps, |git_dir, args| match args {

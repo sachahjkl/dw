@@ -1,3 +1,4 @@
+use crate::interactive::confirm_when_interactive;
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
@@ -142,6 +143,18 @@ pub fn handle(args: FinishArgs) -> Result<()> {
         return Err(anyhow::anyhow!(
             "--create-pr ne peut pas être combiné avec --skip-ado."
         ));
+    }
+    if !confirm_when_interactive(&finish_confirmation_prompt(
+        &workspace,
+        !changed.is_empty(),
+        !unpushed.is_empty(),
+        create_pr,
+        skip_ado,
+    ))? {
+        if !json {
+            print_styled("Finalisation annulée.");
+        }
+        return Ok(());
     }
 
     if !handoff.is_valid {
@@ -307,4 +320,48 @@ pub fn handle(args: FinishArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn finish_confirmation_prompt(
+    workspace: &str,
+    has_changes: bool,
+    has_unpushed: bool,
+    create_pr: bool,
+    skip_ado: bool,
+) -> String {
+    let mut actions = Vec::new();
+    if has_changes {
+        actions.push("commit");
+    }
+    if has_changes || has_unpushed {
+        actions.push("push");
+    }
+    if create_pr {
+        actions.push("PR ADO");
+    } else if skip_ado {
+        actions.push("sans ADO");
+    }
+
+    format!(
+        "Exécuter la finalisation ({}) ?\n{}",
+        actions.join(" + "),
+        workspace
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::finish_confirmation_prompt;
+
+    #[test]
+    fn finish_confirmation_prompt_summarizes_actions() {
+        assert_eq!(
+            finish_confirmation_prompt("/tmp/ws", true, false, true, false),
+            "Exécuter la finalisation (commit + push + PR ADO) ?\n/tmp/ws"
+        );
+        assert_eq!(
+            finish_confirmation_prompt("/tmp/ws", false, true, false, true),
+            "Exécuter la finalisation (push + sans ADO) ?\n/tmp/ws"
+        );
+    }
 }

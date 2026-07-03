@@ -9,7 +9,9 @@ use dw_workspace::{
     filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
 };
 
+use crate::interactive::multiselect_or_require_flag;
 use crate::render::{print_styled, print_styled_lines};
+use std::collections::HashSet;
 
 pub struct PruneArgs {
     pub root: Option<String>,
@@ -60,8 +62,20 @@ pub fn handle(args: PruneArgs) -> Result<()> {
         ));
     }
 
+    let selected_candidates = if yes {
+        candidates
+    } else {
+        prompt_prune_candidates(candidates)?
+    };
+    if selected_candidates.is_empty() {
+        if !json {
+            print_styled("Prune annulé.");
+        }
+        return Ok(());
+    }
+
     let projects = load_projects_config(&root);
-    for candidate in candidates {
+    for candidate in selected_candidates {
         let (_manifest, steps) = plan_task_teardown(&root, &projects, &candidate.path)?;
         execute_task_teardown(&candidate.path, &steps, |git_dir, args| match args {
             ["worktree", "remove", "--force", target] => {
@@ -155,6 +169,30 @@ fn prune_candidate_lines(candidates: &[WorkspaceSummary]) -> Vec<String> {
     lines
 }
 
+fn prompt_prune_candidates(candidates: Vec<WorkspaceSummary>) -> Result<Vec<WorkspaceSummary>> {
+    let choices = candidates
+        .iter()
+        .map(prune_candidate_choice)
+        .collect::<Vec<_>>();
+    let selected = multiselect_or_require_flag("--yes", "Workspaces à supprimer", choices)?
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+    Ok(candidates
+        .into_iter()
+        .filter(|candidate| selected.contains(&prune_candidate_choice(candidate)))
+        .collect())
+}
+
+fn prune_candidate_choice(candidate: &WorkspaceSummary) -> String {
+    format!(
+        "{} - {} - {}",
+        prune_candidate_line(candidate),
+        candidate.manifest.repositories.join(", "),
+        candidate.path
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,6 +283,36 @@ mod tests {
         assert!(lines.contains(&"Workspace : /tmp/dw/projects/ha/workspaces/feat-1-done".into()));
         assert!(lines.contains(&"Éléments  : ha / #1 Done [Valide]".into()));
         assert!(lines.contains(&"Repos     : front, back".into()));
+    }
+
+    #[test]
+    fn prune_candidate_choice_includes_context_and_path() {
+        let candidate = WorkspaceSummary {
+            path: "/tmp/dw/projects/ha/workspaces/feat-1-done".into(),
+            manifest: WorkspaceManifest {
+                schema: 1,
+                work_item_id: "1".into(),
+                task_id: None,
+                project: "ha".into(),
+                kind: "feat".into(),
+                slug: "done".into(),
+                branch_name: "feat/1-done".into(),
+                created_at: "2026-07-02T10:00:00Z".into(),
+                repositories: vec!["front".into(), "back".into()],
+                status: "created".into(),
+                work_item_type: Some("User Story".into()),
+                work_item_title: Some("Done".into()),
+                work_item_state: Some("Valide".into()),
+                child_task_ids: None,
+                child_tasks: None,
+                work_items: None,
+            },
+        };
+
+        assert_eq!(
+            prune_candidate_choice(&candidate),
+            "ha / #1 Done [Valide] - front, back - /tmp/dw/projects/ha/workspaces/feat-1-done"
+        );
     }
 
     fn unique_temp_root() -> std::path::PathBuf {
