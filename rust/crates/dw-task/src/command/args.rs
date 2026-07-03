@@ -127,32 +127,57 @@ pub enum TaskCommand {
     },
     #[command(about = "Met les repositories du workspace a jour depuis leur branche cible.")]
     RepoLatest {
-        #[arg(long, conflicts_with = "continue")]
+        #[arg(
+            long,
+            conflicts_with = "continue",
+            help = "Chemin du workspace a synchroniser."
+        )]
         workspace: Option<String>,
-        #[arg(long = "continue", conflicts_with = "workspace")]
+        #[arg(
+            long = "continue",
+            conflicts_with = "workspace",
+            help = "Reprendre le workspace task le plus recent correspondant."
+        )]
         r#continue: bool,
-        #[arg(long = "only")]
+        #[arg(
+            long = "only",
+            help = "Limiter la synchronisation a un repository du workspace."
+        )]
         only: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a utiliser.")]
         root: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Emettre le plan/resultat JSON deterministe.")]
         json: bool,
     },
     #[command(
         about = "Prepare ou cree un commit intermediaire pour les repositories du workspace."
     )]
     Commit {
-        #[arg(long, conflicts_with = "continue")]
+        #[arg(
+            long,
+            conflicts_with = "continue",
+            help = "Chemin du workspace a committer."
+        )]
         workspace: Option<String>,
-        #[arg(long = "continue", conflicts_with = "workspace")]
+        #[arg(
+            long = "continue",
+            conflicts_with = "workspace",
+            help = "Reprendre le workspace task le plus recent correspondant."
+        )]
         r#continue: bool,
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a utiliser.")]
         root: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Creer vraiment les commits; sans ce flag, affiche le plan."
+        )]
         execute: bool,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Message de commit explicite; sinon genere depuis le manifeste task."
+        )]
         message: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Emettre le rapport JSON deterministe.")]
         json: bool,
     },
     #[command(about = "Ajoute des work items au workspace task courant.")]
@@ -203,14 +228,18 @@ pub enum TaskCommand {
     },
     #[command(about = "Ajoute un repository au workspace task.")]
     AddRepo {
+        #[arg(help = "Repository configure a ajouter au workspace.")]
         repo: String,
-        #[arg(long)]
+        #[arg(long, help = "Chemin du workspace a modifier.")]
         workspace: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a utiliser.")]
         root: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Creer le worktree et modifier task.json; sans ce flag, affiche le plan."
+        )]
         execute: bool,
-        #[arg(long)]
+        #[arg(long, help = "Emettre le plan/resultat JSON deterministe.")]
         json: bool,
     },
     #[command(about = "Cree une tache enfant ADO et l'ajoute au handoff repository.")]
@@ -292,22 +321,32 @@ pub enum TaskCommand {
     },
     #[command(about = "Supprime les worktrees et nettoie un workspace task.")]
     Teardown {
-        #[arg(long)]
+        #[arg(long, help = "Chemin du workspace a supprimer.")]
         workspace: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a utiliser.")]
         root: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Projet configure utilise pour resoudre le workspace.")]
         project: Option<String>,
-        #[arg(long = "work-item")]
+        #[arg(
+            long = "work-item",
+            help = "Work item utilise pour resoudre le workspace."
+        )]
         work_item: Option<String>,
-        #[arg(long = "continue")]
+        #[arg(
+            long = "continue",
+            help = "Reprendre le workspace task le plus recent correspondant."
+        )]
         r#continue: bool,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Supprimer vraiment les worktrees et le workspace; sans ce flag, affiche le plan."
+        )]
         execute: bool,
-        #[arg(long)]
+        #[arg(long, help = "Confirmer la suppression destructive avec --execute.")]
         yes: bool,
-        #[arg(long)]
+        #[arg(long, help = "Emettre le plan/resultat JSON deterministe.")]
         json: bool,
+        #[arg(help = "Alias positionnel du work item pour resoudre le workspace.")]
         positional_work_item: Option<String>,
     },
     #[command(about = "Nettoie les workspaces dont les work items sont termines.")]
