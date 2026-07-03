@@ -4,7 +4,6 @@ bin/
 obj/
 artifacts/
 target/
-rust/target/
 
 # Local smoke/test roots
 .smoke/

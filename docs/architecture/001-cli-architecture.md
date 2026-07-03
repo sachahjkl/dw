@@ -1,8 +1,8 @@
 # CLI Architecture
 
-The CLI is a small .NET 10 executable targeting Windows x64 first.
+The CLI is a native Rust workspace targeting Linux and Windows release binaries.
 
-It is framework-dependent because the target machines are expected to have the .NET 10 runtime. This keeps artifacts smaller than self-contained publishing while preserving straightforward deployment.
+The top-level `dw-cli` crate owns command-line composition and delegates domain behavior to dedicated crates. Domain crates expose command handlers, completion catalogs, and rendering helpers where appropriate.
 
 ## Layers
 
@@ -13,9 +13,9 @@ Commands
         -> filesystem / git / azure devops / sql / secrets / updates
 ```
 
-The command tree is declared with `System.CommandLine`. Commands, subcommands, arguments, options, descriptions, help, and shell suggestions must come from that tree instead of ad-hoc command parsing or hardcoded usage text.
+The command tree is declared with `clap`. Commands, subcommands, arguments, options, descriptions, help, and shell suggestions must come from that tree plus the domain completion catalogs instead of ad-hoc command parsing or hardcoded usage text.
 
-Handlers receive typed option records or explicit values built from `ParseResult`. They must not redispatch subcommands with local `switch` statements or parse positional values manually.
+Handlers receive typed option records. `dw-cli` should stay thin: it routes to domain crates and handles cross-domain orchestration only when necessary.
 
 ## Command Groups
 
@@ -25,7 +25,7 @@ Handlers receive typed option records or explicit values built from `ParseResult
 - `task`: task workspace lifecycle
 - `auth`: Azure DevOps authentication
 - `db`: read-only SQL Server access
-- `update`: GitHub Releases update flow
+- `upgrade`: GitHub Releases update flow
 
 ## Versioning
 
@@ -35,4 +35,4 @@ The intended version format is:
 YYYY.MM.DD.BUILD+COMMIT
 ```
 
-The date must be supplied by the release process, not computed during reproducible builds.
+The date prefix is supplied by `VERSION`; the commit suffix comes from the build environment or Git metadata.
