@@ -8,7 +8,7 @@ use dw_ado::{
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_git::{commit_repository, push_repository, repository_status};
-use dw_ui::confirm_when_interactive;
+use dw_ui::{confirm_when_interactive, select_optional};
 use dw_workspace::{
     WorkspaceHandoffSummary, build_commit_message, ensure_verification_passed, finish_state,
     plan_task_finish, pull_request_description, pull_request_title, read_handoff_summary,
@@ -42,10 +42,10 @@ pub fn handle(args: FinishArgs) -> Result<()> {
         root,
         execute,
         message,
-        create_pr,
-        ready,
+        mut create_pr,
+        mut ready,
         skip_verify,
-        skip_ado,
+        mut skip_ado,
         json,
     } = args;
 
@@ -87,6 +87,13 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             .map(|(target, _)| target.repository.clone())
             .collect::<Vec<_>>()
     };
+
+    if should_prompt_finish_mode(execute, json, create_pr, ready, skip_ado)
+        && let Some(mode) = select_finish_mode()?
+    {
+        apply_finish_mode(mode, &mut create_pr, &mut ready, &mut skip_ado);
+    }
+
     let pull_request_candidates = if create_pr {
         select_pull_request_candidates(&statuses, &actionable_repositories, project_config.as_ref())
     } else {
@@ -349,9 +356,81 @@ fn finish_confirmation_prompt(
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FinishMode {
+    PushOnly,
+    DraftPr,
+    ReadyPr,
+    KeepFlags,
+}
+
+fn should_prompt_finish_mode(
+    execute: bool,
+    json: bool,
+    create_pr: bool,
+    ready: bool,
+    skip_ado: bool,
+) -> bool {
+    execute && !json && !create_pr && !ready && !skip_ado
+}
+
+fn finish_mode_choices() -> Vec<String> {
+    vec![
+        "Push uniquement, sans ADO".to_string(),
+        "Push + PR ADO draft".to_string(),
+        "Push + PR ADO ready".to_string(),
+        "Garder les flags actuels".to_string(),
+    ]
+}
+
+fn finish_mode_from_label(label: &str) -> FinishMode {
+    match label {
+        "Push + PR ADO draft" => FinishMode::DraftPr,
+        "Push + PR ADO ready" => FinishMode::ReadyPr,
+        "Garder les flags actuels" => FinishMode::KeepFlags,
+        _ => FinishMode::PushOnly,
+    }
+}
+
+fn select_finish_mode() -> Result<Option<FinishMode>> {
+    Ok(
+        select_optional("Mode de finalisation", finish_mode_choices())?
+            .map(|label| finish_mode_from_label(&label)),
+    )
+}
+
+fn apply_finish_mode(
+    mode: FinishMode,
+    create_pr: &mut bool,
+    ready: &mut bool,
+    skip_ado: &mut bool,
+) {
+    match mode {
+        FinishMode::PushOnly => {
+            *create_pr = false;
+            *ready = false;
+            *skip_ado = true;
+        }
+        FinishMode::DraftPr => {
+            *create_pr = true;
+            *ready = false;
+            *skip_ado = false;
+        }
+        FinishMode::ReadyPr => {
+            *create_pr = true;
+            *ready = true;
+            *skip_ado = false;
+        }
+        FinishMode::KeepFlags => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::finish_confirmation_prompt;
+    use super::{
+        FinishMode, apply_finish_mode, finish_confirmation_prompt, finish_mode_choices,
+        finish_mode_from_label, should_prompt_finish_mode,
+    };
 
     #[test]
     fn finish_confirmation_prompt_summarizes_actions() {
@@ -363,5 +442,50 @@ mod tests {
             finish_confirmation_prompt("/tmp/ws", false, true, false, true),
             "Exécuter la finalisation (push + sans ADO) ?\n/tmp/ws"
         );
+    }
+
+    #[test]
+    fn finish_mode_prompt_only_when_flags_leave_it_ambiguous() {
+        assert!(should_prompt_finish_mode(true, false, false, false, false));
+        assert!(!should_prompt_finish_mode(
+            false, false, false, false, false
+        ));
+        assert!(!should_prompt_finish_mode(true, true, false, false, false));
+        assert!(!should_prompt_finish_mode(true, false, true, false, false));
+        assert!(!should_prompt_finish_mode(true, false, false, true, false));
+        assert!(!should_prompt_finish_mode(true, false, false, false, true));
+    }
+
+    #[test]
+    fn finish_mode_choices_map_to_modes() {
+        let choices = finish_mode_choices();
+        assert_eq!(finish_mode_from_label(&choices[0]), FinishMode::PushOnly);
+        assert_eq!(finish_mode_from_label(&choices[1]), FinishMode::DraftPr);
+        assert_eq!(finish_mode_from_label(&choices[2]), FinishMode::ReadyPr);
+        assert_eq!(finish_mode_from_label(&choices[3]), FinishMode::KeepFlags);
+    }
+
+    #[test]
+    fn finish_modes_apply_flags() {
+        let (mut create_pr, mut ready, mut skip_ado) = (false, false, false);
+        apply_finish_mode(
+            FinishMode::ReadyPr,
+            &mut create_pr,
+            &mut ready,
+            &mut skip_ado,
+        );
+        assert!(create_pr);
+        assert!(ready);
+        assert!(!skip_ado);
+
+        apply_finish_mode(
+            FinishMode::PushOnly,
+            &mut create_pr,
+            &mut ready,
+            &mut skip_ado,
+        );
+        assert!(!create_pr);
+        assert!(!ready);
+        assert!(skip_ado);
     }
 }
