@@ -149,7 +149,7 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
-        print_styled_lines(&work_item_update_plan_lines("Add work-item", &plan));
+        print_styled_lines(&work_item_update_plan_lines("ajout", &plan));
         if !skip_ado {
             print_styled("Work items ADO résolus:");
             print_styled(&display_work_items(&plan.work_items, true));
@@ -192,7 +192,7 @@ pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
-        print_styled_lines(&work_item_update_plan_lines("Remove work-item", &plan));
+        print_styled_lines(&work_item_update_plan_lines("retrait", &plan));
     }
     if execute {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
@@ -207,15 +207,17 @@ pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
 }
 
 fn work_item_update_plan_lines(
-    label: &str,
+    action: &str,
     plan: &dw_workspace::TaskWorkItemUpdatePlan,
 ) -> Vec<String> {
     vec![
-        format!("Prévisualisation {label}:"),
-        format!("- branch: {} -> {}", plan.old_branch, plan.new_branch),
-        format!("- workspace: {} -> {}", plan.workspace, plan.new_workspace),
+        "Work items task".into(),
+        "Mode      : prévisualisation".into(),
+        format!("Action    : {action}"),
+        format!("Branche   : {} -> {}", plan.old_branch, plan.new_branch),
+        format!("Workspace : {} -> {}", plan.workspace, plan.new_workspace),
         format!(
-            "- work items: {}",
+            "Items     : {}",
             plan.work_items
                 .iter()
                 .map(|item| format!("#{}", item.id))
@@ -252,10 +254,12 @@ mod tests {
             ],
         };
 
-        let lines = work_item_update_plan_lines("ajout work-item", &plan);
+        let lines = work_item_update_plan_lines("ajout", &plan);
 
-        assert_eq!(lines[0], "Prévisualisation ajout work-item:");
-        assert!(lines.contains(&"- branch: feat/1-old -> feat/1-2-new".into()));
-        assert!(lines.contains(&"- work items: #1, #2".into()));
+        assert_eq!(lines[0], "Work items task");
+        assert_eq!(lines[1], "Mode      : prévisualisation");
+        assert_eq!(lines[2], "Action    : ajout");
+        assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-2-new".into()));
+        assert!(lines.contains(&"Items     : #1, #2".into()));
     }
 }

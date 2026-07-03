@@ -150,6 +150,7 @@ impl TerminalTheme {
                 "Task workspaces",
                 "Task sync",
                 "Task rename",
+                "Work items task",
                 "Workspace courant",
                 "Repo latest",
                 "Commit workspace",
