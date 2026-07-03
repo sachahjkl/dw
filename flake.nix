@@ -1,5 +1,5 @@
 {
-  description = "dw - native Rust Dev Workflow CLI";
+  description = "dw - Dev Workflow CLI";
 
   nixConfig = {
     extra-substituters = [
@@ -140,7 +140,7 @@
           };
 
           shellHook = ''
-            echo "dw Rust dev shell"
+            echo "dw dev shell"
             echo "Commands:"
             echo "  nix run .#dw -- version"
             echo "  nix run .#check"

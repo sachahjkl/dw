@@ -1,6 +1,6 @@
 # CLI Architecture
 
-The CLI is a native Rust workspace targeting Linux and Windows release binaries.
+The CLI targets Linux and Windows release binaries from this workspace.
 
 The top-level `dw-cli` crate owns command-line composition and delegates domain behavior to dedicated crates. Domain crates expose command handlers, completion catalogs, and rendering helpers where appropriate.
 

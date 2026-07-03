@@ -1,4 +1,4 @@
-name: Rust CI
+name: CI
 
 on:
   push:
@@ -6,12 +6,14 @@ on:
       - develop
       - main
       - master
+    paths-ignore:
+      - VERSION
   pull_request:
   workflow_dispatch:
 
 jobs:
   linux:
-    name: Linux Rust build, tests and artifact
+    name: Linux build, tests and artifact
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,7 +35,7 @@ jobs:
       - name: Build Nix package
         run: nix build .#default
 
-      - name: Rust checks
+      - name: Checks
         run: nix run .#check
 
       - name: Publish linux-x64 artifact
@@ -48,16 +50,16 @@ jobs:
             artifacts/linux-x64/release.json
 
   windows:
-    name: Windows Rust build, tests and artifact
+    name: Windows build, tests and artifact
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Rust
+      - name: Setup toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust checks
+      - name: Checks
         shell: pwsh
         run: |
           cargo fmt --all -- --check

@@ -502,7 +502,7 @@ fn create_child_task_body(
     source: &str,
 ) -> Result<Value, AdoError> {
     let trace = format!(
-        "Créé automatiquement par Dev Workflow Rust via {source}. Parent #{}. Repository: {repository}.",
+        "Créé automatiquement par Dev Workflow via {source}. Parent #{}. Repository: {repository}.",
         parent.id
     );
     let body = vec![

@@ -1,6 +1,6 @@
 # dw
 
-`dw` is a native Rust Dev Workflow CLI for AI-assisted work across Azure DevOps, Git worktrees, multi-repository projects, agent context, and read-only SQL Server introspection.
+`dw` is the Dev Workflow CLI for AI-assisted work across Azure DevOps, Git worktrees, multi-repository projects, agent context, and read-only SQL Server introspection.
 
 The CLI is the deterministic rail. AI agents still do the reasoning and editing, but `dw` keeps workflow state, filesystem layout, Git operations, ADO context, database access, and release/update mechanics predictable.
 
@@ -64,7 +64,7 @@ Release workflows also produce `release.json`, consumed by `dw upgrade --check` 
 
 ## CI
 
-GitHub Actions runs Rust CI on Linux and Windows:
+GitHub Actions runs CI on Linux and Windows:
 
 - `cargo fmt --all -- --check`
 - `cargo test --workspace --locked`

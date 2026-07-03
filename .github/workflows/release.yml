@@ -1,4 +1,4 @@
-name: Rust Release
+name: Release
 
 on:
   push:
@@ -79,7 +79,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Rust
+      - name: Setup toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build and test
