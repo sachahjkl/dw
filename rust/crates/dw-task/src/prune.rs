@@ -162,7 +162,7 @@ fn prune_candidate_lines(candidates: &[WorkspaceSummary]) -> Vec<String> {
         lines.push(format!("Workspace : {}", candidate.path));
         lines.push(format!("Éléments  : {}", prune_candidate_line(candidate)));
         lines.push(format!(
-            "Repos     : {}",
+            "Repositories: {}",
             candidate.manifest.repositories.join(", ")
         ));
     }
@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(lines[3], "À faire   : dw task prune --execute --yes");
         assert!(lines.contains(&"Workspace : /tmp/dw/projects/ha/workspaces/feat-1-done".into()));
         assert!(lines.contains(&"Éléments  : ha / #1 Done [Valide]".into()));
-        assert!(lines.contains(&"Repos     : front, back".into()));
+        assert!(lines.contains(&"Repositories: front, back".into()));
     }
 
     #[test]

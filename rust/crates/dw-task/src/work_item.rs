@@ -1,9 +1,9 @@
 use crate::{load_auth_options, resolve_ado_options, write_workspace_agent_configs};
 use anyhow::Result;
 use dw_ado::auth::require_token;
-use dw_ado::get_work_item_snapshots_authenticated;
+use dw_ado::{get_work_item_snapshots_authenticated, query_assigned_work_items};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_ui::multiselect_optional;
+use dw_ui::{is_stdin_interactive, multiselect_optional};
 use dw_workspace::{
     display_work_items, execute_work_item_update,
     parse_work_item_ids as parse_workspace_work_item_ids, plan_add_work_item_snapshots,
@@ -15,7 +15,7 @@ use crate::render::{print_styled, print_styled_lines};
 
 #[derive(Debug, Clone)]
 pub struct AddWorkItemArgs {
-    pub work_item_ids: String,
+    pub work_item_ids: Option<String>,
     pub workspace: Option<String>,
     pub root: Option<String>,
     pub project: Option<String>,
@@ -74,6 +74,17 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
             .display()
             .to_string(),
     )?;
+    let projects = load_projects_config(&root);
+    let workflow = load_workflow_config(&root);
+    let work_item_ids = resolve_add_work_item_ids(
+        work_item_ids,
+        &root,
+        &projects,
+        &workflow,
+        &current_manifest,
+        skip_ado,
+        json,
+    )?;
     let requested_ids = parse_workspace_work_item_ids(&work_item_ids);
     let missing_ids = requested_ids
         .iter()
@@ -96,8 +107,6 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
             state.as_deref(),
         )?
     } else {
-        let projects = load_projects_config(&root);
-        let workflow = load_workflow_config(&root);
         let mut options = resolve_ado_options(&projects, &workflow, &current_manifest.project)?;
         if options.project.trim().is_empty() {
             options.project = current_manifest.project.clone();
@@ -164,6 +173,80 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn resolve_add_work_item_ids(
+    explicit: Option<String>,
+    root: &str,
+    projects: &dw_config::ProjectsConfig,
+    workflow: &dw_config::WorkflowConfig,
+    manifest: &dw_workspace::WorkspaceManifest,
+    skip_ado: bool,
+    json: bool,
+) -> Result<String> {
+    if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
+        return Ok(ids);
+    }
+    if json || skip_ado || !is_stdin_interactive() {
+        return Err(anyhow::anyhow!(
+            "Work items à ajouter manquants. Fournir `dw task add-work-item <ids>`."
+        ));
+    }
+
+    let choices = add_work_item_choices(root, projects, workflow, manifest)?;
+    let Some(selected) = multiselect_optional("Work items à ajouter", choices)? else {
+        return Err(anyhow::anyhow!(
+            "Work items à ajouter manquants. Fournir `dw task add-work-item <ids>`."
+        ));
+    };
+    if selected.is_empty() {
+        return Err(anyhow::anyhow!("Aucun work item sélectionné."));
+    }
+
+    Ok(selected
+        .iter()
+        .map(|label| work_item_id_from_choice(label))
+        .collect::<Vec<_>>()
+        .join(","))
+}
+
+fn add_work_item_choices(
+    root: &str,
+    projects: &dw_config::ProjectsConfig,
+    workflow: &dw_config::WorkflowConfig,
+    manifest: &dw_workspace::WorkspaceManifest,
+) -> Result<Vec<String>> {
+    let mut options = resolve_ado_options(projects, workflow, &manifest.project)?;
+    if options.project.trim().is_empty() {
+        options.project = manifest.project.clone();
+    }
+    let token = require_token(load_auth_options(Some(root))?)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let items = runtime.block_on(query_assigned_work_items(&options, 50, &token))?;
+    let choices = items
+        .into_iter()
+        .filter(|item| !manifest.matches_work_item(&item.id))
+        .filter(|item| !dw_workspace::is_final_state(item.kind.as_deref(), item.state.as_deref()))
+        .map(|item| {
+            display_add_work_item_choice(&dw_workspace::WorkspaceWorkItem {
+                id: item.id,
+                kind: item.kind,
+                title: item.title,
+                state: item.state,
+            })
+        })
+        .collect::<Vec<_>>();
+    if choices.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Aucun work item assigné disponible à ajouter pour le projet {}.",
+            manifest.project
+        ));
+    }
+    Ok(choices)
+}
+
+fn display_add_work_item_choice(item: &dw_workspace::WorkspaceWorkItem) -> String {
+    display_work_item_choice(item)
 }
 
 pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
@@ -250,6 +333,10 @@ fn removable_work_item_choices(manifest: &dw_workspace::WorkspaceManifest) -> Ve
 }
 
 fn display_remove_work_item_choice(item: &dw_workspace::WorkspaceWorkItem) -> String {
+    display_work_item_choice(item)
+}
+
+fn display_work_item_choice(item: &dw_workspace::WorkspaceWorkItem) -> String {
     format!(
         "#{}{}{}{}",
         item.id,
@@ -377,5 +464,20 @@ mod tests {
         assert_eq!(choices[0], "#1 [User Story] (Active) Parent");
         assert_eq!(choices[1], "#2 [Bug] (New) Secondaire");
         assert_eq!(work_item_id_from_choice(&choices[1]), "2");
+    }
+
+    #[test]
+    fn add_work_item_choice_uses_same_context_format() {
+        let item = dw_workspace::WorkspaceWorkItem {
+            id: "3".into(),
+            kind: Some("Task".into()),
+            title: Some("À ajouter".into()),
+            state: Some("Active".into()),
+        };
+
+        assert_eq!(
+            display_add_work_item_choice(&item),
+            "#3 [Task] (Active) À ajouter"
+        );
     }
 }

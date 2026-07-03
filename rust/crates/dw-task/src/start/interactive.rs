@@ -102,7 +102,7 @@ pub(super) fn interactive_repositories(
         return None;
     }
 
-    let selected = MultiSelect::new("Repos", options).prompt().ok()?;
+    let selected = MultiSelect::new("Repositories", options).prompt().ok()?;
     if selected.is_empty() {
         None
     } else {

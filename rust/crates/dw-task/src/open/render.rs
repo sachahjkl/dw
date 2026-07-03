@@ -41,7 +41,7 @@ pub(super) fn task_list_lines(items: &[dw_workspace::TaskListItem]) -> Vec<Strin
         ));
         lines.push(format!("  Branche: {}", item.branch_name));
         if !item.repositories.is_empty() {
-            lines.push(format!("  Repos: {}", item.repositories.join(", ")));
+            lines.push(format!("  Repositories: {}", item.repositories.join(", ")));
         }
         lines.push(format!("  Chemin: {}", item.path));
     }
@@ -65,7 +65,7 @@ pub(super) fn current_workspace_lines(item: &dw_workspace::TaskCurrentItem) -> V
         lines.push(format!("Tâches enfants: {}", format_child_tasks(item)));
     }
 
-    lines.push(format!("Repos     : {}", item.repositories.join(", ")));
+    lines.push(format!("Repositories: {}", item.repositories.join(", ")));
     lines
 }
 

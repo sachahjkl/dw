@@ -262,7 +262,7 @@ pub enum TaskCommand {
     #[command(about = "Ajoute des work items au workspace task courant.")]
     AddWorkItem {
         #[arg(help = "IDs de work items à ajouter, séparés par virgules.")]
-        work_item_ids: String,
+        work_item_ids: Option<String>,
         #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Chemin du workspace à modifier.")]
         workspace: Option<String>,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]

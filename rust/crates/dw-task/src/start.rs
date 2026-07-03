@@ -204,7 +204,7 @@ fn planned_workspace_lines(plan: &TaskStartPlan) -> Vec<String> {
         format!("Slug: {}", plan.slug),
         format!("Branche cible: {}", plan.branch_name),
         format!("Workspace cible: {}", plan.workspace),
-        format!("Repos: {}", plan.repositories.join(", ")),
+        format!("Repositories: {}", plan.repositories.join(", ")),
         "Relancer avec --execute pour créer le workspace.".into(),
     ]
 }
@@ -213,7 +213,7 @@ fn created_workspace_lines(plan: &TaskStartPlan) -> Vec<String> {
     vec![
         format!("Workspace créé: {}", plan.workspace),
         format!("Branche cible: {}", plan.branch_name),
-        format!("Repos: {}", plan.repositories.join(", ")),
+        format!("Repositories: {}", plan.repositories.join(", ")),
         "Prochaine étape conseillée: ouvrir le workspace ou lancer l'agent.".into(),
     ]
 }

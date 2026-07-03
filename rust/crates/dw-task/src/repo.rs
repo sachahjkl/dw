@@ -89,7 +89,7 @@ pub fn repo_latest(args: RepoLatestArgs) -> Result<()> {
             ));
             update_repository(&target.repository_path, &target.default_branch)?;
         }
-        print_styled("Repos synchronisés avec la remote.");
+        print_styled("Repositories synchronisés avec la remote.");
     }
     Ok(())
 }

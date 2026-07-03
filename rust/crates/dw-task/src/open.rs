@@ -290,7 +290,7 @@ mod tests {
         assert_eq!(lines[1], "Projet  Créé        Type   Work items");
         assert!(lines[2].contains("ha      2026-07-02  feat   #42 Titre [Actif]"));
         assert!(lines.contains(&"  Branche: feat/42-titre".into()));
-        assert!(lines.contains(&"  Repos: front".into()));
+        assert!(lines.contains(&"  Repositories: front".into()));
         assert_eq!(lines.last().map(String::as_str), Some("  Chemin: /tmp/ws"));
     }
 
@@ -324,7 +324,7 @@ mod tests {
         assert!(lines.contains(&"Projet    : ha".into()));
         assert!(lines.contains(&"Work items: #42 Corriger [Bug, Actif]".into()));
         assert!(lines.contains(&"Tâches enfants: #43 Corriger front (front)".into()));
-        assert!(lines.contains(&"Repos     : front, back".into()));
+        assert!(lines.contains(&"Repositories: front, back".into()));
     }
 
     #[test]
