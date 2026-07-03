@@ -1,4 +1,6 @@
 use anyhow::Result;
+use dw_contracts::{TaskHandoffValidationReport, TaskPreflightReport};
+use dw_ui::TerminalTheme;
 use dw_workspace::{build_handoff_validation_report, build_preflight_report_from_ai_context_files};
 use std::path::Path;
 
@@ -19,34 +21,7 @@ pub fn preflight(workspace: String, ai_context_file: Vec<String>, json: bool) ->
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        println!("Preflight workspace: {}", report.workspace);
-        println!("Projet: {}", report.project);
-        println!(
-            "Work items: {}",
-            report
-                .work_item_ids
-                .iter()
-                .map(|id| format!("#{id}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        println!();
-        if report.issues.is_empty() {
-            println!("Aucun warning ni blocage detecte.");
-        } else {
-            for issue in &report.issues {
-                println!("- [{}] {}: {}", issue.severity, issue.code, issue.message);
-                if let Some(details) = &issue.details {
-                    println!("  {}", details);
-                }
-            }
-            if report.has_blocking_issues {
-                println!();
-                println!(
-                    "Blocages detectes: demander confirmation utilisateur avant de forcer l'implementation."
-                );
-            }
-        }
+        print_styled_lines(&preflight_lines(&report));
     }
     Ok(())
 }
@@ -56,31 +31,91 @@ pub fn handoff_validate(workspace: String, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        println!("Handoff validation: {}", report.workspace);
-        println!("Projet: {}", report.project);
-        println!();
-        for item in &report.items {
-            println!("- [{}] {}: {}", item.status, item.repository, item.message);
-            if item.valid {
-                println!(
-                    "  done={} decisions={} risks={} blockers={} follow_up={}",
-                    item.done_count,
-                    item.decision_count,
-                    item.risk_count,
-                    item.blocker_count,
-                    item.follow_up_count
-                );
-            }
-        }
-
-        if !report.is_valid {
-            println!();
-            println!(
-                "Validation handoff echouee: completer/corriger les handoffs avant task finish."
-            );
-        }
+        print_styled_lines(&handoff_validation_lines(&report));
     }
     Ok(())
+}
+
+fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
+    let mut lines = vec![
+        format!("Preflight workspace: {}", report.workspace),
+        format!("Projet: {}", report.project),
+        format!(
+            "Work items: {}",
+            report
+                .work_item_ids
+                .iter()
+                .map(|id| format!("#{id}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        String::new(),
+    ];
+
+    if report.issues.is_empty() {
+        lines.push("Aucun warning ni blocage detecte.".into());
+        return lines;
+    }
+
+    for issue in &report.issues {
+        lines.push(format!(
+            "- [{}] {}: {}",
+            issue.severity, issue.code, issue.message
+        ));
+        if let Some(details) = &issue.details {
+            lines.push(format!("  {details}"));
+        }
+    }
+
+    if report.has_blocking_issues {
+        lines.push(String::new());
+        lines.push(
+            "Blocages detectes: demander confirmation utilisateur avant de forcer l'implementation."
+                .into(),
+        );
+    }
+
+    lines
+}
+
+fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String> {
+    let mut lines = vec![
+        format!("Handoff validation: {}", report.workspace),
+        format!("Projet: {}", report.project),
+        String::new(),
+    ];
+
+    for item in &report.items {
+        lines.push(format!(
+            "- [{}] {}: {}",
+            item.status, item.repository, item.message
+        ));
+        if item.valid {
+            lines.push(format!(
+                "  done={} decisions={} risks={} blockers={} follow_up={}",
+                item.done_count,
+                item.decision_count,
+                item.risk_count,
+                item.blocker_count,
+                item.follow_up_count
+            ));
+        }
+    }
+
+    if !report.is_valid {
+        lines.push(String::new());
+        lines.push(
+            "Validation handoff echouee: completer/corriger les handoffs avant task finish.".into(),
+        );
+    }
+
+    lines
+}
+
+fn print_styled_lines(lines: &[String]) {
+    for line in lines {
+        println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
+    }
 }
 
 fn discover_ai_context_files(workspace: &str) -> Vec<String> {
@@ -108,5 +143,74 @@ fn collect_ai_context_files(root: &Path, files: &mut Vec<String>) {
         if name.starts_with("ai-context") && name.ends_with(".json") {
             files.push(path.display().to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dw_contracts::{
+        HANDOFF_VALIDATION_VERSION, PREFLIGHT_VERSION, TaskHandoffValidationItem,
+        TaskPreflightIssue,
+    };
+
+    #[test]
+    fn preflight_lines_include_blocking_guidance() {
+        let report = TaskPreflightReport {
+            schema_version: PREFLIGHT_VERSION.into(),
+            workspace: "/tmp/ws".into(),
+            project: "ha".into(),
+            work_item_ids: vec!["42".into()],
+            has_blocking_issues: true,
+            issues: vec![TaskPreflightIssue {
+                code: "missing_attachment".into(),
+                severity: "blocking".into(),
+                work_item_id: "42".into(),
+                message: "Piece jointe manquante".into(),
+                details: Some("screenshot absent".into()),
+                related_ids: vec![],
+            }],
+        };
+
+        let lines = preflight_lines(&report);
+
+        assert_eq!(lines[0], "Preflight workspace: /tmp/ws");
+        assert!(lines.contains(&"- [blocking] missing_attachment: Piece jointe manquante".into()));
+        assert!(lines.contains(
+            &"Blocages detectes: demander confirmation utilisateur avant de forcer l'implementation."
+                .into()
+        ));
+    }
+
+    #[test]
+    fn handoff_validation_lines_include_counts_and_failure() {
+        let report = TaskHandoffValidationReport {
+            schema_version: HANDOFF_VALIDATION_VERSION.into(),
+            workspace: "/tmp/ws".into(),
+            project: "ha".into(),
+            is_valid: false,
+            items: vec![TaskHandoffValidationItem {
+                repository: "front".into(),
+                path: "/tmp/ws/front/handoff-front.md".into(),
+                status: "done".into(),
+                valid: true,
+                message: "OK".into(),
+                done_count: 2,
+                decision_count: 1,
+                risk_count: 0,
+                blocker_count: 0,
+                follow_up_count: 1,
+            }],
+        };
+
+        let lines = handoff_validation_lines(&report);
+
+        assert!(lines.contains(&"- [done] front: OK".into()));
+        assert!(lines.contains(&"  done=2 decisions=1 risks=0 blockers=0 follow_up=1".into()));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("Validation handoff echouee"))
+        );
     }
 }

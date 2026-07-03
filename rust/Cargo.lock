@@ -1332,6 +1332,7 @@ dependencies = [
  "dw-ado",
  "dw-agent",
  "dw-config",
+ "dw-contracts",
  "dw-git",
  "dw-ui",
  "dw-workspace",

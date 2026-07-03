@@ -4,6 +4,7 @@ use dw_ado::auth::require_token;
 use dw_ado::get_work_item_snapshots_authenticated;
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_git::{worktree_prune, worktree_remove};
+use dw_ui::TerminalTheme;
 use dw_workspace::{
     WorkspaceSummary, display_work_items, execute_task_sync, execute_task_teardown,
     filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
@@ -44,23 +45,18 @@ pub fn handle(args: PruneArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&candidates)?);
     } else if candidates.is_empty() {
-        println!("Aucun workspace eligible au prune.");
+        print_styled("Aucun workspace eligible au prune.");
     } else {
         for candidate in &candidates {
-            println!(
-                "{} / {}: {}",
-                candidate.manifest.project,
-                display_work_items(&candidate.manifest.parent_work_items(), true),
-                candidate.path
-            );
+            print_styled(&prune_candidate_line(candidate));
         }
     }
 
     if candidates.is_empty() || !execute {
         if !candidates.is_empty() && !json {
-            println!();
-            println!(
-                "Dry-run uniquement. Relancer avec --execute --yes pour supprimer les workspaces eligibles."
+            print_styled("");
+            print_styled(
+                "Dry-run uniquement. Relancer avec --execute --yes pour supprimer les workspaces eligibles.",
             );
         }
         return Ok(());
@@ -82,7 +78,7 @@ pub fn handle(args: PruneArgs) -> Result<()> {
             _ => Err(format!("commande git non supportee: {}", args.join(" "))),
         })?;
         if !json {
-            println!("Workspace supprime: {}", candidate.path);
+            print_styled(&format!("Workspace supprime: {}", candidate.path));
         }
     }
 
@@ -96,7 +92,7 @@ fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary], json: bool) {
         Ok(options) => options,
         Err(error) => {
             if !json {
-                println!("Sync ignoree (auth indisponible): {error}");
+                print_styled(&format!("Sync ignoree (auth indisponible): {error}"));
             }
             return;
         }
@@ -119,10 +115,10 @@ fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary], json: bool) {
             let snapshots = get_work_item_snapshots_authenticated(&options, &ids, &token)?;
             let updated = execute_task_sync(&workspace.path, &snapshots)?;
             if !json {
-                println!(
+                print_styled(&format!(
                     "Sync: {}",
                     display_work_items(&updated.parent_work_items(), true)
-                );
+                ));
             }
             Ok(())
         })();
@@ -130,18 +126,32 @@ fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary], json: bool) {
         if let Err(error) = result
             && !json
         {
-            println!(
+            print_styled(&format!(
                 "Sync ignoree [{}]: {}",
                 display_work_items(&workspace.manifest.parent_work_items(), false),
                 error
-            );
+            ));
         }
     }
+}
+
+fn prune_candidate_line(candidate: &WorkspaceSummary) -> String {
+    format!(
+        "{} / {}: {}",
+        candidate.manifest.project,
+        display_work_items(&candidate.manifest.parent_work_items(), true),
+        candidate.path
+    )
+}
+
+fn print_styled(line: &str) {
+    println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dw_workspace::WorkspaceManifest;
 
     #[test]
     fn prune_no_sync_dry_run_does_not_require_auth() {
@@ -166,6 +176,36 @@ mod tests {
         .expect("offline dry-run should not require auth");
 
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn prune_candidate_line_includes_project_items_and_path() {
+        let candidate = WorkspaceSummary {
+            path: "/tmp/dw/projects/ha/workspaces/feat-1-done".into(),
+            manifest: WorkspaceManifest {
+                schema: 1,
+                work_item_id: "1".into(),
+                task_id: None,
+                project: "ha".into(),
+                kind: "feat".into(),
+                slug: "done".into(),
+                branch_name: "feat/1-done".into(),
+                created_at: "2026-07-02T10:00:00Z".into(),
+                repositories: vec!["front".into()],
+                status: "created".into(),
+                work_item_type: Some("User Story".into()),
+                work_item_title: Some("Done".into()),
+                work_item_state: Some("Valide".into()),
+                child_task_ids: None,
+                child_tasks: None,
+                work_items: None,
+            },
+        };
+
+        assert_eq!(
+            prune_candidate_line(&candidate),
+            "ha / #1 Done [Valide]: /tmp/dw/projects/ha/workspaces/feat-1-done"
+        );
     }
 
     fn unique_temp_root() -> std::path::PathBuf {
