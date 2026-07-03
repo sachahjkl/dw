@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 mod finish;
+mod templates;
 
 pub use finish::{
     PullRequestCandidate, TaskFinishError, TaskFinishOptions, VerificationResult,
@@ -22,6 +23,7 @@ pub use finish::{
     read_handoff_summary, read_plan, run_verification, select_pull_request_candidates,
     structured_handoff_section, task_finish_options,
 };
+use templates::{handoff_markdown, plan_markdown};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceManifest {
@@ -1928,40 +1930,6 @@ fn read_manifest(path: &Path) -> Result<WorkspaceManifest, WorkspaceError> {
         .map_err(|_| WorkspaceError::InvalidManifest(path.display().to_string()))
 }
 
-fn plan_markdown(manifest: &WorkspaceManifest) -> String {
-    format!(
-        "# Plan - Work items {}\n\nProject: `{}`\n\n## Functional Summary\n\nTODO\n\n## Affected Repositories\n\n{}\n\n## Code Analysis\n\nTODO\n\n## Technical Plan\n\nTODO\n\n## Risks\n\nTODO\n\n## Verification\n\nTODO\n",
-        manifest
-            .parent_work_items()
-            .iter()
-            .map(|item| format!("#{}", item.id))
-            .collect::<Vec<_>>()
-            .join(", "),
-        manifest.project,
-        manifest
-            .repositories
-            .iter()
-            .map(|repo| format!("- {repo}: TODO"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    )
-}
-
-fn handoff_markdown(manifest: &WorkspaceManifest, repository: &str) -> String {
-    format!(
-        "# Handoff {repository}\n\n## Contexte\n\n- Projet: `{}`\n- Repository: `{repository}`\n- Branche: `{}`\n- Work items parents: {}\n- Child tasks connus: (aucune)\n\n## Entrées déterministes à relire\n\n1. `task.json`\n2. `plan.md`\n3. `AGENTS.md`\n4. `dw ado ai-context <id> --project {}` pour chaque work item parent\n5. `dw task preflight --continue`\n\n## Objectif du lot\n\nDécrire ici, dans `plan.md`, ce qui relève de `{repository}` et ce qui doit être traité par ce handoff.\n\n## Contraintes\n\n- Préserver les labels métier exacts\n- Tout texte user/projet en français\n- Traiter screenshots / maquettes / pièces jointes comme source factuelle\n- Demander au user au lieu de deviner si le contexte manque\n- Vérifier les impacts API contrat front/back quand pertinent\n\n## Travail attendu\n\n- Limiter le travail à `{repository}`\n- Lister clairement les fichiers/zonings impactés\n- Signaler les dépendances vers d'autres domaines\n- Mettre à jour la synthèse structurée ci-dessous\n\n## Synthèse structurée attendue\n\nRemplir ce bloc sans changer les labels.\n\n```yaml\nstatus: todo\nrepository: {repository}\nsummary:\n  done: []\n  decisions: []\n  risks: []\n  blockers: []\n  follow_up: []\nverification:\n  commands: []\n  manual_checks: []\nartifacts:\n  files: []\n  screenshots: []\n  attachments: []\n```\n",
-        manifest.project,
-        manifest.branch_name,
-        manifest
-            .parent_work_items()
-            .iter()
-            .map(|item| format!("`#{}`", item.id))
-            .collect::<Vec<_>>()
-            .join(", "),
-        manifest.project,
-    )
-}
-
 fn write_text(path: &Path, content: &str) -> Result<(), WorkspaceError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -1990,13 +1958,13 @@ fn build_stale_context_issues(
 
     let mut stale_reasons = Vec::new();
     if manifest_item.title != ai_context.work_item.title {
-        stale_reasons.push("titre local different d'ADO".to_string());
+        stale_reasons.push("titre local différent d'ADO".to_string());
     }
     if manifest_item.state != ai_context.work_item.state {
         stale_reasons.push("état local différent d'ADO".to_string());
     }
     if manifest_item.kind != ai_context.work_item.kind {
-        stale_reasons.push("type local different d'ADO".to_string());
+        stale_reasons.push("type local différent d'ADO".to_string());
     }
     if stale_reasons.is_empty() {
         return vec![];
