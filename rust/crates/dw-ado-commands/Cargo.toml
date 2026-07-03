@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 dw-ado = { path = "../dw-ado" }
 dw-config = { path = "../dw-config" }
 dw-contracts = { path = "../dw-contracts" }

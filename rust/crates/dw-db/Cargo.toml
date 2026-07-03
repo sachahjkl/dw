@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 dw-config = { path = "../dw-config" }
 dw-secret = { path = "../dw-secret" }
 serde.workspace = true

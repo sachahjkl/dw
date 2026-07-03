@@ -107,8 +107,8 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Command::Completion { command } => handle_completion(command)?,
         Command::Config { command } => handle_config(command)?,
 
-        Command::Ado { command } => crate::ado::handle_ado(command)?,
-        Command::Db { command } => crate::db::handle_db(command)?,
+        Command::Ado { command } => dw_ado_commands::command::handle_ado(command)?,
+        Command::Db { command } => dw_db::command::handle_db(command)?,
         Command::Secret { command } => handle_secret(command)?,
         Command::Upgrade { check, rid } => handle_upgrade(check, rid)?,
         Command::Task { command } => dw_task::command::handle_task(command)?,

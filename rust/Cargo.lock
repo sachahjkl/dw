@@ -1219,6 +1219,7 @@ name = "dw-ado-commands"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "dw-ado",
  "dw-config",
  "dw-contracts",
@@ -1286,6 +1287,7 @@ name = "dw-db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "dw-config",
  "dw-secret",
  "serde",
