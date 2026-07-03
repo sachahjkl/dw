@@ -7,5 +7,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+clap.workspace = true
+dw-config = { path = "../dw-config" }
+dw-ui = { path = "../dw-ui" }
 serde.workspace = true
 thiserror.workspace = true

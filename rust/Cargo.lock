@@ -1233,6 +1233,10 @@ dependencies = [
 name = "dw-agent"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "clap",
+ "dw-config",
+ "dw-ui",
  "serde",
  "thiserror 2.0.18",
 ]

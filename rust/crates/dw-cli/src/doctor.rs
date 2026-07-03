@@ -1,5 +1,5 @@
 use anyhow::Result;
-use dw_agent::{ALL_AGENT_KINDS, AgentKind, AgentOpenRequest, build_open_launch, parse_agent_kind};
+use dw_agent::parse_agent_kind;
 use dw_config::{
     InitRequest, default_agent, init_root, load_user_settings, resolve_root, user_settings_path,
 };
@@ -68,37 +68,6 @@ pub(crate) fn run_doctor(fix: bool) -> Result<()> {
     }
 }
 
-pub(crate) fn run_agent_doctor(requested: Option<&str>) -> Result<()> {
-    let theme = theme_from_settings(load_user_settings().color.as_deref());
-    let agents = if let Some(agent) = requested.filter(|value| !value.trim().is_empty()) {
-        vec![parse_agent_kind(Some(agent))?]
-    } else {
-        ALL_AGENT_KINDS.to_vec()
-    };
-
-    let agent_checks = agents
-        .into_iter()
-        .map(|agent| {
-            let launch = agent.launch_probe();
-            let available = command_available(&launch.file_name, &["--help"]);
-            AgentDoctorCheck {
-                agent_name: agent.name().into(),
-                command: launch.file_name,
-                available,
-            }
-        })
-        .collect::<Vec<_>>();
-    println!("{}", render_agent_report(&agent_checks, &theme));
-    Ok(())
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AgentDoctorCheck {
-    agent_name: String,
-    command: String,
-    available: bool,
-}
-
 fn render_doctor_report(checks: &[DoctorCheck], theme: &TerminalTheme) -> String {
     let passed_count = checks.iter().filter(|check| check.passed).count();
     let total_count = checks.len();
@@ -115,26 +84,6 @@ fn render_doctor_report(checks: &[DoctorCheck], theme: &TerminalTheme) -> String
         String::new(),
     ];
     lines.extend(render_checks(checks, theme));
-    lines.join("\n")
-}
-
-fn render_agent_report(checks: &[AgentDoctorCheck], theme: &TerminalTheme) -> String {
-    let mut lines = vec![
-        theme.command("Agents disponibles"),
-        String::new(),
-        format!("{:<12} {:<12} Status", "Agent", "Command"),
-    ];
-    for check in checks {
-        let status = if check.available {
-            theme.success("✓ OK")
-        } else {
-            theme.warning("! missing")
-        };
-        lines.push(format!(
-            "{:<12} {:<12} {}",
-            check.agent_name, check.command, status
-        ));
-    }
     lines.join("\n")
 }
 
@@ -258,31 +207,6 @@ fn first_non_empty_line(output: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn command_available(file_name: &str, arguments: &[&str]) -> bool {
-    Command::new(file_name)
-        .args(arguments)
-        .output()
-        .is_ok_and(|output| output.status.success())
-}
-
-trait AgentProbe {
-    fn launch_probe(self) -> dw_agent::AgentLaunch;
-}
-
-impl AgentProbe for AgentKind {
-    fn launch_probe(self) -> dw_agent::AgentLaunch {
-        build_open_launch(
-            Some(self.name()),
-            &AgentOpenRequest {
-                root: ".".into(),
-                workspace: ".".into(),
-                r#continue: false,
-            },
-        )
-        .expect("known agent should build launch")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,28 +235,5 @@ mod tests {
         assert!(report.contains("✓ OK"));
         assert!(report.contains("/tmp/dw"));
         assert!(report.contains("Installer Git"));
-    }
-
-    #[test]
-    fn agent_report_marks_missing_agent_without_probe_side_effects() {
-        let checks = vec![
-            AgentDoctorCheck {
-                agent_name: "codex".into(),
-                command: "codex".into(),
-                available: true,
-            },
-            AgentDoctorCheck {
-                agent_name: "missing".into(),
-                command: "missing".into(),
-                available: false,
-            },
-        ];
-
-        let report = render_agent_report(&checks, &TerminalTheme::plain());
-
-        assert!(report.contains("Agents disponibles"));
-        assert!(report.contains("codex"));
-        assert!(report.contains("✓ OK"));
-        assert!(report.contains("! missing"));
     }
 }

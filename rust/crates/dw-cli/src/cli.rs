@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 use dw_ado_commands::auth::AuthCommand;
 use dw_ado_commands::command::AdoCommand;
+use dw_agent::command::AgentCommand;
 use dw_config::command::ConfigCommand;
 use dw_db::command::DbCommand;
 use dw_secret::command::SecretCommand;
@@ -94,45 +95,6 @@ pub(crate) enum Command {
     Task {
         #[command(subcommand)]
         command: TaskCommand,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum AgentCommand {
-    Context,
-    Open {
-        #[arg(long, conflicts_with_all = ["project", "work_item", "continue"])]
-        workspace: Option<String>,
-        #[arg(long)]
-        root: Option<String>,
-        #[arg(long, conflicts_with = "workspace")]
-        project: Option<String>,
-        #[arg(long = "work-item")]
-        work_item: Option<String>,
-        #[arg(long = "continue", conflicts_with = "workspace")]
-        r#continue: bool,
-        #[arg(long)]
-        repo: Option<String>,
-        #[arg(long)]
-        agent: Option<String>,
-        positional_work_item: Option<String>,
-    },
-    Config {
-        #[arg(long)]
-        root: Option<String>,
-    },
-    Show {
-        #[arg(long)]
-        root: Option<String>,
-    },
-    SetDefault {
-        agent: String,
-        #[arg(long)]
-        root: Option<String>,
-    },
-    Doctor {
-        #[arg(long)]
-        agent: Option<String>,
     },
 }
 

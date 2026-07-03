@@ -2,11 +2,10 @@ use crate::cli::*;
 use crate::completion::{
     generate_completion, print_completion_complete, print_completion_install, print_completion_show,
 };
-use crate::doctor::{run_agent_doctor, run_doctor};
+use crate::doctor::run_doctor;
 use crate::version::informational_version;
 use anyhow::Result;
-use dw_agent::agent_context;
-use dw_config::{default_agent, resolve_root, set_default_agent};
+use dw_agent::command::AgentAction;
 use dw_ui::TerminalTheme;
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
@@ -36,41 +35,31 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 profile,
             })?
         }
-        Command::Agent { command } => match command {
-            AgentCommand::Context => {
-                let root = resolve_root(None);
-                println!("{}", agent_context(&root));
+        Command::Agent { command } => match dw_agent::command::handle_agent(command)? {
+            AgentAction::Handled => {}
+            AgentAction::Open(args) => {
+                let dw_agent::command::OpenAgentArgs {
+                    workspace,
+                    root,
+                    project,
+                    work_item,
+                    positional_work_item,
+                    r#continue,
+                    repo,
+                    agent,
+                } = args;
+                dw_task::command::open_workspace(dw_task::command::OpenWorkspaceArgs {
+                    workspace,
+                    project,
+                    work_item,
+                    positional_work_item,
+                    r#continue,
+                    repo,
+                    agent,
+                    json: false,
+                    root,
+                })?
             }
-            AgentCommand::Open {
-                workspace,
-                project,
-                work_item,
-                positional_work_item,
-                r#continue,
-                repo,
-                agent,
-                root,
-            } => dw_task::command::open_workspace(dw_task::command::OpenWorkspaceArgs {
-                workspace,
-                project,
-                work_item,
-                positional_work_item,
-                r#continue,
-                repo,
-                agent,
-                json: false,
-                root,
-            })?,
-            AgentCommand::Config { root } | AgentCommand::Show { root } => {
-                let root = resolve_root(root.as_deref());
-                print_styled(&format!("Agent par defaut: {}", default_agent(&root)));
-            }
-            AgentCommand::SetDefault { root, agent } => {
-                let root = resolve_root(root.as_deref());
-                let agent = set_default_agent(&root, &agent)?;
-                print_styled(&format!("Agent par defaut: {agent}"));
-            }
-            AgentCommand::Doctor { agent } => run_agent_doctor(agent.as_deref())?,
         },
         Command::Auth { command } => dw_ado_commands::auth::handle_auth(command)?,
         Command::Completion { command } => handle_completion(command)?,
