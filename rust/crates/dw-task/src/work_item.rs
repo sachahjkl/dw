@@ -161,8 +161,6 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
         if !json {
             print_styled(&format!("Workspace mis à jour: {new_workspace}"));
         }
-    } else if !json {
-        print_styled("Relancer avec --execute pour appliquer.");
     }
     Ok(())
 }
@@ -200,8 +198,6 @@ pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
         if !json {
             print_styled(&format!("Workspace mis à jour: {new_workspace}"));
         }
-    } else if !json {
-        print_styled("Relancer avec --execute pour appliquer.");
     }
     Ok(())
 }
@@ -224,6 +220,7 @@ fn work_item_update_plan_lines(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+        "À faire   : dw task add-work-item/remove-work-item --execute".into(),
     ]
 }
 
@@ -261,5 +258,8 @@ mod tests {
         assert_eq!(lines[2], "Action    : ajout");
         assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-2-new".into()));
         assert!(lines.contains(&"Items     : #1, #2".into()));
+        assert!(
+            lines.contains(&"À faire   : dw task add-work-item/remove-work-item --execute".into())
+        );
     }
 }
