@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
+use dw_agent::command::OpenAgentArgs;
 
 pub use crate::open::{OpenWorkspaceArgs, open_workspace};
 
@@ -565,4 +566,18 @@ pub fn handle_task(command: TaskCommand) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn handle_agent_open(args: OpenAgentArgs) -> Result<()> {
+    open_workspace(OpenWorkspaceArgs {
+        workspace: args.workspace,
+        project: args.project,
+        work_item: args.work_item,
+        positional_work_item: args.positional_work_item,
+        r#continue: args.r#continue,
+        repo: args.repo,
+        agent: args.agent,
+        json: false,
+        root: args.root,
+    })
 }

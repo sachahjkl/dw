@@ -37,29 +37,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         }
         Command::Agent { command } => match dw_agent::command::handle_agent(command)? {
             AgentAction::Handled => {}
-            AgentAction::Open(args) => {
-                let dw_agent::command::OpenAgentArgs {
-                    workspace,
-                    root,
-                    project,
-                    work_item,
-                    positional_work_item,
-                    r#continue,
-                    repo,
-                    agent,
-                } = args;
-                dw_task::command::open_workspace(dw_task::command::OpenWorkspaceArgs {
-                    workspace,
-                    project,
-                    work_item,
-                    positional_work_item,
-                    r#continue,
-                    repo,
-                    agent,
-                    json: false,
-                    root,
-                })?
-            }
+            AgentAction::Open(args) => dw_task::command::handle_agent_open(args)?,
         },
         Command::Auth { command } => dw_ado_commands::auth::handle_auth(command)?,
         Command::Completion { command } => handle_completion(command)?,
