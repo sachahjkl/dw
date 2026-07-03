@@ -168,7 +168,7 @@ fn run_upgrade(
         ));
     }
     let executable_path = std::env::current_exe()?;
-    print_styled("Préparation de l'upgrade...");
+    print_styled("Préparation de la mise à jour...");
     let temp_asset = download_asset(client, asset)?;
     let hash = file_sha256(&temp_asset)?;
     if !hash.eq_ignore_ascii_case(&asset.sha256) {
@@ -188,10 +188,10 @@ fn run_upgrade(
 
 fn release_check_lines(release: &GitHubRelease, manifest: &ReleaseManifest) -> Vec<String> {
     let mut lines = vec![
-        "Upgrade".into(),
+        "Mise à jour".into(),
         format!("Release  : {}", release.tag_name),
         format!("Version  : {}+{}", manifest.version, manifest.commit),
-        format!("Assets   : {}", manifest.assets.len()),
+        format!("Artefacts : {}", manifest.assets.len()),
     ];
     for asset in &manifest.assets {
         lines.push(format!(
@@ -204,7 +204,7 @@ fn release_check_lines(release: &GitHubRelease, manifest: &ReleaseManifest) -> V
 
 fn upgrade_done_lines(manifest: &ReleaseManifest) -> Vec<String> {
     vec![
-        "Upgrade".into(),
+        "Mise à jour".into(),
         "Statut   : terminé".into(),
         format!("Version  : {}+{}", manifest.version, manifest.commit),
     ]
@@ -567,10 +567,10 @@ mod tests {
 
         let lines = release_check_lines(&release, &manifest);
 
-        assert_eq!(lines[0], "Upgrade");
+        assert_eq!(lines[0], "Mise à jour");
         assert_eq!(lines[1], "Release  : v2026.07.03");
         assert_eq!(lines[2], "Version  : 2026.07.03+abcdef0");
-        assert_eq!(lines[3], "Assets   : 1");
+        assert_eq!(lines[3], "Artefacts : 1");
         assert!(lines[4].contains("linux-x64"));
         assert!(lines[4].contains("dw-linux-x64.tar.gz"));
     }
@@ -585,7 +585,7 @@ mod tests {
 
         let lines = upgrade_done_lines(&manifest);
 
-        assert_eq!(lines[0], "Upgrade");
+        assert_eq!(lines[0], "Mise à jour");
         assert_eq!(lines[1], "Statut   : terminé");
         assert_eq!(lines[2], "Version  : 2026.07.03+abcdef0");
     }
