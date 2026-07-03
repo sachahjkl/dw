@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod command;
 pub mod commands;
+pub mod completion;
 mod output;
 
 use anyhow::Result;

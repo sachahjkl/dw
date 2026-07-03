@@ -1,4 +1,5 @@
 pub mod command;
+pub mod completion;
 mod doctor;
 mod init;
 mod init_templates;

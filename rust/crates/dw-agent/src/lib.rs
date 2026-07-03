@@ -1,4 +1,5 @@
 pub mod command;
+pub mod completion;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

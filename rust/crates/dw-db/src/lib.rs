@@ -1,5 +1,6 @@
 pub mod command;
 pub mod commands;
+pub mod completion;
 mod config;
 mod guard;
 mod query;
