@@ -12,7 +12,7 @@ pub(super) struct FinishSummary<'a> {
 
 pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
     let mut lines = vec![
-        "Finish workspace".into(),
+        "Finalisation workspace".into(),
         format!("Workspace : {}", summary.workspace),
         format!("Branche   : {}", summary.branch_name),
     ];
@@ -22,7 +22,7 @@ pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
     }
 
     lines.push(String::new());
-    lines.push("Handoff validation".into());
+    lines.push("Validation handoff".into());
     lines.push(format!(
         "Statut    : {}",
         if summary.handoff.is_valid { "OK" } else { "KO" }
@@ -43,7 +43,7 @@ pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
     }
     if summary.create_pr {
         lines.push(String::new());
-        lines.push("Pull requests".into());
+        lines.push("Pull requests à créer".into());
         if summary.pull_request_candidates.is_empty() {
             lines.push("Aucun dépôt candidat détecté.".into());
         } else {
@@ -68,8 +68,8 @@ fn handoff_summary_lines(summary: &dw_workspace::WorkspaceHandoffSummary) -> Vec
     push_summary_list(&mut lines, "Fait      ", &summary.done);
     push_summary_list(&mut lines, "Décisions ", &summary.decisions);
     push_summary_list(&mut lines, "Risques   ", &summary.risks);
-    push_summary_list(&mut lines, "Blockers  ", &summary.blockers);
-    push_summary_list(&mut lines, "Follow-up ", &summary.follow_up);
+    push_summary_list(&mut lines, "Blocages  ", &summary.blockers);
+    push_summary_list(&mut lines, "Suite     ", &summary.follow_up);
     lines
 }
 
@@ -92,8 +92,8 @@ pub(super) fn finish_dry_run_hint(no_changes: bool, create_pr: bool) -> &'static
 fn repository_status_lines(repository: &str, status: &dw_git::RepositoryStatus) -> Vec<String> {
     let mut lines = vec![
         String::new(),
-        format!("Repo      : {repository}"),
-        format!("Path      : {}", status.path),
+        format!("Dépôt     : {repository}"),
+        format!("Chemin    : {}", status.path),
         format!("Statut    : {}", repository_status_label(status)),
     ];
     if !status.detail.trim().is_empty() {
@@ -149,8 +149,8 @@ mod tests {
 
         let lines = repository_status_lines("front", &status);
 
-        assert!(lines.contains(&"Repo      : front".into()));
-        assert!(lines.contains(&"Path      : /tmp/repo".into()));
+        assert!(lines.contains(&"Dépôt     : front".into()));
+        assert!(lines.contains(&"Chemin    : /tmp/repo".into()));
         assert!(lines.contains(&"Statut    : Changements détectés:".into()));
         assert!(lines.contains(&" M src/lib.rs".into()));
     }
@@ -206,7 +206,7 @@ mod tests {
             pull_request_candidates: &pull_request_candidates,
         });
 
-        assert_eq!(lines[0], "Finish workspace");
+        assert_eq!(lines[0], "Finalisation workspace");
         assert!(lines.contains(&"Statut    : OK".into()));
         assert!(lines.contains(&"- [done] front - OK".into()));
         assert!(lines.contains(&"Commit à créer".into()));
@@ -249,6 +249,6 @@ mod tests {
         assert!(lines.contains(&"Statut    : done".into()));
         assert!(lines.contains(&"Fait      : UI ajustée".into()));
         assert!(lines.contains(&"Décisions : Conserver le contrat JSON".into()));
-        assert!(lines.contains(&"Follow-up : Valider en recette".into()));
+        assert!(lines.contains(&"Suite     : Valider en recette".into()));
     }
 }
