@@ -9,10 +9,10 @@ use dw_ado::{
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_git::{commit_repository, push_repository, repository_status};
 use dw_workspace::{
-    build_commit_message, ensure_verification_passed, finish_state, plan_task_finish,
-    pull_request_description, pull_request_title, read_handoff_summary, read_plan,
-    resolve_workspace_for_workspace_command, run_verification, select_pull_request_candidates,
-    task_finish_options,
+    WorkspaceHandoffSummary, build_commit_message, ensure_verification_passed, finish_state,
+    plan_task_finish, pull_request_description, pull_request_title, read_handoff_summary,
+    read_plan, resolve_workspace_for_workspace_command, run_verification,
+    select_pull_request_candidates, task_finish_options,
 };
 use std::path::Path;
 
@@ -63,6 +63,10 @@ pub fn handle(args: FinishArgs) -> Result<()> {
         .iter()
         .map(|target| (target, repository_status(&target.path)))
         .collect::<Vec<_>>();
+    let handoff_summaries = targets
+        .iter()
+        .filter_map(|target| read_handoff_summary(Path::new(&workspace), &target.repository).ok())
+        .collect::<Vec<WorkspaceHandoffSummary>>();
     let changed = statuses
         .iter()
         .filter(|(_, status)| status.is_git_repository && status.has_changes)
@@ -112,6 +116,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             branch_name: &manifest.branch_name,
             statuses: &statuses,
             handoff: &handoff,
+            handoff_summaries: &handoff_summaries,
             commit_message: &commit_message,
             has_changes: !changed.is_empty(),
             create_pr,

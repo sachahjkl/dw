@@ -3,6 +3,7 @@ pub(super) struct FinishSummary<'a> {
     pub(super) branch_name: &'a str,
     pub(super) statuses: &'a [(&'a dw_workspace::TaskCommitTarget, dw_git::RepositoryStatus)],
     pub(super) handoff: &'a dw_contracts::TaskHandoffValidationReport,
+    pub(super) handoff_summaries: &'a [dw_workspace::WorkspaceHandoffSummary],
     pub(super) commit_message: &'a str,
     pub(super) has_changes: bool,
     pub(super) create_pr: bool,
@@ -30,6 +31,9 @@ pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
             item.status, item.repository, item.message
         ));
     }
+    for handoff_summary in summary.handoff_summaries {
+        lines.extend(handoff_summary_lines(handoff_summary));
+    }
     if summary.has_changes {
         lines.push(String::new());
         lines.push(format!("Message: {}", summary.commit_message));
@@ -49,6 +53,25 @@ pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
     }
 
     lines
+}
+
+fn handoff_summary_lines(summary: &dw_workspace::WorkspaceHandoffSummary) -> Vec<String> {
+    let mut lines = vec![
+        String::new(),
+        format!("[handoff:{}] statut={}", summary.repository, summary.status),
+    ];
+    push_summary_list(&mut lines, "fait", &summary.done);
+    push_summary_list(&mut lines, "décisions", &summary.decisions);
+    push_summary_list(&mut lines, "risques", &summary.risks);
+    push_summary_list(&mut lines, "blockers", &summary.blockers);
+    push_summary_list(&mut lines, "follow-up", &summary.follow_up);
+    lines
+}
+
+fn push_summary_list(lines: &mut Vec<String>, label: &str, items: &[String]) {
+    if !items.is_empty() {
+        lines.push(format!("  {label}: {}", items.join(" | ")));
+    }
 }
 
 pub(super) fn finish_dry_run_hint(no_changes: bool, create_pr: bool) -> &'static str {
@@ -169,6 +192,7 @@ mod tests {
             branch_name: "feat/42-demo",
             statuses: &statuses,
             handoff: &handoff,
+            handoff_summaries: &[],
             commit_message: "feat(42): demo",
             has_changes: true,
             create_pr: true,
@@ -179,5 +203,42 @@ mod tests {
         assert!(lines.contains(&"- [done] front: OK".into()));
         assert!(lines.contains(&"Message: feat(42): demo".into()));
         assert!(lines.contains(&"PR: front -> develop".into()));
+    }
+
+    #[test]
+    fn finish_summary_lines_include_handoff_summary_details() {
+        let handoff = TaskHandoffValidationReport {
+            schema_version: HANDOFF_VALIDATION_VERSION.into(),
+            workspace: "/tmp/ws".into(),
+            project: "ha".into(),
+            is_valid: true,
+            items: Vec::new(),
+        };
+        let summaries = vec![dw_workspace::WorkspaceHandoffSummary {
+            repository: "front".into(),
+            status: "done".into(),
+            done: vec!["UI ajustée".into()],
+            decisions: vec!["Conserver le contrat JSON".into()],
+            risks: Vec::new(),
+            blockers: Vec::new(),
+            follow_up: vec!["Valider en recette".into()],
+        }];
+
+        let lines = finish_summary_lines(FinishSummary {
+            workspace: "/tmp/ws",
+            branch_name: "feat/42-demo",
+            statuses: &[],
+            handoff: &handoff,
+            handoff_summaries: &summaries,
+            commit_message: "feat(42): demo",
+            has_changes: false,
+            create_pr: false,
+            pull_request_candidates: &[],
+        });
+
+        assert!(lines.contains(&"[handoff:front] statut=done".into()));
+        assert!(lines.contains(&"  fait: UI ajustée".into()));
+        assert!(lines.contains(&"  décisions: Conserver le contrat JSON".into()));
+        assert!(lines.contains(&"  follow-up: Valider en recette".into()));
     }
 }
