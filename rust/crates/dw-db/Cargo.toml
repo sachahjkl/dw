@@ -10,6 +10,7 @@ repository.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 dw-config = { path = "../dw-config" }
+dw-contracts = { path = "../dw-contracts" }
 dw-secret = { path = "../dw-secret" }
 dw-ui = { path = "../dw-ui" }
 serde.workspace = true

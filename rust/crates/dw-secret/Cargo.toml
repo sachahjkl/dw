@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+dw-contracts = { path = "../dw-contracts" }
 inquire.workspace = true
 keyring.workspace = true
 thiserror.workspace = true

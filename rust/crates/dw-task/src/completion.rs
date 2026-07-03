@@ -1,5 +1,16 @@
 use dw_config::{load_projects_config, resolve_project};
+use dw_contracts::completion::{CompletionCatalog, CompletionContext};
 use dw_workspace::{read_manifest_path, task_list};
+
+pub fn catalog() -> CompletionCatalog {
+    CompletionCatalog {
+        subcommands,
+        options_for,
+        option_requires_value,
+        option_allowed,
+        values_for: values_for_catalog,
+    }
+}
 
 pub fn subcommands() -> &'static [&'static str] {
     &[
@@ -158,6 +169,16 @@ pub fn values_for(
         ]),
         _ => None,
     }
+}
+
+fn values_for_catalog(option: &str, context: CompletionContext<'_>) -> Option<Vec<String>> {
+    values_for(
+        option,
+        context.root,
+        context.project,
+        context.workspace,
+        context.work_item,
+    )
 }
 
 pub fn agent_open_options() -> Vec<&'static str> {

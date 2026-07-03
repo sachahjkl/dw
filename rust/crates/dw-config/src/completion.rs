@@ -1,4 +1,15 @@
 use crate::{load_databases_config, load_projects_config};
+use dw_contracts::completion::{CompletionCatalog, CompletionContext};
+
+pub fn catalog() -> CompletionCatalog {
+    CompletionCatalog {
+        subcommands,
+        options_for,
+        option_requires_value,
+        option_allowed,
+        values_for: values_for_catalog,
+    }
+}
 
 pub fn subcommands() -> &'static [&'static str] {
     &["show", "set-root", "set-color", "doctor"]
@@ -43,4 +54,11 @@ pub fn database_values(root: &str, project: Option<&str>) -> Vec<String> {
 
 pub fn env_values(root: &str, project: Option<&str>) -> Vec<String> {
     database_values(root, project)
+}
+
+fn values_for_catalog(option: &str, _context: CompletionContext<'_>) -> Option<Vec<String>> {
+    match option {
+        "--root" => Some(Vec::new()),
+        _ => None,
+    }
 }

@@ -3,6 +3,7 @@ use clap_complete::{Shell, generate};
 
 use crate::cli::{Cli, CompletionOutput};
 use dw_config::resolve_root;
+use dw_contracts::completion::CompletionContext;
 
 mod catalog;
 
@@ -134,30 +135,16 @@ fn values_for_path(path: &[&str], option: &str, words: &[String], root: &str) ->
     let project = option_value(words, "--project");
     let workspace = option_value(words, "--workspace");
     let work_item = option_value(words, "--work-item");
-    match path {
-        ["task", _] | ["agent", "open"] => dw_task::completion::values_for(
-            option,
+    catalog::values_for_path(
+        path,
+        option,
+        CompletionContext {
             root,
-            project.as_deref(),
-            workspace.as_deref(),
-            work_item.as_deref(),
-        )
-        .unwrap_or_default(),
-        ["ado", _] => dw_ado_commands::completion::values_for(option, root).unwrap_or_default(),
-        ["db", _] => {
-            dw_db::completion::values_for(option, root, project.as_deref()).unwrap_or_default()
-        }
-        ["config", _] => match option {
-            "--root" => Vec::new(),
-            _ => Vec::new(),
+            project: project.as_deref(),
+            workspace: workspace.as_deref(),
+            work_item: work_item.as_deref(),
         },
-        ["agent", _] => dw_agent::completion::values_for(option).unwrap_or_default(),
-        ["completion", "complete"] if option == "--format" => vec!["bash".into(), "json".into()],
-        ["init"] | ["refresh"] if option == "--profile" => {
-            vec!["business".into(), "default".into()]
-        }
-        _ => Vec::new(),
-    }
+    )
 }
 
 fn option_value(words: &[String], option: &str) -> Option<String> {

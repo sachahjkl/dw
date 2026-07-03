@@ -1,5 +1,24 @@
 use serde::{Deserialize, Serialize};
 
+pub mod completion {
+    #[derive(Clone, Copy)]
+    pub struct CompletionContext<'a> {
+        pub root: &'a str,
+        pub project: Option<&'a str>,
+        pub workspace: Option<&'a str>,
+        pub work_item: Option<&'a str>,
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct CompletionCatalog {
+        pub subcommands: fn() -> &'static [&'static str],
+        pub options_for: fn(&str) -> Vec<&'static str>,
+        pub option_requires_value: fn(&str) -> bool,
+        pub option_allowed: fn(&str, &[&str]) -> bool,
+        pub values_for: fn(&str, CompletionContext<'_>) -> Option<Vec<String>>,
+    }
+}
+
 pub const AI_CONTEXT_VERSION: &str = "dw.ado.ai-context.v1";
 pub const PREFLIGHT_VERSION: &str = "dw.task.preflight.v1";
 pub const HANDOFF_VALIDATION_VERSION: &str = "dw.task.handoff-validation.v1";

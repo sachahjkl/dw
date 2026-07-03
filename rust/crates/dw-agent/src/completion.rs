@@ -1,3 +1,15 @@
+use dw_contracts::completion::{CompletionCatalog, CompletionContext};
+
+pub fn catalog() -> CompletionCatalog {
+    CompletionCatalog {
+        subcommands,
+        options_for,
+        option_requires_value,
+        option_allowed,
+        values_for: values_for_catalog,
+    }
+}
+
 pub fn subcommands() -> &'static [&'static str] {
     &["context", "open", "config", "show", "set-default", "doctor"]
 }
@@ -30,4 +42,8 @@ pub fn values_for(option: &str) -> Option<Vec<String>> {
         ]),
         _ => None,
     }
+}
+
+fn values_for_catalog(option: &str, _context: CompletionContext<'_>) -> Option<Vec<String>> {
+    values_for(option)
 }

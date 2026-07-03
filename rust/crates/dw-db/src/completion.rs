@@ -1,3 +1,15 @@
+use dw_contracts::completion::{CompletionCatalog, CompletionContext};
+
+pub fn catalog() -> CompletionCatalog {
+    CompletionCatalog {
+        subcommands,
+        options_for,
+        option_requires_value,
+        option_allowed,
+        values_for: values_for_catalog,
+    }
+}
+
 pub fn subcommands() -> &'static [&'static str] {
     &["schema", "describe", "query", "guard"]
 }
@@ -42,4 +54,8 @@ pub fn values_for(option: &str, root: &str, project: Option<&str>) -> Option<Vec
         "--max-rows" => Some(vec!["50".into(), "100".into(), "500".into(), "1000".into()]),
         _ => None,
     }
+}
+
+fn values_for_catalog(option: &str, context: CompletionContext<'_>) -> Option<Vec<String>> {
+    values_for(option, context.root, context.project)
 }
