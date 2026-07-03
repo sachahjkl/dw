@@ -16,7 +16,7 @@ pub fn render_assigned_items(
 ) -> String {
     let mut lines = vec![
         theme.success("ADO assignés"),
-        format!("Items     : {}", items.len()),
+        format!("Éléments  : {}", items.len()),
     ];
     for item in items {
         lines.push(String::new());
@@ -127,7 +127,7 @@ mod tests {
         );
 
         assert!(output.contains("ADO assignés"));
-        assert!(output.contains("Items     : 1"));
+        assert!(output.contains("Éléments  : 1"));
         assert!(output.contains("Item      : #42 [Bug / En developpement] Corriger"));
         assert!(output.contains("Démarrer  : dw task start 42 --project ha"));
     }

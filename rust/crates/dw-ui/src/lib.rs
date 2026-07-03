@@ -162,7 +162,7 @@ impl TerminalTheme {
                 "ADO assignés",
                 "ADO work item",
                 "ADO context",
-                "ADO auth",
+                "Connexion ADO",
                 "Sous-tâche ADO",
                 "Secret",
             ],

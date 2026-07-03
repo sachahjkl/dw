@@ -101,7 +101,7 @@ fn print_auth_token(token: AdoToken) {
 
 fn auth_token_lines(token: &AdoToken) -> Vec<String> {
     vec![
-        "ADO auth".into(),
+        "Connexion ADO".into(),
         "Statut    : connecté".into(),
         format!("Source    : {}", token.source),
         expiration_line(token.expires_on.as_deref()),
@@ -111,7 +111,7 @@ fn auth_token_lines(token: &AdoToken) -> Vec<String> {
 fn auth_status_lines(status: &AdoAuthStatus) -> Vec<String> {
     if status.connected {
         vec![
-            "ADO auth".into(),
+            "Connexion ADO".into(),
             "Statut    : connecté".into(),
             format!(
                 "Source    : {}",
@@ -121,7 +121,7 @@ fn auth_status_lines(status: &AdoAuthStatus) -> Vec<String> {
         ]
     } else {
         vec![
-            "ADO auth".into(),
+            "Connexion ADO".into(),
             "Statut    : non connecté".into(),
             "À faire   : dw auth login ou définir DW_ADO_TOKEN.".into(),
         ]
@@ -130,16 +130,16 @@ fn auth_status_lines(status: &AdoAuthStatus) -> Vec<String> {
 
 fn environment_pat_lines() -> Vec<String> {
     vec![
-        "ADO auth".into(),
+        "Connexion ADO".into(),
         "Mode      : PAT via environnement".into(),
         "À faire   : définir DW_ADO_TOKEN ou AZURE_DEVOPS_EXT_PAT.".into(),
-        "Secret    : aucun secret n'est saisi ni stocké par cette commande.".into(),
+        "Sécurité : aucun secret n'est saisi ni stocké par cette commande.".into(),
     ]
 }
 
 fn logout_lines(removed: bool) -> Vec<String> {
     vec![
-        "ADO auth".into(),
+        "Connexion ADO".into(),
         format!(
             "Sessions  : {}",
             if removed {
@@ -191,7 +191,7 @@ mod tests {
             expires_on: Some("2026-07-03T12:14:07Z".into()),
         });
 
-        assert_eq!(lines[0], "ADO auth");
+        assert_eq!(lines[0], "Connexion ADO");
         assert_eq!(lines[1], "Statut    : connecté");
         assert_eq!(lines[2], "Source    : MSAL keyring");
         assert_eq!(lines[3], "Expiration: 2026-07-03T12:14:07Z");
@@ -205,7 +205,7 @@ mod tests {
             expires_on: None,
         });
 
-        assert_eq!(lines[0], "ADO auth");
+        assert_eq!(lines[0], "Connexion ADO");
         assert_eq!(lines[1], "Statut    : non connecté");
         assert_eq!(
             lines[2],
@@ -217,7 +217,7 @@ mod tests {
     fn logout_lines_keep_pat_warning() {
         let lines = logout_lines(true);
 
-        assert_eq!(lines[0], "ADO auth");
+        assert_eq!(lines[0], "Connexion ADO");
         assert_eq!(lines[1], "Sessions  : MSAL supprimées");
         assert!(lines[2].contains("DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent gérées"));
     }
