@@ -3,7 +3,6 @@ use dw_agent::{AgentOpenRequest, build_open_launch};
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_workspace::{
     read_manifest_path, resolve_open_target, resolve_workspace, task_current, task_list,
-    task_status,
 };
 use std::io::IsTerminal;
 
@@ -26,7 +25,7 @@ pub struct OpenWorkspaceArgs {
 
 pub fn status(root: Option<String>) {
     let root = resolve_root(root.as_deref());
-    let items = task_status(&root);
+    let items = task_list(&root, None, None);
     print_styled_lines(&render::task_status_lines(&root, &items));
 }
 
@@ -336,9 +335,28 @@ mod tests {
         assert!(empty.contains(&"Détectés  : 0".into()));
         assert!(empty.contains(&"Aucun workspace task trouvé.".into()));
 
-        let filled = task_status_lines("/tmp/root", &["/tmp/root/projects/ha/tasks/ws".into()]);
+        let filled = task_status_lines(
+            "/tmp/root",
+            &[dw_workspace::TaskListItem {
+                path: "/tmp/root/projects/ha/tasks/ws".into(),
+                project: "ha".into(),
+                work_item_id: "42".into(),
+                display_work_items: "#42 Titre [Actif]".into(),
+                task_id: None,
+                kind: "feat".into(),
+                slug: "titre".into(),
+                branch_name: "feat/42-titre".into(),
+                created_at: "2026-07-02T10:00:00Z".into(),
+                work_item_type: Some("User Story".into()),
+                work_item_title: Some("Titre".into()),
+                work_item_state: Some("Actif".into()),
+                repositories: vec!["front".into(), "back".into()],
+            }],
+        );
         assert!(filled.contains(&"Détectés  : 1".into()));
-        assert!(filled.contains(&"- /tmp/root/projects/ha/tasks/ws".into()));
+        assert!(filled.contains(&"- ha feat #42 Titre [Actif]".into()));
+        assert!(filled.contains(&"  Repositories: front, back".into()));
+        assert!(filled.contains(&"  Chemin      : /tmp/root/projects/ha/tasks/ws".into()));
     }
 
     #[test]

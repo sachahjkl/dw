@@ -1,4 +1,4 @@
-pub(super) fn task_status_lines(root: &str, items: &[String]) -> Vec<String> {
+pub(super) fn task_status_lines(root: &str, items: &[dw_workspace::TaskListItem]) -> Vec<String> {
     let mut lines = vec![
         "Workspaces task".into(),
         format!("Root      : {root}"),
@@ -10,8 +10,18 @@ pub(super) fn task_status_lines(root: &str, items: &[String]) -> Vec<String> {
         return lines;
     }
 
-    lines.push("Chemins".into());
-    lines.extend(items.iter().map(|item| format!("- {item}")));
+    lines.push("Détails".into());
+    for item in items {
+        lines.push(format!(
+            "- {} {} {}",
+            item.project, item.kind, item.display_work_items
+        ));
+        lines.push(format!("  Branche     : {}", item.branch_name));
+        if !item.repositories.is_empty() {
+            lines.push(format!("  Repositories: {}", item.repositories.join(", ")));
+        }
+        lines.push(format!("  Chemin      : {}", item.path));
+    }
     lines
 }
 
