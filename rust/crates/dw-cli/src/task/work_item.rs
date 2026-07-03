@@ -156,7 +156,7 @@ pub(crate) fn add(args: AddWorkItemArgs) -> Result<()> {
     }
     if execute {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
-        super::write_agent_configs(&new_workspace, &updated)?;
+        dw_task::write_workspace_agent_configs(&new_workspace, &updated)?;
         if !json {
             println!("Workspace mis a jour: {new_workspace}");
         }
@@ -195,7 +195,7 @@ pub(crate) fn remove(args: RemoveWorkItemArgs) -> Result<()> {
     }
     if execute {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
-        super::write_agent_configs(&new_workspace, &updated)?;
+        dw_task::write_workspace_agent_configs(&new_workspace, &updated)?;
         if !json {
             println!("Workspace mis a jour: {new_workspace}");
         }

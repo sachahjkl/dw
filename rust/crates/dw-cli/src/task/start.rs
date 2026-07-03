@@ -1,4 +1,4 @@
-use crate::ado::resolve_ado_options;
+use crate::ado::{project_choices, resolve_ado_options};
 use crate::simple_handlers::load_auth_options;
 use anyhow::Result;
 use dw_ado::auth::require_token;
@@ -98,7 +98,7 @@ pub(crate) fn handle(args: StartArgs) -> Result<()> {
             };
             execute_task_start_with_work_items(&plan, work_items)?
         };
-        super::write_agent_configs(&plan.workspace, &manifest)?;
+        dw_task::write_workspace_agent_configs(&plan.workspace, &manifest)?;
         println!("Workspace cree: {}", plan.workspace);
         println!("Branche cible: {}", plan.branch_name);
         println!("Repos: {}", plan.repositories.join(", "));
@@ -134,12 +134,15 @@ fn interactive_project(
         return project;
     }
 
-    let options = projects.projects.keys().cloned().collect::<Vec<_>>();
-    if options.is_empty() {
+    let choices = project_choices(projects);
+    if choices.is_empty() {
         return None;
     }
 
-    Select::new("Projet", options).prompt().ok()
+    Select::new("Projet", choices)
+        .prompt()
+        .ok()
+        .map(|choice| choice.key)
 }
 
 fn interactive_work_item(

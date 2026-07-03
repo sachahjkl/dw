@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 dw-ado = { path = "../dw-ado" }
+dw-agent = { path = "../dw-agent" }
 dw-config = { path = "../dw-config" }
 dw-git = { path = "../dw-git" }
 dw-workspace = { path = "../dw-workspace" }

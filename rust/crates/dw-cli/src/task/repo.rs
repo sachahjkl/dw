@@ -218,7 +218,7 @@ pub(crate) fn add_repo(args: AddRepoArgs) -> Result<()> {
         worktree_path: plan.worktree_path.clone(),
     })?;
     let updated = execute_task_add_repo(&manifest, &plan)?;
-    super::write_agent_configs(&workspace, &updated)?;
+    dw_task::write_workspace_agent_configs(&workspace, &updated)?;
     if !json {
         println!(
             "Repo ajoute: {} - {} - {}",

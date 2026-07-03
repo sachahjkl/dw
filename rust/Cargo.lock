@@ -1303,6 +1303,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dw-ado",
+ "dw-agent",
  "dw-config",
  "dw-git",
  "dw-workspace",
