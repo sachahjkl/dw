@@ -143,9 +143,9 @@ fn logout_lines(removed: bool) -> Vec<String> {
         format!(
             "Sessions  : {}",
             if removed {
-                "MSAL supprimées"
+                "session locale supprimée"
             } else {
-                "aucune session MSAL locale"
+                "aucune session locale"
             }
         ),
         "PAT       : les variables DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent gérées par l'environnement.".into(),
@@ -186,14 +186,14 @@ mod tests {
     fn auth_token_lines_render_connected_source_and_expiration() {
         let lines = auth_token_lines(&AdoToken {
             access_token: "secret".into(),
-            source: "MSAL keyring".into(),
+            source: "keyring".into(),
             scheme: AdoAuthScheme::Bearer,
             expires_on: Some("2026-07-03T12:14:07Z".into()),
         });
 
         assert_eq!(lines[0], "Connexion ADO");
         assert_eq!(lines[1], "Statut    : connecté");
-        assert_eq!(lines[2], "Source    : MSAL keyring");
+        assert_eq!(lines[2], "Source    : keyring");
         assert_eq!(lines[3], "Expiration: 2026-07-03T12:14:07Z");
     }
 
@@ -218,7 +218,7 @@ mod tests {
         let lines = logout_lines(true);
 
         assert_eq!(lines[0], "Connexion ADO");
-        assert_eq!(lines[1], "Sessions  : MSAL supprimées");
+        assert_eq!(lines[1], "Sessions  : session locale supprimée");
         assert!(lines[2].contains("DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent gérées"));
     }
 }

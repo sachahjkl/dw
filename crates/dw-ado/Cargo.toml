@@ -14,7 +14,6 @@ base64.workspace = true
 chrono = "0.4"
 dw-contracts = { path = "../dw-contracts" }
 keyring.workspace = true
-msal.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true

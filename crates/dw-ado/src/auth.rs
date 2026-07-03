@@ -1,7 +1,7 @@
 use crate::auth_browser;
 use chrono::{DateTime, Utc};
 use keyring::Entry;
-use msal::PublicClientApplication;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::time::{Duration, Instant, sleep};
@@ -12,7 +12,8 @@ pub const ADO_RESOURCE_ID: &str = "499b84ac-1321-427f-aa17-267ca6975798";
 pub const DEFAULT_ADO_SCOPE: &str = "499b84ac-1321-427f-aa17-267ca6975798/.default";
 
 const KEYRING_SERVICE: &str = "dw.azure-devops";
-const KEYRING_USER: &str = "msal-refresh-token";
+const KEYRING_USER: &str = "oauth-refresh-token";
+const LEGACY_KEYRING_USER: &str = "msal-refresh-token";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdoAuthOptions {
@@ -54,8 +55,8 @@ pub enum AdoAuthError {
     MissingConfig,
     #[error("Token ADO indisponible. Exécuter dw auth login ou définir DW_ADO_TOKEN.")]
     MissingToken,
-    #[error("MSAL a échoué: {0}")]
-    Msal(String),
+    #[error("OAuth Azure DevOps a échoué: {0}")]
+    OAuth(String),
     #[error("Stockage credentials OS indisponible: {0}")]
     Keyring(String),
     #[error("Runtime async indisponible: {0}")]
@@ -90,19 +91,14 @@ pub fn login_browser_interactive(auth: Option<AdoAuthOptions>) -> Result<AdoToke
         AdoAuthError::BrowserLogin("Microsoft n'a pas renvoyé de refresh_token.".into())
     })?;
     store_refresh_token(refresh_token)?;
-    Ok(oauth_token_result(token, "MSAL interactive"))
+    Ok(oauth_token_result(token, "navigateur"))
 }
 
 pub fn login_device_code(auth: Option<AdoAuthOptions>) -> Result<AdoToken, AdoAuthError> {
     let auth = auth.ok_or(AdoAuthError::MissingConfig)?;
     block_on(async move {
-        let app = public_client(&auth)?;
         let scopes = scopes(&auth);
-        let scope_refs = scopes.iter().map(String::as_str).collect::<Vec<_>>();
-        let flow = app
-            .initiate_device_flow(scope_refs.clone())
-            .await
-            .map_err(|error| AdoAuthError::Msal(error.to_string()))?;
+        let flow = initiate_device_flow(&auth, &scopes).await?;
         open_browser(&flow.verification_uri);
         if let Some(message) = &flow.message {
             println!("{message}");
@@ -113,36 +109,83 @@ pub fn login_device_code(auth: Option<AdoAuthOptions>) -> Result<AdoToken, AdoAu
             );
         }
 
-        let token = acquire_device_token_polling(&app, flow).await?;
-        store_refresh_token(&token.refresh_token)?;
-        Ok(token_result(token, "MSAL device code"))
+        let token = acquire_device_token_polling(&auth, flow).await?;
+        if let Some(refresh_token) = token.refresh_token.as_deref() {
+            store_refresh_token(refresh_token)?;
+        }
+        Ok(oauth_token_result(token, "code appareil"))
     })?
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct DeviceAuthorizationResponse {
+    device_code: String,
+    user_code: String,
+    verification_uri: String,
+    expires_in: u32,
+    interval: Option<u32>,
+    message: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuthErrorResponse {
+    error: String,
+    error_description: Option<String>,
+}
+
+async fn initiate_device_flow(
+    auth: &AdoAuthOptions,
+    scopes: &[String],
+) -> Result<DeviceAuthorizationResponse, AdoAuthError> {
+    let tenant = auth.tenant_id.as_deref().unwrap_or(DEFAULT_TENANT_ID);
+    let client_id = auth
+        .client_id
+        .as_deref()
+        .unwrap_or(DEFAULT_PUBLIC_CLIENT_ID);
+    let url = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/devicecode");
+    let scope = scopes.join(" ");
+    post_oauth_form(&url, &[("client_id", client_id), ("scope", scope.as_str())]).await
+}
+
 async fn acquire_device_token_polling(
-    app: &PublicClientApplication,
-    flow: msal::DeviceAuthorizationResponse,
-) -> Result<msal::UserToken, AdoAuthError> {
+    auth: &AdoAuthOptions,
+    flow: DeviceAuthorizationResponse,
+) -> Result<auth_browser::OAuthTokenResponse, AdoAuthError> {
     let mut interval = Duration::from_secs(flow.interval.unwrap_or(5).max(1).into());
     let deadline = Instant::now() + Duration::from_secs(flow.expires_in.into());
+    let tenant = auth.tenant_id.as_deref().unwrap_or(DEFAULT_TENANT_ID);
+    let client_id = auth
+        .client_id
+        .as_deref()
+        .unwrap_or(DEFAULT_PUBLIC_CLIENT_ID);
+    let url = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token");
 
     loop {
-        match app.acquire_token_by_device_flow(flow.clone()).await {
+        match post_oauth_form::<auth_browser::OAuthTokenResponse>(
+            &url,
+            &[
+                ("client_id", client_id),
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+                ("device_code", flow.device_code.as_str()),
+            ],
+        )
+        .await
+        {
             Ok(token) => return Ok(token),
-            Err(error) if is_pending_device_auth(&error.to_string()) => {
+            Err(AdoAuthError::OAuth(error)) if is_pending_device_auth(&error) => {
                 if Instant::now() + interval >= deadline {
                     return Err(AdoAuthError::LoginExpired);
                 }
                 sleep(interval).await;
             }
-            Err(error) if is_slow_down_device_auth(&error.to_string()) => {
+            Err(AdoAuthError::OAuth(error)) if is_slow_down_device_auth(&error) => {
                 interval += Duration::from_secs(5);
                 if Instant::now() + interval >= deadline {
                     return Err(AdoAuthError::LoginExpired);
                 }
                 sleep(interval).await;
             }
-            Err(error) => return Err(AdoAuthError::Msal(error.to_string())),
+            Err(error) => return Err(error),
         }
     }
 }
@@ -178,15 +221,12 @@ pub fn token_silent_or_environment(
     };
 
     block_on(async move {
-        let app = public_client(&auth)?;
         let scopes = scopes(&auth);
-        let scope_refs = scopes.iter().map(String::as_str).collect::<Vec<_>>();
-        let token = app
-            .acquire_token_by_refresh_token(&refresh_token, scope_refs)
-            .await
-            .map_err(|error| AdoAuthError::Msal(error.to_string()))?;
-        store_refresh_token(&token.refresh_token)?;
-        Ok(Some(token_result(token, "MSAL keyring")))
+        let token = refresh_access_token(&auth, &scopes, &refresh_token).await?;
+        if let Some(refresh_token) = token.refresh_token.as_deref() {
+            store_refresh_token(refresh_token)?;
+        }
+        Ok(Some(oauth_token_result(token, "keyring")))
     })?
 }
 
@@ -210,23 +250,33 @@ pub fn status(auth: Option<AdoAuthOptions>) -> Result<AdoAuthStatus, AdoAuthErro
 }
 
 pub fn logout() -> Result<bool, AdoAuthError> {
-    let entry = keyring_entry()?;
-    match entry.delete_credential() {
-        Ok(()) => Ok(true),
-        Err(error) if is_missing_keyring_entry(&error) => Ok(false),
-        Err(error) => Err(AdoAuthError::Keyring(error.to_string())),
-    }
+    let current = delete_keyring_credential(KEYRING_USER)?;
+    let legacy = delete_keyring_credential(LEGACY_KEYRING_USER)?;
+    Ok(current || legacy)
 }
 
-fn public_client(auth: &AdoAuthOptions) -> Result<PublicClientApplication, AdoAuthError> {
+async fn refresh_access_token(
+    auth: &AdoAuthOptions,
+    scopes: &[String],
+    refresh_token: &str,
+) -> Result<auth_browser::OAuthTokenResponse, AdoAuthError> {
     let tenant = auth.tenant_id.as_deref().unwrap_or(DEFAULT_TENANT_ID);
     let client_id = auth
         .client_id
         .as_deref()
         .unwrap_or(DEFAULT_PUBLIC_CLIENT_ID);
-    let authority = format!("https://login.microsoftonline.com/{tenant}");
-    PublicClientApplication::new(client_id, Some(&authority))
-        .map_err(|error| AdoAuthError::Msal(error.to_string()))
+    let url = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token");
+    let scope = scopes.join(" ");
+    post_oauth_form(
+        &url,
+        &[
+            ("client_id", client_id),
+            ("scope", scope.as_str()),
+            ("refresh_token", refresh_token),
+            ("grant_type", "refresh_token"),
+        ],
+    )
+    .await
 }
 
 fn scopes(auth: &AdoAuthOptions) -> Vec<String> {
@@ -234,16 +284,6 @@ fn scopes(auth: &AdoAuthOptions) -> Vec<String> {
         vec![DEFAULT_ADO_SCOPE.into()]
     } else {
         auth.scopes.clone()
-    }
-}
-
-fn token_result(token: msal::UserToken, source: &str) -> AdoToken {
-    let expires_on = Utc::now() + chrono::Duration::seconds(token.expires_in.into());
-    AdoToken {
-        access_token: token.access_token.clone().unwrap_or_default(),
-        source: source.into(),
-        scheme: AdoAuthScheme::Bearer,
-        expires_on: Some(format_rfc3339(expires_on)),
     }
 }
 
@@ -261,6 +301,42 @@ fn format_rfc3339(value: DateTime<Utc>) -> String {
     value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+async fn post_oauth_form<T: for<'de> Deserialize<'de>>(
+    url: &str,
+    form: &[(&str, &str)],
+) -> Result<T, AdoAuthError> {
+    let response = reqwest::Client::new()
+        .post(url)
+        .form(form)
+        .send()
+        .await
+        .map_err(|error| AdoAuthError::OAuth(error.to_string()))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|error| AdoAuthError::OAuth(error.to_string()))?;
+
+    if status != StatusCode::OK {
+        return Err(AdoAuthError::OAuth(oauth_error_message(&body)));
+    }
+
+    serde_json::from_str::<T>(&body).map_err(|error| {
+        AdoAuthError::OAuth(format!("Réponse OAuth invalide: {error}. Body: {body}"))
+    })
+}
+
+fn oauth_error_message(body: &str) -> String {
+    serde_json::from_str::<OAuthErrorResponse>(body)
+        .map(|error| {
+            error
+                .error_description
+                .map(|description| format!("{}: {description}", error.error))
+                .unwrap_or(error.error)
+        })
+        .unwrap_or_else(|_| body.to_string())
+}
+
 fn store_refresh_token(refresh_token: &str) -> Result<(), AdoAuthError> {
     keyring_entry()?
         .set_password(refresh_token)
@@ -268,8 +344,14 @@ fn store_refresh_token(refresh_token: &str) -> Result<(), AdoAuthError> {
 }
 
 fn read_refresh_token() -> Result<Option<String>, AdoAuthError> {
-    let entry = keyring_entry()?;
-    match entry.get_password() {
+    read_keyring_password(KEYRING_USER)?.map_or_else(
+        || read_keyring_password(LEGACY_KEYRING_USER),
+        |value| Ok(Some(value)),
+    )
+}
+
+fn read_keyring_password(user: &str) -> Result<Option<String>, AdoAuthError> {
+    match keyring_entry_for(user)?.get_password() {
         Ok(value) if !value.trim().is_empty() => Ok(Some(value)),
         Ok(_) => Ok(None),
         Err(error) if is_missing_keyring_entry(&error) => Ok(None),
@@ -278,8 +360,19 @@ fn read_refresh_token() -> Result<Option<String>, AdoAuthError> {
 }
 
 fn keyring_entry() -> Result<Entry, AdoAuthError> {
-    Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|error| AdoAuthError::Keyring(error.to_string()))
+    keyring_entry_for(KEYRING_USER)
+}
+
+fn keyring_entry_for(user: &str) -> Result<Entry, AdoAuthError> {
+    Entry::new(KEYRING_SERVICE, user).map_err(|error| AdoAuthError::Keyring(error.to_string()))
+}
+
+fn delete_keyring_credential(user: &str) -> Result<bool, AdoAuthError> {
+    match keyring_entry_for(user)?.delete_credential() {
+        Ok(()) => Ok(true),
+        Err(error) if is_missing_keyring_entry(&error) => Ok(false),
+        Err(error) => Err(AdoAuthError::Keyring(error.to_string())),
+    }
 }
 
 fn is_missing_keyring_entry(error: &keyring::Error) -> bool {
