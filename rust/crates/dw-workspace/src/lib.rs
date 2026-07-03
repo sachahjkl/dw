@@ -1,3 +1,4 @@
+use dw_ado::WorkItemSnapshot;
 use dw_config::{
     ProjectConfig, ProjectsConfig, RepositoryConfig, repository_config, resolve_project,
 };
@@ -12,12 +13,6 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WorkspaceRewriteNote {
-    pub status: &'static str,
-    pub message: &'static str,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceManifest {
@@ -161,6 +156,52 @@ pub struct TaskRepoLatestTarget {
     pub default_branch: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskCommitTarget {
+    pub repository: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskWorkItemUpdatePlan {
+    pub workspace: String,
+    #[serde(rename = "newWorkspace")]
+    pub new_workspace: String,
+    #[serde(rename = "oldBranch")]
+    pub old_branch: String,
+    #[serde(rename = "newBranch")]
+    pub new_branch: String,
+    #[serde(rename = "workItems")]
+    pub work_items: Vec<WorkspaceWorkItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskAddRepoPlan {
+    pub workspace: String,
+    pub repository: String,
+    #[serde(rename = "projectRoot")]
+    pub project_root: String,
+    #[serde(rename = "worktreePath")]
+    pub worktree_path: String,
+    pub url: String,
+    #[serde(rename = "defaultBranch")]
+    pub default_branch: String,
+    #[serde(rename = "anchorName")]
+    pub anchor_name: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+    pub repositories: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkspaceTeardownStep {
+    pub repository: String,
+    pub action: String,
+    pub target: String,
+    #[serde(rename = "gitDir")]
+    pub git_dir: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TaskStartRequest<'a> {
     pub root: &'a str,
@@ -204,13 +245,10 @@ pub enum WorkspaceError {
     WorkspaceConflict(String),
     #[error("Fichier ai-context introuvable: {0}")]
     MissingAiContext(String),
-}
-
-pub fn current_rewrite_note() -> WorkspaceRewriteNote {
-    WorkspaceRewriteNote {
-        status: "bootstrap",
-        message: "Le moteur workspace Rust n'est pas encore migre. Utiliser le .NET comme reference de parite.",
-    }
+    #[error("Teardown echoue [{repository}]: {message}")]
+    TeardownFailed { repository: String, message: String },
+    #[error("Impossible de retirer tous les work items du workspace.")]
+    EmptyWorkItemSet,
 }
 
 pub fn build_handoff_validation_report(
@@ -401,6 +439,65 @@ pub fn task_list(root: &str, project: Option<&str>, work_item: Option<&str>) -> 
         .collect()
 }
 
+pub fn plan_task_prune(
+    root: &str,
+    project: Option<&str>,
+    work_item: Option<&str>,
+) -> Vec<WorkspaceSummary> {
+    filter_workspaces(find_workspaces(root), project, work_item)
+        .into_iter()
+        .filter(|workspace| {
+            workspace
+                .manifest
+                .parent_work_items()
+                .iter()
+                .all(|item| is_final_state(item.kind.as_deref(), item.state.as_deref()))
+        })
+        .collect()
+}
+
+pub fn display_work_item(item: &WorkspaceWorkItem, include_state: bool) -> String {
+    let title = item.title.clone().unwrap_or_else(|| "(sans titre)".into());
+    if include_state {
+        let state = item.state.clone().unwrap_or_else(|| "?".into());
+        format!("#{} {} [{}]", item.id, title, state)
+    } else {
+        format!("#{} {}", item.id, title)
+    }
+}
+
+pub fn display_work_items(items: &[WorkspaceWorkItem], include_state: bool) -> String {
+    items
+        .iter()
+        .map(|item| display_work_item(item, include_state))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+pub fn is_final_state(work_item_type: Option<&str>, state: Option<&str>) -> bool {
+    let normalized_state = normalize_state_or_type(state);
+    if normalized_state.is_empty() {
+        return false;
+    }
+    let normalized_type = normalize_state_or_type(work_item_type);
+    let final_states = [
+        "valide",
+        "validé",
+        "cloture",
+        "clôturé",
+        "abandonne",
+        "abandonné",
+    ];
+    let final_states_without_validated = ["cloture", "clôturé", "abandonne", "abandonné"];
+    match normalized_type.as_str() {
+        "user story" | "anomalie" => final_states.contains(&normalized_state.as_str()),
+        "bug" | "activite" | "activité" => {
+            final_states_without_validated.contains(&normalized_state.as_str())
+        }
+        _ => final_states.contains(&normalized_state.as_str()),
+    }
+}
+
 pub fn task_current(start_path: &str) -> Result<TaskCurrentItem, WorkspaceError> {
     let workspace = find_workspace_path(start_path).ok_or(WorkspaceError::NoCurrentWorkspace)?;
     let manifest = read_manifest(&Path::new(&workspace).join("task.json"))?;
@@ -541,11 +638,456 @@ pub fn plan_task_repo_latest(
     Ok((manifest, targets))
 }
 
+pub fn plan_task_commit(
+    projects: &ProjectsConfig,
+    workspace: &str,
+) -> Result<(WorkspaceManifest, Vec<TaskCommitTarget>), WorkspaceError> {
+    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let project_config = resolve_project(projects, &manifest.project);
+    let targets = manifest
+        .repositories
+        .iter()
+        .map(|repository| {
+            let repository_config = project_config
+                .as_ref()
+                .and_then(|project| repository_config(project, repository));
+            let folder = repository_config
+                .and_then(|repository| repository.folder)
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| repository.clone());
+            TaskCommitTarget {
+                repository: repository.clone(),
+                path: Path::new(workspace).join(folder).display().to_string(),
+            }
+        })
+        .collect();
+    Ok((manifest, targets))
+}
+
+pub fn plan_task_finish(
+    projects: &ProjectsConfig,
+    workspace: &str,
+) -> Result<
+    (
+        WorkspaceManifest,
+        Vec<TaskCommitTarget>,
+        TaskHandoffValidationReport,
+    ),
+    WorkspaceError,
+> {
+    let (manifest, targets) = plan_task_commit(projects, workspace)?;
+    let handoff = build_handoff_validation_report(workspace)?;
+    Ok((manifest, targets, handoff))
+}
+
+pub fn build_commit_message(
+    manifest: &WorkspaceManifest,
+    override_message: Option<&str>,
+) -> String {
+    if let Some(message) = override_message.filter(|message| !message.trim().is_empty()) {
+        return ensure_work_item_reference(message, manifest);
+    }
+
+    format!(
+        "{}({}): {}",
+        commit_prefix(&manifest.kind),
+        commit_ids(manifest).join(" "),
+        manifest.slug
+    )
+}
+
+pub fn ensure_work_item_reference(message: &str, manifest: &WorkspaceManifest) -> String {
+    let ids = commit_ids_for_reference(manifest);
+    if ids.iter().any(|id| message.contains(&format!("#{id}"))) {
+        message.into()
+    } else if let Some(id) = ids.first() {
+        format!("{message} #{id}")
+    } else {
+        message.into()
+    }
+}
+
+pub fn plan_add_work_items(
+    root: &str,
+    workspace: &str,
+    ids: &str,
+    kind: Option<&str>,
+    title: Option<&str>,
+    state: Option<&str>,
+) -> Result<(WorkspaceManifest, TaskWorkItemUpdatePlan), WorkspaceError> {
+    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let mut work_items = manifest.parent_work_items();
+    for id in parse_work_item_selection(Some(ids)).unwrap_or_default() {
+        if manifest.matches_work_item(&id)
+            || work_items
+                .iter()
+                .any(|item| item.id.eq_ignore_ascii_case(&id))
+        {
+            continue;
+        }
+        work_items.push(WorkspaceWorkItem {
+            id,
+            kind: kind.map(ToOwned::to_owned),
+            title: title.map(ToOwned::to_owned),
+            state: state.map(ToOwned::to_owned),
+        });
+    }
+    build_work_item_update_plan(root, workspace, &manifest, work_items).map(|plan| (manifest, plan))
+}
+
+pub fn plan_remove_work_items(
+    root: &str,
+    workspace: &str,
+    ids: &str,
+) -> Result<(WorkspaceManifest, TaskWorkItemUpdatePlan), WorkspaceError> {
+    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let selection = parse_work_item_selection(Some(ids)).unwrap_or_default();
+    let work_items = manifest
+        .parent_work_items()
+        .into_iter()
+        .filter(|item| !selection.iter().any(|id| id.eq_ignore_ascii_case(&item.id)))
+        .collect::<Vec<_>>();
+    if work_items.is_empty() {
+        return Err(WorkspaceError::EmptyWorkItemSet);
+    }
+    build_work_item_update_plan(root, workspace, &manifest, work_items).map(|plan| (manifest, plan))
+}
+
+pub fn execute_work_item_update(
+    manifest: &WorkspaceManifest,
+    plan: &TaskWorkItemUpdatePlan,
+) -> Result<(WorkspaceManifest, String), WorkspaceError> {
+    let first = plan
+        .work_items
+        .first()
+        .ok_or(WorkspaceError::EmptyWorkItemSet)?;
+    let updated = WorkspaceManifest {
+        work_item_id: first.id.clone(),
+        work_item_type: first.kind.clone(),
+        work_item_title: first.title.clone(),
+        work_item_state: first.state.clone(),
+        work_items: Some(plan.work_items.clone()),
+        branch_name: plan.new_branch.clone(),
+        ..manifest.clone()
+    };
+
+    let workspace_path = Path::new(&plan.workspace);
+    write_text(
+        &workspace_path.join("task.json"),
+        &serde_json::to_string_pretty(&updated)
+            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.clone()))?,
+    )?;
+    write_text(&workspace_path.join("plan.md"), &plan_markdown(&updated))?;
+    for repository in &updated.repositories {
+        write_text(
+            &workspace_path.join(format!("handoff-{repository}.md")),
+            &handoff_markdown(&updated, repository),
+        )?;
+    }
+
+    if plan.workspace != plan.new_workspace {
+        if Path::new(&plan.new_workspace).exists() {
+            return Err(WorkspaceError::WorkspaceConflict(
+                plan.new_workspace.clone(),
+            ));
+        }
+        fs::rename(&plan.workspace, &plan.new_workspace)
+            .map_err(|_| WorkspaceError::MissingWorkspace(plan.new_workspace.clone()))?;
+    }
+
+    Ok((updated, plan.new_workspace.clone()))
+}
+
+pub fn execute_task_sync(
+    workspace: &str,
+    snapshots: &[WorkItemSnapshot],
+) -> Result<WorkspaceManifest, WorkspaceError> {
+    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    if snapshots.is_empty() {
+        return Ok(manifest);
+    }
+    let work_items = snapshots
+        .iter()
+        .map(|snapshot| WorkspaceWorkItem {
+            id: snapshot.id.clone(),
+            kind: snapshot.kind.clone(),
+            title: snapshot.title.clone(),
+            state: snapshot.state.clone(),
+        })
+        .collect::<Vec<_>>();
+    let first = &work_items[0];
+    let updated = WorkspaceManifest {
+        work_item_id: first.id.clone(),
+        work_item_type: first.kind.clone(),
+        work_item_title: first.title.clone(),
+        work_item_state: first.state.clone(),
+        work_items: Some(work_items),
+        ..manifest
+    };
+    write_text(
+        &Path::new(workspace).join("task.json"),
+        &serde_json::to_string_pretty(&updated)
+            .map_err(|_| WorkspaceError::InvalidManifest(workspace.into()))?,
+    )?;
+    Ok(updated)
+}
+
+pub fn execute_add_child_task(
+    workspace: &str,
+    repository: &str,
+    id: &str,
+    title: Option<String>,
+) -> Result<WorkspaceManifest, WorkspaceError> {
+    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let mut child_tasks = manifest.normalized_child_tasks();
+    child_tasks.push(WorkspaceChildTask {
+        repository: repository.into(),
+        id: id.into(),
+        title,
+    });
+    let updated = WorkspaceManifest {
+        child_tasks: Some(child_tasks),
+        ..manifest
+    };
+    write_text(
+        &Path::new(workspace).join("task.json"),
+        &serde_json::to_string_pretty(&updated)
+            .map_err(|_| WorkspaceError::InvalidManifest(workspace.into()))?,
+    )?;
+    Ok(updated)
+}
+
+pub fn requires_child_tasks(work_item_type: Option<&str>) -> bool {
+    let normalized = work_item_type.unwrap_or_default().trim().to_lowercase();
+    normalized == "user story" || normalized == "anomalie"
+}
+
+pub fn plan_task_add_repo(
+    root: &str,
+    projects: &ProjectsConfig,
+    workspace: &str,
+    repository_key: &str,
+) -> Result<(WorkspaceManifest, TaskAddRepoPlan), WorkspaceError> {
+    let repository_key = repository_key.trim();
+    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    if manifest
+        .repositories
+        .iter()
+        .any(|repository| repository.eq_ignore_ascii_case(repository_key))
+    {
+        let repository = repository_key.to_string();
+        return Ok((
+            manifest.clone(),
+            TaskAddRepoPlan {
+                workspace: workspace.into(),
+                repository: repository.clone(),
+                project_root: Path::new(root)
+                    .join("projects")
+                    .join(&manifest.project)
+                    .display()
+                    .to_string(),
+                worktree_path: Path::new(workspace).join(&repository).display().to_string(),
+                url: String::new(),
+                default_branch: "main".into(),
+                anchor_name: format!("{repository}.git"),
+                branch_name: manifest.branch_name.clone(),
+                repositories: manifest.repositories.clone(),
+            },
+        ));
+    }
+
+    let project_config = resolve_project(projects, &manifest.project)
+        .ok_or_else(|| WorkspaceError::MissingWorkspaceRepository(repository_key.into()))?;
+    let repository_config = repository_config(&project_config, repository_key)
+        .ok_or_else(|| WorkspaceError::MissingWorkspaceRepository(repository_key.into()))?;
+    let folder = repository_config
+        .folder
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| repository_key.into());
+    let anchor_name = repository_config
+        .anchor_name
+        .clone()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| format!("{repository_key}.git"));
+    let mut repositories = manifest.repositories.clone();
+    repositories.push(repository_key.into());
+    repositories = distinct_repositories(&repositories);
+
+    Ok((
+        manifest.clone(),
+        TaskAddRepoPlan {
+            workspace: workspace.into(),
+            repository: repository_key.into(),
+            project_root: Path::new(root)
+                .join("projects")
+                .join(&manifest.project)
+                .display()
+                .to_string(),
+            worktree_path: Path::new(workspace).join(folder).display().to_string(),
+            url: repository_config.url,
+            default_branch: repository_config.default_branch,
+            anchor_name,
+            branch_name: manifest.branch_name.clone(),
+            repositories,
+        },
+    ))
+}
+
+pub fn execute_task_add_repo(
+    manifest: &WorkspaceManifest,
+    plan: &TaskAddRepoPlan,
+) -> Result<WorkspaceManifest, WorkspaceError> {
+    let updated = WorkspaceManifest {
+        repositories: plan.repositories.clone(),
+        ..manifest.clone()
+    };
+    write_text(
+        &Path::new(&plan.workspace).join("task.json"),
+        &serde_json::to_string_pretty(&updated)
+            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.clone()))?,
+    )?;
+    write_text(
+        &Path::new(&plan.workspace).join(format!("handoff-{}.md", plan.repository)),
+        &handoff_markdown(&updated, &plan.repository),
+    )?;
+    Ok(updated)
+}
+
+pub fn plan_task_teardown(
+    root: &str,
+    projects: &ProjectsConfig,
+    workspace: &str,
+) -> Result<(WorkspaceManifest, Vec<WorkspaceTeardownStep>), WorkspaceError> {
+    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let project_config = resolve_project(projects, &manifest.project);
+    let project_root = Path::new(root).join("projects").join(&manifest.project);
+    let mut steps = Vec::new();
+
+    for repository_key in distinct_repositories(&manifest.repositories) {
+        let repository = project_config
+            .as_ref()
+            .and_then(|project| repository_config(project, &repository_key))
+            .unwrap_or(RepositoryConfig {
+                url: String::new(),
+                default_branch: "main".into(),
+                pull_request_target_branch: None,
+                azure_dev_ops_repository: None,
+                anchor_name: None,
+                folder: Some(repository_key.clone()),
+            });
+        let folder = repository
+            .folder
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| repository_key.clone());
+        let anchor_name = repository
+            .anchor_name
+            .clone()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| format!("{repository_key}.git"));
+        let git_dir = project_root
+            .join("repositories")
+            .join(anchor_name)
+            .display()
+            .to_string();
+        steps.push(WorkspaceTeardownStep {
+            repository: repository_key.clone(),
+            action: "worktree remove".into(),
+            target: Path::new(workspace).join(folder).display().to_string(),
+            git_dir: Some(git_dir.clone()),
+        });
+
+        if !repository.url.trim().is_empty() {
+            steps.push(WorkspaceTeardownStep {
+                repository: repository_key,
+                action: "worktree prune".into(),
+                target: git_dir.clone(),
+                git_dir: Some(git_dir),
+            });
+        }
+    }
+
+    steps.push(WorkspaceTeardownStep {
+        repository: "workspace".into(),
+        action: "delete directory".into(),
+        target: workspace.into(),
+        git_dir: None,
+    });
+
+    Ok((manifest, steps))
+}
+
+pub fn execute_task_teardown<F>(
+    workspace: &str,
+    steps: &[WorkspaceTeardownStep],
+    mut run_git_dir: F,
+) -> Result<(), WorkspaceError>
+where
+    F: FnMut(&str, &[&str]) -> Result<(), String>,
+{
+    for step in steps.iter().filter(|step| step.action == "worktree remove") {
+        let git_dir = require_git_dir(step)?;
+        if !Path::new(git_dir).exists() {
+            return Err(WorkspaceError::TeardownFailed {
+                repository: step.repository.clone(),
+                message: format!("gitDir introuvable {git_dir}"),
+            });
+        }
+        run_git_dir(git_dir, &["worktree", "remove", "--force", &step.target]).map_err(
+            |message| WorkspaceError::TeardownFailed {
+                repository: step.repository.clone(),
+                message,
+            },
+        )?;
+    }
+
+    for step in steps.iter().filter(|step| step.action == "worktree prune") {
+        let git_dir = require_git_dir(step)?;
+        if !Path::new(git_dir).exists() {
+            continue;
+        }
+        run_git_dir(git_dir, &["worktree", "prune"]).map_err(|message| {
+            WorkspaceError::TeardownFailed {
+                repository: step.repository.clone(),
+                message,
+            }
+        })?;
+    }
+
+    if Path::new(workspace).exists() {
+        fs::remove_dir_all(workspace).map_err(|error| WorkspaceError::TeardownFailed {
+            repository: "workspace".into(),
+            message: error.to_string(),
+        })?;
+    }
+
+    Ok(())
+}
+
 pub fn execute_task_start(
     plan: &TaskStartPlan,
     work_item_type: Option<&str>,
     work_item_title: Option<&str>,
     work_item_state: Option<&str>,
+) -> Result<WorkspaceManifest, WorkspaceError> {
+    execute_task_start_with_work_items(
+        plan,
+        plan.work_item_ids
+            .iter()
+            .map(|id| WorkspaceWorkItem {
+                id: id.clone(),
+                kind: work_item_type.map(ToOwned::to_owned),
+                title: work_item_title.map(ToOwned::to_owned),
+                state: work_item_state.map(ToOwned::to_owned),
+            })
+            .collect(),
+    )
+}
+
+pub fn execute_task_start_with_work_items(
+    plan: &TaskStartPlan,
+    work_items: Vec<WorkspaceWorkItem>,
 ) -> Result<WorkspaceManifest, WorkspaceError> {
     let workspace = Path::new(&plan.workspace);
     fs::create_dir_all(workspace)
@@ -556,16 +1098,22 @@ pub fn execute_task_start(
         })?;
     }
 
-    let work_items = plan
-        .work_item_ids
-        .iter()
-        .map(|id| WorkspaceWorkItem {
-            id: id.clone(),
-            kind: work_item_type.map(ToOwned::to_owned),
-            title: work_item_title.map(ToOwned::to_owned),
-            state: work_item_state.map(ToOwned::to_owned),
-        })
-        .collect::<Vec<_>>();
+    let work_items = if work_items.is_empty() {
+        plan.work_item_ids
+            .iter()
+            .map(|id| WorkspaceWorkItem {
+                id: id.clone(),
+                kind: None,
+                title: None,
+                state: None,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        work_items
+    };
+    let first = work_items
+        .first()
+        .ok_or_else(|| WorkspaceError::InvalidManifest(plan.workspace.clone()))?;
 
     let manifest = WorkspaceManifest {
         schema: 1,
@@ -578,9 +1126,9 @@ pub fn execute_task_start(
         created_at: current_timestamp_string(),
         repositories: plan.repositories.clone(),
         status: "created".into(),
-        work_item_type: work_item_type.map(ToOwned::to_owned),
-        work_item_title: work_item_title.map(ToOwned::to_owned),
-        work_item_state: work_item_state.map(ToOwned::to_owned),
+        work_item_type: first.kind.clone(),
+        work_item_title: first.title.clone(),
+        work_item_state: first.state.clone(),
         child_task_ids: None,
         child_tasks: None,
         work_items: Some(work_items),
@@ -1058,8 +1606,15 @@ fn distinct_repositories(repositories: &[String]) -> Vec<String> {
 }
 
 fn format_work_item(item: &WorkspaceWorkItem) -> String {
-    let title = item.title.clone().unwrap_or_else(|| "(sans titre)".into());
-    format!("#{} {}", item.id, title)
+    display_work_item(item, false)
+}
+
+fn normalize_state_or_type(value: Option<&str>) -> String {
+    value
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase()
+        .replace('é', "e")
 }
 
 fn resolve_work_item_ids(
@@ -1184,6 +1739,119 @@ fn resolve_workspace_repositories(
     }
 
     Ok(manifest.repositories.clone())
+}
+
+fn commit_prefix(kind: &str) -> String {
+    match kind.to_ascii_lowercase().as_str() {
+        "feat" | "fix" | "bug" | "chore" | "refactor" | "test" => kind.to_ascii_lowercase(),
+        _ => kind.to_ascii_lowercase(),
+    }
+}
+
+fn commit_ids(manifest: &WorkspaceManifest) -> Vec<String> {
+    distinct_non_empty_owned(
+        manifest
+            .parent_work_items()
+            .into_iter()
+            .map(|item| item.id)
+            .chain(manifest.task_id.clone())
+            .chain(
+                manifest
+                    .normalized_child_tasks()
+                    .into_iter()
+                    .map(|task| task.id),
+            )
+            .map(|id| format!("#{id}"))
+            .collect(),
+    )
+}
+
+fn commit_ids_for_reference(manifest: &WorkspaceManifest) -> Vec<String> {
+    distinct_non_empty_owned(
+        manifest
+            .task_id
+            .clone()
+            .into_iter()
+            .chain(std::iter::once(manifest.work_item_id.clone()))
+            .chain(manifest.parent_work_items().into_iter().map(|item| item.id))
+            .chain(
+                manifest
+                    .normalized_child_tasks()
+                    .into_iter()
+                    .map(|task| task.id),
+            )
+            .collect(),
+    )
+}
+
+fn build_work_item_update_plan(
+    root: &str,
+    workspace: &str,
+    manifest: &WorkspaceManifest,
+    work_items: Vec<WorkspaceWorkItem>,
+) -> Result<TaskWorkItemUpdatePlan, WorkspaceError> {
+    let _first = work_items.first().ok_or(WorkspaceError::EmptyWorkItemSet)?;
+    let parent_ids = work_items
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<Vec<_>>();
+    let mut branch_ids = parent_ids.clone();
+    if let Some(task_id) = &manifest.task_id
+        && !task_id.trim().is_empty()
+    {
+        branch_ids.push(task_id.clone());
+    }
+    branch_ids.extend(
+        manifest
+            .normalized_child_tasks()
+            .into_iter()
+            .map(|task| task.id),
+    );
+    let new_branch = build_branch_name(&manifest.kind, &branch_ids, &manifest.slug);
+    let new_workspace = Path::new(workspace)
+        .parent()
+        .unwrap_or_else(|| Path::new(root))
+        .join(build_subject_name(
+            &manifest.kind,
+            &parent_ids,
+            &manifest.slug,
+        ))
+        .display()
+        .to_string();
+
+    Ok(TaskWorkItemUpdatePlan {
+        workspace: workspace.into(),
+        new_workspace,
+        old_branch: manifest.branch_name.clone(),
+        new_branch,
+        work_items,
+    })
+}
+
+fn distinct_non_empty_owned(values: Vec<String>) -> Vec<String> {
+    let mut result = Vec::new();
+    for value in values {
+        if value.trim().is_empty() {
+            continue;
+        }
+        if !result
+            .iter()
+            .any(|item: &String| item.eq_ignore_ascii_case(&value))
+        {
+            result.push(value);
+        }
+    }
+    result
+}
+
+fn require_git_dir(step: &WorkspaceTeardownStep) -> Result<&str, WorkspaceError> {
+    step.git_dir
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| WorkspaceError::TeardownFailed {
+            repository: step.repository.clone(),
+            message: "gitDir manquant".into(),
+        })
 }
 
 fn collect_manifests(root: &Path, entries: &mut Vec<WorkspaceSummary>) {
@@ -2046,6 +2714,490 @@ artifacts:
         assert_eq!(targets[0].repository, "front");
         assert_eq!(targets[0].default_branch, "develop");
         assert!(targets[0].repository_path.ends_with("custom-front"));
+    }
+
+    #[test]
+    fn plan_task_commit_uses_repository_folder_override() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"123","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/123-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front","back"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+        let projects: ProjectsConfig = serde_json::from_str(
+            r#"{"projects":{"ha":{"displayName":"HA","repositories":{"front":{"url":"","defaultBranch":"develop","folder":"custom-front"},"back":{"url":"","defaultBranch":"main"}}}}}"#,
+        )
+        .expect("projects should parse");
+
+        let (_manifest, targets) =
+            plan_task_commit(&projects, workspace.to_str().expect("utf8 path"))
+                .expect("plan should build");
+
+        assert_eq!(targets.len(), 2);
+        assert!(targets.iter().any(|target| {
+            target.repository == "front" && target.path.ends_with("custom-front")
+        }));
+        assert!(
+            targets
+                .iter()
+                .any(|target| target.repository == "back" && target.path.ends_with("back"))
+        );
+    }
+
+    #[test]
+    fn build_commit_message_uses_parent_task_and_child_ids() {
+        let manifest: WorkspaceManifest = serde_json::from_str(
+            r#"{
+  "schema": 1,
+  "workItemId": "53020",
+  "taskId": "53312",
+  "project": "he",
+  "type": "bug",
+  "slug": "corriger-ouverture-dossier",
+  "branchName": "bug/53020-53312-55201-corriger-ouverture-dossier",
+  "createdAt": "2026-07-02T10:00:00Z",
+  "repositories": ["front"],
+  "status": "created",
+  "childTasks": [
+    { "repository": "front", "id": "55201", "title": "Verifier UI" }
+  ]
+}"#,
+        )
+        .expect("manifest should parse");
+
+        assert_eq!(
+            build_commit_message(&manifest, None),
+            "bug(#53020 #53312 #55201): corriger-ouverture-dossier"
+        );
+    }
+
+    #[test]
+    fn build_commit_message_supports_multiple_parent_ids() {
+        let manifest: WorkspaceManifest = serde_json::from_str(
+            r#"{
+  "schema": 1,
+  "workItemId": "53020",
+  "taskId": null,
+  "project": "he",
+  "type": "bug",
+  "slug": "corriger-ouverture-dossier",
+  "branchName": "bug/53020-53098-corriger-ouverture-dossier",
+  "createdAt": "2026-07-02T10:00:00Z",
+  "repositories": ["back"],
+  "status": "created",
+  "workItems": [
+    { "id": "53020" },
+    { "id": "53098" }
+  ]
+}"#,
+        )
+        .expect("manifest should parse");
+
+        assert_eq!(
+            build_commit_message(&manifest, None),
+            "bug(#53020 #53098): corriger-ouverture-dossier"
+        );
+    }
+
+    #[test]
+    fn build_commit_message_adds_reference_to_override_when_missing() {
+        let manifest: WorkspaceManifest = serde_json::from_str(
+            r#"{"schema":1,"workItemId":"27485","taskId":"55201","project":"ha","type":"feat","slug":"descriptif","branchName":"feat/27485-55201-descriptif","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should parse");
+
+        assert_eq!(
+            build_commit_message(&manifest, Some("feat: descriptif")),
+            "feat: descriptif #55201"
+        );
+        assert_eq!(
+            build_commit_message(&manifest, Some("feat: descriptif #27485")),
+            "feat: descriptif #27485"
+        );
+    }
+
+    #[test]
+    fn plan_add_work_items_updates_branch_and_workspace_subject() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"11010","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/11010-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+
+        let (_manifest, plan) = plan_add_work_items(
+            temp.path().to_str().expect("utf8 path"),
+            workspace.to_str().expect("utf8 path"),
+            "55206",
+            Some("Bug"),
+            Some("Secondaire"),
+            Some("En developpement"),
+        )
+        .expect("plan should build");
+
+        assert_eq!(plan.new_branch, "feat/11010-55206-demo");
+        assert!(plan.new_workspace.ends_with("feat-11010-55206-demo"));
+        assert_eq!(plan.work_items.len(), 2);
+        assert_eq!(plan.work_items[1].title.as_deref(), Some("Secondaire"));
+    }
+
+    #[test]
+    fn execute_work_item_update_writes_manifest_and_renames_workspace() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"11010","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/11010-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+        let (manifest, plan) = plan_add_work_items(
+            temp.path().to_str().expect("utf8 path"),
+            workspace.to_str().expect("utf8 path"),
+            "55206",
+            None,
+            None,
+            None,
+        )
+        .expect("plan should build");
+
+        let (updated, new_workspace) =
+            execute_work_item_update(&manifest, &plan).expect("update should execute");
+
+        assert_eq!(updated.branch_name, "feat/11010-55206-demo");
+        assert!(!workspace.exists());
+        assert!(
+            std::path::Path::new(&new_workspace)
+                .join("task.json")
+                .exists()
+        );
+        assert!(
+            std::path::Path::new(&new_workspace)
+                .join("handoff-front.md")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn plan_remove_work_items_rejects_empty_parent_set() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"11010","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/11010-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+
+        let error = plan_remove_work_items(
+            temp.path().to_str().expect("utf8 path"),
+            workspace.to_str().expect("utf8 path"),
+            "11010",
+        )
+        .expect_err("removing every parent should fail");
+
+        assert!(matches!(error, WorkspaceError::EmptyWorkItemSet));
+    }
+
+    #[test]
+    fn plan_task_add_repo_uses_config_folder_anchor_and_branch() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"123","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/123-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+        let projects: ProjectsConfig = serde_json::from_str(
+            r#"{"projects":{"ha":{"displayName":"HA","repositories":{"db":{"url":"https://example/db.git","defaultBranch":"develop","anchorName":"database.git","folder":"database"}}}}}"#,
+        )
+        .expect("projects should parse");
+
+        let (_manifest, plan) = plan_task_add_repo(
+            root.to_str().expect("utf8 path"),
+            &projects,
+            workspace.to_str().expect("utf8 path"),
+            "db",
+        )
+        .expect("plan should build");
+
+        assert_eq!(plan.repository, "db");
+        assert_eq!(plan.default_branch, "develop");
+        assert_eq!(plan.anchor_name, "database.git");
+        assert_eq!(plan.branch_name, "feat/123-demo");
+        assert!(plan.worktree_path.ends_with("database"));
+        assert_eq!(plan.repositories, vec!["front", "db"]);
+    }
+
+    #[test]
+    fn execute_task_add_repo_updates_manifest_and_handoff() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"123","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/123-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+        let projects: ProjectsConfig = serde_json::from_str(
+            r#"{"projects":{"ha":{"displayName":"HA","repositories":{"db":{"url":"","defaultBranch":"main"}}}}}"#,
+        )
+        .expect("projects should parse");
+        let (manifest, plan) = plan_task_add_repo(
+            root.to_str().expect("utf8 path"),
+            &projects,
+            workspace.to_str().expect("utf8 path"),
+            "db",
+        )
+        .expect("plan should build");
+
+        let updated = execute_task_add_repo(&manifest, &plan).expect("add repo should execute");
+
+        assert_eq!(updated.repositories, vec!["front", "db"]);
+        let manifest_text = fs::read_to_string(workspace.join("task.json")).expect("manifest");
+        assert!(manifest_text.contains("db"));
+        assert!(workspace.join("handoff-db.md").exists());
+    }
+
+    #[test]
+    fn execute_task_sync_updates_parent_work_items_from_snapshots() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"123","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/123-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created","workItems":[{"id":"123","type":"Bug","title":"Ancien","state":"New"}]}"#,
+        )
+        .expect("manifest should be written");
+
+        let updated = execute_task_sync(
+            workspace.to_str().expect("utf8 path"),
+            &[WorkItemSnapshot {
+                id: "123".into(),
+                kind: Some("Bug".into()),
+                state: Some("En developpement".into()),
+                title: Some("Titre ADO".into()),
+                url: Some("https://dev.azure.com/org/project/_workitems/edit/123".into()),
+            }],
+        )
+        .expect("sync should execute");
+
+        assert_eq!(updated.work_item_title.as_deref(), Some("Titre ADO"));
+        assert_eq!(updated.work_item_state.as_deref(), Some("En developpement"));
+        let manifest_text = fs::read_to_string(workspace.join("task.json")).expect("manifest");
+        assert!(manifest_text.contains("Titre ADO"));
+    }
+
+    #[test]
+    fn display_work_item_includes_title_and_state_when_requested() {
+        let text = display_work_item(
+            &WorkspaceWorkItem {
+                id: "55206".into(),
+                kind: Some("Bug".into()),
+                title: Some("Heures PSFs incoherentes affichees".into()),
+                state: Some("Valide".into()),
+            },
+            true,
+        );
+
+        assert_eq!(text, "#55206 Heures PSFs incoherentes affichees [Valide]");
+    }
+
+    #[test]
+    fn display_work_items_joins_multiple_items_with_titles() {
+        let text = display_work_items(
+            &[
+                WorkspaceWorkItem {
+                    id: "26999".into(),
+                    kind: Some("User Story".into()),
+                    title: Some("Edition de la demande de transport".into()),
+                    state: Some("En realisation".into()),
+                },
+                WorkspaceWorkItem {
+                    id: "55264".into(),
+                    kind: Some("Task".into()),
+                    title: Some("Transmission automatique du dossier".into()),
+                    state: Some("En realisation".into()),
+                },
+            ],
+            true,
+        );
+
+        assert_eq!(
+            text,
+            "#26999 Edition de la demande de transport [En realisation], #55264 Transmission automatique du dossier [En realisation]"
+        );
+    }
+
+    #[test]
+    fn plan_task_prune_keeps_only_workspaces_with_all_parents_final() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        let final_workspace = root.join("projects/ha/workspaces/feat-1-final");
+        let active_workspace = root.join("projects/ha/workspaces/feat-2-active");
+        fs::create_dir_all(&final_workspace).expect("final workspace should exist");
+        fs::create_dir_all(&active_workspace).expect("active workspace should exist");
+        fs::write(
+            final_workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"1","taskId":null,"project":"ha","type":"feat","slug":"final","branchName":"feat/1-final","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created","workItems":[{"id":"1","type":"User Story","title":"Done","state":"Valide"}]}"#,
+        )
+        .expect("final manifest should be written");
+        fs::write(
+            active_workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"2","taskId":null,"project":"ha","type":"feat","slug":"active","branchName":"feat/2-active","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created","workItems":[{"id":"2","type":"User Story","title":"Active","state":"En realisation"}]}"#,
+        )
+        .expect("active manifest should be written");
+
+        let candidates = plan_task_prune(root.to_str().expect("utf8 path"), Some("ha"), None);
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].path, final_workspace.display().to_string());
+    }
+
+    #[test]
+    fn plan_task_teardown_removes_each_repo_worktree_and_prunes_git_anchors() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        let workspace = root.join("projects/ha/workspaces/feat-55222-slug");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"55222","taskId":null,"project":"ha","type":"feat","slug":"slug","branchName":"feat/55222-slug","createdAt":"2026-06-22T12:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+        let projects: ProjectsConfig = serde_json::from_str(
+            r#"{"projects":{"ha":{"displayName":"HA","repositories":{"front":{"url":"https://example/front.git","defaultBranch":"develop","anchorName":"front.git","folder":"front"}}}}}"#,
+        )
+        .expect("projects should parse");
+
+        let (_manifest, steps) = plan_task_teardown(
+            root.to_str().expect("utf8 path"),
+            &projects,
+            workspace.to_str().expect("utf8 path"),
+        )
+        .expect("plan should build");
+        let anchor = root.join("projects/ha/repositories/front.git");
+
+        assert!(steps.iter().any(|step| {
+            step.repository == "front"
+                && step.action == "worktree remove"
+                && step.target == workspace.join("front").display().to_string()
+                && step.git_dir.as_deref() == Some(anchor.to_str().expect("utf8 path"))
+        }));
+        assert!(steps.iter().any(|step| {
+            step.repository == "front"
+                && step.action == "worktree prune"
+                && step.target == anchor.display().to_string()
+                && step.git_dir.as_deref() == Some(anchor.to_str().expect("utf8 path"))
+        }));
+        assert!(steps.iter().any(|step| {
+            step.repository == "workspace"
+                && step.action == "delete directory"
+                && step.target == workspace.display().to_string()
+        }));
+    }
+
+    #[test]
+    fn execute_task_teardown_runs_git_from_anchor_and_deletes_workspace() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        let workspace = root.join("projects/ha/workspaces/feat-55222-slug");
+        let anchor = root.join("projects/ha/repositories/front.git");
+        fs::create_dir_all(workspace.join("front")).expect("worktree should exist");
+        fs::create_dir_all(&anchor).expect("anchor should exist");
+        let steps = vec![
+            WorkspaceTeardownStep {
+                repository: "front".into(),
+                action: "worktree remove".into(),
+                target: workspace.join("front").display().to_string(),
+                git_dir: Some(anchor.display().to_string()),
+            },
+            WorkspaceTeardownStep {
+                repository: "front".into(),
+                action: "worktree prune".into(),
+                target: anchor.display().to_string(),
+                git_dir: Some(anchor.display().to_string()),
+            },
+            WorkspaceTeardownStep {
+                repository: "workspace".into(),
+                action: "delete directory".into(),
+                target: workspace.display().to_string(),
+                git_dir: None,
+            },
+        ];
+        let mut calls: Vec<(String, Vec<String>)> = Vec::new();
+
+        execute_task_teardown(
+            workspace.to_str().expect("utf8 path"),
+            &steps,
+            |git_dir, args| {
+                calls.push((
+                    git_dir.to_string(),
+                    args.iter().map(|arg| arg.to_string()).collect(),
+                ));
+                Ok(())
+            },
+        )
+        .expect("teardown should execute");
+
+        assert!(calls.iter().any(|(git_dir, args)| {
+            git_dir == anchor.to_str().expect("utf8 path")
+                && args
+                    == &vec![
+                        "worktree".to_string(),
+                        "remove".to_string(),
+                        "--force".to_string(),
+                        workspace.join("front").display().to_string(),
+                    ]
+        }));
+        assert!(calls.iter().any(|(git_dir, args)| {
+            git_dir == anchor.to_str().expect("utf8 path")
+                && args == &vec!["worktree".to_string(), "prune".to_string()]
+        }));
+        assert!(!workspace.exists());
+    }
+
+    #[test]
+    fn execute_task_teardown_skips_prune_when_anchor_is_missing() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("workspace");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        let missing_anchor = temp.path().join("missing/front.git");
+        let steps = vec![
+            WorkspaceTeardownStep {
+                repository: "front".into(),
+                action: "worktree prune".into(),
+                target: missing_anchor.display().to_string(),
+                git_dir: Some(missing_anchor.display().to_string()),
+            },
+            WorkspaceTeardownStep {
+                repository: "workspace".into(),
+                action: "delete directory".into(),
+                target: workspace.display().to_string(),
+                git_dir: None,
+            },
+        ];
+        let mut calls = 0;
+
+        execute_task_teardown(
+            workspace.to_str().expect("utf8 path"),
+            &steps,
+            |_git_dir, _args| {
+                calls += 1;
+                Ok(())
+            },
+        )
+        .expect("teardown should skip missing prune anchor");
+
+        assert_eq!(calls, 0);
+        assert!(!workspace.exists());
     }
 
     fn valid_handoff(repository: &str, status: &str) -> String {

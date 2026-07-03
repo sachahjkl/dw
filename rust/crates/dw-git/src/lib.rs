@@ -1,11 +1,47 @@
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GitRewriteNote {
     pub strategy: &'static str,
     pub status: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RepositoryStatus {
+    pub path: String,
+    #[serde(rename = "isGitRepository")]
+    pub is_git_repository: bool,
+    #[serde(rename = "hasChanges")]
+    pub has_changes: bool,
+    #[serde(rename = "hasUnpushed")]
+    pub has_unpushed: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorktreePrepareRequest {
+    #[serde(rename = "projectRoot")]
+    pub project_root: String,
+    pub repository: String,
+    pub url: String,
+    #[serde(rename = "defaultBranch")]
+    pub default_branch: String,
+    #[serde(rename = "anchorName")]
+    pub anchor_name: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+    #[serde(rename = "worktreePath")]
+    pub worktree_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorktreePrepareResult {
+    pub repository: String,
+    pub status: String,
+    pub message: String,
 }
 
 pub fn current_strategy() -> GitRewriteNote {
@@ -110,10 +146,220 @@ pub fn update_repository(repository_path: &str, default_branch: &str) -> Result<
     Ok(())
 }
 
+pub fn repository_status(repository_path: &str) -> RepositoryStatus {
+    if !Path::new(repository_path).is_dir() {
+        return RepositoryStatus {
+            path: repository_path.into(),
+            is_git_repository: false,
+            has_changes: false,
+            has_unpushed: false,
+            detail: "Dossier absent.".into(),
+        };
+    }
+
+    let status = match run_git(repository_path, &["status", "--short"]) {
+        Ok(output) => output.trim().to_string(),
+        Err(error) => {
+            return RepositoryStatus {
+                path: repository_path.into(),
+                is_git_repository: false,
+                has_changes: false,
+                has_unpushed: false,
+                detail: error.to_string(),
+            };
+        }
+    };
+
+    if !status.is_empty() {
+        return RepositoryStatus {
+            path: repository_path.into(),
+            is_git_repository: true,
+            has_changes: true,
+            has_unpushed: false,
+            detail: status,
+        };
+    }
+
+    let ahead = run_git(repository_path, &["rev-list", "--count", "@{u}..HEAD"])
+        .ok()
+        .and_then(|output| output.trim().parse::<u32>().ok())
+        .unwrap_or(0);
+
+    RepositoryStatus {
+        path: repository_path.into(),
+        is_git_repository: true,
+        has_changes: false,
+        has_unpushed: ahead > 0,
+        detail: if ahead > 0 {
+            format!("{ahead} commit(s) non pousse(s).")
+        } else {
+            String::new()
+        },
+    }
+}
+
+pub fn commit_repository(repository_path: &str, message: &str) -> Result<()> {
+    run_git(repository_path, &["add", "."])?;
+    run_git(repository_path, &["commit", "-m", message])?;
+    Ok(())
+}
+
+pub fn push_repository(repository_path: &str, branch_name: &str) -> Result<()> {
+    run_git(repository_path, &["push", "-u", "origin", branch_name])?;
+    Ok(())
+}
+
+pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrepareResult> {
+    if request.url.trim().is_empty() {
+        std::fs::create_dir_all(&request.worktree_path)?;
+        return Ok(WorktreePrepareResult {
+            repository: request.repository.clone(),
+            status: "placeholder".into(),
+            message: "URL distante absente dans projects.json.".into(),
+        });
+    }
+
+    let repositories_root = Path::new(&request.project_root).join("repositories");
+    let anchor_path = repositories_root.join(&request.anchor_name);
+    std::fs::create_dir_all(&repositories_root)?;
+
+    if !anchor_path.is_dir() {
+        run_git_in(
+            &request.project_root,
+            &[
+                "clone",
+                "--bare",
+                &request.url,
+                anchor_path.to_str().unwrap_or_default(),
+            ],
+        )?;
+        run_git_dir(
+            anchor_path.to_str().unwrap_or_default(),
+            &[
+                "config",
+                "remote.origin.fetch",
+                "+refs/heads/*:refs/remotes/origin/*",
+            ],
+        )?;
+    } else {
+        run_git_dir(
+            anchor_path.to_str().unwrap_or_default(),
+            &[
+                "config",
+                "remote.origin.fetch",
+                "+refs/heads/*:refs/remotes/origin/*",
+            ],
+        )?;
+        run_git_dir(
+            anchor_path.to_str().unwrap_or_default(),
+            &["fetch", "--prune", "origin"],
+        )?;
+    }
+
+    if Path::new(&request.worktree_path).is_dir() {
+        return Ok(WorktreePrepareResult {
+            repository: request.repository.clone(),
+            status: "prepared".into(),
+            message: "Worktree deja present.".into(),
+        });
+    }
+
+    let anchor = anchor_path.to_str().unwrap_or_default();
+    let base_ref = [
+        format!("origin/{}", request.default_branch),
+        format!("refs/heads/{}", request.default_branch),
+    ]
+    .into_iter()
+    .find(|candidate| run_git_dir(anchor, &["rev-parse", "--verify", candidate]).is_ok())
+    .ok_or_else(|| {
+        anyhow!(
+            "Branche de base introuvable: {}. References testees: origin/{}, refs/heads/{}.",
+            request.default_branch,
+            request.default_branch,
+            request.default_branch
+        )
+    })?;
+    let branch_ref = format!("refs/heads/{}", request.branch_name);
+    let branch_exists = run_git_dir(anchor, &["rev-parse", "--verify", &branch_ref]).is_ok();
+    if branch_exists {
+        run_git_dir(
+            anchor,
+            &[
+                "worktree",
+                "add",
+                &request.worktree_path,
+                &request.branch_name,
+            ],
+        )?;
+    } else {
+        run_git_dir(
+            anchor,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                &request.branch_name,
+                &request.worktree_path,
+                &base_ref,
+            ],
+        )?;
+    }
+
+    Ok(WorktreePrepareResult {
+        repository: request.repository.clone(),
+        status: "prepared".into(),
+        message: if branch_exists {
+            format!(
+                "Worktree cree depuis la branche existante {}.",
+                request.branch_name
+            )
+        } else {
+            format!("Worktree cree depuis {base_ref}.")
+        },
+    })
+}
+
+pub fn worktree_remove(git_dir: &str, worktree_path: &str) -> Result<()> {
+    run_git_dir(git_dir, &["worktree", "remove", "--force", worktree_path]).map(|_| ())
+}
+
+pub fn worktree_prune(git_dir: &str) -> Result<()> {
+    run_git_dir(git_dir, &["worktree", "prune"]).map(|_| ())
+}
+
 fn run_git(repository_path: &str, args: &[&str]) -> Result<String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(repository_path)
+        .output()?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn run_git_in(working_directory: &str, args: &[&str]) -> Result<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(working_directory)
+        .output()?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn run_git_dir(git_dir: &str, args: &[&str]) -> Result<String> {
+    let output = Command::new("git")
+        .arg("--git-dir")
+        .arg(git_dir)
+        .args(args)
         .output()?;
     if !output.status.success() {
         return Err(anyhow!(

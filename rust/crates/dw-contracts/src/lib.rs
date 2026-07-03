@@ -14,27 +14,6 @@ pub struct StructuredEnvelope<T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Phase0Status {
-    pub phase: &'static str,
-    pub dotnet_reference_present: bool,
-    pub cargo_workspace_present: bool,
-    pub windows_validation_required: bool,
-    pub real_service_validation_required: bool,
-}
-
-impl Phase0Status {
-    pub fn current() -> Self {
-        Self {
-            phase: "phase0",
-            dotnet_reference_present: true,
-            cargo_workspace_present: true,
-            windows_validation_required: true,
-            real_service_validation_required: true,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskHandoffValidationReport {
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,

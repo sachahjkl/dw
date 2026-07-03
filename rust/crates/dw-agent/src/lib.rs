@@ -4,6 +4,16 @@ use thiserror::Error;
 
 pub const DEFAULT_AGENT: &str = "opencode";
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentKind {
+    Opencode,
+    Cursor,
+    Claude,
+    Codex,
+    Copilot,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentLaunch {
     #[serde(rename = "fileName")]
@@ -48,15 +58,52 @@ pub enum AgentError {
     UnknownAgent(String),
 }
 
-pub fn build_open_launch(
-    agent: Option<&str>,
-    request: &AgentOpenRequest,
-) -> Result<AgentLaunch, AgentError> {
+pub trait AgentAdapter {
+    fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch;
+}
+
+pub fn parse_agent_kind(agent: Option<&str>) -> Result<AgentKind, AgentError> {
     let name = agent
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(DEFAULT_AGENT);
     match name.to_ascii_lowercase().as_str() {
-        "opencode" => Ok(AgentLaunch {
+        "opencode" => Ok(AgentKind::Opencode),
+        "cursor" | "cursor-agent" | "agent" => Ok(AgentKind::Cursor),
+        "claude" => Ok(AgentKind::Claude),
+        "codex-cli" | "codex" => Ok(AgentKind::Codex),
+        "copilot" => Ok(AgentKind::Copilot),
+        other => Err(AgentError::UnknownAgent(other.into())),
+    }
+}
+
+pub fn build_open_launch(
+    agent: Option<&str>,
+    request: &AgentOpenRequest,
+) -> Result<AgentLaunch, AgentError> {
+    Ok(parse_agent_kind(agent)?.launch(request))
+}
+
+impl AgentAdapter for AgentKind {
+    fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
+        match self {
+            AgentKind::Opencode => Opencode.launch(request),
+            AgentKind::Cursor => CursorAgent.launch(request),
+            AgentKind::Claude => Claude.launch(request),
+            AgentKind::Codex => Codex.launch(request),
+            AgentKind::Copilot => Copilot.launch(request),
+        }
+    }
+}
+
+struct Opencode;
+struct CursorAgent;
+struct Claude;
+struct Codex;
+struct Copilot;
+
+impl AgentAdapter for Opencode {
+    fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
+        AgentLaunch {
             file_name: "opencode".into(),
             arguments: if request.r#continue {
                 vec!["-c".into(), request.workspace.clone()]
@@ -68,8 +115,13 @@ pub fn build_open_launch(
                 format!("{}/config/opencode/opencode.jsonc", request.root),
             )]),
             working_directory: request.workspace.clone(),
-        }),
-        "cursor" | "cursor-agent" | "agent" => Ok(AgentLaunch {
+        }
+    }
+}
+
+impl AgentAdapter for CursorAgent {
+    fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
+        AgentLaunch {
             file_name: "agent".into(),
             arguments: if request.r#continue {
                 vec![
@@ -82,18 +134,28 @@ pub fn build_open_launch(
             },
             environment: BTreeMap::new(),
             working_directory: request.workspace.clone(),
-        }),
-        "claude" => Ok(AgentLaunch {
+        }
+    }
+}
+
+impl AgentAdapter for Claude {
+    fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
+        AgentLaunch {
             file_name: "claude".into(),
-            arguments: if request.r#continue {
-                vec!["--continue".into()]
-            } else {
-                vec![]
-            },
+            arguments: request
+                .r#continue
+                .then(|| "--continue".into())
+                .into_iter()
+                .collect(),
             environment: BTreeMap::new(),
             working_directory: request.workspace.clone(),
-        }),
-        "codex-cli" | "codex" => Ok(AgentLaunch {
+        }
+    }
+}
+
+impl AgentAdapter for Codex {
+    fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
+        AgentLaunch {
             file_name: "codex".into(),
             arguments: if request.r#continue {
                 vec![
@@ -107,18 +169,22 @@ pub fn build_open_launch(
             },
             environment: BTreeMap::new(),
             working_directory: request.workspace.clone(),
-        }),
-        "copilot" => Ok(AgentLaunch {
+        }
+    }
+}
+
+impl AgentAdapter for Copilot {
+    fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
+        AgentLaunch {
             file_name: "copilot".into(),
-            arguments: if request.r#continue {
-                vec!["--continue".into()]
-            } else {
-                vec![]
-            },
+            arguments: request
+                .r#continue
+                .then(|| "--continue".into())
+                .into_iter()
+                .collect(),
             environment: BTreeMap::new(),
             working_directory: request.workspace.clone(),
-        }),
-        other => Err(AgentError::UnknownAgent(other.into())),
+        }
     }
 }
 
@@ -154,6 +220,52 @@ pub fn workspace_config_files(
             content: workspace_agents_md(&request.work_items, &request.project),
         },
     ]
+}
+
+pub fn agent_context(root: &str) -> String {
+    format!(
+        r#"# DevWorkflow agent context
+
+You are working inside a DevWorkflow-managed environment.
+
+Use `dw` for workflow operations:
+
+- `dw doctor` checks local prerequisites.
+- `dw auth login` connects Azure DevOps when the silent token is unavailable.
+- `dw ado assigned --project <name>` lists assigned work items.
+- `dw ado work-item <workItemId> --project <name>` reads a work item summary.
+- `dw ado ai-context <workItemId> --project <name>` reads the deterministic structured work item context for AI consumption.
+- `dw task current` prints the active task workspace and branch.
+- `dw task sync --continue` refreshes `task.json` from ADO when the local context may be stale.
+- `dw task preflight --continue` checks deterministic blockers/warnings before implementation or child-task decomposition.
+- `dw task handoff-validate --continue` validates handoff contracts before `task finish` or sub-agent execution.
+- `dw task open --workspace <path>` opens a new agent session for a workspace.
+- `dw task open --continue` resumes an existing agent session on the latest workspace.
+- `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"` creates ADO child tasks after the plan is written.
+- `dw task commit --continue --execute` creates an intermediate commit without push or PR.
+- `dw task finish --continue --execute --create-pr` is the expected commit/push/PR flow when finishing.
+- `dw db schema`, `dw db describe` and `dw db query` are the SQL entrypoints and are read-only by default.
+
+Current configured root:
+
+```text
+{root}
+```
+
+Important rules:
+
+1. Azure DevOps work items are the source of truth.
+2. Use `dw` for every ADO, Git naming, PR and worktree operation.
+3. Do not use Azure DevOps MCP tools.
+4. Read the work item with `dw ado work-item` before coding, then run `dw ado ai-context` before acting on ADO context.
+5. Before working, make sure the initial project setup required by the environment is in place: `pnpm install`, `pnpm approve-builds --all`, `npm install` fallback, or `dotnet restore` as appropriate.
+6. Update `plan.md` before implementing.
+7. Write all user-facing and project-facing text in French.
+8. Do not normalize business labels or domain wording from ADO, screenshots, mockups or project text.
+9. Treat screenshots, mockups and attachments as factual source material.
+10. Branches, commits and PR titles are created by `dw`; do not create them manually.
+"#
+    )
 }
 
 fn workspace_agents_md(work_items: &[WorkspaceWorkItemRef], project: &str) -> String {
