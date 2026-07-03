@@ -1,25 +1,18 @@
-mod lifecycle;
-mod open;
-mod repo;
-mod start;
-mod validate;
-mod work_item;
-
 use crate::cli::TaskCommand;
 use anyhow::Result;
 
-pub(crate) use open::{OpenWorkspaceArgs, open_workspace};
+pub(crate) use dw_task::open::{OpenWorkspaceArgs, open_workspace};
 
 pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
     match command {
-        TaskCommand::Status { root } => open::status(root),
+        TaskCommand::Status { root } => dw_task::open::status(root),
         TaskCommand::List {
             root,
             project,
             work_item,
             json,
-        } => open::list(root, project, work_item, json)?,
-        TaskCommand::Current { json } => open::current(json)?,
+        } => dw_task::open::list(root, project, work_item, json)?,
+        TaskCommand::Current { json } => dw_task::open::current(json)?,
         TaskCommand::Open {
             workspace,
             project,
@@ -30,7 +23,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             agent,
             json,
             root,
-        } => open::open_workspace(open::OpenWorkspaceArgs {
+        } => dw_task::open::open_workspace(dw_task::open::OpenWorkspaceArgs {
             workspace,
             project,
             work_item,
@@ -52,7 +45,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             skip_ado,
             json,
             execute,
-        } => start::handle(start::StartArgs {
+        } => dw_task::start::handle(dw_task::start::StartArgs {
             work_item_id,
             root,
             project,
@@ -68,7 +61,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             workspace,
             ai_context_file,
             json,
-        } => validate::preflight(workspace, ai_context_file, json)?,
+        } => dw_task::validate::preflight(workspace, ai_context_file, json)?,
         TaskCommand::Sync {
             workspace,
             root,
@@ -77,7 +70,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             r#continue,
             positional_work_item,
             json,
-        } => lifecycle::sync(lifecycle::SyncArgs {
+        } => dw_task::lifecycle::sync(dw_task::lifecycle::SyncArgs {
             workspace,
             root,
             project,
@@ -96,7 +89,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             json,
             execute,
             positional_work_item,
-        } => lifecycle::rename(lifecycle::RenameArgs {
+        } => dw_task::lifecycle::rename(dw_task::lifecycle::RenameArgs {
             slug,
             workspace,
             root,
@@ -113,7 +106,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             only,
             root,
             json,
-        } => repo::repo_latest(repo::RepoLatestArgs {
+        } => dw_task::repo::repo_latest(dw_task::repo::RepoLatestArgs {
             workspace,
             r#continue,
             only,
@@ -127,7 +120,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             execute,
             message,
             json,
-        } => repo::commit(repo::CommitArgs {
+        } => dw_task::repo::commit(dw_task::repo::CommitArgs {
             workspace,
             r#continue,
             root,
@@ -149,7 +142,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             state,
             execute,
             json,
-        } => work_item::add(work_item::AddWorkItemArgs {
+        } => dw_task::work_item::add(dw_task::work_item::AddWorkItemArgs {
             work_item_ids,
             workspace,
             root,
@@ -174,7 +167,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             positional_work_item,
             execute,
             json,
-        } => work_item::remove(work_item::RemoveWorkItemArgs {
+        } => dw_task::work_item::remove(dw_task::work_item::RemoveWorkItemArgs {
             work_item_ids,
             workspace,
             root,
@@ -191,7 +184,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             root,
             execute,
             json,
-        } => repo::add_repo(repo::AddRepoArgs {
+        } => dw_task::repo::add_repo(dw_task::repo::AddRepoArgs {
             repo,
             workspace,
             root,
@@ -208,7 +201,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             r#continue,
             positional_work_item,
             json,
-        } => lifecycle::create_child_task(lifecycle::CreateChildTaskArgs {
+        } => dw_task::lifecycle::create_child_task(dw_task::lifecycle::CreateChildTaskArgs {
             repo,
             title,
             workspace,
@@ -243,7 +236,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             json,
         })?,
         TaskCommand::HandoffValidate { workspace, json } => {
-            validate::handoff_validate(workspace, json)?
+            dw_task::validate::handoff_validate(workspace, json)?
         }
         TaskCommand::Teardown {
             workspace,
@@ -255,7 +248,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             execute,
             yes,
             json,
-        } => repo::teardown(repo::TeardownArgs {
+        } => dw_task::repo::teardown(dw_task::repo::TeardownArgs {
             workspace,
             root,
             project,

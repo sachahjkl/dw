@@ -1,5 +1,4 @@
-use crate::ado::resolve_ado_options;
-use crate::simple_handlers::load_auth_options;
+use crate::{load_auth_options, resolve_ado_options, write_workspace_agent_configs};
 use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::get_work_item_snapshots_authenticated;
@@ -12,36 +11,36 @@ use dw_workspace::{
 use std::path::Path;
 
 #[derive(Debug, Clone)]
-pub(crate) struct AddWorkItemArgs {
-    pub(crate) work_item_ids: String,
-    pub(crate) workspace: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) work_item: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) positional_work_item: Option<String>,
-    pub(crate) skip_ado: bool,
-    pub(crate) type_name: Option<String>,
-    pub(crate) title: Option<String>,
-    pub(crate) state: Option<String>,
-    pub(crate) execute: bool,
-    pub(crate) json: bool,
+pub struct AddWorkItemArgs {
+    pub work_item_ids: String,
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub positional_work_item: Option<String>,
+    pub skip_ado: bool,
+    pub type_name: Option<String>,
+    pub title: Option<String>,
+    pub state: Option<String>,
+    pub execute: bool,
+    pub json: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RemoveWorkItemArgs {
-    pub(crate) work_item_ids: String,
-    pub(crate) workspace: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) work_item: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) positional_work_item: Option<String>,
-    pub(crate) execute: bool,
-    pub(crate) json: bool,
+pub struct RemoveWorkItemArgs {
+    pub work_item_ids: String,
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub positional_work_item: Option<String>,
+    pub execute: bool,
+    pub json: bool,
 }
 
-pub(crate) fn add(args: AddWorkItemArgs) -> Result<()> {
+pub fn add(args: AddWorkItemArgs) -> Result<()> {
     let AddWorkItemArgs {
         work_item_ids,
         workspace,
@@ -156,7 +155,7 @@ pub(crate) fn add(args: AddWorkItemArgs) -> Result<()> {
     }
     if execute {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
-        dw_task::write_workspace_agent_configs(&new_workspace, &updated)?;
+        write_workspace_agent_configs(&new_workspace, &updated)?;
         if !json {
             println!("Workspace mis a jour: {new_workspace}");
         }
@@ -166,7 +165,7 @@ pub(crate) fn add(args: AddWorkItemArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn remove(args: RemoveWorkItemArgs) -> Result<()> {
+pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
     let RemoveWorkItemArgs {
         work_item_ids,
         workspace,
@@ -195,7 +194,7 @@ pub(crate) fn remove(args: RemoveWorkItemArgs) -> Result<()> {
     }
     if execute {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
-        dw_task::write_workspace_agent_configs(&new_workspace, &updated)?;
+        write_workspace_agent_configs(&new_workspace, &updated)?;
         if !json {
             println!("Workspace mis a jour: {new_workspace}");
         }

@@ -1,4 +1,4 @@
-use crate::ado::resolve_ado_options;
+use crate::resolve_ado_options;
 use anyhow::Result;
 use dw_ado::{create_child_task as ado_create_child_task, env_pat, get_work_item_snapshots};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
@@ -8,43 +8,43 @@ use dw_workspace::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct SyncArgs {
-    pub(crate) workspace: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) work_item: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) positional_work_item: Option<String>,
-    pub(crate) json: bool,
+pub struct SyncArgs {
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub positional_work_item: Option<String>,
+    pub json: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct RenameArgs {
-    pub(crate) slug: String,
-    pub(crate) workspace: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) work_item: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) json: bool,
-    pub(crate) execute: bool,
-    pub(crate) positional_work_item: Option<String>,
+pub struct RenameArgs {
+    pub slug: String,
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub json: bool,
+    pub execute: bool,
+    pub positional_work_item: Option<String>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CreateChildTaskArgs {
-    pub(crate) repo: String,
-    pub(crate) title: String,
-    pub(crate) workspace: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) work_item: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) positional_work_item: Option<String>,
-    pub(crate) json: bool,
+pub struct CreateChildTaskArgs {
+    pub repo: String,
+    pub title: String,
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub positional_work_item: Option<String>,
+    pub json: bool,
 }
 
-pub(crate) fn sync(args: SyncArgs) -> Result<()> {
+pub fn sync(args: SyncArgs) -> Result<()> {
     let SyncArgs {
         workspace,
         root,
@@ -101,7 +101,7 @@ pub(crate) fn sync(args: SyncArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn rename(args: RenameArgs) -> Result<()> {
+pub fn rename(args: RenameArgs) -> Result<()> {
     let RenameArgs {
         slug,
         workspace,
@@ -142,7 +142,7 @@ pub(crate) fn rename(args: RenameArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
+pub fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
     let CreateChildTaskArgs {
         repo,
         title,

@@ -1,3 +1,4 @@
+use crate::write_workspace_agent_configs;
 use anyhow::Result;
 use dw_config::{load_projects_config, resolve_root};
 use dw_git::{
@@ -11,47 +12,47 @@ use dw_workspace::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct RepoLatestArgs {
-    pub(crate) workspace: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) only: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) json: bool,
+pub struct RepoLatestArgs {
+    pub workspace: Option<String>,
+    pub r#continue: bool,
+    pub only: Option<String>,
+    pub root: Option<String>,
+    pub json: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CommitArgs {
-    pub(crate) workspace: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) root: Option<String>,
-    pub(crate) execute: bool,
-    pub(crate) message: Option<String>,
-    pub(crate) json: bool,
+pub struct CommitArgs {
+    pub workspace: Option<String>,
+    pub r#continue: bool,
+    pub root: Option<String>,
+    pub execute: bool,
+    pub message: Option<String>,
+    pub json: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct AddRepoArgs {
-    pub(crate) repo: String,
-    pub(crate) workspace: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) execute: bool,
-    pub(crate) json: bool,
+pub struct AddRepoArgs {
+    pub repo: String,
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub execute: bool,
+    pub json: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct TeardownArgs {
-    pub(crate) workspace: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) work_item: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) positional_work_item: Option<String>,
-    pub(crate) execute: bool,
-    pub(crate) yes: bool,
-    pub(crate) json: bool,
+pub struct TeardownArgs {
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub positional_work_item: Option<String>,
+    pub execute: bool,
+    pub yes: bool,
+    pub json: bool,
 }
 
-pub(crate) fn repo_latest(args: RepoLatestArgs) -> Result<()> {
+pub fn repo_latest(args: RepoLatestArgs) -> Result<()> {
     let RepoLatestArgs {
         workspace,
         r#continue,
@@ -83,7 +84,7 @@ pub(crate) fn repo_latest(args: RepoLatestArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn commit(args: CommitArgs) -> Result<()> {
+pub fn commit(args: CommitArgs) -> Result<()> {
     let CommitArgs {
         workspace,
         r#continue,
@@ -170,7 +171,7 @@ pub(crate) fn commit(args: CommitArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn add_repo(args: AddRepoArgs) -> Result<()> {
+pub fn add_repo(args: AddRepoArgs) -> Result<()> {
     let AddRepoArgs {
         repo,
         workspace,
@@ -218,7 +219,7 @@ pub(crate) fn add_repo(args: AddRepoArgs) -> Result<()> {
         worktree_path: plan.worktree_path.clone(),
     })?;
     let updated = execute_task_add_repo(&manifest, &plan)?;
-    dw_task::write_workspace_agent_configs(&workspace, &updated)?;
+    write_workspace_agent_configs(&workspace, &updated)?;
     if !json {
         println!(
             "Repo ajoute: {} - {} - {}",
@@ -228,7 +229,7 @@ pub(crate) fn add_repo(args: AddRepoArgs) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn teardown(args: TeardownArgs) -> Result<()> {
+pub fn teardown(args: TeardownArgs) -> Result<()> {
     let TeardownArgs {
         workspace,
         root,

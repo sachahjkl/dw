@@ -1,6 +1,12 @@
 mod agent_config;
 pub mod finish;
+pub mod lifecycle;
+pub mod open;
 pub mod prune;
+pub mod repo;
+pub mod start;
+pub mod validate;
+pub mod work_item;
 
 use anyhow::Result;
 use dw_ado::{AzureDevOpsOptions, auth::AdoAuthOptions};

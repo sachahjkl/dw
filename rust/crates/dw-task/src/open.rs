@@ -8,19 +8,19 @@ use dw_workspace::{
 use inquire::Select;
 use std::io::IsTerminal;
 
-pub(crate) struct OpenWorkspaceArgs {
-    pub(crate) workspace: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) work_item: Option<String>,
-    pub(crate) positional_work_item: Option<String>,
-    pub(crate) r#continue: bool,
-    pub(crate) repo: Option<String>,
-    pub(crate) agent: Option<String>,
-    pub(crate) json: bool,
-    pub(crate) root: Option<String>,
+pub struct OpenWorkspaceArgs {
+    pub workspace: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub positional_work_item: Option<String>,
+    pub r#continue: bool,
+    pub repo: Option<String>,
+    pub agent: Option<String>,
+    pub json: bool,
+    pub root: Option<String>,
 }
 
-pub(crate) fn status(root: Option<String>) {
+pub fn status(root: Option<String>) {
     let root = resolve_root(root.as_deref());
     let items = task_status(&root);
     println!("Root: {}", root);
@@ -34,7 +34,7 @@ pub(crate) fn status(root: Option<String>) {
     }
 }
 
-pub(crate) fn list(
+pub fn list(
     root: Option<String>,
     project: Option<String>,
     work_item: Option<String>,
@@ -62,7 +62,7 @@ pub(crate) fn list(
     Ok(())
 }
 
-pub(crate) fn current(json: bool) -> Result<()> {
+pub fn current(json: bool) -> Result<()> {
     let current = std::env::current_dir()?.display().to_string();
     let item = task_current(&current)?;
     if json {
@@ -80,7 +80,7 @@ pub(crate) fn current(json: bool) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn open_workspace(args: OpenWorkspaceArgs) -> Result<()> {
+pub fn open_workspace(args: OpenWorkspaceArgs) -> Result<()> {
     let OpenWorkspaceArgs {
         workspace,
         project,

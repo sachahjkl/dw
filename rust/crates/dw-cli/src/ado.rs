@@ -7,7 +7,7 @@ mod work_item;
 use crate::cli::AdoCommand;
 use anyhow::Result;
 
-pub(crate) use project::{project_choices, resolve_ado_options, resolve_project_key_or_prompt};
+pub(crate) use project::{resolve_ado_options, resolve_project_key_or_prompt};
 
 pub(crate) fn handle_ado(command: AdoCommand) -> Result<()> {
     match command {

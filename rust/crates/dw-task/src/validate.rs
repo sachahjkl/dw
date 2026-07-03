@@ -2,7 +2,7 @@ use anyhow::Result;
 use dw_workspace::{build_handoff_validation_report, build_preflight_report_from_ai_context_files};
 use std::path::Path;
 
-pub(crate) fn preflight(workspace: String, ai_context_file: Vec<String>, json: bool) -> Result<()> {
+pub fn preflight(workspace: String, ai_context_file: Vec<String>, json: bool) -> Result<()> {
     let files = if ai_context_file.is_empty() {
         discover_ai_context_files(&workspace)
     } else {
@@ -51,7 +51,7 @@ pub(crate) fn preflight(workspace: String, ai_context_file: Vec<String>, json: b
     Ok(())
 }
 
-pub(crate) fn handoff_validate(workspace: String, json: bool) -> Result<()> {
+pub fn handoff_validate(workspace: String, json: bool) -> Result<()> {
     let report = build_handoff_validation_report(&workspace)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);

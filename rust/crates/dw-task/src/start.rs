@@ -1,5 +1,4 @@
-use crate::ado::{project_choices, resolve_ado_options};
-use crate::simple_handlers::load_auth_options;
+use crate::{load_auth_options, resolve_ado_options, write_workspace_agent_configs};
 use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{env_pat, get_work_item_snapshots, query_assigned_work_items};
@@ -11,20 +10,20 @@ use inquire::{MultiSelect, Select, Text};
 use std::io::IsTerminal;
 
 #[derive(Debug, Clone)]
-pub(crate) struct StartArgs {
-    pub(crate) work_item_id: Option<String>,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) task: Option<String>,
-    pub(crate) type_name: Option<String>,
-    pub(crate) only: Option<String>,
-    pub(crate) slug: Option<String>,
-    pub(crate) skip_ado: bool,
-    pub(crate) json: bool,
-    pub(crate) execute: bool,
+pub struct StartArgs {
+    pub work_item_id: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub task: Option<String>,
+    pub type_name: Option<String>,
+    pub only: Option<String>,
+    pub slug: Option<String>,
+    pub skip_ado: bool,
+    pub json: bool,
+    pub execute: bool,
 }
 
-pub(crate) fn handle(args: StartArgs) -> Result<()> {
+pub fn handle(args: StartArgs) -> Result<()> {
     let StartArgs {
         work_item_id,
         root,
@@ -40,15 +39,10 @@ pub(crate) fn handle(args: StartArgs) -> Result<()> {
     let root = resolve_root(root.as_deref());
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let project = interactive_project(project, &projects);
-    let work_item_id = interactive_work_item(
-        work_item_id,
-        &root,
-        &projects,
-        &workflow,
-        project.as_deref(),
-        skip_ado,
-    )?;
+    let selection =
+        interactive_start_selection(work_item_id, project, &root, &projects, &workflow, skip_ado)?;
+    let project = selection.project;
+    let work_item_id = selection.work_item_id;
     let only = interactive_repositories(only, &projects, project.as_deref());
     let plan = plan_task_start(TaskStartRequest {
         root: &root,
@@ -98,7 +92,7 @@ pub(crate) fn handle(args: StartArgs) -> Result<()> {
             };
             execute_task_start_with_work_items(&plan, work_items)?
         };
-        dw_task::write_workspace_agent_configs(&plan.workspace, &manifest)?;
+        write_workspace_agent_configs(&plan.workspace, &manifest)?;
         println!("Workspace cree: {}", plan.workspace);
         println!("Branche cible: {}", plan.branch_name);
         println!("Repos: {}", plan.repositories.join(", "));
@@ -126,6 +120,100 @@ impl std::fmt::Display for WorkItemChoice {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StartSelection {
+    project: Option<String>,
+    work_item_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AssignedProjectChoice {
+    project_key: String,
+    label: String,
+    items: Vec<dw_ado::WorkItemSnapshot>,
+}
+
+impl std::fmt::Display for AssignedProjectChoice {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.label)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectChoice {
+    key: String,
+    label: String,
+}
+
+impl std::fmt::Display for ProjectChoice {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.label)
+    }
+}
+
+fn project_choices(projects: &dw_config::ProjectsConfig) -> Vec<ProjectChoice> {
+    projects
+        .projects
+        .keys()
+        .map(|key| {
+            let display_name = resolve_project(projects, key)
+                .map(|project| project.display_name)
+                .filter(|display_name| !display_name.trim().is_empty());
+            ProjectChoice {
+                key: key.clone(),
+                label: match display_name {
+                    Some(display_name) if display_name != *key => format!("{key} - {display_name}"),
+                    _ => key.clone(),
+                },
+            }
+        })
+        .collect()
+}
+
+fn interactive_start_selection(
+    work_item_id: Option<String>,
+    project: Option<String>,
+    root: &str,
+    projects: &dw_config::ProjectsConfig,
+    workflow: &dw_config::WorkflowConfig,
+    skip_ado: bool,
+) -> Result<StartSelection> {
+    if work_item_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Ok(StartSelection {
+            project,
+            work_item_id: work_item_id.unwrap_or_default(),
+        });
+    }
+
+    if !std::io::stdin().is_terminal() {
+        return Err(anyhow::anyhow!(
+            "work-item-id requis en mode non interactif"
+        ));
+    }
+
+    if !skip_ado && project.is_none() {
+        match interactive_assigned_project_selection(root, projects, workflow) {
+            Ok(Some(selection)) => return Ok(selection),
+            Ok(None) => {}
+            Err(error) => {
+                println!("Selection ADO indisponible: {error}");
+                println!("Saisie manuelle du work item.");
+            }
+        }
+    }
+
+    let project = interactive_project(project, projects);
+    let work_item_id =
+        interactive_work_item(root, projects, workflow, project.as_deref(), skip_ado)?;
+    Ok(StartSelection {
+        project,
+        work_item_id,
+    })
+}
+
 fn interactive_project(
     project: Option<String>,
     projects: &dw_config::ProjectsConfig,
@@ -146,23 +234,12 @@ fn interactive_project(
 }
 
 fn interactive_work_item(
-    work_item_id: Option<String>,
     root: &str,
     projects: &dw_config::ProjectsConfig,
     workflow: &dw_config::WorkflowConfig,
     project: Option<&str>,
     skip_ado: bool,
 ) -> Result<String> {
-    if let Some(work_item_id) = work_item_id.filter(|value| !value.trim().is_empty()) {
-        return Ok(work_item_id);
-    }
-
-    if !std::io::stdin().is_terminal() {
-        return Err(anyhow::anyhow!(
-            "work-item-id requis en mode non interactif"
-        ));
-    }
-
     if !skip_ado && let Some(project) = project.filter(|value| !value.trim().is_empty()) {
         match interactive_assigned_work_item_selection(root, projects, workflow, project) {
             Ok(Some(selection)) => return Ok(selection),
@@ -177,6 +254,48 @@ fn interactive_work_item(
     Ok(Text::new("Work item ID").prompt()?)
 }
 
+fn interactive_assigned_project_selection(
+    root: &str,
+    projects: &dw_config::ProjectsConfig,
+    workflow: &dw_config::WorkflowConfig,
+) -> Result<Option<StartSelection>> {
+    let token = require_token(load_auth_options(Some(root))?)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    let mut choices = Vec::new();
+
+    for project in project_choices(projects) {
+        let Ok(options) = resolve_ado_options(projects, workflow, &project.key) else {
+            continue;
+        };
+        let items = runtime.block_on(query_assigned_work_items(&options, 50, &token))?;
+        let items = active_work_items(items);
+        if items.is_empty() {
+            continue;
+        }
+        choices.push(AssignedProjectChoice {
+            label: format!("{} ({} assignes)", project.label, items.len()),
+            project_key: project.key,
+            items,
+        });
+    }
+
+    if choices.is_empty() {
+        println!("Aucun work item assigne hors etats finaux dans les projets configures.");
+        return Ok(None);
+    }
+
+    let project = Select::new("Projet avec work items assignes", choices).prompt()?;
+    let selected = select_work_items(&project.items)?;
+    if selected.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(StartSelection {
+        project: Some(project.project_key),
+        work_item_id: selected.join(","),
+    }))
+}
+
 fn interactive_assigned_work_item_selection(
     root: &str,
     projects: &dw_config::ProjectsConfig,
@@ -187,28 +306,30 @@ fn interactive_assigned_work_item_selection(
     let token = require_token(load_auth_options(Some(root))?)?;
     let runtime = tokio::runtime::Runtime::new()?;
     let items = runtime.block_on(query_assigned_work_items(&options, 50, &token))?;
-    let items = items
-        .into_iter()
-        .filter(|item| !dw_workspace::is_final_state(item.kind.as_deref(), item.state.as_deref()))
-        .collect::<Vec<_>>();
-    let choices = work_item_choices(&items);
-    if choices.is_empty() {
+    let items = active_work_items(items);
+    if items.is_empty() {
         println!("Aucun work item assigne hors etats finaux pour {project}.");
         return Ok(None);
     }
 
-    let selected = MultiSelect::new("Work items assignes", choices).prompt()?;
+    let selected = select_work_items(&items)?;
     if selected.is_empty() {
         return Ok(None);
     }
 
-    Ok(Some(
-        selected
-            .into_iter()
-            .map(|choice| choice.id)
-            .collect::<Vec<_>>()
-            .join(","),
-    ))
+    Ok(Some(selected.join(",")))
+}
+
+fn active_work_items(items: Vec<dw_ado::WorkItemSnapshot>) -> Vec<dw_ado::WorkItemSnapshot> {
+    items
+        .into_iter()
+        .filter(|item| !dw_workspace::is_final_state(item.kind.as_deref(), item.state.as_deref()))
+        .collect()
+}
+
+fn select_work_items(items: &[dw_ado::WorkItemSnapshot]) -> Result<Vec<String>> {
+    let selected = MultiSelect::new("Work items assignes", work_item_choices(items)).prompt()?;
+    Ok(selected.into_iter().map(|choice| choice.id).collect())
 }
 
 fn work_item_choices(items: &[dw_ado::WorkItemSnapshot]) -> Vec<WorkItemChoice> {
@@ -298,5 +419,46 @@ mod tests {
                 label: "#53115 [Bug] En développement - Corriger le calcul".into()
             }]
         );
+    }
+
+    #[test]
+    fn active_work_items_excludes_final_states() {
+        let items = vec![
+            dw_ado::WorkItemSnapshot {
+                id: "1".into(),
+                kind: Some("Task".into()),
+                state: Some("Valide".into()),
+                title: Some("Termine".into()),
+                url: None,
+            },
+            dw_ado::WorkItemSnapshot {
+                id: "2".into(),
+                kind: Some("Bug".into()),
+                state: Some("En developpement".into()),
+                title: Some("Actif".into()),
+                url: None,
+            },
+        ];
+
+        let active = active_work_items(items);
+
+        assert_eq!(
+            active
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["2"]
+        );
+    }
+
+    #[test]
+    fn assigned_project_choice_displays_label_and_count() {
+        let choice = AssignedProjectChoice {
+            project_key: "ha".into(),
+            label: "ha - Hommage Agence (2 assignes)".into(),
+            items: vec![],
+        };
+
+        assert_eq!(choice.to_string(), "ha - Hommage Agence (2 assignes)");
     }
 }

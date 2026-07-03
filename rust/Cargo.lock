@@ -1308,7 +1308,9 @@ dependencies = [
  "dw-config",
  "dw-git",
  "dw-workspace",
+ "inquire",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
