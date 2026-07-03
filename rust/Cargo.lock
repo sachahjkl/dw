@@ -1327,6 +1327,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dw-contracts",
+ "dw-ui",
  "inquire",
  "keyring",
  "tempfile",

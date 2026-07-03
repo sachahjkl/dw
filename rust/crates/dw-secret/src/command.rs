@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
+use dw_ui::TerminalTheme;
 use inquire::{Password, PasswordDisplayMode};
 use std::io::IsTerminal;
 
@@ -59,19 +60,88 @@ pub fn handle_secret(command: SecretCommand) -> Result<()> {
                 (Some(_), Some(_)) => unreachable!("clap rejects --value with --from-env"),
             };
             store_secret(&store, &key, &secret)?;
-            println!("Secret enregistre dans le keyring systeme.");
+            print_styled_lines(&secret_set_lines(&key));
         }
         SecretCommand::Get { key } => {
-            if secret_exists(&store, &key)? {
-                println!("Secret présent.");
-            } else {
-                println!("Secret introuvable.");
-            }
+            print_styled_lines(&secret_get_lines(&key, secret_exists(&store, &key)?));
         }
         SecretCommand::Delete { key } => {
             delete_secret(&store, &key)?;
-            println!("Secret supprimé si présent.");
+            print_styled_lines(&secret_delete_lines(&key));
         }
     }
     Ok(())
+}
+
+fn secret_set_lines(key: &str) -> Vec<String> {
+    vec![
+        "Secret".into(),
+        "Statut    : enregistré".into(),
+        format!("Clé       : {key}"),
+        "Stockage  : keyring système".into(),
+        "Valeur    : masquée".into(),
+    ]
+}
+
+fn secret_get_lines(key: &str, exists: bool) -> Vec<String> {
+    vec![
+        "Secret".into(),
+        format!(
+            "Statut    : {}",
+            if exists { "présent" } else { "introuvable" }
+        ),
+        format!("Clé       : {key}"),
+        "Valeur    : masquée".into(),
+    ]
+}
+
+fn secret_delete_lines(key: &str) -> Vec<String> {
+    vec![
+        "Secret".into(),
+        "Statut    : supprimé si présent".into(),
+        format!("Clé       : {key}"),
+    ]
+}
+
+fn print_styled_lines(lines: &[String]) {
+    let theme = TerminalTheme::stdout_auto();
+    for line in lines {
+        println!("{}", theme.style_line(line, false));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn secret_set_lines_never_include_secret_value() {
+        let lines = secret_set_lines("db/password");
+
+        assert_eq!(lines[0], "Secret");
+        assert_eq!(lines[1], "Statut    : enregistré");
+        assert_eq!(lines[2], "Clé       : db/password");
+        assert_eq!(lines[3], "Stockage  : keyring système");
+        assert_eq!(lines[4], "Valeur    : masquée");
+        assert!(!lines.join("\n").contains("password-value"));
+    }
+
+    #[test]
+    fn secret_get_lines_render_presence_without_value() {
+        let present = secret_get_lines("db/password", true);
+        let missing = secret_get_lines("db/password", false);
+
+        assert_eq!(present[1], "Statut    : présent");
+        assert_eq!(missing[1], "Statut    : introuvable");
+        assert!(present.contains(&"Valeur    : masquée".into()));
+    }
+
+    #[test]
+    fn secret_delete_lines_render_key() {
+        let lines = secret_delete_lines("db/password");
+
+        assert_eq!(lines[0], "Secret");
+        assert_eq!(lines[1], "Statut    : supprimé si présent");
+        assert_eq!(lines[2], "Clé       : db/password");
+    }
 }
