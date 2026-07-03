@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_OWNER: &str = "sachahjkl";
 const DEFAULT_REPOSITORY: &str = "dw";
@@ -224,7 +226,8 @@ pub(crate) fn prepare_replacement_executable(
 }
 
 fn extract_windows_executable(archive_path: &Path) -> Result<PathBuf> {
-    let destination = std::env::temp_dir().join(format!("dw-upgrade-{}.exe", std::process::id()));
+    let destination =
+        std::env::temp_dir().join(format!("dw-upgrade-{}.exe", unique_upgrade_suffix()));
     let result = (|| {
         let file = fs::File::open(archive_path)?;
         let mut archive = zip::ZipArchive::new(file)?;
@@ -267,9 +270,7 @@ fn ensure_windows_executable(path: &Path, display_name: &str) -> Result<()> {
 
 fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<()> {
     if cfg!(windows) {
-        return Err(anyhow!(
-            "Auto-upgrade Windows Rust pas encore active: utiliser l'installeur ou remplacer le binaire apres fermeture de dw."
-        ));
+        return replace_windows_executable(executable_path, replacement);
     }
     fs::copy(replacement, executable_path)?;
     let _ = fs::remove_file(replacement);
@@ -282,6 +283,84 @@ fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<()> 
     }
     println!("Binaire remplace: {}", executable_path.display());
     Ok(())
+}
+
+fn replace_windows_executable(executable_path: &Path, replacement: &Path) -> Result<()> {
+    let script = std::env::temp_dir().join(format!("dw-upgrade-{}.cmd", unique_upgrade_suffix()));
+    let backup = executable_path.with_extension(format!(
+        "{}bak",
+        executable_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| format!("{extension}."))
+            .unwrap_or_default()
+    ));
+    fs::write(
+        &script,
+        windows_replacement_script(
+            &replacement.display().to_string(),
+            &executable_path.display().to_string(),
+            &backup.display().to_string(),
+            std::process::id(),
+        ),
+    )?;
+    ProcessCommand::new("cmd.exe")
+        .arg("/c")
+        .arg(&script)
+        .spawn()?;
+    println!(
+        "Remplacement programme au prochain relachement du binaire: {}",
+        executable_path.display()
+    );
+    Ok(())
+}
+
+pub(crate) fn windows_replacement_script(
+    replacement: &str,
+    executable_path: &str,
+    backup: &str,
+    pid: u32,
+) -> String {
+    format!(
+        r#"@echo off
+setlocal
+set "NEW={replacement}"
+set "TARGET={executable_path}"
+set "BACKUP={backup}"
+set "PID={pid}"
+
+:wait
+tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul
+if not errorlevel 1 (
+  timeout /t 1 /nobreak >nul
+  goto wait
+)
+
+if not exist "%NEW%" exit /b 1
+if exist "%BACKUP%" del /f /q "%BACKUP%" >nul 2>nul
+if exist "%TARGET%" move /Y "%TARGET%" "%BACKUP%" >nul
+copy /Y "%NEW%" "%TARGET%" >nul
+if errorlevel 1 (
+  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul
+  exit /b 1
+)
+if not exist "%TARGET%" (
+  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul
+  exit /b 1
+)
+del /f /q "%NEW%" >nul 2>nul
+del /f /q "%BACKUP%" >nul 2>nul
+del /f /q "%~f0" >nul 2>nul
+"#
+    )
+}
+
+fn unique_upgrade_suffix() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{}-{nanos}", std::process::id())
 }
 
 pub(crate) fn ensure_supported_host(executable_path: Option<&Path>) -> Result<()> {
@@ -385,6 +464,18 @@ mod tests {
     }
 
     #[test]
+    fn windows_replacement_script_waits_and_restores_backup_on_failure() {
+        let script = windows_replacement_script("new.exe", "dw.exe", "dw.exe.bak", 1234);
+
+        assert!(script.contains("tasklist /FI \"PID eq %PID%\""));
+        assert!(script.contains("set \"BACKUP=dw.exe.bak\""));
+        assert!(script.contains("move /Y \"%TARGET%\" \"%BACKUP%\""));
+        assert!(script.contains("copy /Y \"%NEW%\" \"%TARGET%\""));
+        assert!(script.contains("move /Y \"%BACKUP%\" \"%TARGET%\""));
+        assert!(!script.contains("move /Y \"new.exe\" \"dw.exe\""));
+    }
+
+    #[test]
     fn prepare_replacement_rejects_tar_gz_asset() {
         let path =
             std::env::temp_dir().join(format!("dw-upgrade-test-{}.tar.gz", std::process::id()));
@@ -407,5 +498,62 @@ mod tests {
 
         assert_eq!(replacement, path);
         let _ = fs::remove_file(replacement);
+    }
+
+    #[test]
+    fn prepare_replacement_extracts_dw_exe_from_zip() {
+        let path = create_zip(&[("dw.exe", &[0x4d, 0x5a, 0x01, 0x02])]);
+
+        let replacement = prepare_replacement_executable("dw-win-x64.zip", &path, "win-x64")
+            .expect("zip should extract");
+
+        assert!(!path.exists());
+        assert_eq!(
+            fs::read(&replacement).expect("replacement should exist"),
+            vec![0x4d, 0x5a, 0x01, 0x02]
+        );
+        let _ = fs::remove_file(replacement);
+    }
+
+    #[test]
+    fn prepare_replacement_rejects_zip_without_dw_exe() {
+        let path = create_zip(&[("readme.txt", &[0x41])]);
+
+        let error = prepare_replacement_executable("dw-win-x64.zip", &path, "win-x64")
+            .expect_err("zip without dw.exe should fail");
+
+        assert!(error.to_string().contains("dw.exe introuvable"));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn prepare_replacement_rejects_zip_when_dw_exe_is_not_windows_executable() {
+        let path = create_zip(&[("dw.exe", &[0x50, 0x4b, 0x03, 0x04])]);
+
+        let error = prepare_replacement_executable("dw-win-x64.zip", &path, "win-x64")
+            .expect_err("invalid dw.exe should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("n'est pas un executable Windows")
+        );
+        assert!(!path.exists());
+    }
+
+    fn create_zip(entries: &[(&str, &[u8])]) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("dw-upgrade-test-{}.zip", unique_upgrade_suffix()));
+        let file = fs::File::create(&path).expect("zip file should be created");
+        let mut archive = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, content) in entries {
+            archive
+                .start_file(name, options)
+                .expect("zip entry should start");
+            std::io::Write::write_all(&mut archive, content).expect("zip entry should be written");
+        }
+        archive.finish().expect("zip should finish");
+        path
     }
 }
