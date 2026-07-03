@@ -155,6 +155,10 @@ impl TerminalTheme {
                 "Handoff ",
                 "Commit à créer",
                 "Pull requests",
+                "Preflight task",
+                "Détails preflight",
+                "Validation handoff",
+                "Détails handoff",
             ],
         ) {
             return self.bold(&self.cyan(&styled));

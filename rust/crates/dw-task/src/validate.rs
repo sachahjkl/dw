@@ -103,12 +103,13 @@ pub fn handoff_validate(args: HandoffValidateArgs) -> Result<()> {
 
 fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     let mut lines = vec![
+        "Preflight task".into(),
         format!(
-            "Preflight task: {}",
+            "Statut    : {}",
             validation_status_label(!report.has_blocking_issues)
         ),
-        format!("Workspace: {}", report.workspace),
-        format!("Projet: {}", report.project),
+        format!("Workspace : {}", report.workspace),
+        format!("Projet    : {}", report.project),
         format!(
             "Work items: {}",
             report
@@ -141,14 +142,14 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
         .len()
         .saturating_sub(blocking_count + warning_count);
     lines.push(format!(
-        "Résumé: {} blocage(s), {} avertissement(s), {} info(s)",
+        "Résumé   : {} blocage(s), {} avertissement(s), {} info(s)",
         blocking_count, warning_count, other_count
     ));
     lines.push(String::new());
-    lines.push("Détails:".into());
+    lines.push("Détails preflight".into());
     for issue in &report.issues {
         lines.push(format!(
-            "{} [{}] #{} {}: {}",
+            "{} [{}] #{} {} - {}",
             severity_icon(&issue.severity),
             issue.severity,
             issue.work_item_id,
@@ -156,7 +157,7 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
             issue.message
         ));
         if let Some(details) = &issue.details {
-            lines.push(format!("  {details}"));
+            lines.push(format!("  Détail : {details}"));
         }
         if !issue.related_ids.is_empty() {
             lines.push(format!(
@@ -184,21 +185,19 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
 
 fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String> {
     let mut lines = vec![
+        "Validation handoff".into(),
+        format!("Statut    : {}", validation_status_label(report.is_valid)),
+        format!("Workspace : {}", report.workspace),
+        format!("Projet    : {}", report.project),
         format!(
-            "Validation handoff: {}",
-            validation_status_label(report.is_valid)
-        ),
-        format!("Workspace: {}", report.workspace),
-        format!("Projet: {}", report.project),
-        format!(
-            "Handoffs: {}/{} valides",
+            "Handoffs  : {}/{} valides",
             report.items.iter().filter(|item| item.valid).count(),
             report.items.len()
         ),
         String::new(),
     ];
 
-    lines.push("Détails:".into());
+    lines.push("Détails handoff".into());
     for item in &report.items {
         lines.push(format!(
             "{} [{}] {}",
@@ -206,7 +205,7 @@ fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String>
             item.status,
             item.repository
         ));
-        lines.push(format!("  {}", item.message));
+        lines.push(format!("  Message : {}", item.message));
         if !item.path.trim().is_empty() {
             lines.push(format!("  Fichier: {}", item.path));
         }
@@ -321,12 +320,13 @@ mod tests {
 
         let lines = preflight_lines(&report);
 
-        assert_eq!(lines[0], "Preflight task: ✕ À corriger");
-        assert!(lines.contains(&"Workspace: /tmp/ws".into()));
-        assert!(lines.contains(&"Résumé: 1 blocage(s), 0 avertissement(s), 0 info(s)".into()));
-        assert!(lines.contains(&"Détails:".into()));
+        assert_eq!(lines[0], "Preflight task");
+        assert!(lines.contains(&"Statut    : ✕ À corriger".into()));
+        assert!(lines.contains(&"Workspace : /tmp/ws".into()));
+        assert!(lines.contains(&"Résumé   : 1 blocage(s), 0 avertissement(s), 0 info(s)".into()));
+        assert!(lines.contains(&"Détails preflight".into()));
         assert!(
-            lines.contains(&"✕ [blocking] #42 missing_attachment: Piece jointe manquante".into())
+            lines.contains(&"✕ [blocking] #42 missing_attachment - Piece jointe manquante".into())
         );
         assert!(lines.contains(
             &"Blocages détectés: demander confirmation utilisateur avant de forcer l'implémentation."
@@ -357,11 +357,12 @@ mod tests {
 
         let lines = handoff_validation_lines(&report);
 
-        assert_eq!(lines[0], "Validation handoff: ✕ À corriger");
-        assert!(lines.contains(&"Handoffs: 1/1 valides".into()));
-        assert!(lines.contains(&"Détails:".into()));
+        assert_eq!(lines[0], "Validation handoff");
+        assert!(lines.contains(&"Statut    : ✕ À corriger".into()));
+        assert!(lines.contains(&"Handoffs  : 1/1 valides".into()));
+        assert!(lines.contains(&"Détails handoff".into()));
         assert!(lines.contains(&"✓ [done] front".into()));
-        assert!(lines.contains(&"  OK".into()));
+        assert!(lines.contains(&"  Message : OK".into()));
         assert!(lines.contains(&"  Fichier: /tmp/ws/front/handoff-front.md".into()));
         assert!(
             lines.contains(&"  Synthèse: done=2 decisions=1 risks=0 blockers=0 follow_up=1".into())
