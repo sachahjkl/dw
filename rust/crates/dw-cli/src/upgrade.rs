@@ -215,10 +215,7 @@ pub(crate) fn prepare_replacement_executable(
         return extract_windows_executable(asset_path);
     }
     if asset_file_name.ends_with(".tar.gz") || asset_file_name.ends_with(".tgz") {
-        let _ = fs::remove_file(asset_path);
-        return Err(anyhow!(
-            "Asset archive non supporté pour l'upgrade automatique: {asset_file_name} ({rid})."
-        ));
+        return extract_unix_executable(asset_path, rid);
     }
     if asset_file_name.ends_with(".exe") {
         ensure_windows_executable(asset_path, asset_file_name)?;
@@ -257,14 +254,67 @@ fn extract_windows_executable(archive_path: &Path) -> Result<PathBuf> {
     result
 }
 
+fn extract_unix_executable(archive_path: &Path, rid: &str) -> Result<PathBuf> {
+    let destination = std::env::temp_dir().join(format!("dw-upgrade-{}", unique_upgrade_suffix()));
+    let result = (|| {
+        let file = fs::File::open(archive_path)?;
+        let decoder = flate2::read::GzDecoder::new(file);
+        let mut archive = tar::Archive::new(decoder);
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            let path = entry.path()?;
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if name != "dw" {
+                continue;
+            }
+            if !entry.header().entry_type().is_file() {
+                continue;
+            }
+            entry.unpack(&destination)?;
+            ensure_unix_executable(&destination, "dw", rid)?;
+            return Ok(destination.clone());
+        }
+        Err(anyhow!("Archive upgrade invalide: dw introuvable."))
+    })();
+    let _ = fs::remove_file(archive_path);
+    if result.is_err() {
+        let _ = fs::remove_file(&destination);
+    }
+    result
+}
+
 fn ensure_windows_executable(path: &Path, display_name: &str) -> Result<()> {
     let mut signature = [0_u8; 2];
     fs::File::open(path)?.read_exact(&mut signature)?;
     if signature != WINDOWS_PE_SIGNATURE {
         let _ = fs::remove_file(path);
         return Err(anyhow!(
-            "Asset upgrade invalide: {display_name} n'est pas un executable Windows."
+            "Asset upgrade invalide: {display_name} n'est pas un exécutable Windows."
         ));
+    }
+    Ok(())
+}
+
+fn ensure_unix_executable(path: &Path, display_name: &str, rid: &str) -> Result<()> {
+    if rid.starts_with("win-") {
+        return Err(anyhow!(
+            "Asset upgrade invalide: {display_name} n'est pas un exécutable Windows."
+        ));
+    }
+    if !fs::metadata(path)?.is_file() {
+        let _ = fs::remove_file(path);
+        return Err(anyhow!(
+            "Asset upgrade invalide: {display_name} n'est pas un fichier."
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(path)?.permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions)?;
     }
     Ok(())
 }
@@ -485,16 +535,18 @@ mod tests {
     }
 
     #[test]
-    fn prepare_replacement_rejects_tar_gz_asset() {
-        let path =
-            std::env::temp_dir().join(format!("dw-upgrade-test-{}.tar.gz", std::process::id()));
-        fs::write(&path, [0x1f, 0x8b]).expect("asset should be written");
+    fn prepare_replacement_extracts_dw_from_tar_gz() {
+        let path = create_tar_gz(&[("dw", b"#!/bin/sh\necho dw\n".as_slice())]);
 
-        let error = prepare_replacement_executable("dw-linux-x64.tar.gz", &path, "linux-x64")
-            .expect_err("tar gz should fail");
+        let replacement = prepare_replacement_executable("dw-linux-x64.tar.gz", &path, "linux-x64")
+            .expect("tar.gz should extract");
 
-        assert!(error.to_string().contains("archive non supporté"));
         assert!(!path.exists());
+        assert_eq!(
+            fs::read_to_string(&replacement).expect("replacement should exist"),
+            "#!/bin/sh\necho dw\n"
+        );
+        let _ = fs::remove_file(replacement);
     }
 
     #[test]
@@ -545,7 +597,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("n'est pas un executable Windows")
+                .contains("n'est pas un exécutable Windows")
         );
         assert!(!path.exists());
     }
@@ -563,6 +615,27 @@ mod tests {
             std::io::Write::write_all(&mut archive, content).expect("zip entry should be written");
         }
         archive.finish().expect("zip should finish");
+        path
+    }
+
+    fn create_tar_gz(entries: &[(&str, &[u8])]) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "dw-upgrade-test-{}.tar.gz",
+            unique_upgrade_suffix()
+        ));
+        let file = fs::File::create(&path).expect("tar.gz file should be created");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        for (name, content) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(content.len() as u64);
+            header.set_mode(0o755);
+            header.set_cksum();
+            archive
+                .append_data(&mut header, *name, *content)
+                .expect("tar entry should be written");
+        }
+        archive.finish().expect("tar should finish");
         path
     }
 }

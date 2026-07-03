@@ -22,11 +22,13 @@ dw-secret = { path = "../dw-secret" }
 dw-task = { path = "../dw-task" }
 dw-ui = { path = "../dw-ui" }
 dw-workspace = { path = "../dw-workspace" }
+flate2.workspace = true
 inquire.workspace = true
 msal.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+tar.workspace = true
 tokio.workspace = true
 zip.workspace = true
