@@ -1,6 +1,7 @@
 use crate::commands::project::{resolve_ado_options, resolve_cli_ado_options};
 use crate::commands::work_item::parse_work_item_ids_as_strings;
 use crate::load_auth_options;
+use crate::output::{render_context_items, terminal_theme};
 use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{get_ai_context, get_work_item_expanded};
@@ -96,74 +97,8 @@ fn print_context_items(
     comment_limit: i32,
     project: &str,
 ) {
-    for (index, item) in items.iter().enumerate() {
-        if index > 0 {
-            println!();
-            println!("---");
-            println!();
-        }
-
-        println!("#{}", item.work_item.id);
-        println!(
-            "Type: {}",
-            item.work_item.kind.as_deref().unwrap_or("inconnu")
-        );
-        println!(
-            "Etat: {}",
-            item.work_item.state.as_deref().unwrap_or("inconnu")
-        );
-        println!(
-            "Titre: {}",
-            item.work_item.title.as_deref().unwrap_or("inconnu")
-        );
-        println!(
-            "Assigne a: {}",
-            item.work_item
-                .assigned_to
-                .as_deref()
-                .unwrap_or("non assigne")
-        );
-
-        if let Some(description) = &item.content.description
-            && !description.trim().is_empty()
-        {
-            println!();
-            println!("Description:");
-            println!("{}", description.trim());
-        }
-
-        if !item.relations.is_empty() {
-            println!();
-            println!("Relations:");
-            for relation in &item.relations {
-                println!(
-                    "- {} {}",
-                    relation.kind,
-                    relation
-                        .work_item_id
-                        .as_deref()
-                        .or(relation.url.as_deref())
-                        .unwrap_or("")
-                );
-            }
-        }
-
-        if comment_limit != 0 && !item.comments.is_empty() {
-            println!();
-            println!("Commentaires:");
-            for comment in item.comments.iter().take(comment_limit.max(0) as usize) {
-                println!(
-                    "- {}: {}",
-                    comment.author.as_deref().unwrap_or("inconnu"),
-                    comment.text.as_deref().unwrap_or("").trim()
-                );
-            }
-        }
-
-        println!();
-        println!(
-            "AI context: dw ado ai-context {} --project {}",
-            item.work_item.id, project
-        );
-    }
+    println!(
+        "{}",
+        render_context_items(items, comment_limit, project, &terminal_theme())
+    );
 }
