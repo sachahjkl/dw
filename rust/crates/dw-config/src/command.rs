@@ -75,10 +75,12 @@ pub fn handle_config(command: ConfigCommand) -> Result<()> {
             }
         }
         ConfigCommand::SetRoot { path } => {
-            print_styled(&format!("Root: {}", set_user_root(&path)?));
+            print_styled("Config mise à jour");
+            print_styled(&format!("Root      : {}", set_user_root(&path)?));
         }
         ConfigCommand::SetColor { mode } => {
-            print_styled(&format!("Color: {}", set_color_mode(&mode)?));
+            print_styled("Config mise à jour");
+            print_styled(&format!("Couleur   : {}", set_color_mode(&mode)?));
         }
     }
     Ok(())
@@ -152,46 +154,55 @@ fn refresh_report_lines(report: &RefreshReport) -> Vec<String> {
 
 fn config_show_lines(report: &crate::ConfigShow) -> Vec<String> {
     vec![
-        format!("Root: {}", report.root),
-        format!("Couleur: {}", report.color),
-        format!("Settings: {}", report.settings_path),
-        format!(
-            "{} {}",
-            if report.projects_exists { "✓" } else { "!" },
-            report.projects_path
-        ),
-        format!(
-            "{} {}",
-            if report.workflow_exists { "✓" } else { "!" },
-            report.workflow_path
-        ),
-        format!(
-            "{} {}",
-            if report.databases_exists { "✓" } else { "!" },
-            report.databases_path
-        ),
+        "Config DevWorkflow".into(),
+        format!("Root      : {}", report.root),
+        format!("Couleur   : {}", report.color),
+        format!("Settings  : {}", report.settings_path),
+        String::new(),
+        "Fichiers".into(),
+        config_file_line("projects", &report.projects_path, report.projects_exists),
+        config_file_line("workflow", &report.workflow_path, report.workflow_exists),
+        config_file_line("databases", &report.databases_path, report.databases_exists),
     ]
 }
 
 fn config_doctor_lines(report: &crate::ConfigDoctorReport) -> Vec<String> {
-    let mut lines = vec![format!("Root: {}", report.root)];
+    let mut lines = vec![
+        "Doctor config".into(),
+        format!(
+            "Statut    : {}",
+            if report.passed {
+                "valide"
+            } else {
+                "à corriger"
+            }
+        ),
+        format!("Root      : {}", report.root),
+        String::new(),
+        "Checks".into(),
+    ];
     for check in &report.checks {
-        lines.push(format!(
-            "{} {}",
-            if check.passed { "✓" } else { "!" },
-            check.path
-        ));
+        lines.push(config_check_line(check));
         if let Some(message) = &check.message {
-            lines.push(format!("  -> {message}"));
+            lines.push(format!("  Détail  : {message}"));
         }
     }
+    lines.push(String::new());
     lines.push(if report.passed {
-        "Configuration valide.".into()
+        "Résultat  : Configuration valide.".into()
     } else {
-        "Configuration incomplète: corriger les points signalés puis relancer `dw config doctor`."
+        "Résultat  : Configuration incomplète. Corriger les points signalés puis relancer `dw config doctor`."
             .into()
     });
     lines
+}
+
+fn config_file_line(label: &str, path: &str, exists: bool) -> String {
+    format!("{} {:9}: {}", if exists { "✓" } else { "!" }, label, path)
+}
+
+fn config_check_line(check: &crate::ConfigDoctorCheck) -> String {
+    format!("{} {}", if check.passed { "✓" } else { "!" }, check.path)
 }
 
 fn print_styled(line: &str) {
@@ -216,12 +227,15 @@ mod tests {
 
         let lines = config_doctor_lines(&report);
 
-        assert_eq!(lines[0], "Root: /tmp/dw");
-        assert_eq!(lines[1], "! /tmp/dw/config/projects.json");
-        assert_eq!(lines[2], "  -> fichier absent");
+        assert_eq!(lines[0], "Doctor config");
+        assert_eq!(lines[1], "Statut    : à corriger");
+        assert_eq!(lines[2], "Root      : /tmp/dw");
+        assert_eq!(lines[4], "Checks");
+        assert_eq!(lines[5], "! /tmp/dw/config/projects.json");
+        assert_eq!(lines[6], "  Détail  : fichier absent");
         assert_eq!(
-            lines[3],
-            "Configuration incomplète: corriger les points signalés puis relancer `dw config doctor`."
+            lines[8],
+            "Résultat  : Configuration incomplète. Corriger les points signalés puis relancer `dw config doctor`."
         );
     }
 
@@ -241,12 +255,14 @@ mod tests {
 
         let lines = config_show_lines(&report);
 
-        assert_eq!(lines[0], "Root: /tmp/dw");
-        assert_eq!(lines[1], "Couleur: auto");
-        assert_eq!(lines[2], "Settings: /tmp/settings.json");
-        assert_eq!(lines[3], "! /tmp/dw/config/projects.json");
-        assert_eq!(lines[4], "✓ /tmp/dw/config/workflow.json");
-        assert_eq!(lines[5], "✓ /tmp/dw/config/databases.json");
+        assert_eq!(lines[0], "Config DevWorkflow");
+        assert_eq!(lines[1], "Root      : /tmp/dw");
+        assert_eq!(lines[2], "Couleur   : auto");
+        assert_eq!(lines[3], "Settings  : /tmp/settings.json");
+        assert_eq!(lines[5], "Fichiers");
+        assert_eq!(lines[6], "! projects : /tmp/dw/config/projects.json");
+        assert_eq!(lines[7], "✓ workflow : /tmp/dw/config/workflow.json");
+        assert_eq!(lines[8], "✓ databases: /tmp/dw/config/databases.json");
     }
 
     #[test]
