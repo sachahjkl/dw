@@ -1,6 +1,3 @@
-mod finish;
-mod prune;
-
 use crate::ado::resolve_ado_options;
 use crate::cli::TaskCommand;
 use crate::simple_handlers::load_auth_options;
@@ -793,7 +790,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             skip_verify,
             skip_ado,
             json,
-        } => finish::handle(finish::FinishArgs {
+        } => dw_task::finish::handle(dw_task::finish::FinishArgs {
             workspace,
             r#continue,
             root,
@@ -910,7 +907,7 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             yes,
             no_sync,
             json,
-        } => prune::handle(prune::PruneArgs {
+        } => dw_task::prune::handle(dw_task::prune::PruneArgs {
             root,
             project,
             work_item,

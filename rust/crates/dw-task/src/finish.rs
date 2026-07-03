@@ -1,5 +1,4 @@
-use crate::ado::resolve_ado_options;
-use crate::simple_handlers::load_auth_options;
+use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{
@@ -17,20 +16,20 @@ use dw_workspace::{
 };
 use std::path::Path;
 
-pub(super) struct FinishArgs {
-    pub(super) workspace: Option<String>,
-    pub(super) r#continue: bool,
-    pub(super) root: Option<String>,
-    pub(super) execute: bool,
-    pub(super) message: Option<String>,
-    pub(super) create_pr: bool,
-    pub(super) ready: bool,
-    pub(super) skip_verify: bool,
-    pub(super) skip_ado: bool,
-    pub(super) json: bool,
+pub struct FinishArgs {
+    pub workspace: Option<String>,
+    pub r#continue: bool,
+    pub root: Option<String>,
+    pub execute: bool,
+    pub message: Option<String>,
+    pub create_pr: bool,
+    pub ready: bool,
+    pub skip_verify: bool,
+    pub skip_ado: bool,
+    pub json: bool,
 }
 
-pub(super) fn handle(args: FinishArgs) -> Result<()> {
+pub fn handle(args: FinishArgs) -> Result<()> {
     let FinishArgs {
         workspace,
         r#continue,

@@ -1236,6 +1236,7 @@ dependencies = [
  "dw-db",
  "dw-git",
  "dw-secret",
+ "dw-task",
  "dw-ui",
  "dw-workspace",
  "inquire",
@@ -1294,6 +1295,18 @@ dependencies = [
  "keyring",
  "tempfile",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "dw-task"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dw-ado",
+ "dw-config",
+ "dw-git",
+ "dw-workspace",
+ "serde_json",
 ]
 
 [[package]]

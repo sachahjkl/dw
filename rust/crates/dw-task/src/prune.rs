@@ -1,5 +1,4 @@
-use crate::ado::resolve_ado_options;
-use crate::simple_handlers::load_auth_options;
+use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::get_work_item_snapshots_authenticated;
@@ -10,17 +9,17 @@ use dw_workspace::{
     filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
 };
 
-pub(super) struct PruneArgs {
-    pub(super) root: Option<String>,
-    pub(super) project: Option<String>,
-    pub(super) work_item: Option<String>,
-    pub(super) execute: bool,
-    pub(super) yes: bool,
-    pub(super) no_sync: bool,
-    pub(super) json: bool,
+pub struct PruneArgs {
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub execute: bool,
+    pub yes: bool,
+    pub no_sync: bool,
+    pub json: bool,
 }
 
-pub(super) fn handle(args: PruneArgs) -> Result<()> {
+pub fn handle(args: PruneArgs) -> Result<()> {
     let PruneArgs {
         root,
         project,

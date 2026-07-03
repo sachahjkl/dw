@@ -8,6 +8,7 @@ members = [
   "crates/dw-db",
   "crates/dw-git",
   "crates/dw-secret",
+  "crates/dw-task",
   "crates/dw-workspace",
   "crates/dw-ui",
 ]

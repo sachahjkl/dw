@@ -18,6 +18,7 @@ dw-contracts = { path = "../dw-contracts" }
 dw-db = { path = "../dw-db" }
 dw-git = { path = "../dw-git" }
 dw-secret = { path = "../dw-secret" }
+dw-task = { path = "../dw-task" }
 dw-ui = { path = "../dw-ui" }
 dw-workspace = { path = "../dw-workspace" }
 inquire.workspace = true
