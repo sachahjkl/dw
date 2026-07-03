@@ -1,8 +1,9 @@
 use anyhow::Result;
 use dw_contracts::{TaskHandoffValidationReport, TaskPreflightReport};
-use dw_ui::TerminalTheme;
 use dw_workspace::{build_handoff_validation_report, build_preflight_report_from_ai_context_files};
 use std::path::Path;
+
+use crate::render::print_styled_lines;
 
 pub fn preflight(workspace: String, ai_context_file: Vec<String>, json: bool) -> Result<()> {
     let files = if ai_context_file.is_empty() {
@@ -110,12 +111,6 @@ fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String>
     }
 
     lines
-}
-
-fn print_styled_lines(lines: &[String]) {
-    for line in lines {
-        println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
-    }
 }
 
 fn discover_ai_context_files(workspace: &str) -> Vec<String> {

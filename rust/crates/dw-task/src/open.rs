@@ -8,6 +8,8 @@ use dw_workspace::{
 use inquire::Select;
 use std::io::IsTerminal;
 
+use crate::render::{print_styled, print_styled_lines};
+
 pub struct OpenWorkspaceArgs {
     pub workspace: Option<String>,
     pub project: Option<String>,
@@ -23,13 +25,13 @@ pub struct OpenWorkspaceArgs {
 pub fn status(root: Option<String>) {
     let root = resolve_root(root.as_deref());
     let items = task_status(&root);
-    println!("Root: {}", root);
-    println!("Workspaces detectes:");
+    print_styled(&format!("Root: {}", root));
+    print_styled("Workspaces detectes:");
     if items.is_empty() {
-        println!("  Aucun workspace task trouve.");
+        print_styled("  Aucun workspace task trouve.");
     } else {
         for item in items {
-            println!("  {}", item);
+            print_styled(&format!("  {item}"));
         }
     }
 }
@@ -45,19 +47,9 @@ pub fn list(
     if json {
         println!("{}", serde_json::to_string_pretty(&items)?);
     } else if items.is_empty() {
-        println!("Aucun workspace task trouve.");
+        print_styled("Aucun workspace task trouve.");
     } else {
-        println!("Project  WorkItems  Created     Branch");
-        for item in items {
-            println!(
-                "{:<8} {:<8} {}  {}",
-                item.project,
-                item.display_work_items,
-                created_date(&item.created_at),
-                item.branch_name
-            );
-            println!("  {}", item.path);
-        }
+        print_styled_lines(&task_list_lines(&items));
     }
     Ok(())
 }
@@ -68,14 +60,7 @@ pub fn current(json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&item)?);
     } else {
-        println!("Workspace: {}", item.workspace);
-        println!("Project: {}", item.project);
-        println!(
-            "Work items: {}",
-            format_current_work_items(&item.work_items)
-        );
-        println!("Branch: {}", item.branch);
-        println!("Repos: {}", item.repositories.join(", "));
+        print_styled_lines(&current_workspace_lines(&item));
     }
     Ok(())
 }
@@ -195,6 +180,34 @@ fn created_date(value: &str) -> &str {
     value.get(..10).unwrap_or(value)
 }
 
+fn task_list_lines(items: &[dw_workspace::TaskListItem]) -> Vec<String> {
+    let mut lines = vec!["Project  WorkItems  Created     Branch".into()];
+    for item in items {
+        lines.push(format!(
+            "{:<8} {:<8} {}  {}",
+            item.project,
+            item.display_work_items,
+            created_date(&item.created_at),
+            item.branch_name
+        ));
+        lines.push(format!("  {}", item.path));
+    }
+    lines
+}
+
+fn current_workspace_lines(item: &dw_workspace::TaskCurrentItem) -> Vec<String> {
+    vec![
+        format!("Workspace: {}", item.workspace),
+        format!("Project: {}", item.project),
+        format!(
+            "Work items: {}",
+            format_current_work_items(&item.work_items)
+        ),
+        format!("Branch: {}", item.branch),
+        format!("Repos: {}", item.repositories.join(", ")),
+    ]
+}
+
 fn format_current_work_items(items: &[dw_workspace::WorkspaceWorkItem]) -> String {
     items
         .iter()
@@ -204,4 +217,60 @@ fn format_current_work_items(items: &[dw_workspace::WorkspaceWorkItem]) -> Strin
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_list_lines_render_table_and_paths() {
+        let items = vec![dw_workspace::TaskListItem {
+            path: "/tmp/ws".into(),
+            project: "ha".into(),
+            work_item_id: "42".into(),
+            display_work_items: "#42 Titre [Actif]".into(),
+            task_id: None,
+            kind: "feat".into(),
+            slug: "titre".into(),
+            branch_name: "feat/42-titre".into(),
+            created_at: "2026-07-02T10:00:00Z".into(),
+            work_item_type: Some("User Story".into()),
+            work_item_title: Some("Titre".into()),
+            work_item_state: Some("Actif".into()),
+            repositories: vec!["front".into()],
+        }];
+
+        let lines = task_list_lines(&items);
+
+        assert_eq!(lines[0], "Project  WorkItems  Created     Branch");
+        assert!(lines[1].contains("2026-07-02"));
+        assert_eq!(lines[2], "  /tmp/ws");
+    }
+
+    #[test]
+    fn current_workspace_lines_render_work_items() {
+        let item = dw_workspace::TaskCurrentItem {
+            workspace: "/tmp/ws".into(),
+            project: "ha".into(),
+            primary_work_item_id: "42".into(),
+            work_items: vec![dw_workspace::WorkspaceWorkItem {
+                id: "42".into(),
+                kind: Some("Bug".into()),
+                title: Some("Corriger".into()),
+                state: Some("Actif".into()),
+            }],
+            task_id: None,
+            child_task_ids: Default::default(),
+            child_tasks: vec![],
+            branch: "fix/42-corriger".into(),
+            repositories: vec!["front".into(), "back".into()],
+        };
+
+        let lines = current_workspace_lines(&item);
+
+        assert_eq!(lines[0], "Workspace: /tmp/ws");
+        assert!(lines.contains(&"Work items: #42 Corriger".into()));
+        assert!(lines.contains(&"Repos: front, back".into()));
+    }
 }

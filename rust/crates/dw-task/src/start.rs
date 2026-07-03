@@ -5,13 +5,14 @@ use dw_ado::{env_pat, get_work_item_snapshots, query_assigned_work_items};
 use dw_config::{
     load_projects_config, load_workflow_config, project_choices, resolve_project, resolve_root,
 };
-use dw_ui::TerminalTheme;
 use dw_workspace::{
     TaskStartPlan, TaskStartRequest, execute_task_start, execute_task_start_with_work_items,
     plan_task_start,
 };
 use inquire::{MultiSelect, Select, Text};
 use std::io::IsTerminal;
+
+use crate::render::{print_styled, print_styled_lines};
 
 #[derive(Debug, Clone)]
 pub struct StartArgs {
@@ -384,16 +385,6 @@ fn created_workspace_lines(plan: &TaskStartPlan) -> Vec<String> {
         format!("Repos: {}", plan.repositories.join(", ")),
         "Prochaine etape conseillee: ouvrir le workspace ou lancer l'agent.".into(),
     ]
-}
-
-fn print_styled_lines(lines: &[String]) {
-    for line in lines {
-        print_styled(line);
-    }
-}
-
-fn print_styled(line: &str) {
-    println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
 }
 
 #[cfg(test)]

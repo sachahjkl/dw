@@ -4,11 +4,12 @@ use dw_ado::auth::require_token;
 use dw_ado::get_work_item_snapshots_authenticated;
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_git::{worktree_prune, worktree_remove};
-use dw_ui::TerminalTheme;
 use dw_workspace::{
     WorkspaceSummary, display_work_items, execute_task_sync, execute_task_teardown,
     filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
 };
+
+use crate::render::print_styled;
 
 pub struct PruneArgs {
     pub root: Option<String>,
@@ -142,10 +143,6 @@ fn prune_candidate_line(candidate: &WorkspaceSummary) -> String {
         display_work_items(&candidate.manifest.parent_work_items(), true),
         candidate.path
     )
-}
-
-fn print_styled(line: &str) {
-    println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
 }
 
 #[cfg(test)]

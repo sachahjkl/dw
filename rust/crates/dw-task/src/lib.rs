@@ -4,6 +4,7 @@ pub mod finish;
 pub mod lifecycle;
 pub mod open;
 pub mod prune;
+mod render;
 pub mod repo;
 pub mod start;
 pub mod validate;
