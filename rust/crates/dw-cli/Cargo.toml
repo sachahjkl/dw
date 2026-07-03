@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+build = "build.rs"
 
 [dependencies]
 anyhow.workspace = true
@@ -16,9 +17,14 @@ dw-config = { path = "../dw-config" }
 dw-contracts = { path = "../dw-contracts" }
 dw-db = { path = "../dw-db" }
 dw-git = { path = "../dw-git" }
+dw-secret = { path = "../dw-secret" }
 dw-ui = { path = "../dw-ui" }
 dw-workspace = { path = "../dw-workspace" }
 inquire.workspace = true
 msal.workspace = true
+reqwest.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
+zip.workspace = true

@@ -2,9 +2,11 @@ use clap::Parser;
 
 mod cli;
 mod completion;
+mod doctor;
 mod handlers;
 mod simple_handlers;
-mod support;
+mod task;
+mod upgrade;
 mod version;
 
 fn main() {

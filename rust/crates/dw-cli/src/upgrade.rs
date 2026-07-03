@@ -1,0 +1,411 @@
+use anyhow::{Result, anyhow};
+use dw_config::{WorkflowConfig, load_user_settings, load_workflow_config, resolve_root};
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+const DEFAULT_OWNER: &str = "sachahjkl";
+const DEFAULT_REPOSITORY: &str = "dw";
+const DEFAULT_MANIFEST_ASSET: &str = "release.json";
+const WINDOWS_PE_SIGNATURE: [u8; 2] = [0x4D, 0x5A];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UpdateOptions {
+    pub(crate) owner: String,
+    pub(crate) repository: String,
+    pub(crate) include_prerelease: bool,
+    pub(crate) asset_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRelease {
+    #[serde(rename = "tag_name")]
+    tag_name: String,
+    assets: Vec<GitHubReleaseAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubReleaseAsset {
+    name: String,
+    #[serde(rename = "browser_download_url")]
+    browser_download_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseManifest {
+    version: String,
+    commit: String,
+    assets: Vec<ReleaseAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseAsset {
+    rid: String,
+    #[serde(rename = "fileName")]
+    file_name: String,
+    sha256: String,
+    #[serde(default)]
+    url: String,
+}
+
+pub(crate) fn handle_upgrade(check: bool, rid: Option<String>) -> Result<()> {
+    ensure_supported_host(std::env::current_exe().ok().as_deref())?;
+    let root = resolve_root(load_user_settings().root.as_deref());
+    let workflow = load_workflow_config(&root);
+    let options = resolve_updates(&workflow)?;
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("dw/1.0")
+        .build()?;
+    let release = get_latest_release(&client, &options)?;
+    let manifest = download_manifest(&client, &release, &options.asset_name)?;
+
+    if check {
+        print_release_check(&release, &manifest);
+        return Ok(());
+    }
+
+    let rid = rid.unwrap_or_else(default_rid);
+    run_upgrade(&client, &manifest, &rid)
+}
+
+pub(crate) fn resolve_updates(workflow: &WorkflowConfig) -> Result<UpdateOptions> {
+    let value = workflow.updates.as_ref();
+    let owner = string_property(value, "owner").unwrap_or_else(|| DEFAULT_OWNER.into());
+    let repository =
+        string_property(value, "repository").unwrap_or_else(|| DEFAULT_REPOSITORY.into());
+    if owner.trim().is_empty() || repository.trim().is_empty() {
+        return Err(anyhow!(
+            "Configuration updates.owner / updates.repository manquante dans workflow.json."
+        ));
+    }
+    Ok(UpdateOptions {
+        owner,
+        repository,
+        include_prerelease: value
+            .and_then(|value| value.get("includePrerelease"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        asset_name: string_property(value, "assetName")
+            .unwrap_or_else(|| DEFAULT_MANIFEST_ASSET.into()),
+    })
+}
+
+fn get_latest_release(
+    client: &reqwest::blocking::Client,
+    options: &UpdateOptions,
+) -> Result<GitHubRelease> {
+    let url = if options.include_prerelease {
+        format!(
+            "https://api.github.com/repos/{}/{}/releases",
+            options.owner, options.repository
+        )
+    } else {
+        format!(
+            "https://api.github.com/repos/{}/{}/releases/latest",
+            options.owner, options.repository
+        )
+    };
+    let response = client.get(url).send()?;
+    let status = response.status().as_u16();
+    let body = response.text()?;
+    if !(200..300).contains(&status) {
+        return Err(anyhow!("GitHub Releases HTTP {status}: {body}"));
+    }
+    if options.include_prerelease {
+        let releases: Vec<GitHubRelease> = serde_json::from_str(&body)?;
+        releases
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("Aucune release GitHub trouvee."))
+    } else {
+        Ok(serde_json::from_str(&body)?)
+    }
+}
+
+fn download_manifest(
+    client: &reqwest::blocking::Client,
+    release: &GitHubRelease,
+    asset_name: &str,
+) -> Result<ReleaseManifest> {
+    let asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name.eq_ignore_ascii_case(asset_name))
+        .ok_or_else(|| anyhow!("Asset release introuvable: {asset_name}"))?;
+    let response = client.get(&asset.browser_download_url).send()?;
+    let status = response.status().as_u16();
+    let body = response.text()?;
+    if !(200..300).contains(&status) {
+        return Err(anyhow!(
+            "Telechargement release.json impossible HTTP {status}: {body}"
+        ));
+    }
+    Ok(serde_json::from_str(&body)?)
+}
+
+fn print_release_check(release: &GitHubRelease, manifest: &ReleaseManifest) {
+    println!("Latest release: {}", release.tag_name);
+    println!("Manifest version: {}+{}", manifest.version, manifest.commit);
+    for asset in &manifest.assets {
+        println!("- {}: {} {}", asset.rid, asset.file_name, asset.sha256);
+    }
+}
+
+fn run_upgrade(
+    client: &reqwest::blocking::Client,
+    manifest: &ReleaseManifest,
+    rid: &str,
+) -> Result<()> {
+    let asset = manifest
+        .assets
+        .iter()
+        .find(|asset| asset.rid.eq_ignore_ascii_case(rid))
+        .ok_or_else(|| anyhow!("Aucun asset pour RID {rid}."))?;
+    if asset.url.trim().is_empty() {
+        return Err(anyhow!(
+            "release.json doit contenir assets[].url pour telecharger un asset."
+        ));
+    }
+    let executable_path = std::env::current_exe()?;
+    println!("Preparation de l'upgrade...");
+    let temp_asset = download_asset(client, asset)?;
+    let hash = file_sha256(&temp_asset)?;
+    if !hash.eq_ignore_ascii_case(&asset.sha256) {
+        let _ = fs::remove_file(&temp_asset);
+        return Err(anyhow!(
+            "SHA256 invalide pour {}. Attendu {}, obtenu {}.",
+            temp_asset.display(),
+            asset.sha256,
+            hash
+        ));
+    }
+    let replacement = prepare_replacement_executable(&asset.file_name, &temp_asset, rid)?;
+    replace_executable(&executable_path, &replacement)?;
+    println!("Done: {}+{}", manifest.version, manifest.commit);
+    Ok(())
+}
+
+fn download_asset(client: &reqwest::blocking::Client, asset: &ReleaseAsset) -> Result<PathBuf> {
+    let response = client.get(&asset.url).send()?;
+    let status = response.status().as_u16();
+    let body = response.bytes()?;
+    if !(200..300).contains(&status) {
+        return Err(anyhow!("Telechargement upgrade impossible HTTP {status}."));
+    }
+    let path = std::env::temp_dir().join(format!(
+        "dw-upgrade-{}{}",
+        std::process::id(),
+        extension_suffix(&asset.file_name)
+    ));
+    fs::write(&path, body)?;
+    Ok(path)
+}
+
+pub(crate) fn prepare_replacement_executable(
+    asset_file_name: &str,
+    asset_path: &Path,
+    rid: &str,
+) -> Result<PathBuf> {
+    if asset_file_name.ends_with(".zip") {
+        return extract_windows_executable(asset_path);
+    }
+    if asset_file_name.ends_with(".tar.gz") || asset_file_name.ends_with(".tgz") {
+        let _ = fs::remove_file(asset_path);
+        return Err(anyhow!(
+            "Asset archive non supporte pour l'upgrade automatique: {asset_file_name} ({rid})."
+        ));
+    }
+    if asset_file_name.ends_with(".exe") {
+        ensure_windows_executable(asset_path, asset_file_name)?;
+    }
+    Ok(asset_path.to_path_buf())
+}
+
+fn extract_windows_executable(archive_path: &Path) -> Result<PathBuf> {
+    let destination = std::env::temp_dir().join(format!("dw-upgrade-{}.exe", std::process::id()));
+    let result = (|| {
+        let file = fs::File::open(archive_path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index)?;
+            let Some(name) = Path::new(entry.name())
+                .file_name()
+                .and_then(|name| name.to_str())
+            else {
+                continue;
+            };
+            if !name.eq_ignore_ascii_case("dw.exe") {
+                continue;
+            }
+            let mut output = fs::File::create(&destination)?;
+            std::io::copy(&mut entry, &mut output)?;
+            ensure_windows_executable(&destination, entry.name())?;
+            return Ok(destination.clone());
+        }
+        Err(anyhow!("Archive upgrade invalide: dw.exe introuvable."))
+    })();
+    let _ = fs::remove_file(archive_path);
+    if result.is_err() {
+        let _ = fs::remove_file(&destination);
+    }
+    result
+}
+
+fn ensure_windows_executable(path: &Path, display_name: &str) -> Result<()> {
+    let mut signature = [0_u8; 2];
+    fs::File::open(path)?.read_exact(&mut signature)?;
+    if signature != WINDOWS_PE_SIGNATURE {
+        let _ = fs::remove_file(path);
+        return Err(anyhow!(
+            "Asset upgrade invalide: {display_name} n'est pas un executable Windows."
+        ));
+    }
+    Ok(())
+}
+
+fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<()> {
+    if cfg!(windows) {
+        return Err(anyhow!(
+            "Auto-upgrade Windows Rust pas encore active: utiliser l'installeur ou remplacer le binaire apres fermeture de dw."
+        ));
+    }
+    fs::copy(replacement, executable_path)?;
+    let _ = fs::remove_file(replacement);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(executable_path)?.permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(executable_path, permissions)?;
+    }
+    println!("Binaire remplace: {}", executable_path.display());
+    Ok(())
+}
+
+pub(crate) fn ensure_supported_host(executable_path: Option<&Path>) -> Result<()> {
+    if executable_path
+        .and_then(Path::to_str)
+        .is_some_and(|path| path.contains("/nix/store/"))
+    {
+        return Err(anyhow!(
+            "Auto-update indisponible pour une installation Nix. Utiliser `nix run --refresh github:sachahjkl/dw` ou `nix profile upgrade`."
+        ));
+    }
+    Ok(())
+}
+
+fn file_sha256(path: &Path) -> Result<String> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn string_property(value: Option<&serde_json::Value>, key: &str) -> Option<String> {
+    value
+        .and_then(|value| value.get(key))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn default_rid() -> String {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => "win-x64",
+        ("linux", "x86_64") => "linux-x64",
+        ("macos", "aarch64") => "osx-arm64",
+        ("macos", "x86_64") => "osx-x64",
+        _ => std::env::consts::ARCH,
+    }
+    .into()
+}
+
+fn extension_suffix(file_name: &str) -> String {
+    if file_name.ends_with(".tar.gz") {
+        ".tar.gz".into()
+    } else {
+        Path::new(file_name)
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|extension| format!(".{extension}"))
+            .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_updates_falls_back_to_defaults() {
+        let options = resolve_updates(&WorkflowConfig::default()).expect("updates");
+
+        assert_eq!(options.owner, "sachahjkl");
+        assert_eq!(options.repository, "dw");
+        assert!(!options.include_prerelease);
+        assert_eq!(options.asset_name, "release.json");
+    }
+
+    #[test]
+    fn resolve_updates_reads_workflow_override() {
+        let workflow = WorkflowConfig {
+            updates: Some(serde_json::json!({
+                "owner": "owner",
+                "repository": "repo",
+                "includePrerelease": true,
+                "assetName": "custom.json"
+            })),
+            ..WorkflowConfig::default()
+        };
+
+        let options = resolve_updates(&workflow).expect("updates");
+
+        assert_eq!(options.owner, "owner");
+        assert_eq!(options.repository, "repo");
+        assert!(options.include_prerelease);
+        assert_eq!(options.asset_name, "custom.json");
+    }
+
+    #[test]
+    fn ensure_supported_host_rejects_nix_store_path() {
+        let error = ensure_supported_host(Some(Path::new("/nix/store/hash-dw/bin/dw")))
+            .expect_err("nix path should fail");
+
+        assert!(error.to_string().contains("Auto-update indisponible"));
+    }
+
+    #[test]
+    fn prepare_replacement_rejects_tar_gz_asset() {
+        let path =
+            std::env::temp_dir().join(format!("dw-upgrade-test-{}.tar.gz", std::process::id()));
+        fs::write(&path, [0x1f, 0x8b]).expect("asset should be written");
+
+        let error = prepare_replacement_executable("dw-linux-x64.tar.gz", &path, "linux-x64")
+            .expect_err("tar gz should fail");
+
+        assert!(error.to_string().contains("archive non supporte"));
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn prepare_replacement_accepts_windows_executable() {
+        let path = std::env::temp_dir().join(format!("dw-upgrade-test-{}.exe", std::process::id()));
+        fs::write(&path, [0x4d, 0x5a, 0x01]).expect("asset should be written");
+
+        let replacement =
+            prepare_replacement_executable("dw.exe", &path, "win-x64").expect("exe should pass");
+
+        assert_eq!(replacement, path);
+        let _ = fs::remove_file(replacement);
+    }
+}

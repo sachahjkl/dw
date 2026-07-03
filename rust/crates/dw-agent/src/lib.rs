@@ -14,6 +14,26 @@ pub enum AgentKind {
     Copilot,
 }
 
+pub const ALL_AGENT_KINDS: [AgentKind; 5] = [
+    AgentKind::Opencode,
+    AgentKind::Cursor,
+    AgentKind::Claude,
+    AgentKind::Codex,
+    AgentKind::Copilot,
+];
+
+impl AgentKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            AgentKind::Opencode => "opencode",
+            AgentKind::Cursor => "cursor",
+            AgentKind::Claude => "claude",
+            AgentKind::Codex => "codex",
+            AgentKind::Copilot => "copilot",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentLaunch {
     #[serde(rename = "fileName")]

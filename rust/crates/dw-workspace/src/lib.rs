@@ -14,6 +14,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+mod finish;
+
+pub use finish::{
+    PullRequestCandidate, TaskFinishError, TaskFinishOptions, VerificationResult,
+    ensure_verification_passed, finish_state, pull_request_description, pull_request_title,
+    read_handoff_summary, read_plan, run_verification, select_pull_request_candidates,
+    structured_handoff_section, task_finish_options,
+};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceManifest {
     pub schema: i64,
@@ -717,6 +726,7 @@ pub fn plan_add_work_items(
 ) -> Result<(WorkspaceManifest, TaskWorkItemUpdatePlan), WorkspaceError> {
     let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
     let mut work_items = manifest.parent_work_items();
+    let mut added_ids = Vec::new();
     for id in parse_work_item_selection(Some(ids)).unwrap_or_default() {
         if manifest.matches_work_item(&id)
             || work_items
@@ -725,6 +735,7 @@ pub fn plan_add_work_items(
         {
             continue;
         }
+        added_ids.push(id.clone());
         work_items.push(WorkspaceWorkItem {
             id,
             kind: kind.map(ToOwned::to_owned),
@@ -732,6 +743,35 @@ pub fn plan_add_work_items(
             state: state.map(ToOwned::to_owned),
         });
     }
+    reject_work_item_conflicts(root, workspace, &manifest.project, &added_ids)?;
+    build_work_item_update_plan(root, workspace, &manifest, work_items).map(|plan| (manifest, plan))
+}
+
+pub fn plan_add_work_item_snapshots(
+    root: &str,
+    workspace: &str,
+    snapshots: &[WorkItemSnapshot],
+) -> Result<(WorkspaceManifest, TaskWorkItemUpdatePlan), WorkspaceError> {
+    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let mut work_items = manifest.parent_work_items();
+    let mut added_ids = Vec::new();
+    for snapshot in snapshots {
+        if manifest.matches_work_item(&snapshot.id)
+            || work_items
+                .iter()
+                .any(|item| item.id.eq_ignore_ascii_case(&snapshot.id))
+        {
+            continue;
+        }
+        added_ids.push(snapshot.id.clone());
+        work_items.push(WorkspaceWorkItem {
+            id: snapshot.id.clone(),
+            kind: snapshot.kind.clone(),
+            title: snapshot.title.clone(),
+            state: snapshot.state.clone(),
+        });
+    }
+    reject_work_item_conflicts(root, workspace, &manifest.project, &added_ids)?;
     build_work_item_update_plan(root, workspace, &manifest, work_items).map(|plan| (manifest, plan))
 }
 
@@ -1651,6 +1691,10 @@ fn normalize_work_item_selection(value: Option<&str>) -> Option<String> {
     Some(ids.join(","))
 }
 
+pub fn parse_work_item_ids(value: &str) -> Vec<String> {
+    parse_work_item_selection(Some(value)).unwrap_or_default()
+}
+
 fn parse_work_item_selection(value: Option<&str>) -> Option<Vec<String>> {
     let normalized = normalize_work_item_selection(value)?;
     Some(normalized.split(',').map(|item| item.to_string()).collect())
@@ -1826,6 +1870,34 @@ fn build_work_item_update_plan(
         new_branch,
         work_items,
     })
+}
+
+fn reject_work_item_conflicts(
+    root: &str,
+    current_workspace: &str,
+    project: &str,
+    ids: &[String],
+) -> Result<(), WorkspaceError> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let conflicts = find_workspaces(root)
+        .into_iter()
+        .filter(|workspace| !workspace.path.eq_ignore_ascii_case(current_workspace))
+        .filter(|workspace| workspace.manifest.project.eq_ignore_ascii_case(project))
+        .filter(|workspace| {
+            ids.iter()
+                .any(|id| workspace.manifest.matches_work_item(id))
+        })
+        .map(|workspace| workspace.path)
+        .collect::<Vec<_>>();
+
+    if conflicts.is_empty() {
+        Ok(())
+    } else {
+        Err(WorkspaceError::WorkspaceConflict(conflicts.join("; ")))
+    }
 }
 
 fn distinct_non_empty_owned(values: Vec<String>) -> Vec<String> {
@@ -2843,6 +2915,73 @@ artifacts:
         assert!(plan.new_workspace.ends_with("feat-11010-55206-demo"));
         assert_eq!(plan.work_items.len(), 2);
         assert_eq!(plan.work_items[1].title.as_deref(), Some("Secondaire"));
+    }
+
+    #[test]
+    fn plan_add_work_item_snapshots_keeps_ado_metadata() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"11010","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/11010-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+
+        let (_manifest, plan) = plan_add_work_item_snapshots(
+            temp.path().to_str().expect("utf8 path"),
+            workspace.to_str().expect("utf8 path"),
+            &[WorkItemSnapshot {
+                id: "55206".into(),
+                kind: Some("Bug".into()),
+                state: Some("En developpement".into()),
+                title: Some("Secondaire".into()),
+                url: None,
+            }],
+        )
+        .expect("plan should build");
+
+        assert_eq!(plan.new_branch, "feat/11010-55206-demo");
+        assert_eq!(plan.work_items[1].kind.as_deref(), Some("Bug"));
+        assert_eq!(plan.work_items[1].title.as_deref(), Some("Secondaire"));
+        assert_eq!(
+            plan.work_items[1].state.as_deref(),
+            Some("En developpement")
+        );
+    }
+
+    #[test]
+    fn plan_add_work_item_snapshots_rejects_workspace_conflict() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        let other = temp.path().join("projects/ha/workspaces/bug-55206-other");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::create_dir_all(&other).expect("other workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"11010","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/11010-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+        fs::write(
+            other.join("task.json"),
+            r#"{"schema":1,"workItemId":"55206","taskId":null,"project":"ha","type":"bug","slug":"other","branchName":"bug/55206-other","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("other manifest should be written");
+
+        let error = plan_add_work_item_snapshots(
+            temp.path().to_str().expect("utf8 path"),
+            workspace.to_str().expect("utf8 path"),
+            &[WorkItemSnapshot {
+                id: "55206".into(),
+                kind: Some("Bug".into()),
+                state: Some("En developpement".into()),
+                title: Some("Secondaire".into()),
+                url: None,
+            }],
+        )
+        .expect_err("conflict should be rejected");
+
+        assert!(error.to_string().contains("bug-55206-other"));
     }
 
     #[test]

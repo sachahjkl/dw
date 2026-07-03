@@ -4,12 +4,14 @@ use crate::cli::{AuthCommand, CompletionCommand, ConfigCommand, SecretCommand};
 use crate::completion::{
     generate_completion, print_completion_complete, print_completion_install, print_completion_show,
 };
-use crate::support::{flag_value, unsupported_command_with_args};
+use crate::upgrade;
 use dw_ado::auth::{AdoAuthOptions, login_browser_interactive, login_device_code, logout, status};
 use dw_config::{
     config_doctor, config_show, load_workflow_config, resolve_root, set_color_mode, set_user_root,
 };
-use inquire::Select;
+use dw_secret::{KeyringSecretStore, delete_secret, secret_exists, secret_from_env, store_secret};
+use inquire::{Password, PasswordDisplayMode, Select};
+use std::io::IsTerminal;
 
 #[derive(Debug, Clone, Copy)]
 enum AuthLoginMode {
@@ -163,32 +165,45 @@ pub(crate) fn load_auth_options(root: Option<&str>) -> Result<Option<AdoAuthOpti
 }
 
 pub(crate) fn handle_secret(command: SecretCommand) -> Result<()> {
+    let store = KeyringSecretStore;
     match command {
         SecretCommand::Set {
             key,
             value,
             from_env,
-        } => unsupported_command_with_args(
-            "secret set",
-            &[
-                ("key", Some(key.as_str())),
-                ("value", value.as_deref()),
-                ("from-env", from_env.as_deref()),
-            ],
-        )?,
+        } => {
+            let secret = match (value, from_env) {
+                (Some(secret), None) => secret,
+                (None, Some(name)) => secret_from_env(&name)?,
+                (None, None) if std::io::stdin().is_terminal() => Password::new("Secret")
+                    .with_display_mode(PasswordDisplayMode::Hidden)
+                    .without_confirmation()
+                    .prompt()?,
+                (None, None) => {
+                    return Err(anyhow::anyhow!(
+                        "secret set requiert --value ou --from-env en mode non interactif"
+                    ));
+                }
+                (Some(_), Some(_)) => unreachable!("clap rejects --value with --from-env"),
+            };
+            store_secret(&store, &key, &secret)?;
+            println!("Secret enregistre dans le keyring systeme.");
+        }
         SecretCommand::Get { key } => {
-            unsupported_command_with_args("secret get", &[("key", Some(key.as_str()))])?
+            if secret_exists(&store, &key)? {
+                println!("Secret present.");
+            } else {
+                println!("Secret introuvable.");
+            }
         }
         SecretCommand::Delete { key } => {
-            unsupported_command_with_args("secret delete", &[("key", Some(key.as_str()))])?
+            delete_secret(&store, &key)?;
+            println!("Secret supprime si present.");
         }
     }
     Ok(())
 }
 
 pub(crate) fn handle_upgrade(check: bool, rid: Option<String>) -> Result<()> {
-    unsupported_command_with_args(
-        "upgrade",
-        &[("check", flag_value(check)), ("rid", rid.as_deref())],
-    )
+    upgrade::handle_upgrade(check, rid)
 }

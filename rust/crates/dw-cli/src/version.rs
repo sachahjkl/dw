@@ -1,10 +1,12 @@
 pub(crate) fn informational_version() -> String {
-    let version = option_env!("DW_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    let version = env!("DW_VERSION");
     match option_env!("DW_COMMIT").filter(|value| !value.trim().is_empty()) {
         Some(commit) => format!("{version}+{}", short_commit(commit)),
         None => version.into(),
     }
 }
+
+pub(crate) const PACKAGE_VERSION: &str = env!("DW_VERSION");
 
 fn short_commit(commit: &str) -> &str {
     commit.get(..7).unwrap_or(commit)

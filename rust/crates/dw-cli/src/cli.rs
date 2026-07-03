@@ -3,7 +3,11 @@ use clap_complete::Shell;
 
 #[derive(Debug, Parser)]
 #[command(name = "dw")]
+#[command(bin_name = "dw")]
+#[command(version = crate::version::PACKAGE_VERSION)]
+#[command(propagate_version = true)]
 #[command(about = "Dev Workflow")]
+#[command(help_template = "{about} {version}\n\n{usage-heading} {usage}\n\n{all-args}")]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,
@@ -75,9 +79,9 @@ pub(crate) enum Command {
     },
     #[command(about = "Met a jour le binaire dw.")]
     Upgrade {
-        #[arg(long)]
+        #[arg(long, conflicts_with = "rid")]
         check: bool,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "check")]
         rid: Option<String>,
     },
     #[command(about = "Gere le cycle de travail: workspace, worktrees, commits, PR et cleanup.")]
@@ -304,9 +308,9 @@ pub(crate) enum DbCommand {
 pub(crate) enum SecretCommand {
     Set {
         key: String,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from_env")]
         value: Option<String>,
-        #[arg(long = "from-env")]
+        #[arg(long = "from-env", conflicts_with = "value")]
         from_env: Option<String>,
     },
     Get {

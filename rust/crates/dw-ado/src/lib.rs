@@ -604,6 +604,26 @@ pub fn update_work_item_state(
     Ok(())
 }
 
+pub fn update_work_item_state_authenticated(
+    options: &AzureDevOpsOptions,
+    work_item_id: &str,
+    state: &str,
+    history: &str,
+    token: &AdoToken,
+) -> Result<(), AdoError> {
+    let body = vec![
+        patch_add("/fields/System.History", Value::String(history.into())),
+        patch_add("/fields/System.State", Value::String(state.into())),
+    ];
+    let _ = patch_json_authenticated_with_content_type(
+        &work_item_url(options, work_item_id),
+        token,
+        &serde_json::to_value(body).map_err(|error| AdoError::Json(error.to_string()))?,
+        "application/json-patch+json",
+    )?;
+    Ok(())
+}
+
 pub fn try_find_active_pull_request(
     options: &AzureDevOpsOptions,
     repository: &str,
@@ -632,6 +652,19 @@ pub fn try_find_active_pull_request(
     }))
 }
 
+pub fn try_find_active_pull_request_authenticated(
+    options: &AzureDevOpsOptions,
+    repository: &str,
+    source_ref: &str,
+    token: &AdoToken,
+) -> Result<Option<PullRequestSummary>, AdoError> {
+    let root = get_json_authenticated(
+        &active_pull_requests_url(options, repository, source_ref),
+        token,
+    )?;
+    pull_request_summary_from_response(root, source_ref)
+}
+
 pub fn create_pull_request(
     options: &AzureDevOpsOptions,
     input: &CreatePullRequestInput,
@@ -643,6 +676,34 @@ pub fn create_pull_request(
         .map(|id| serde_json::json!({ "id": id }))
         .collect::<Vec<_>>();
     let root = post_json(
+        &pull_requests_url(options, &input.repository),
+        token,
+        &serde_json::json!({
+            "sourceRefName": input.source_ref_name,
+            "targetRefName": input.target_ref_name,
+            "title": input.title,
+            "description": input.description,
+            "isDraft": input.is_draft,
+            "workItemRefs": refs,
+        }),
+    )?;
+    Ok(PullRequestCreateResult {
+        pull_request_id: root.get("pullRequestId").and_then(Value::as_i64),
+        url: field_text(&root, "url"),
+    })
+}
+
+pub fn create_pull_request_authenticated(
+    options: &AzureDevOpsOptions,
+    input: &CreatePullRequestInput,
+    token: &AdoToken,
+) -> Result<PullRequestCreateResult, AdoError> {
+    let refs = input
+        .work_item_ids
+        .iter()
+        .map(|id| serde_json::json!({ "id": id }))
+        .collect::<Vec<_>>();
+    let root = post_json_authenticated(
         &pull_requests_url(options, &input.repository),
         token,
         &serde_json::json!({
@@ -674,6 +735,44 @@ pub fn link_work_item_to_pull_request(
         "application/json",
     )?;
     Ok(())
+}
+
+pub fn link_work_item_to_pull_request_authenticated(
+    options: &AzureDevOpsOptions,
+    repository: &str,
+    pull_request_id: i64,
+    work_item_id: &str,
+    token: &AdoToken,
+) -> Result<(), AdoError> {
+    let _ = patch_json_authenticated_with_content_type(
+        &pull_request_work_items_url(options, repository, pull_request_id),
+        token,
+        &serde_json::json!([{ "id": work_item_id }]),
+        "application/json",
+    )?;
+    Ok(())
+}
+
+fn pull_request_summary_from_response(
+    root: Value,
+    source_ref: &str,
+) -> Result<Option<PullRequestSummary>, AdoError> {
+    let values = root
+        .get("value")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Ok(values.into_iter().find_map(|item| {
+        let id = item.get("pullRequestId").and_then(Value::as_i64)?;
+        let source = item
+            .get("sourceRefName")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        (source.eq_ignore_ascii_case(source_ref)).then(|| PullRequestSummary {
+            pull_request_id: id,
+            url: field_text(&item, "url"),
+        })
+    }))
 }
 
 fn get_json(url: &str, token: &str) -> Result<Value, AdoError> {
@@ -744,6 +843,23 @@ fn patch_json_with_content_type(
         .patch(url)
         .header("Accept", "application/json")
         .header("Authorization", basic_auth_header(token))
+        .header("Content-Type", content_type)
+        .body(body.to_string())
+        .send()
+        .map_err(|error| AdoError::Request(error.to_string()))?;
+    read_json_response(response)
+}
+
+fn patch_json_authenticated_with_content_type(
+    url: &str,
+    token: &AdoToken,
+    body: &Value,
+    content_type: &str,
+) -> Result<Value, AdoError> {
+    let response = reqwest::blocking::Client::new()
+        .patch(url)
+        .header("Accept", "application/json")
+        .header("Authorization", auth_header(token))
         .header("Content-Type", content_type)
         .body(body.to_string())
         .send()

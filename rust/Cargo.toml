@@ -7,6 +7,7 @@ members = [
   "crates/dw-ado",
   "crates/dw-db",
   "crates/dw-git",
+  "crates/dw-secret",
   "crates/dw-workspace",
   "crates/dw-ui",
 ]
@@ -32,6 +33,7 @@ tiberius = { version = "0.12", default-features = false, features = ["rustls", "
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 inquire = "0.9"
+keyring = "4.1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
@@ -43,3 +45,4 @@ sha2 = "0.10"
 tiny_http = "0.12"
 url = "2"
 webbrowser = "1"
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
