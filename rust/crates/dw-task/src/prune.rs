@@ -138,7 +138,7 @@ fn prune_candidate_line(candidate: &WorkspaceSummary) -> String {
 
 fn prune_candidate_lines(candidates: &[WorkspaceSummary]) -> Vec<String> {
     let mut lines = vec![
-        "Task prune".into(),
+        "Nettoyage workspaces".into(),
         "Mode      : prévisualisation".into(),
         format!("Candidats : {}", candidates.len()),
         "À faire   : dw task prune --execute --yes".into(),
@@ -146,7 +146,7 @@ fn prune_candidate_lines(candidates: &[WorkspaceSummary]) -> Vec<String> {
     for candidate in candidates {
         lines.push(String::new());
         lines.push(format!("Workspace : {}", candidate.path));
-        lines.push(format!("Items     : {}", prune_candidate_line(candidate)));
+        lines.push(format!("Éléments  : {}", prune_candidate_line(candidate)));
         lines.push(format!(
             "Repos     : {}",
             candidate.manifest.repositories.join(", ")
@@ -238,12 +238,12 @@ mod tests {
 
         let lines = prune_candidate_lines(&[candidate]);
 
-        assert_eq!(lines[0], "Task prune");
+        assert_eq!(lines[0], "Nettoyage workspaces");
         assert_eq!(lines[1], "Mode      : prévisualisation");
         assert_eq!(lines[2], "Candidats : 1");
         assert_eq!(lines[3], "À faire   : dw task prune --execute --yes");
         assert!(lines.contains(&"Workspace : /tmp/dw/projects/ha/workspaces/feat-1-done".into()));
-        assert!(lines.contains(&"Items     : ha / #1 Done [Valide]".into()));
+        assert!(lines.contains(&"Éléments  : ha / #1 Done [Valide]".into()));
         assert!(lines.contains(&"Repos     : front, back".into()));
     }
 

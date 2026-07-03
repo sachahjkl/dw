@@ -103,7 +103,7 @@ pub fn handoff_validate(args: HandoffValidateArgs) -> Result<()> {
 
 fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     let mut lines = vec![
-        "Preflight task".into(),
+        "Préflight task".into(),
         format!(
             "Statut    : {}",
             validation_status_label(!report.has_blocking_issues)
@@ -146,7 +146,7 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
         blocking_count, warning_count, other_count
     ));
     lines.push(String::new());
-    lines.push("Détails preflight".into());
+    lines.push("Détails préflight".into());
     for issue in &report.issues {
         lines.push(format!(
             "{} [{}] #{} {} - {}",
@@ -320,11 +320,11 @@ mod tests {
 
         let lines = preflight_lines(&report);
 
-        assert_eq!(lines[0], "Preflight task");
+        assert_eq!(lines[0], "Préflight task");
         assert!(lines.contains(&"Statut    : ✕ À corriger".into()));
         assert!(lines.contains(&"Workspace : /tmp/ws".into()));
         assert!(lines.contains(&"Résumé   : 1 blocage(s), 0 avertissement(s), 0 info(s)".into()));
-        assert!(lines.contains(&"Détails preflight".into()));
+        assert!(lines.contains(&"Détails préflight".into()));
         assert!(
             lines.contains(&"✕ [blocking] #42 missing_attachment - Piece jointe manquante".into())
         );

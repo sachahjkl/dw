@@ -207,13 +207,13 @@ fn work_item_update_plan_lines(
     plan: &dw_workspace::TaskWorkItemUpdatePlan,
 ) -> Vec<String> {
     vec![
-        "Work items task".into(),
+        "Work items workspace".into(),
         "Mode      : prévisualisation".into(),
         format!("Action    : {action}"),
         format!("Branche   : {} -> {}", plan.old_branch, plan.new_branch),
         format!("Workspace : {} -> {}", plan.workspace, plan.new_workspace),
         format!(
-            "Items     : {}",
+            "Éléments  : {}",
             plan.work_items
                 .iter()
                 .map(|item| format!("#{}", item.id))
@@ -253,11 +253,11 @@ mod tests {
 
         let lines = work_item_update_plan_lines("ajout", &plan);
 
-        assert_eq!(lines[0], "Work items task");
+        assert_eq!(lines[0], "Work items workspace");
         assert_eq!(lines[1], "Mode      : prévisualisation");
         assert_eq!(lines[2], "Action    : ajout");
         assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-2-new".into()));
-        assert!(lines.contains(&"Items     : #1, #2".into()));
+        assert!(lines.contains(&"Éléments  : #1, #2".into()));
         assert!(
             lines.contains(&"À faire   : dw task add-work-item/remove-work-item --execute".into())
         );

@@ -199,7 +199,7 @@ mod tests {
         assert!(lines[2].contains("ha      2026-07-02  feat   #42 Titre [Actif]"));
         assert!(lines.contains(&"  Branche: feat/42-titre".into()));
         assert!(lines.contains(&"  Repos: front".into()));
-        assert_eq!(lines.last().map(String::as_str), Some("  Path: /tmp/ws"));
+        assert_eq!(lines.last().map(String::as_str), Some("  Chemin: /tmp/ws"));
     }
 
     #[test]
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn task_status_lines_render_empty_and_non_empty_states() {
         let empty = task_status_lines("/tmp/root", &[]);
-        assert_eq!(empty[0], "Task workspaces");
+        assert_eq!(empty[0], "Workspaces task");
         assert!(empty.contains(&"Root      : /tmp/root".into()));
         assert!(empty.contains(&"Détectés  : 0".into()));
         assert!(empty.contains(&"Aucun workspace task trouvé.".into()));
