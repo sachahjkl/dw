@@ -169,18 +169,18 @@ fn interactive_assigned_project_selection(
             continue;
         }
         choices.push(AssignedProjectChoice {
-            label: format!("{} ({} assignes)", project.label, items.len()),
+            label: format!("{} ({} assignés)", project.label, items.len()),
             project_key: project.key,
             items,
         });
     }
 
     if choices.is_empty() {
-        print_styled("Aucun work item assigne hors etats finaux dans les projets configures.");
+        print_styled("Aucun work item assigné hors états finaux dans les projets configurés.");
         return Ok(None);
     }
 
-    let project = Select::new("Projet avec work items assignes", choices).prompt()?;
+    let project = Select::new("Projet avec work items assignés", choices).prompt()?;
     let selected = select_work_items(&project.items)?;
     if selected.is_empty() {
         return Ok(None);
@@ -205,7 +205,7 @@ fn interactive_assigned_work_item_selection(
     let items = active_work_items(items);
     if items.is_empty() {
         print_styled(&format!(
-            "Aucun work item assigne hors etats finaux pour {project}."
+            "Aucun work item assigné hors états finaux pour {project}."
         ));
         return Ok(None);
     }
@@ -226,7 +226,7 @@ fn active_work_items(items: Vec<dw_ado::WorkItemSnapshot>) -> Vec<dw_ado::WorkIt
 }
 
 fn select_work_items(items: &[dw_ado::WorkItemSnapshot]) -> Result<Vec<String>> {
-    let selected = MultiSelect::new("Work items assignes", work_item_choices(items)).prompt()?;
+    let selected = MultiSelect::new("Work items assignés", work_item_choices(items)).prompt()?;
     Ok(selected.into_iter().map(|choice| choice.id).collect())
 }
 
@@ -325,10 +325,10 @@ mod tests {
     fn assigned_project_choice_displays_label_and_count() {
         let choice = AssignedProjectChoice {
             project_key: "ha".into(),
-            label: "ha - Hommage Agence (2 assignes)".into(),
+            label: "ha - Hommage Agence (2 assignés)".into(),
             items: vec![],
         };
 
-        assert_eq!(choice.to_string(), "ha - Hommage Agence (2 assignes)");
+        assert_eq!(choice.to_string(), "ha - Hommage Agence (2 assignés)");
     }
 }

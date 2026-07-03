@@ -154,7 +154,7 @@ pub fn commit(args: CommitArgs) -> Result<()> {
         commit_repository(&target.path, &commit_message)?;
     }
     if !json {
-        print_styled("Commits termines. Aucun push ni PR creee.");
+        print_styled("Commits terminés. Aucun push ni PR créée.");
     }
     Ok(())
 }

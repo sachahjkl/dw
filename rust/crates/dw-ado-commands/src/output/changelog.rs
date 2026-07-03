@@ -5,12 +5,12 @@ pub fn render_changelog_source_empty(from_git: bool, theme: &TerminalTheme) -> S
     theme.warning(if from_git {
         "Aucun work item detecte dans les messages de commit de la plage git."
     } else {
-        "Aucun work item detecte pour les pull requests donnees."
+        "Aucun work item détecté pour les pull requests données."
     })
 }
 
 pub fn render_changelog_resolved_empty(theme: &TerminalTheme) -> String {
-    theme.warning("Aucun work item resolu dans Azure DevOps.")
+    theme.warning("Aucun work item résolu dans Azure DevOps.")
 }
 
 pub fn render_changelog_ids(ids: &[String]) -> String {

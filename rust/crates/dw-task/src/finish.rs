@@ -122,7 +122,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
     if changed.is_empty() && unpushed.is_empty() && pull_request_candidates.is_empty() {
         if !json {
             print_styled("");
-            print_styled("Rien a terminer.");
+            print_styled("Rien à terminer.");
         }
         return Ok(());
     }
@@ -163,14 +163,14 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             push_repository(&target.path, &manifest.branch_name)?;
         }
         if !json {
-            print_styled("Commits/push termines.");
+            print_styled("Commits/push terminés.");
         }
     } else {
         for (target, _) in &unpushed {
             push_repository(&target.path, &manifest.branch_name)?;
         }
         if !json {
-            print_styled("Push termine.");
+            print_styled("Push terminé.");
         }
     }
     if !create_pr {
@@ -181,7 +181,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
     }
 
     if !changed.is_empty() && !json {
-        print_styled("Commits/push termines. Creation PR en cours.");
+        print_styled("Commits/push terminés. Création PR en cours.");
     } else if changed.is_empty() && unpushed.is_empty() && !json {
         print_styled("Aucun commit local a pousser. Verification PR en cours.");
     }
@@ -276,7 +276,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             );
             let Some(state) = state else {
                 print_styled(&format!(
-                    "ADO item {}: etat inchange ({}).",
+                    "ADO item {}: état inchangé ({}).",
                     label,
                     item.kind.as_deref().unwrap_or("type inconnu")
                 ));
@@ -287,7 +287,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
                 .as_deref()
                 .is_some_and(|current| current.eq_ignore_ascii_case(&state))
             {
-                print_styled(&format!("ADO item {label}: deja en etat {state}."));
+                print_styled(&format!("ADO item {label}: déjà en état {state}."));
                 continue;
             }
             update_work_item_state_authenticated(
@@ -297,7 +297,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
                 "dw task finish: PR ouverte",
                 &token,
             )?;
-            print_styled(&format!("ADO item {label}: etat -> {state}"));
+            print_styled(&format!("ADO item {label}: état -> {state}"));
         }
     }
 

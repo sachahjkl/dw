@@ -144,7 +144,7 @@ pub fn get_work_item_ids_from_pull_requests(
 ) -> Result<Vec<String>, AdoError> {
     if repositories.is_empty() {
         return Err(AdoError::InvalidInput(
-            "Le mode PR requiert --repo, ou un --project avec des repositories AzureDevOpsRepository configures.".into(),
+            "Le mode PR requiert --repo, ou un --project avec des repositories AzureDevOpsRepository configurés.".into(),
         ));
     }
 

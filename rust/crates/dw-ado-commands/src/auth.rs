@@ -50,9 +50,9 @@ pub fn handle_auth(command: AuthCommand) -> Result<()> {
                 AuthLoginMode::DeviceCode => print_auth_token(login_device_code(auth)?)?,
                 AuthLoginMode::EnvironmentPat => {
                     print_styled(
-                        "Definir DW_ADO_TOKEN ou AZURE_DEVOPS_EXT_PAT dans l'environnement.",
+                        "Définir DW_ADO_TOKEN ou AZURE_DEVOPS_EXT_PAT dans l'environnement.",
                     );
-                    print_styled("Aucun secret n'est saisi ni stocke par cette commande.");
+                    print_styled("Aucun secret n'est saisi ni stocké par cette commande.");
                 }
             }
         }
@@ -61,7 +61,7 @@ pub fn handle_auth(command: AuthCommand) -> Result<()> {
             let status = status(auth)?;
             if status.connected {
                 print_styled(&format!(
-                    "Connecte via {}.",
+                    "Connecté via {}.",
                     status.source.unwrap_or_default()
                 ));
                 print_styled(
@@ -71,8 +71,8 @@ pub fn handle_auth(command: AuthCommand) -> Result<()> {
                         .unwrap_or_else(|| "Expiration inconnue.".into()),
                 );
             } else {
-                print_styled("Non connecte.");
-                print_styled("Executer dw auth login ou definir DW_ADO_TOKEN.");
+                print_styled("Non connecté.");
+                print_styled("Exécuter dw auth login ou définir DW_ADO_TOKEN.");
                 std::process::exit(1);
             }
         }
@@ -80,11 +80,11 @@ pub fn handle_auth(command: AuthCommand) -> Result<()> {
             let _ = load_auth_options(root.as_deref())?;
             let removed = logout()?;
             print_styled(&format!(
-                "Sessions MSAL supprimees: {}.",
+                "Sessions MSAL supprimées: {}.",
                 usize::from(removed)
             ));
             print_styled(
-                "Les PAT definis via DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent geres par l'environnement.",
+                "Les PAT définis via DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent gérés par l'environnement.",
             );
         }
     }
@@ -98,7 +98,7 @@ fn prompt_auth_login_mode() -> Result<AuthLoginChoice> {
 fn auth_login_choices() -> Vec<AuthLoginChoice> {
     vec![
         AuthLoginChoice {
-            label: "Navigateur automatique (recommande)",
+            label: "Navigateur automatique (recommandé)",
             mode: AuthLoginMode::Browser,
         },
         AuthLoginChoice {
@@ -113,7 +113,7 @@ fn auth_login_choices() -> Vec<AuthLoginChoice> {
 }
 
 fn print_auth_token(token: AdoToken) -> Result<()> {
-    print_styled(&format!("Connecte via {}.", token.source));
+    print_styled(&format!("Connecté via {}.", token.source));
     print_styled(
         &token
             .expires_on
@@ -135,7 +135,7 @@ mod tests {
     fn auth_login_choices_keep_browser_first() {
         let choices = auth_login_choices();
 
-        assert_eq!(choices[0].label, "Navigateur automatique (recommande)");
+        assert_eq!(choices[0].label, "Navigateur automatique (recommandé)");
         assert!(matches!(choices[0].mode, AuthLoginMode::Browser));
     }
 }

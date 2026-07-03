@@ -15,7 +15,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         }
         Command::Guide => {
             print_styled(&format!("dw - Dev Workflow {}", informational_version()));
-            print_styled("Demarrer avec `dw init`, puis `dw task start <work-item-id>`.");
+            print_styled("Démarrer avec `dw init`, puis `dw task start <work-item-id>`.");
         }
         Command::Doctor { fix } => run_doctor(fix)?,
         Command::Init {

@@ -3,9 +3,9 @@ use dw_ui::TerminalTheme;
 
 pub fn empty_assigned_message(include_final_states: bool) -> &'static str {
     if include_final_states {
-        "Aucun work item assigne."
+        "Aucun work item assigné."
     } else {
-        "Aucun work item assigne hors etats finaux."
+        "Aucun work item assigné hors états finaux."
     }
 }
 
@@ -14,7 +14,7 @@ pub fn render_assigned_items(
     project: &str,
     theme: &TerminalTheme,
 ) -> String {
-    let mut lines = vec![theme.success(&format!("Work items assignes ({})", items.len()))];
+    let mut lines = vec![theme.success(&format!("Work items assignés ({})", items.len()))];
     for item in items {
         lines.push(format_work_item_summary(item, theme));
         lines.push(format!(
@@ -31,7 +31,7 @@ pub fn render_assigned_groups(
     project: &str,
     theme: &TerminalTheme,
 ) -> String {
-    let mut lines = vec![theme.success(&format!("Work items assignes ({})", groups.len()))];
+    let mut lines = vec![theme.success(&format!("Work items assignés ({})", groups.len()))];
     for group in groups {
         lines.push(format_work_item_summary(&group.parent, theme));
         if !group.items.is_empty() {
@@ -101,7 +101,7 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("Work items assignes (1)"));
+        assert!(output.contains("Work items assignés (1)"));
         assert!(output.contains("dw task start 42 --project ha"));
     }
 

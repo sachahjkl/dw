@@ -106,7 +106,7 @@ fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String>
     if !report.is_valid {
         lines.push(String::new());
         lines.push(
-            "Validation handoff echouee: completer/corriger les handoffs avant task finish.".into(),
+            "Validation handoff échouée: compléter/corriger les handoffs avant task finish.".into(),
         );
     }
 
@@ -205,7 +205,7 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|line| line.starts_with("Validation handoff echouee"))
+                .any(|line| line.starts_with("Validation handoff échouée"))
         );
     }
 }

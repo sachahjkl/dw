@@ -38,7 +38,7 @@ pub fn handle_context(args: ContextArgs) -> Result<()> {
     } = args;
     let root = resolve_root(root.as_deref());
     let project_key =
-        project.ok_or_else(|| anyhow::anyhow!("ado context requiert --project configure."))?;
+        project.ok_or_else(|| anyhow::anyhow!("ado context requiert --project configuré."))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
     let options = resolve_ado_options(&projects, &workflow, &project_key)?;

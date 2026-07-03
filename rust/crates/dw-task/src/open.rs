@@ -173,7 +173,7 @@ fn interactive_workspace_selection(
         .into_iter()
         .find(|(label, _)| *label == selected)
         .map(|(_, path)| path)
-        .ok_or_else(|| anyhow::anyhow!("Workspace selection invalide"))
+        .ok_or_else(|| anyhow::anyhow!("Sélection workspace invalide"))
 }
 
 fn created_date(value: &str) -> &str {

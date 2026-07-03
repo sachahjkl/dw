@@ -14,36 +14,36 @@ pub enum AgentCommand {
         #[arg(
             long,
             conflicts_with_all = ["project", "work_item", "continue"],
-            help = "Chemin du workspace a ouvrir directement."
+            help = "Chemin du workspace à ouvrir directement."
         )]
         workspace: Option<String>,
-        #[arg(long, help = "Root DevWorkflow a utiliser.")]
+        #[arg(long, help = "Root DevWorkflow à utiliser.")]
         root: Option<String>,
         #[arg(
             long,
             conflicts_with = "workspace",
-            help = "Projet configure a utiliser pour resoudre un workspace."
+            help = "Projet configuré à utiliser pour résoudre un workspace."
         )]
         project: Option<String>,
         #[arg(
             long = "work-item",
-            help = "Work item servant a resoudre le workspace."
+            help = "Work item servant à résoudre le workspace."
         )]
         work_item: Option<String>,
         #[arg(
             long = "continue",
             conflicts_with = "workspace",
-            help = "Reprendre le workspace task le plus recent correspondant."
+            help = "Reprendre le workspace task le plus récent correspondant."
         )]
         r#continue: bool,
-        #[arg(long, help = "Repository a ouvrir dans le workspace, si applicable.")]
+        #[arg(long, help = "Repository à ouvrir dans le workspace, si applicable.")]
         repo: Option<String>,
         #[arg(
             long,
             help = "Agent a lancer: opencode, cursor, claude, codex ou copilot."
         )]
         agent: Option<String>,
-        #[arg(help = "Alias positionnel du work item pour resoudre le workspace.")]
+        #[arg(help = "Alias positionnel du work item pour résoudre le workspace.")]
         positional_work_item: Option<String>,
     },
     #[command(about = "Affiche la configuration agent effective.")]
@@ -58,9 +58,9 @@ pub enum AgentCommand {
     },
     #[command(about = "Definit l'agent par defaut du root DevWorkflow.")]
     SetDefault {
-        #[arg(help = "Agent a utiliser par defaut: opencode, cursor, claude, codex ou copilot.")]
+        #[arg(help = "Agent à utiliser par défaut: opencode, cursor, claude, codex ou copilot.")]
         agent: String,
-        #[arg(long, help = "Root DevWorkflow a modifier.")]
+        #[arg(long, help = "Root DevWorkflow à modifier.")]
         root: Option<String>,
     },
     #[command(about = "Diagnostique la disponibilite des agents installes.")]

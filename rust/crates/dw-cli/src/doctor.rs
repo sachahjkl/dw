@@ -24,13 +24,13 @@ pub(crate) fn run_doctor(fix: bool) -> Result<()> {
             name: "Root DevWorkflow".into(),
             passed: Path::new(&root).is_dir(),
             detail: Some(root.clone()),
-            remediation: format!("Executer: dw init --root \"{root}\""),
+            remediation: format!("Exécuter: dw init --root \"{root}\""),
         },
         DoctorCheck {
             name: "Configuration utilisateur".into(),
             passed: Path::new(&user_settings_path()).is_file(),
             detail: Some(user_settings_path()),
-            remediation: "Executer: dw init".into(),
+            remediation: "Exécuter: dw init".into(),
         },
         check_default_agent(&root),
         check_command(
@@ -64,7 +64,7 @@ pub(crate) fn run_doctor(fix: bool) -> Result<()> {
     if checks.iter().all(|check| check.passed) {
         Ok(())
     } else {
-        Err(anyhow::anyhow!("doctor a detecte des points a corriger."))
+        Err(anyhow::anyhow!("doctor a détecté des points à corriger."))
     }
 }
 

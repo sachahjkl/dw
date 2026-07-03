@@ -181,7 +181,7 @@ fn is_success_status_line(line: &str) -> bool {
             "Work items ajoutes",
             "Work items retires",
             "Binaire remplace",
-            "Commits/push termines",
+            "Commits/push terminés",
             "PR creee",
             "Root rafraichi",
         ],

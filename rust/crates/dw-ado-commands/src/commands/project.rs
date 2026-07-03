@@ -59,7 +59,7 @@ pub fn resolve_cli_ado_options(
             resolve_ado_options(&projects, &workflow, &project)
         }
         _ => Err(anyhow::anyhow!(
-            "ado ai-context requiert --project configure ou --organization avec --project."
+            "ado ai-context requiert --project configuré ou --organization avec --project."
         )),
     }
 }
@@ -75,14 +75,14 @@ pub fn resolve_project_key_or_prompt(
 
     if !std::io::stdin().is_terminal() {
         return Err(anyhow::anyhow!(
-            "{command_name} requiert --project configure en mode non-interactif."
+            "{command_name} requiert --project configuré en mode non-interactif."
         ));
     }
 
     let choices = project_choices(projects);
     if choices.is_empty() {
         return Err(anyhow::anyhow!(
-            "Aucun projet configure dans projects.json. Executer dw init ou completer config/projects.json."
+            "Aucun projet configuré dans projects.json. Exécuter dw init ou compléter config/projects.json."
         ));
     }
 

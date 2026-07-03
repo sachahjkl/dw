@@ -1993,7 +1993,7 @@ fn build_stale_context_issues(
         stale_reasons.push("titre local different d'ADO".to_string());
     }
     if manifest_item.state != ai_context.work_item.state {
-        stale_reasons.push("etat local different d'ADO".to_string());
+        stale_reasons.push("état local différent d'ADO".to_string());
     }
     if manifest_item.kind != ai_context.work_item.kind {
         stale_reasons.push("type local different d'ADO".to_string());

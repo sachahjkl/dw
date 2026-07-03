@@ -24,9 +24,9 @@ pub(crate) struct Cli {
 pub(crate) enum Command {
     #[command(about = "Affiche la version du CLI.")]
     Version,
-    #[command(about = "Explique le parcours de demarrage.", alias = "get-started")]
+    #[command(about = "Explique le parcours de démarrage.", alias = "get-started")]
     Guide,
-    #[command(about = "Diagnostique les prerequis machine et la configuration locale.")]
+    #[command(about = "Diagnostique les prérequis machine et la configuration locale.")]
     Doctor {
         #[arg(long)]
         fix: bool,
@@ -42,7 +42,7 @@ pub(crate) enum Command {
         #[arg(long = "no-save")]
         no_save: bool,
     },
-    #[command(about = "Regenere schemas et contextes agents.")]
+    #[command(about = "Régénère schémas et contextes agents.")]
     Refresh {
         #[arg(long)]
         root: Option<String>,
@@ -54,12 +54,12 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: AgentCommand,
     },
-    #[command(about = "Gere la connexion Azure DevOps.")]
+    #[command(about = "Gère la connexion Azure DevOps.")]
     Auth {
         #[command(subcommand)]
         command: AuthCommand,
     },
-    #[command(about = "Installe ou interroge l'autocompletion shell.")]
+    #[command(about = "Installe ou interroge l'autocomplétion shell.")]
     Completion {
         #[command(subcommand)]
         command: CompletionCommand,
@@ -74,7 +74,7 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: AdoCommand,
     },
-    #[command(about = "Explore et protege les acces base de donnees.")]
+    #[command(about = "Explore et protège les accès base de données.")]
     Db {
         #[command(subcommand)]
         command: DbCommand,
@@ -84,14 +84,14 @@ pub(crate) enum Command {
         #[command(subcommand)]
         command: SecretCommand,
     },
-    #[command(about = "Met a jour le binaire dw.")]
+    #[command(about = "Met à jour le binaire dw.")]
     Upgrade {
         #[arg(long, conflicts_with = "rid")]
         check: bool,
         #[arg(long, conflicts_with = "check")]
         rid: Option<String>,
     },
-    #[command(about = "Gere le cycle de travail: workspace, worktrees, commits, PR et cleanup.")]
+    #[command(about = "Gère le cycle de travail: workspace, worktrees, commits, PR et cleanup.")]
     Task {
         #[command(subcommand)]
         command: TaskCommand,

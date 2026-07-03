@@ -33,7 +33,7 @@ pub fn render_context_items(
             item.work_item
                 .assigned_to
                 .as_deref()
-                .unwrap_or("non assigne")
+                .unwrap_or("non assigné")
         ));
 
         if let Some(description) = &item.content.description

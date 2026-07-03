@@ -5,72 +5,72 @@ use crate::commands;
 
 #[derive(Debug, Subcommand)]
 pub enum DbCommand {
-    #[command(about = "Verifie qu'une requete SQL respecte le mode read-only.")]
+    #[command(about = "Vérifie qu'une requête SQL respecte le mode read-only.")]
     Guard {
-        #[arg(long, help = "Requete SQL a analyser sans execution.")]
+        #[arg(long, help = "Requête SQL à analyser sans exécution.")]
         sql: String,
     },
-    #[command(about = "Liste les tables et vues accessibles sur une base configuree.")]
+    #[command(about = "Liste les tables et vues accessibles sur une base configurée.")]
     Schema {
-        #[arg(long, help = "Projet configure contenant la connexion base.")]
+        #[arg(long, help = "Projet configuré contenant la connexion base.")]
         project: Option<String>,
         #[arg(
             long,
             conflicts_with = "env",
-            help = "Nom de connexion declare dans databases.json."
+            help = "Nom de connexion déclaré dans databases.json."
         )]
         database: Option<String>,
         #[arg(
             long,
             conflicts_with = "database",
-            help = "Alias d'environnement base declare dans databases.json."
+            help = "Alias d'environnement base déclaré dans databases.json."
         )]
         env: Option<String>,
-        #[arg(long, help = "Emettre le resultat JSON deterministe.")]
+        #[arg(long, help = "Émettre le résultat JSON déterministe.")]
         json: bool,
     },
-    #[command(about = "Decrit les colonnes d'une table SQL.")]
+    #[command(about = "Décrit les colonnes d'une table SQL.")]
     Describe {
-        #[arg(help = "Table a decrire, au format table ou schema.table.")]
+        #[arg(help = "Table à décrire, au format table ou schema.table.")]
         table: String,
-        #[arg(long, help = "Projet configure contenant la connexion base.")]
+        #[arg(long, help = "Projet configuré contenant la connexion base.")]
         project: Option<String>,
         #[arg(
             long,
             conflicts_with = "env",
-            help = "Nom de connexion declare dans databases.json."
+            help = "Nom de connexion déclaré dans databases.json."
         )]
         database: Option<String>,
         #[arg(
             long,
             conflicts_with = "database",
-            help = "Alias d'environnement base declare dans databases.json."
+            help = "Alias d'environnement base déclaré dans databases.json."
         )]
         env: Option<String>,
-        #[arg(long, help = "Emettre le resultat JSON deterministe.")]
+        #[arg(long, help = "Émettre le résultat JSON déterministe.")]
         json: bool,
     },
-    #[command(about = "Execute une requete SQL read-only avec garde-fous et limite de lignes.")]
+    #[command(about = "Exécute une requête SQL read-only avec garde-fous et limite de lignes.")]
     Query {
-        #[arg(long, help = "Requete SQL read-only a executer.")]
+        #[arg(long, help = "Requête SQL read-only à exécuter.")]
         sql: String,
-        #[arg(long, help = "Projet configure contenant la connexion base.")]
+        #[arg(long, help = "Projet configuré contenant la connexion base.")]
         project: Option<String>,
         #[arg(
             long,
             conflicts_with = "env",
-            help = "Nom de connexion declare dans databases.json."
+            help = "Nom de connexion déclaré dans databases.json."
         )]
         database: Option<String>,
         #[arg(
             long,
             conflicts_with = "database",
-            help = "Alias d'environnement base declare dans databases.json."
+            help = "Alias d'environnement base déclaré dans databases.json."
         )]
         env: Option<String>,
-        #[arg(long = "max-rows", help = "Nombre maximum de lignes a afficher.")]
+        #[arg(long = "max-rows", help = "Nombre maximum de lignes à afficher.")]
         max_rows: Option<usize>,
-        #[arg(long, help = "Emettre le resultat JSON deterministe.")]
+        #[arg(long, help = "Émettre le résultat JSON déterministe.")]
         json: bool,
     },
 }

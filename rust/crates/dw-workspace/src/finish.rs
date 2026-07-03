@@ -12,7 +12,7 @@ use crate::{TaskCommitTarget, WorkspaceHandoffSummary, WorkspaceManifest, try_pa
 
 #[derive(Debug, Error)]
 pub enum TaskFinishError {
-    #[error("task finish bloque: verification echouee.")]
+    #[error("task finish bloqué: vérification échouée.")]
     VerificationFailed,
     #[error("Handoff manquant pour {repository}: {path}")]
     MissingHandoff { repository: String, path: String },
@@ -117,7 +117,7 @@ pub fn run_verification(
     candidates: &[PullRequestCandidate],
 ) -> Vec<VerificationResult> {
     if options.verification_commands.is_empty() {
-        println!("Verification: aucune commande configuree.");
+        println!("Vérification: aucune commande configurée.");
         return Vec::new();
     }
 
@@ -163,7 +163,7 @@ pub fn ensure_verification_passed(results: &[VerificationResult]) -> Result<(), 
 
     for result in failed {
         eprintln!(
-            "Verification echouee [{}]: {}",
+            "Vérification échouée [{}]: {}",
             result.repository, result.command
         );
         if !result.standard_error.trim().is_empty() {
@@ -316,7 +316,7 @@ fn render_verification(repository: &str, results: &[VerificationResult]) -> Stri
         })
         .collect::<Vec<_>>();
     if matching.is_empty() {
-        "- Aucune commande configuree dans `taskFinish.verificationCommands`.".into()
+        "- Aucune commande configurée dans `taskFinish.verificationCommands`.".into()
     } else {
         matching.join("\n")
     }

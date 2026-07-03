@@ -135,12 +135,12 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
                     format!(
                         "#{} ({})",
                         item.id,
-                        item.state.as_deref().unwrap_or("etat inconnu")
+                        item.state.as_deref().unwrap_or("état inconnu")
                     )
                 })
                 .collect::<Vec<_>>();
             return Err(anyhow::anyhow!(
-                "Impossible d'ajouter des work items en etat final: {}",
+                "Impossible d'ajouter des work items en état final: {}",
                 labels.join(", ")
             ));
         }
@@ -151,7 +151,7 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
     } else {
         print_styled_lines(&work_item_update_plan_lines("Add work-item", &plan));
         if !skip_ado {
-            print_styled("Work items ADO resolus:");
+            print_styled("Work items ADO résolus:");
             print_styled(&display_work_items(&plan.work_items, true));
         }
     }

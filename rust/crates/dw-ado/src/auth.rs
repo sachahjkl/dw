@@ -50,17 +50,17 @@ pub struct AdoAuthStatus {
 
 #[derive(Debug, Error)]
 pub enum AdoAuthError {
-    #[error("Auth ADO non configuree. Renseigner auth dans workflow.json ou definir DW_ADO_TOKEN.")]
+    #[error("Auth ADO non configurée. Renseigner auth dans workflow.json ou définir DW_ADO_TOKEN.")]
     MissingConfig,
-    #[error("Token ADO indisponible. Executer dw auth login ou definir DW_ADO_TOKEN.")]
+    #[error("Token ADO indisponible. Exécuter dw auth login ou définir DW_ADO_TOKEN.")]
     MissingToken,
-    #[error("MSAL a echoue: {0}")]
+    #[error("MSAL a échoué: {0}")]
     Msal(String),
     #[error("Stockage credentials OS indisponible: {0}")]
     Keyring(String),
     #[error("Runtime async indisponible: {0}")]
     Runtime(String),
-    #[error("Connexion ADO expiree avant validation dans le navigateur.")]
+    #[error("Connexion ADO expirée avant validation dans le navigateur.")]
     LoginExpired,
     #[error("Login navigateur impossible: {0}")]
     BrowserLogin(String),

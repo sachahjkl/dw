@@ -10,7 +10,7 @@ pub const KEY_PREFIX: &str = "dw/";
 
 #[derive(Debug, Error)]
 pub enum SecretError {
-    #[error("Cle de secret vide.")]
+    #[error("Clé de secret vide.")]
     EmptyKey,
     #[error("Variable d'environnement introuvable: {0}")]
     MissingEnvironmentVariable(String),

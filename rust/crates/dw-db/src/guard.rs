@@ -27,13 +27,13 @@ impl SqlGuardResult {
 
 pub fn validate_read_only_sql(sql: &str) -> SqlGuardResult {
     if sql.trim().is_empty() {
-        return SqlGuardResult::blocked("La requete SQL est vide.");
+        return SqlGuardResult::blocked("La requête SQL est vide.");
     }
 
     let cleaned = strip_comments(sql).trim().to_string();
     if !starts_with_readonly_verb(&cleaned) {
         return SqlGuardResult::blocked(
-            "Seules les requetes SELECT/WITH et l'introspection read-only sont autorisees.",
+            "Seules les requêtes SELECT/WITH et l'introspection read-only sont autorisées.",
         );
     }
 

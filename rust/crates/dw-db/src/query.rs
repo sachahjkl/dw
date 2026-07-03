@@ -87,7 +87,7 @@ pub fn query_sql_server(
     let guard = validate_read_only_sql(sql);
     if !guard.is_allowed {
         return Err(format!(
-            "Requete bloquee: {}",
+            "Requête bloquée: {}",
             guard.reason.unwrap_or_else(|| "raison inconnue".into())
         ));
     }

@@ -7,14 +7,14 @@ use crate::{KeyringSecretStore, delete_secret, secret_exists, secret_from_env, s
 
 #[derive(Debug, Subcommand)]
 pub enum SecretCommand {
-    #[command(about = "Enregistre un secret dans le keyring systeme.")]
+    #[command(about = "Enregistre un secret dans le keyring système.")]
     Set {
-        #[arg(help = "Cle logique du secret, par exemple une credentialReference.")]
+        #[arg(help = "Clé logique du secret, par exemple une credentialReference.")]
         key: String,
         #[arg(
             long,
             conflicts_with = "from_env",
-            help = "Valeur du secret a enregistrer."
+            help = "Valeur du secret à enregistrer."
         )]
         value: Option<String>,
         #[arg(
@@ -24,14 +24,14 @@ pub enum SecretCommand {
         )]
         from_env: Option<String>,
     },
-    #[command(about = "Verifie si un secret existe sans afficher sa valeur.")]
+    #[command(about = "Vérifie si un secret existe sans afficher sa valeur.")]
     Get {
-        #[arg(help = "Cle logique du secret a verifier.")]
+        #[arg(help = "Clé logique du secret à vérifier.")]
         key: String,
     },
-    #[command(about = "Supprime un secret du keyring systeme.")]
+    #[command(about = "Supprime un secret du keyring système.")]
     Delete {
-        #[arg(help = "Cle logique du secret a supprimer.")]
+        #[arg(help = "Clé logique du secret à supprimer.")]
         key: String,
     },
 }

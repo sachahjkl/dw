@@ -87,7 +87,7 @@ fn execute_db_query(
     let guard = validate_read_only_sql(sql);
     if !guard.is_allowed {
         return Err(anyhow::anyhow!(
-            "Requete bloquee: {}",
+            "Requête bloquée: {}",
             guard.reason.unwrap_or_else(|| "raison inconnue".into())
         ));
     }
