@@ -10,6 +10,8 @@ use std::io::IsTerminal;
 
 use crate::render::{print_styled, print_styled_lines};
 
+mod render;
+
 pub struct OpenWorkspaceArgs {
     pub workspace: Option<String>,
     pub project: Option<String>,
@@ -25,15 +27,7 @@ pub struct OpenWorkspaceArgs {
 pub fn status(root: Option<String>) {
     let root = resolve_root(root.as_deref());
     let items = task_status(&root);
-    print_styled(&format!("Root: {}", root));
-    print_styled(&format!("Workspaces détectés: {}", items.len()));
-    if items.is_empty() {
-        print_styled("Aucun workspace task trouvé.");
-    } else {
-        for item in items {
-            print_styled(&format!("- {item}"));
-        }
-    }
+    print_styled_lines(&render::task_status_lines(&root, &items));
 }
 
 pub fn list(
@@ -49,7 +43,7 @@ pub fn list(
     } else if items.is_empty() {
         print_styled("Aucun workspace task trouvé.");
     } else {
-        print_styled_lines(&task_list_lines(&items));
+        print_styled_lines(&render::task_list_lines(&items));
     }
     Ok(())
 }
@@ -60,7 +54,7 @@ pub fn current(json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&item)?);
     } else {
-        print_styled_lines(&current_workspace_lines(&item));
+        print_styled_lines(&render::current_workspace_lines(&item));
     }
     Ok(())
 }
@@ -176,84 +170,9 @@ fn interactive_workspace_selection(
         .ok_or_else(|| anyhow::anyhow!("Sélection workspace invalide"))
 }
 
-fn created_date(value: &str) -> &str {
-    value.get(..10).unwrap_or(value)
-}
-
-fn task_list_lines(items: &[dw_workspace::TaskListItem]) -> Vec<String> {
-    let mut lines = vec![
-        format!("Workspaces task: {}", items.len()),
-        "Projet   Créé        Type   Branche".into(),
-    ];
-    for item in items {
-        lines.push(format!(
-            "{:<8} {}  {:<6} {}",
-            item.project,
-            created_date(&item.created_at),
-            item.kind,
-            item.branch_name
-        ));
-        lines.push(format!("  Work items: {}", item.display_work_items));
-        if !item.repositories.is_empty() {
-            lines.push(format!("  Repos: {}", item.repositories.join(", ")));
-        }
-        lines.push(format!("  {}", item.path));
-    }
-    lines
-}
-
-fn current_workspace_lines(item: &dw_workspace::TaskCurrentItem) -> Vec<String> {
-    let mut lines = vec![
-        "Workspace courant".into(),
-        format!("Workspace: {}", item.workspace),
-        format!("Projet: {}", item.project),
-        format!("Branche: {}", item.branch),
-        format!(
-            "Work items: {}",
-            format_current_work_items(&item.work_items)
-        ),
-    ];
-    if !item.child_tasks.is_empty() || !item.child_task_ids.is_empty() {
-        lines.push(format!("Tâches enfants: {}", format_child_tasks(item)));
-    }
-    lines.push(format!("Repos: {}", item.repositories.join(", ")));
-    lines
-}
-
-fn format_current_work_items(items: &[dw_workspace::WorkspaceWorkItem]) -> String {
-    items
-        .iter()
-        .map(|item| {
-            let title = item.title.clone().unwrap_or_else(|| "(sans titre)".into());
-            format!("#{} {}", item.id, title)
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn format_child_tasks(item: &dw_workspace::TaskCurrentItem) -> String {
-    if !item.child_tasks.is_empty() {
-        return item
-            .child_tasks
-            .iter()
-            .map(|task| {
-                let title = task.title.clone().unwrap_or_else(|| "(sans titre)".into());
-                format!("#{} {} ({})", task.id, title, task.repository)
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-    }
-
-    item.child_task_ids
-        .iter()
-        .map(|(repository, id)| format!("#{id} ({repository})"))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::render::{current_workspace_lines, task_list_lines, task_status_lines};
 
     #[test]
     fn task_list_lines_render_table_and_paths() {
@@ -276,11 +195,11 @@ mod tests {
         let lines = task_list_lines(&items);
 
         assert_eq!(lines[0], "Workspaces task: 1");
-        assert_eq!(lines[1], "Projet   Créé        Type   Branche");
-        assert!(lines[2].contains("2026-07-02"));
-        assert!(lines.contains(&"  Work items: #42 Titre [Actif]".into()));
+        assert_eq!(lines[1], "Projet  Créé        Type   Work items");
+        assert!(lines[2].contains("ha      2026-07-02  feat   #42 Titre [Actif]"));
+        assert!(lines.contains(&"  Branche: feat/42-titre".into()));
         assert!(lines.contains(&"  Repos: front".into()));
-        assert_eq!(lines.last().map(String::as_str), Some("  /tmp/ws"));
+        assert_eq!(lines.last().map(String::as_str), Some("  Path: /tmp/ws"));
     }
 
     #[test]
@@ -309,10 +228,23 @@ mod tests {
         let lines = current_workspace_lines(&item);
 
         assert_eq!(lines[0], "Workspace courant");
-        assert!(lines.contains(&"Workspace: /tmp/ws".into()));
-        assert!(lines.contains(&"Projet: ha".into()));
-        assert!(lines.contains(&"Work items: #42 Corriger".into()));
+        assert!(lines.contains(&"Workspace : /tmp/ws".into()));
+        assert!(lines.contains(&"Projet    : ha".into()));
+        assert!(lines.contains(&"Work items: #42 Corriger [Bug, Actif]".into()));
         assert!(lines.contains(&"Tâches enfants: #43 Corriger front (front)".into()));
-        assert!(lines.contains(&"Repos: front, back".into()));
+        assert!(lines.contains(&"Repos     : front, back".into()));
+    }
+
+    #[test]
+    fn task_status_lines_render_empty_and_non_empty_states() {
+        let empty = task_status_lines("/tmp/root", &[]);
+        assert_eq!(empty[0], "Task workspaces");
+        assert!(empty.contains(&"Root      : /tmp/root".into()));
+        assert!(empty.contains(&"Détectés  : 0".into()));
+        assert!(empty.contains(&"Aucun workspace task trouvé.".into()));
+
+        let filled = task_status_lines("/tmp/root", &["/tmp/root/projects/ha/tasks/ws".into()]);
+        assert!(filled.contains(&"Détectés  : 1".into()));
+        assert!(filled.contains(&"- /tmp/root/projects/ha/tasks/ws".into()));
     }
 }
