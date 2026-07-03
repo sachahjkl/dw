@@ -14,6 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+pub mod completion;
 mod finish;
 mod start;
 mod templates;

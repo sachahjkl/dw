@@ -57,7 +57,6 @@ pub(super) fn options_for_path(path: &[&str]) -> Vec<&'static str> {
         ["completion", "complete"] => vec!["--format"],
         ["completion", _] => Vec::new(),
         ["auth", _] => vec!["--root"],
-        ["agent", "open"] => dw_task::completion::agent_open_options(),
         [_, subcommand] => command_catalog(path)
             .map(|catalog| (catalog.options_for)(subcommand))
             .unwrap_or_default(),
@@ -81,9 +80,6 @@ pub(super) fn values_for_path(
     context: CompletionContext<'_>,
 ) -> Vec<String> {
     match path {
-        ["agent", "open"] => {
-            (dw_task::completion::catalog().values_for)(option, context).unwrap_or_default()
-        }
         ["completion", "complete"] if option == "--format" => vec!["bash".into(), "json".into()],
         ["init"] | ["refresh"] if option == "--profile" => {
             vec!["business".into(), "default".into()]
@@ -128,7 +124,6 @@ fn root_option_allowed(option: &str, selected: &[&str]) -> bool {
 
 fn command_catalog(path: &[&str]) -> Option<CompletionCatalog> {
     match path {
-        ["agent", "open"] => Some(dw_task::completion::catalog()),
         [root, _] => root_catalog(root),
         _ => None,
     }

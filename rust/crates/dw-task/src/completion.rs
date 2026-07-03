@@ -1,6 +1,7 @@
-use dw_config::{load_projects_config, resolve_project};
 use dw_contracts::completion::{CompletionCatalog, CompletionContext};
-use dw_workspace::{read_manifest_path, task_list};
+use dw_workspace::completion::{
+    repository_values, work_item_values, workspace_resolution_options, workspace_values,
+};
 
 pub fn catalog() -> CompletionCatalog {
     CompletionCatalog {
@@ -183,66 +184,4 @@ fn values_for_catalog(option: &str, context: CompletionContext<'_>) -> Option<Ve
 
 pub fn agent_open_options() -> Vec<&'static str> {
     workspace_resolution_options(&["--repo", "--agent"])
-}
-
-pub fn repository_values(
-    root: &str,
-    project: Option<&str>,
-    workspace: Option<&str>,
-) -> Vec<String> {
-    let projects = load_projects_config(root);
-    let mut values = project
-        .and_then(|project| resolve_project(&projects, project))
-        .map(|project| project.repositories.keys().cloned().collect::<Vec<_>>())
-        .unwrap_or_else(|| {
-            projects
-                .projects
-                .keys()
-                .filter_map(|project| resolve_project(&projects, project))
-                .flat_map(|project| project.repositories.keys().cloned().collect::<Vec<_>>())
-                .collect()
-        });
-    if let Some(workspace) = workspace
-        && let Ok(manifest) = read_manifest_path(&format!("{workspace}/task.json"))
-    {
-        values = manifest.repositories;
-    }
-    values.sort();
-    values.dedup();
-    values
-}
-
-pub fn workspace_values(root: &str, project: Option<&str>, work_item: Option<&str>) -> Vec<String> {
-    task_list(root, project, work_item)
-        .into_iter()
-        .map(|item| item.path)
-        .collect()
-}
-
-pub fn work_item_values(root: &str, project: Option<&str>) -> Vec<String> {
-    let mut values = task_list(root, project, None)
-        .into_iter()
-        .flat_map(|item| {
-            item.display_work_items
-                .split(',')
-                .map(str::trim)
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    values.sort();
-    values.dedup();
-    values
-}
-
-fn workspace_resolution_options(extra: &[&'static str]) -> Vec<&'static str> {
-    let mut options = vec![
-        "--workspace",
-        "--root",
-        "--project",
-        "--work-item",
-        "--continue",
-    ];
-    options.extend_from_slice(extra);
-    options
 }
