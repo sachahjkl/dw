@@ -76,7 +76,7 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
     )?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let work_item_ids = resolve_add_work_item_ids(
+    let Some(work_item_ids) = resolve_add_work_item_ids(
         work_item_ids,
         &root,
         &projects,
@@ -84,7 +84,10 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
         &current_manifest,
         skip_ado,
         json,
-    )?;
+    )?
+    else {
+        return Ok(());
+    };
     let requested_ids = parse_workspace_work_item_ids(&work_item_ids);
     let missing_ids = requested_ids
         .iter()
@@ -183,9 +186,9 @@ fn resolve_add_work_item_ids(
     manifest: &dw_workspace::WorkspaceManifest,
     skip_ado: bool,
     json: bool,
-) -> Result<String> {
+) -> Result<Option<String>> {
     if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
-        return Ok(ids);
+        return Ok(Some(ids));
     }
     if json || skip_ado || !is_stdin_interactive() {
         return Err(anyhow::anyhow!(
@@ -194,20 +197,30 @@ fn resolve_add_work_item_ids(
     }
 
     let choices = add_work_item_choices(root, projects, workflow, manifest)?;
+    if choices.is_empty() {
+        print_styled(&format!(
+            "Aucun work item assigné disponible à ajouter pour le projet {}.",
+            manifest.project
+        ));
+        return Ok(None);
+    }
     let Some(selected) = multiselect_optional("Work items à ajouter", choices)? else {
         return Err(anyhow::anyhow!(
             "Work items à ajouter manquants. Fournir `dw task add-work-item <ids>`."
         ));
     };
     if selected.is_empty() {
-        return Err(anyhow::anyhow!("Aucun work item sélectionné."));
+        print_styled("Aucun work item sélectionné.");
+        return Ok(None);
     }
 
-    Ok(selected
-        .iter()
-        .map(|label| work_item_id_from_choice(label))
-        .collect::<Vec<_>>()
-        .join(","))
+    Ok(Some(
+        selected
+            .iter()
+            .map(|label| work_item_id_from_choice(label))
+            .collect::<Vec<_>>()
+            .join(","),
+    ))
 }
 
 fn add_work_item_choices(
@@ -236,12 +249,6 @@ fn add_work_item_choices(
             })
         })
         .collect::<Vec<_>>();
-    if choices.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Aucun work item assigné disponible à ajouter pour le projet {}.",
-            manifest.project
-        ));
-    }
     Ok(choices)
 }
 
@@ -276,7 +283,10 @@ pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
             .display()
             .to_string(),
     )?;
-    let work_item_ids = resolve_remove_work_item_ids(work_item_ids, &current_manifest, json)?;
+    let Some(work_item_ids) = resolve_remove_work_item_ids(work_item_ids, &current_manifest, json)?
+    else {
+        return Ok(());
+    };
     let (manifest, plan) = plan_remove_work_items(&root, &workspace, &work_item_ids)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
@@ -297,31 +307,38 @@ fn resolve_remove_work_item_ids(
     explicit: Option<String>,
     manifest: &dw_workspace::WorkspaceManifest,
     json: bool,
-) -> Result<String> {
+) -> Result<Option<String>> {
     if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
-        return Ok(ids);
+        return Ok(Some(ids));
     }
-    if json {
+    if json || !is_stdin_interactive() {
         return Err(anyhow::anyhow!(
             "Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`."
         ));
     }
 
     let choices = removable_work_item_choices(manifest);
+    if choices.is_empty() {
+        print_styled("Aucun work item disponible à retirer.");
+        return Ok(None);
+    }
     let Some(selected) = multiselect_optional("Work items à retirer", choices)? else {
         return Err(anyhow::anyhow!(
             "Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`."
         ));
     };
     if selected.is_empty() {
-        return Err(anyhow::anyhow!("Aucun work item sélectionné."));
+        print_styled("Aucun work item sélectionné.");
+        return Ok(None);
     }
 
-    Ok(selected
-        .iter()
-        .map(|label| work_item_id_from_choice(label))
-        .collect::<Vec<_>>()
-        .join(","))
+    Ok(Some(
+        selected
+            .iter()
+            .map(|label| work_item_id_from_choice(label))
+            .collect::<Vec<_>>()
+            .join(","),
+    ))
 }
 
 fn removable_work_item_choices(manifest: &dw_workspace::WorkspaceManifest) -> Vec<String> {

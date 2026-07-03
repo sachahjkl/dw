@@ -6,9 +6,9 @@ use dw_git::{
     update_repository, worktree_prune, worktree_remove,
 };
 use dw_workspace::{
-    build_commit_message, execute_task_add_repo, execute_task_teardown, plan_task_add_repo,
-    plan_task_commit, plan_task_repo_latest, plan_task_teardown, resolve_workspace,
-    resolve_workspace_for_workspace_command,
+    WorkspaceError, build_commit_message, execute_task_add_repo, execute_task_teardown,
+    plan_task_add_repo, plan_task_commit, plan_task_repo_latest, plan_task_teardown,
+    resolve_workspace, resolve_workspace_for_workspace_command,
 };
 
 use self::render::{
@@ -263,14 +263,25 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
         json,
     } = args;
     let root = resolve_root(root.as_deref());
-    let workspace = resolve_workspace(
+    let workspace = match resolve_workspace(
         &root,
         workspace.as_deref(),
         project.as_deref(),
         work_item.as_deref(),
         positional_work_item.as_deref(),
         r#continue,
-    )?;
+    ) {
+        Ok(workspace) => workspace,
+        Err(WorkspaceError::NoWorkspaceFound | WorkspaceError::NoCurrentWorkspace) => {
+            if json {
+                println!("[]");
+            } else {
+                print_styled("Aucun workspace task trouvé.");
+            }
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
+    };
     let projects = load_projects_config(&root);
     let (_manifest, steps) = plan_task_teardown(&root, &projects, &workspace)?;
 

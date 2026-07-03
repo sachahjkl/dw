@@ -9,6 +9,10 @@ pub fn empty_assigned_message(include_final_states: bool) -> &'static str {
     }
 }
 
+pub fn render_empty_assigned_message(include_final_states: bool, theme: &TerminalTheme) -> String {
+    theme.warning(empty_assigned_message(include_final_states))
+}
+
 pub fn render_assigned_items(
     items: &[WorkItemSnapshot],
     project: &str,

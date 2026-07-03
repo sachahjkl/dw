@@ -204,7 +204,16 @@ impl TerminalTheme {
 
         if starts_with_any_ignore_ascii_case(
             &styled,
-            &["Aucun", "Sync ignorée", "PR ignorée", "ADO ignore"],
+            &[
+                "Aucun",
+                "Rien",
+                "Sync ignorée",
+                "PR ignorée",
+                "ADO ignore",
+                "Prune annul",
+                "Suppression annul",
+                "Finalisation annul",
+            ],
         ) {
             return self.warning(&styled);
         }
@@ -449,6 +458,27 @@ mod tests {
         let styled = theme.style_line("À faire   : dw task commit --execute", false);
 
         assert!(styled.contains("\u{1b}[1m\u{1b}[35mdw task commit --execute"));
+    }
+
+    #[test]
+    fn style_line_colors_noop_and_cancelled_messages_as_warnings() {
+        let theme = TerminalTheme::new(ColorMode::Always, false, false);
+
+        assert!(
+            theme
+                .style_line("Aucun workspace task trouvé.", false)
+                .contains("\u{1b}[33m")
+        );
+        assert!(
+            theme
+                .style_line("Rien à terminer.", false)
+                .contains("\u{1b}[33m")
+        );
+        assert!(
+            theme
+                .style_line("Suppression annulée.", false)
+                .contains("\u{1b}[33m")
+        );
     }
 
     #[test]
