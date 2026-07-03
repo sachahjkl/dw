@@ -80,7 +80,9 @@ pub(super) fn values_for_path(
     context: CompletionContext<'_>,
 ) -> Vec<String> {
     match path {
-        ["completion", "complete"] if option == "--format" => vec!["bash".into(), "json".into()],
+        ["completion", "complete"] if option == "--format" => {
+            vec!["bash".into(), "fish".into(), "json".into(), "zsh".into()]
+        }
         ["init"] | ["refresh"] if option == "--profile" => {
             vec!["business".into(), "default".into()]
         }

@@ -16,7 +16,9 @@ use catalog::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum CompletionOutput {
     Bash,
+    Fish,
     Json,
+    Zsh,
 }
 
 pub fn generate_completion(shell: Shell, command: &mut clap::Command) {
@@ -57,11 +59,29 @@ pub fn print_completion_install(shell: Shell) {
         Shell::Bash => println!(
             "_dw_complete() {{ COMPREPLY=( $(COMP_LINE=\"$COMP_LINE\" dw completion complete --format bash) ); }}\ncomplete -F _dw_complete dw"
         ),
-        Shell::Zsh => println!(
-            "#compdef dw\n_dw_complete() {{ local -a values; values=($(dw completion complete --format bash -- $words[2,-1])); compadd -- $values }}\ncompdef _dw_complete dw"
-        ),
+        Shell::Zsh => {
+            let script = r#"#compdef dw
+_dw_complete() {
+  local -a rows labels descriptions
+  rows=("${(@f)$(dw completion complete --format zsh -- $words[2,-1])}")
+  local row label description
+  for row in $rows; do
+    label=${row%%$'\t'*}
+    if [[ "$row" == *$'\t'* ]]; then
+      description=${row#*$'\t'}
+    else
+      description=""
+    fi
+    labels+=("$label")
+    descriptions+=("$description")
+  done
+  compadd -d descriptions -a labels
+}
+compdef _dw_complete dw"#;
+            println!("{script}");
+        }
         Shell::Fish => println!(
-            "complete -c dw -f -a '(commandline -opc | string collect | read -lz tokens; dw completion complete --format bash -- $tokens)'"
+            "complete -c dw -f -a '(commandline -opc | string collect | read -lz tokens; dw completion complete --format fish -- $tokens)'"
         ),
         Shell::PowerShell => println!(
             "Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock {{ param($wordToComplete, $commandAst, $cursorPosition) dw completion complete --format json -- @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object {{ $_.Extent.Text }}) | ConvertFrom-Json | ForEach-Object {{ [System.Management.Automation.CompletionResult]::new($_.label, $_.label, 'ParameterValue', $_.description) }} }}"
@@ -86,6 +106,11 @@ pub fn print_completion_complete(format: CompletionOutput, words: Vec<String>) -
                 println!("{}", item.label);
             }
         }
+        CompletionOutput::Fish | CompletionOutput::Zsh => {
+            for item in suggestions {
+                println!("{}", rich_shell_row(&item));
+            }
+        }
         CompletionOutput::Json => {
             let values = suggestions
                 .into_iter()
@@ -101,6 +126,14 @@ pub fn print_completion_complete(format: CompletionOutput, words: Vec<String>) -
 struct CompletionItem {
     label: String,
     description: String,
+}
+
+fn rich_shell_row(item: &CompletionItem) -> String {
+    if item.description.trim().is_empty() {
+        item.label.clone()
+    } else {
+        format!("{}\t{}", item.label, item.description)
+    }
 }
 
 fn completion_words_from_env() -> Vec<String> {
@@ -558,7 +591,21 @@ mod tests {
             "",
         ])));
 
-        assert_eq!(values, vec!["bash", "json"]);
+        assert_eq!(values, vec!["bash", "fish", "json", "zsh"]);
+    }
+
+    #[test]
+    fn rich_shell_rows_include_tab_separated_descriptions() {
+        let items = complete_words(&words(&["task", "open", "--"]));
+        let workspace = items
+            .iter()
+            .find(|item| item.label == "--workspace")
+            .expect("workspace option");
+
+        assert_eq!(
+            rich_shell_row(workspace),
+            "--workspace\tWorkspace task existant"
+        );
     }
 
     #[test]
