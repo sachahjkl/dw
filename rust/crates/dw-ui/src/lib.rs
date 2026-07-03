@@ -159,6 +159,7 @@ impl TerminalTheme {
                 "Détails preflight",
                 "Validation handoff",
                 "Détails handoff",
+                "ADO assignés",
             ],
         ) {
             return self.bold(&self.cyan(&styled));

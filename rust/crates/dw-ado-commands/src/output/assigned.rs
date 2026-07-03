@@ -14,14 +14,17 @@ pub fn render_assigned_items(
     project: &str,
     theme: &TerminalTheme,
 ) -> String {
-    let mut lines = vec![theme.success(&format!("Work items assignés: {}", items.len()))];
+    let mut lines = vec![
+        theme.success("ADO assignés"),
+        format!("Items     : {}", items.len()),
+    ];
     for item in items {
-        lines.push(format_work_item_summary(item, theme));
+        lines.push(String::new());
         lines.push(format!(
-            "  {} {}",
-            theme.command("Démarrer:"),
-            theme.command(&format!("dw task start {} --project {}", item.id, project))
+            "Item      : {}",
+            format_work_item_summary(item, theme)
         ));
+        lines.push(start_command_line(&item.id, project, theme));
         lines.push(String::new());
     }
     trim_trailing_blank_line(lines).join("\n")
@@ -42,20 +45,23 @@ pub fn render_assigned_groups(
         total_items
     ))];
     for group in groups {
-        lines.push(format_work_item_summary(&group.parent, theme));
+        lines.push(String::new());
+        lines.push(format!(
+            "Parent    : {}",
+            format_work_item_summary(&group.parent, theme)
+        ));
         if !group.items.is_empty() {
-            lines.push(format!(
-                "  {} {}",
-                theme.command("Démarrer:"),
-                theme.command(&format!(
-                    "dw task start {} --project {}",
-                    suggested_start_ids(&group.parent, &group.items),
-                    project
-                ))
+            lines.push(start_command_line(
+                &suggested_start_ids(&group.parent, &group.items),
+                project,
+                theme,
             ));
         }
         for item in &group.items {
-            lines.push(format!("  └─ {}", format_work_item_summary(item, theme)));
+            lines.push(format!(
+                "  Enfant  : {}",
+                format_work_item_summary(item, theme)
+            ));
         }
         lines.push(String::new());
     }
@@ -73,6 +79,13 @@ pub(crate) fn suggested_start_ids(
         }
     }
     ids.join(",")
+}
+
+fn start_command_line(ids: &str, project: &str, theme: &TerminalTheme) -> String {
+    format!(
+        "Démarrer  : {}",
+        theme.command(&format!("dw task start {ids} --project {project}"))
+    )
 }
 
 fn format_work_item_summary(item: &WorkItemSnapshot, theme: &TerminalTheme) -> String {
@@ -113,9 +126,10 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("Work items assignés: 1"));
-        assert!(output.contains("#42 [Bug / En developpement] Corriger"));
-        assert!(output.contains("Démarrer: dw task start 42 --project ha"));
+        assert!(output.contains("ADO assignés"));
+        assert!(output.contains("Items     : 1"));
+        assert!(output.contains("Item      : #42 [Bug / En developpement] Corriger"));
+        assert!(output.contains("Démarrer  : dw task start 42 --project ha"));
     }
 
     #[test]
@@ -145,8 +159,9 @@ mod tests {
         );
 
         assert!(output.contains("Work items assignés: 1 groupe(s), 2 item(s)"));
-        assert!(output.contains("Démarrer: dw task start 42,43 --project ha"));
-        assert!(output.contains("  └─ #43 [Task / Actif] Enfant"));
+        assert!(output.contains("Parent    : #42 [User Story / Actif] Parent"));
+        assert!(output.contains("Démarrer  : dw task start 42,43 --project ha"));
+        assert!(output.contains("  Enfant  : #43 [Task / Actif] Enfant"));
     }
 
     #[test]
