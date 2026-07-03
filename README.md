@@ -61,29 +61,33 @@ nix profile upgrade github:sachahjkl/dw
 
 ### Release Binaries
 
-Download the latest release asset for your platform from GitHub Releases:
+Windows install from the latest GitHub release:
+
+```powershell
+irm https://raw.githubusercontent.com/sachahjkl/dw/master/scripts/install.ps1 | iex
+# or:
+iwr https://raw.githubusercontent.com/sachahjkl/dw/master/scripts/install.ps1 -UseBasicParsing | iex
+```
+
+Linux/WSL install from the latest GitHub release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sachahjkl/dw/master/scripts/install.sh | sh
+```
+
+Default install locations:
+
+```text
+Windows: %LOCALAPPDATA%\DevWorkflow\bin
+Linux/WSL: ~/.local/bin
+```
+
+The installers update the user shell/profile PATH unless `-NoPathUpdate` or `--no-path-update` is passed.
+
+Manual downloads are also available from GitHub Releases:
 
 - `dw-linux-x64.tar.gz`
 - `dw-win-x64.zip`
-
-Linux/WSL:
-
-```bash
-mkdir -p ~/.local/bin
-tar -xzf dw-linux-x64.tar.gz -C ~/.local/bin dw
-dw version
-```
-
-Windows PowerShell:
-
-```powershell
-$InstallDir = "$env:LOCALAPPDATA\DevWorkflow\bin"
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Expand-Archive .\dw-win-x64.zip -DestinationPath $InstallDir -Force
-& "$InstallDir\dw.exe" version
-```
-
-Add the install directory to `PATH` if it is not already there.
 
 For release-binary installs, `dw upgrade --check` can inspect the latest release manifest and `dw upgrade` updates the current binary.
 
@@ -100,7 +104,12 @@ Build local release artifacts:
 
 ```bash
 VERSION="$(cat VERSION)" COMMIT="$(git rev-parse --short HEAD)" bash ./scripts/publish-linux-x64.sh
-pwsh ./scripts/publish-win-x64.ps1 -Version "$(cat VERSION)" -Commit "$(git rev-parse --short HEAD)"
+```
+
+```powershell
+$Version = Get-Content .\VERSION
+$Commit = git rev-parse --short HEAD
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-win-x64.ps1 -Version $Version -Commit $Commit
 ```
 
 ## Main Commands
@@ -121,7 +130,12 @@ Build local release artifacts:
 
 ```bash
 VERSION="$(cat VERSION)" COMMIT="$(git rev-parse --short HEAD)" bash ./scripts/publish-linux-x64.sh
-pwsh ./scripts/publish-win-x64.ps1 -Version "$(cat VERSION)" -Commit "$(git rev-parse --short HEAD)"
+```
+
+```powershell
+$Version = Get-Content .\VERSION
+$Commit = git rev-parse --short HEAD
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-win-x64.ps1 -Version $Version -Commit $Commit
 ```
 
 The Linux artifact is written to:
