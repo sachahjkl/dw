@@ -343,7 +343,7 @@ pub fn build_handoff_validation_report(
                         "Handoff valide.".into()
                     } else {
                         format!(
-                            "Handoff parseable mais pas pret pour finish (status: {}).",
+                            "Handoff parseable mais pas prêt pour finish (status: {}).",
                             summary.status
                         )
                     },

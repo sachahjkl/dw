@@ -36,7 +36,7 @@ pub enum AgentCommand {
             help = "Reprendre le workspace task le plus récent correspondant."
         )]
         r#continue: bool,
-        #[arg(long, help = "Repository à ouvrir dans le workspace, si applicable.")]
+        #[arg(long, help = "Dépôt à ouvrir dans le workspace, si applicable.")]
         repo: Option<String>,
         #[arg(
             long,

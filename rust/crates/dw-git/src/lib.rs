@@ -273,7 +273,7 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
     .find(|candidate| run_git_dir(anchor, &["rev-parse", "--verify", candidate]).is_ok())
     .ok_or_else(|| {
         anyhow!(
-            "Branche de base introuvable: {}. References testees: origin/{}, refs/heads/{}.",
+            "Branche de base introuvable: {}. Références testées: origin/{}, refs/heads/{}.",
             request.default_branch,
             request.default_branch,
             request.default_branch
