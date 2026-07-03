@@ -1,5 +1,4 @@
 use anyhow::Result;
-use clap::CommandFactory;
 use clap_complete::{Shell, generate};
 
 use crate::cli::{Cli, CompletionOutput};
@@ -13,7 +12,7 @@ use catalog::{
 };
 
 pub fn generate_completion(shell: Shell) {
-    let mut command = Cli::command();
+    let mut command = Cli::localized_command();
     generate(shell, &mut command, "dw", &mut std::io::stdout());
 }
 

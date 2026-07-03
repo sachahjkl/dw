@@ -1,5 +1,3 @@
-use clap::Parser;
-
 mod cli;
 mod completion;
 mod doctor;
@@ -8,7 +6,7 @@ mod upgrade;
 mod version;
 
 fn main() {
-    if let Err(error) = handlers::run(cli::Cli::parse()) {
+    if let Err(error) = handlers::run(cli::Cli::parse_localized()) {
         eprintln!("Erreur: {error}");
         std::process::exit(1);
     }
