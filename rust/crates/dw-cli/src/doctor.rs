@@ -60,9 +60,7 @@ pub(crate) fn run_doctor(fix: bool) -> Result<()> {
         checks[0].passed = true;
     }
 
-    println!("{}", theme.command("Diagnostic Dev Workflow"));
-    println!();
-    print_checks(&checks, &theme);
+    println!("{}", render_doctor_report(&checks, &theme));
     if checks.iter().all(|check| check.passed) {
         Ok(())
     } else {
@@ -78,40 +76,89 @@ pub(crate) fn run_agent_doctor(requested: Option<&str>) -> Result<()> {
         ALL_AGENT_KINDS.to_vec()
     };
 
-    println!("{}", theme.command("Agents disponibles"));
-    println!();
-    println!("Agent      Command    Status");
-    for agent in agents {
-        let launch = agent.launch_probe();
-        let status = if command_available(&launch.file_name, &["--help"]) {
-            theme.success("OK")
-        } else {
-            theme.warning("missing")
-        };
-        println!("{:<10} {:<10} {}", agent.name(), launch.file_name, status);
-    }
+    let agent_checks = agents
+        .into_iter()
+        .map(|agent| {
+            let launch = agent.launch_probe();
+            let available = command_available(&launch.file_name, &["--help"]);
+            AgentDoctorCheck {
+                agent_name: agent.name().into(),
+                command: launch.file_name,
+                available,
+            }
+        })
+        .collect::<Vec<_>>();
+    println!("{}", render_agent_report(&agent_checks, &theme));
     Ok(())
 }
 
-fn print_checks(checks: &[DoctorCheck], theme: &TerminalTheme) {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AgentDoctorCheck {
+    agent_name: String,
+    command: String,
+    available: bool,
+}
+
+fn render_doctor_report(checks: &[DoctorCheck], theme: &TerminalTheme) -> String {
+    let passed_count = checks.iter().filter(|check| check.passed).count();
+    let total_count = checks.len();
+    let mut lines = vec![
+        theme.command("Diagnostic Dev Workflow"),
+        format!(
+            "{} {passed_count}/{total_count} checks OK",
+            if passed_count == total_count {
+                theme.success("✓")
+            } else {
+                theme.warning("!")
+            }
+        ),
+        String::new(),
+    ];
+    lines.extend(render_checks(checks, theme));
+    lines.join("\n")
+}
+
+fn render_agent_report(checks: &[AgentDoctorCheck], theme: &TerminalTheme) -> String {
+    let mut lines = vec![
+        theme.command("Agents disponibles"),
+        String::new(),
+        format!("{:<12} {:<12} Status", "Agent", "Command"),
+    ];
+    for check in checks {
+        let status = if check.available {
+            theme.success("✓ OK")
+        } else {
+            theme.warning("! missing")
+        };
+        lines.push(format!(
+            "{:<12} {:<12} {}",
+            check.agent_name, check.command, status
+        ));
+    }
+    lines.join("\n")
+}
+
+fn render_checks(checks: &[DoctorCheck], theme: &TerminalTheme) -> Vec<String> {
+    let mut lines = Vec::new();
     for check in checks {
         let status = if check.passed {
             theme.success("✓ OK")
         } else {
             theme.warning("! WARN")
         };
-        println!("{:<8} {}", status, check.name);
+        lines.push(format!("{:<8} {}", status, check.name));
         if let Some(detail) = check
             .detail
             .as_ref()
             .filter(|value| !value.trim().is_empty())
         {
-            println!("         {}", theme.path(detail));
+            lines.push(format!("         {}", theme.path(detail)));
         }
         if !check.passed {
-            println!("         {}", theme.command(&check.remediation));
+            lines.push(format!("         {}", theme.command(&check.remediation)));
         }
     }
+    lines
 }
 
 fn theme_from_settings(color: Option<&str>) -> TerminalTheme {
@@ -233,5 +280,59 @@ impl AgentProbe for AgentKind {
             },
         )
         .expect("known agent should build launch")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doctor_report_includes_summary_details_and_remediation() {
+        let checks = vec![
+            DoctorCheck {
+                name: "Root DevWorkflow".into(),
+                passed: true,
+                detail: Some("/tmp/dw".into()),
+                remediation: "dw init".into(),
+            },
+            DoctorCheck {
+                name: "Git".into(),
+                passed: false,
+                detail: None,
+                remediation: "Installer Git".into(),
+            },
+        ];
+
+        let report = render_doctor_report(&checks, &TerminalTheme::plain());
+
+        assert!(report.contains("Diagnostic Dev Workflow"));
+        assert!(report.contains("! 1/2 checks OK"));
+        assert!(report.contains("✓ OK"));
+        assert!(report.contains("/tmp/dw"));
+        assert!(report.contains("Installer Git"));
+    }
+
+    #[test]
+    fn agent_report_marks_missing_agent_without_probe_side_effects() {
+        let checks = vec![
+            AgentDoctorCheck {
+                agent_name: "codex".into(),
+                command: "codex".into(),
+                available: true,
+            },
+            AgentDoctorCheck {
+                agent_name: "missing".into(),
+                command: "missing".into(),
+                available: false,
+            },
+        ];
+
+        let report = render_agent_report(&checks, &TerminalTheme::plain());
+
+        assert!(report.contains("Agents disponibles"));
+        assert!(report.contains("codex"));
+        assert!(report.contains("✓ OK"));
+        assert!(report.contains("! missing"));
     }
 }
