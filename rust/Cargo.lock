@@ -1269,7 +1269,10 @@ dependencies = [
 name = "dw-config"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "clap",
  "dw-ado",
+ "dw-ui",
  "serde",
  "serde_json",
  "tempfile",
@@ -1311,6 +1314,9 @@ dependencies = [
 name = "dw-secret"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "clap",
+ "inquire",
  "keyring",
  "tempfile",
  "thiserror 2.0.18",

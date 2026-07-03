@@ -1,3 +1,5 @@
+pub mod command;
+
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;

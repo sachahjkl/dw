@@ -7,7 +7,10 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+clap.workspace = true
 dw-ado = { path = "../dw-ado" }
+dw-ui = { path = "../dw-ui" }
 serde.workspace = true
 serde_json.workspace = true
 

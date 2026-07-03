@@ -1,8 +1,6 @@
 use crate::cli::*;
 use crate::doctor::{run_agent_doctor, run_doctor};
-use crate::simple_handlers::{
-    handle_auth, handle_completion, handle_config, handle_secret, handle_upgrade,
-};
+use crate::simple_handlers::{handle_completion, handle_upgrade};
 use crate::version::informational_version;
 use anyhow::Result;
 use dw_agent::agent_context;
@@ -103,13 +101,13 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             }
             AgentCommand::Doctor { agent } => run_agent_doctor(agent.as_deref())?,
         },
-        Command::Auth { command } => handle_auth(command)?,
+        Command::Auth { command } => dw_ado_commands::auth::handle_auth(command)?,
         Command::Completion { command } => handle_completion(command)?,
-        Command::Config { command } => handle_config(command)?,
+        Command::Config { command } => dw_config::command::handle_config(command)?,
 
         Command::Ado { command } => dw_ado_commands::command::handle_ado(command)?,
         Command::Db { command } => dw_db::command::handle_db(command)?,
-        Command::Secret { command } => handle_secret(command)?,
+        Command::Secret { command } => dw_secret::command::handle_secret(command)?,
         Command::Upgrade { check, rid } => handle_upgrade(check, rid)?,
         Command::Task { command } => dw_task::command::handle_task(command)?,
     }

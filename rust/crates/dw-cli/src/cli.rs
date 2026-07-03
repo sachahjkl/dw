@@ -1,7 +1,10 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
+use dw_ado_commands::auth::AuthCommand;
 use dw_ado_commands::command::AdoCommand;
+use dw_config::command::ConfigCommand;
 use dw_db::command::DbCommand;
+use dw_secret::command::SecretCommand;
 use dw_task::command::TaskCommand;
 
 #[derive(Debug, Parser)]
@@ -134,22 +137,6 @@ pub(crate) enum AgentCommand {
 }
 
 #[derive(Debug, Subcommand)]
-pub(crate) enum AuthCommand {
-    Login {
-        #[arg(long)]
-        root: Option<String>,
-    },
-    Status {
-        #[arg(long)]
-        root: Option<String>,
-    },
-    Logout {
-        #[arg(long)]
-        root: Option<String>,
-    },
-}
-
-#[derive(Debug, Subcommand)]
 pub(crate) enum CompletionCommand {
     Show,
     Generate {
@@ -170,43 +157,4 @@ pub(crate) enum CompletionCommand {
 pub(crate) enum CompletionOutput {
     Bash,
     Json,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum ConfigCommand {
-    Show {
-        #[arg(long)]
-        root: Option<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    Doctor {
-        #[arg(long)]
-        root: Option<String>,
-        #[arg(long)]
-        json: bool,
-    },
-    SetRoot {
-        path: String,
-    },
-    SetColor {
-        mode: String,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum SecretCommand {
-    Set {
-        key: String,
-        #[arg(long, conflicts_with = "from_env")]
-        value: Option<String>,
-        #[arg(long = "from-env", conflicts_with = "value")]
-        from_env: Option<String>,
-    },
-    Get {
-        key: String,
-    },
-    Delete {
-        key: String,
-    },
 }
