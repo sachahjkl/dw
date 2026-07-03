@@ -104,7 +104,7 @@ pub fn handoff_validate(args: HandoffValidateArgs) -> Result<()> {
 fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     let mut lines = vec![
         format!(
-            "Preflight: {}",
+            "Preflight task: {}",
             validation_status_label(!report.has_blocking_issues)
         ),
         format!("Workspace: {}", report.workspace),
@@ -122,22 +122,52 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     ];
 
     if report.issues.is_empty() {
-        lines.push("✓ Aucun warning ni blocage détecté.".into());
+        lines.push("✓ Aucun avertissement ni blocage détecté.".into());
         return lines;
     }
 
-    lines.push(format!("Issues: {}", report.issues.len()));
+    let blocking_count = report
+        .issues
+        .iter()
+        .filter(|issue| is_blocking_severity(&issue.severity))
+        .count();
+    let warning_count = report
+        .issues
+        .iter()
+        .filter(|issue| is_warning_severity(&issue.severity))
+        .count();
+    let other_count = report
+        .issues
+        .len()
+        .saturating_sub(blocking_count + warning_count);
+    lines.push(format!(
+        "Résumé: {} blocage(s), {} avertissement(s), {} info(s)",
+        blocking_count, warning_count, other_count
+    ));
     lines.push(String::new());
+    lines.push("Détails:".into());
     for issue in &report.issues {
         lines.push(format!(
-            "{} [{}] {}: {}",
+            "{} [{}] #{} {}: {}",
             severity_icon(&issue.severity),
             issue.severity,
+            issue.work_item_id,
             issue.code,
             issue.message
         ));
         if let Some(details) = &issue.details {
             lines.push(format!("  {details}"));
+        }
+        if !issue.related_ids.is_empty() {
+            lines.push(format!(
+                "  Liés: {}",
+                issue
+                    .related_ids
+                    .iter()
+                    .map(|id| format!("#{id}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
     }
 
@@ -155,7 +185,7 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
 fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String> {
     let mut lines = vec![
         format!(
-            "Handoff validation: {}",
+            "Validation handoff: {}",
             validation_status_label(report.is_valid)
         ),
         format!("Workspace: {}", report.workspace),
@@ -168,17 +198,21 @@ fn handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String>
         String::new(),
     ];
 
+    lines.push("Détails:".into());
     for item in &report.items {
         lines.push(format!(
-            "{} [{}] {}: {}",
+            "{} [{}] {}",
             handoff_status_icon(&item.status, item.valid),
             item.status,
-            item.repository,
-            item.message
+            item.repository
         ));
+        lines.push(format!("  {}", item.message));
+        if !item.path.trim().is_empty() {
+            lines.push(format!("  Fichier: {}", item.path));
+        }
         if item.valid {
             lines.push(format!(
-                "  done={} decisions={} risks={} blockers={} follow_up={}",
+                "  Synthèse: done={} decisions={} risks={} blockers={} follow_up={}",
                 item.done_count,
                 item.decision_count,
                 item.risk_count,
@@ -203,11 +237,21 @@ fn validation_status_label(valid: bool) -> &'static str {
 }
 
 fn severity_icon(severity: &str) -> &'static str {
-    match severity.to_ascii_lowercase().as_str() {
-        "blocking" | "error" => "✕",
-        "warning" | "warn" => "!",
-        _ => "-",
+    if is_blocking_severity(severity) {
+        "✕"
+    } else if is_warning_severity(severity) {
+        "!"
+    } else {
+        "-"
     }
+}
+
+fn is_blocking_severity(severity: &str) -> bool {
+    matches!(severity.to_ascii_lowercase().as_str(), "blocking" | "error")
+}
+
+fn is_warning_severity(severity: &str) -> bool {
+    matches!(severity.to_ascii_lowercase().as_str(), "warning" | "warn")
 }
 
 fn handoff_status_icon(status: &str, valid: bool) -> &'static str {
@@ -277,10 +321,13 @@ mod tests {
 
         let lines = preflight_lines(&report);
 
-        assert_eq!(lines[0], "Preflight: ✕ À corriger");
+        assert_eq!(lines[0], "Preflight task: ✕ À corriger");
         assert!(lines.contains(&"Workspace: /tmp/ws".into()));
-        assert!(lines.contains(&"Issues: 1".into()));
-        assert!(lines.contains(&"✕ [blocking] missing_attachment: Piece jointe manquante".into()));
+        assert!(lines.contains(&"Résumé: 1 blocage(s), 0 avertissement(s), 0 info(s)".into()));
+        assert!(lines.contains(&"Détails:".into()));
+        assert!(
+            lines.contains(&"✕ [blocking] #42 missing_attachment: Piece jointe manquante".into())
+        );
         assert!(lines.contains(
             &"Blocages détectés: demander confirmation utilisateur avant de forcer l'implémentation."
                 .into()
@@ -310,10 +357,15 @@ mod tests {
 
         let lines = handoff_validation_lines(&report);
 
-        assert_eq!(lines[0], "Handoff validation: ✕ À corriger");
+        assert_eq!(lines[0], "Validation handoff: ✕ À corriger");
         assert!(lines.contains(&"Handoffs: 1/1 valides".into()));
-        assert!(lines.contains(&"✓ [done] front: OK".into()));
-        assert!(lines.contains(&"  done=2 decisions=1 risks=0 blockers=0 follow_up=1".into()));
+        assert!(lines.contains(&"Détails:".into()));
+        assert!(lines.contains(&"✓ [done] front".into()));
+        assert!(lines.contains(&"  OK".into()));
+        assert!(lines.contains(&"  Fichier: /tmp/ws/front/handoff-front.md".into()));
+        assert!(
+            lines.contains(&"  Synthèse: done=2 decisions=1 risks=0 blockers=0 follow_up=1".into())
+        );
         assert!(
             lines
                 .iter()
