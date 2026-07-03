@@ -55,7 +55,7 @@ pub fn handle(args: ChangelogArgs) -> Result<()> {
     }
     if ids_only && table {
         return Err(anyhow::anyhow!(
-            "Les options --ids-only et --table ne peuvent pas etre combinees."
+            "Les options --ids-only et --table ne peuvent pas être combinées."
         ));
     }
 

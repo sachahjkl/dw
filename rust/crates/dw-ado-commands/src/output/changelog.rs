@@ -3,7 +3,7 @@ use dw_ui::TerminalTheme;
 
 pub fn render_changelog_source_empty(from_git: bool, theme: &TerminalTheme) -> String {
     theme.warning(if from_git {
-        "Aucun work item detecte dans les messages de commit de la plage git."
+        "Aucun work item détecté dans les messages de commit de la plage git."
     } else {
         "Aucun work item détecté pour les pull requests données."
     })
@@ -86,5 +86,23 @@ mod tests {
         let output = render_changelog_document(markdown, ChangelogFormat::Markdown, &theme);
 
         assert_eq!(output, markdown);
+    }
+
+    #[test]
+    fn empty_changelog_messages_are_accented() {
+        let theme = TerminalTheme::plain();
+
+        assert_eq!(
+            render_changelog_source_empty(true, &theme),
+            "Aucun work item détecté dans les messages de commit de la plage git."
+        );
+        assert_eq!(
+            render_changelog_source_empty(false, &theme),
+            "Aucun work item détecté pour les pull requests données."
+        );
+        assert_eq!(
+            render_changelog_resolved_empty(&theme),
+            "Aucun work item résolu dans Azure DevOps."
+        );
     }
 }
