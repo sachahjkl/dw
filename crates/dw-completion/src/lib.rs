@@ -80,9 +80,7 @@ _dw_complete() {
 compdef _dw_complete dw"#;
             println!("{script}");
         }
-        Shell::Fish => println!(
-            "complete -c dw -f -a '(commandline -opc | string collect | read -lz tokens; dw completion complete --format fish -- $tokens)'"
-        ),
+        Shell::Fish => println!("{}", fish_install_script()),
         Shell::PowerShell => println!(
             "Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock {{ param($wordToComplete, $commandAst, $cursorPosition) dw completion complete --format json -- @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object {{ $_.Extent.Text }}) | ConvertFrom-Json | ForEach-Object {{ [System.Management.Automation.CompletionResult]::new($_.label, $_.label, 'ParameterValue', $_.description) }} }}"
         ),
@@ -91,6 +89,10 @@ compdef _dw_complete dw"#;
         }
         _ => println!("Utiliser `dw completion generate {shell}` pour générer ce shell."),
     }
+}
+
+fn fish_install_script() -> &'static str {
+    "complete -c dw -f -a '(dw completion complete --format fish -- (commandline -opc)[2..-1])'"
 }
 
 pub fn print_completion_complete(format: CompletionOutput, words: Vec<String>) -> Result<()> {
@@ -620,6 +622,14 @@ mod tests {
             "fish       dw completion install fish > ~/.config/fish/completions/dw.fish"
         ));
         assert!(report.contains("powershell dw completion install powershell >> $PROFILE"));
+    }
+
+    #[test]
+    fn fish_install_uses_context_tokens_and_shell_filtering() {
+        let script = fish_install_script();
+
+        assert!(script.contains("(commandline -opc)[2..-1]"));
+        assert!(!script.contains("read -lz tokens"));
     }
 
     #[test]
