@@ -1,3 +1,7 @@
+use crate::output::{
+    render_changelog_document, render_changelog_ids, render_changelog_resolved_empty,
+    render_changelog_source_empty, terminal_theme,
+};
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
@@ -74,39 +78,33 @@ pub fn handle(args: ChangelogArgs) -> Result<()> {
     if work_item_ids.is_empty() {
         println!(
             "{}",
-            if from_git {
-                "Aucun work item detecte dans les messages de commit de la plage git."
-            } else {
-                "Aucun work item detecte pour les pull requests donnees."
-            }
+            render_changelog_source_empty(from_git, &terminal_theme())
         );
         return Ok(());
     }
 
     if ids_only {
-        println!("{}", work_item_ids.join(" "));
+        println!("{}", render_changelog_ids(&work_item_ids));
         return Ok(());
     }
 
     let mut items = load_changelog_items(&options, &work_item_ids, &token)?;
     if items.is_empty() {
-        println!("Aucun work item resolu dans Azure DevOps.");
+        println!("{}", render_changelog_resolved_empty(&terminal_theme()));
         return Ok(());
     }
 
-    if group_by_parent {
+    let document = if group_by_parent {
         let groups = group_work_items_by_parent(&options, &items, &token)?;
-        println!(
-            "{}",
-            render_grouped_changelog(&groups, output_format, &options, table)
-        );
+        render_grouped_changelog(&groups, output_format, &options, table)
     } else {
         items.sort_by(|left, right| left.id.cmp(&right.id));
-        println!(
-            "{}",
-            render_flat_changelog(&items, output_format, &options, table)
-        );
-    }
+        render_flat_changelog(&items, output_format, &options, table)
+    };
+    println!(
+        "{}",
+        render_changelog_document(&document, output_format, &terminal_theme())
+    );
     Ok(())
 }
 
