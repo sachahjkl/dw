@@ -10,6 +10,8 @@ use dw_workspace::{
 };
 use std::path::Path;
 
+use crate::render::{print_styled, print_styled_lines};
+
 #[derive(Debug, Clone)]
 pub struct AddWorkItemArgs {
     pub work_item_ids: String,
@@ -79,7 +81,7 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
         .collect::<Vec<_>>();
     if missing_ids.is_empty() {
         if !json {
-            println!("Tous les work items demandes sont deja presents dans le workspace.");
+            print_styled("Tous les work items demandes sont deja presents dans le workspace.");
         }
         return Ok(());
     }
@@ -147,20 +149,20 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
-        print_work_item_update_plan("Add work-item", &plan);
+        print_styled_lines(&work_item_update_plan_lines("Add work-item", &plan));
         if !skip_ado {
-            println!("Work items ADO resolus:");
-            println!("{}", display_work_items(&plan.work_items, true));
+            print_styled("Work items ADO resolus:");
+            print_styled(&display_work_items(&plan.work_items, true));
         }
     }
     if execute {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
         write_workspace_agent_configs(&new_workspace, &updated)?;
         if !json {
-            println!("Workspace mis a jour: {new_workspace}");
+            print_styled(&format!("Workspace mis a jour: {new_workspace}"));
         }
     } else if !json {
-        println!("Relancer avec --execute pour appliquer.");
+        print_styled("Relancer avec --execute pour appliquer.");
     }
     Ok(())
 }
@@ -190,30 +192,70 @@ pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
-        print_work_item_update_plan("Remove work-item", &plan);
+        print_styled_lines(&work_item_update_plan_lines("Remove work-item", &plan));
     }
     if execute {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
         write_workspace_agent_configs(&new_workspace, &updated)?;
         if !json {
-            println!("Workspace mis a jour: {new_workspace}");
+            print_styled(&format!("Workspace mis a jour: {new_workspace}"));
         }
     } else if !json {
-        println!("Relancer avec --execute pour appliquer.");
+        print_styled("Relancer avec --execute pour appliquer.");
     }
     Ok(())
 }
 
-fn print_work_item_update_plan(label: &str, plan: &dw_workspace::TaskWorkItemUpdatePlan) {
-    println!("{label} dry-run:");
-    println!("- branch: {} -> {}", plan.old_branch, plan.new_branch);
-    println!("- workspace: {} -> {}", plan.workspace, plan.new_workspace);
-    println!(
-        "- work items: {}",
-        plan.work_items
-            .iter()
-            .map(|item| format!("#{}", item.id))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+fn work_item_update_plan_lines(
+    label: &str,
+    plan: &dw_workspace::TaskWorkItemUpdatePlan,
+) -> Vec<String> {
+    vec![
+        format!("{label} dry-run:"),
+        format!("- branch: {} -> {}", plan.old_branch, plan.new_branch),
+        format!("- workspace: {} -> {}", plan.workspace, plan.new_workspace),
+        format!(
+            "- work items: {}",
+            plan.work_items
+                .iter()
+                .map(|item| format!("#{}", item.id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn work_item_update_plan_lines_render_branch_workspace_and_ids() {
+        let plan = dw_workspace::TaskWorkItemUpdatePlan {
+            workspace: "/tmp/old".into(),
+            new_workspace: "/tmp/new".into(),
+            old_branch: "feat/1-old".into(),
+            new_branch: "feat/1-2-new".into(),
+            work_items: vec![
+                dw_workspace::WorkspaceWorkItem {
+                    id: "1".into(),
+                    kind: None,
+                    title: None,
+                    state: None,
+                },
+                dw_workspace::WorkspaceWorkItem {
+                    id: "2".into(),
+                    kind: None,
+                    title: None,
+                    state: None,
+                },
+            ],
+        };
+
+        let lines = work_item_update_plan_lines("Add work-item", &plan);
+
+        assert_eq!(lines[0], "Add work-item dry-run:");
+        assert!(lines.contains(&"- branch: feat/1-old -> feat/1-2-new".into()));
+        assert!(lines.contains(&"- work items: #1, #2".into()));
+    }
 }

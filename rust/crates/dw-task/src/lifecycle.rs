@@ -7,6 +7,8 @@ use dw_workspace::{
     read_manifest_path, requires_child_tasks, resolve_workspace,
 };
 
+use crate::render::{print_styled, print_styled_lines};
+
 #[derive(Debug, Clone)]
 pub struct SyncArgs {
     pub workspace: Option<String>,
@@ -87,16 +89,7 @@ pub fn sync(args: SyncArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&updated)?);
     } else {
-        println!("Workspace synchronise: {workspace}");
-        for item in updated.parent_work_items() {
-            println!(
-                "ADO item {}: {} / {} / {}",
-                item.id,
-                item.kind.unwrap_or_else(|| "?".into()),
-                item.state.unwrap_or_else(|| "?".into()),
-                item.title.unwrap_or_else(|| "(sans titre)".into())
-            );
-        }
+        print_styled_lines(&sync_lines(&workspace, &updated.parent_work_items()));
     }
     Ok(())
 }
@@ -128,15 +121,12 @@ pub fn rename(args: RenameArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
     } else {
-        println!("Rename dry-run:");
-        println!("- slug: {} -> {}", plan.old_slug, plan.new_slug);
-        println!("- branch: {} -> {}", plan.old_branch, plan.new_branch);
-        println!("- workspace: {} -> {}", plan.workspace, plan.new_workspace);
+        print_styled_lines(&rename_plan_lines(&plan));
         if execute {
             let _updated = execute_task_rename(&manifest, &plan)?;
-            println!("Workspace renomme: {}", plan.new_workspace);
+            print_styled(&format!("Workspace renomme: {}", plan.new_workspace));
         } else {
-            println!("Relancer avec --execute pour appliquer.");
+            print_styled("Relancer avec --execute pour appliquer.");
         }
     }
     Ok(())
@@ -197,12 +187,35 @@ pub fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&updated)?);
     } else {
-        println!(
+        print_styled(&format!(
             "Sous-tache enregistree dans le workspace: {} -> #{} {}",
             repo, result.id, result.title
-        );
+        ));
     }
     Ok(())
+}
+
+fn sync_lines(workspace: &str, items: &[dw_workspace::WorkspaceWorkItem]) -> Vec<String> {
+    let mut lines = vec![format!("Workspace synchronise: {workspace}")];
+    for item in items {
+        lines.push(format!(
+            "ADO item {}: {} / {} / {}",
+            item.id,
+            item.kind.as_deref().unwrap_or("?"),
+            item.state.as_deref().unwrap_or("?"),
+            item.title.as_deref().unwrap_or("(sans titre)")
+        ));
+    }
+    lines
+}
+
+fn rename_plan_lines(plan: &dw_workspace::TaskRenamePlan) -> Vec<String> {
+    vec![
+        "Rename dry-run:".into(),
+        format!("- slug: {} -> {}", plan.old_slug, plan.new_slug),
+        format!("- branch: {} -> {}", plan.old_branch, plan.new_branch),
+        format!("- workspace: {} -> {}", plan.workspace, plan.new_workspace),
+    ]
 }
 
 fn child_task_title(repository: &str, title: &str) -> String {
@@ -214,4 +227,43 @@ fn child_task_title(repository: &str, title: &str) -> String {
         other => other,
     };
     format!("[{}] {}", prefix.to_ascii_uppercase(), title)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rename_plan_lines_show_slug_branch_and_workspace() {
+        let plan = dw_workspace::TaskRenamePlan {
+            workspace: "/tmp/old".into(),
+            new_workspace: "/tmp/new".into(),
+            old_slug: "old".into(),
+            new_slug: "new".into(),
+            old_branch: "feat/1-old".into(),
+            new_branch: "feat/1-new".into(),
+        };
+
+        let lines = rename_plan_lines(&plan);
+
+        assert_eq!(lines[0], "Rename dry-run:");
+        assert!(lines.contains(&"- slug: old -> new".into()));
+        assert!(lines.contains(&"- branch: feat/1-old -> feat/1-new".into()));
+    }
+
+    #[test]
+    fn sync_lines_render_missing_ado_fields_as_unknown() {
+        let lines = sync_lines(
+            "/tmp/ws",
+            &[dw_workspace::WorkspaceWorkItem {
+                id: "42".into(),
+                kind: None,
+                state: None,
+                title: None,
+            }],
+        );
+
+        assert_eq!(lines[0], "Workspace synchronise: /tmp/ws");
+        assert_eq!(lines[1], "ADO item 42: ? / ? / (sans titre)");
+    }
 }
