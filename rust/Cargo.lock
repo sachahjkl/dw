@@ -1271,6 +1271,7 @@ name = "dw-db"
 version = "0.1.0"
 dependencies = [
  "dw-config",
+ "dw-secret",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

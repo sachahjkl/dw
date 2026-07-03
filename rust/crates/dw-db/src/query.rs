@@ -1,8 +1,11 @@
 use crate::config::{DatabaseConnectionConfig, DatabaseDefaults};
 use crate::guard::validate_read_only_sql;
+use dw_secret::{KeyringSecretStore, SecretStore};
 use serde::Serialize;
+use std::time::Duration;
 use tiberius::{Client, ColumnData, Config, Row};
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -32,6 +35,13 @@ order by ORDINAL_POSITION",
 }
 
 pub fn resolve_connection_string(connection: &DatabaseConnectionConfig) -> Result<String, String> {
+    resolve_connection_string_with_store(connection, &KeyringSecretStore)
+}
+
+pub fn resolve_connection_string_with_store(
+    connection: &DatabaseConnectionConfig,
+    store: &impl SecretStore,
+) -> Result<String, String> {
     if let Some(value) = connection
         .connection_string
         .as_deref()
@@ -50,7 +60,19 @@ pub fn resolve_connection_string(connection: &DatabaseConnectionConfig) -> Resul
         return Ok(value);
     }
 
-    Err("Connection string SQL introuvable. Renseigner connectionString ou connectionStringEnvironmentVariable.".into())
+    if let Some(key) = connection
+        .credential_key
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return store
+            .get(key)
+            .map_err(|error| error.to_string())?
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| format!("Secret SQL introuvable: {key}"));
+    }
+
+    Err("Connection string SQL introuvable. Renseigner connectionString, connectionStringEnvironmentVariable ou credentialKey.".into())
 }
 
 pub fn query_sql_server(
@@ -74,11 +96,34 @@ pub fn query_sql_server(
     let max_rows = max_rows_override
         .or(connection.max_rows)
         .unwrap_or(defaults.max_rows);
+    let timeout_seconds = connection
+        .timeout_seconds
+        .unwrap_or(defaults.timeout_seconds)
+        .max(1);
     let runtime = tokio::runtime::Runtime::new().map_err(|error| error.to_string())?;
-    runtime.block_on(query_sql_server_async(&connection_string, sql, max_rows))
+    runtime.block_on(query_sql_server_async(
+        &connection_string,
+        sql,
+        max_rows,
+        timeout_seconds,
+    ))
 }
 
 async fn query_sql_server_async(
+    connection_string: &str,
+    sql: &str,
+    max_rows: usize,
+    timeout_seconds: u64,
+) -> Result<QueryResult, String> {
+    timeout(
+        Duration::from_secs(timeout_seconds),
+        query_sql_server_async_inner(connection_string, sql, max_rows),
+    )
+    .await
+    .map_err(|_| format!("Timeout SQL apres {timeout_seconds}s."))?
+}
+
+async fn query_sql_server_async_inner(
     connection_string: &str,
     sql: &str,
     max_rows: usize,
@@ -213,5 +258,45 @@ mod tests {
         };
 
         assert_eq!(resolve_connection_string(&connection).unwrap(), "inline");
+    }
+
+    #[test]
+    fn resolve_connection_string_reads_credential_key() {
+        let store = dw_secret::MemorySecretStore::new();
+        store
+            .set("db/demo", "from-secret")
+            .expect("secret should be stored");
+        let connection = DatabaseConnectionConfig {
+            provider: "sqlserver".into(),
+            connection_string: None,
+            connection_string_environment_variable: None,
+            credential_key: Some("db/demo".into()),
+            readonly: Some(true),
+            max_rows: None,
+            timeout_seconds: None,
+        };
+
+        assert_eq!(
+            resolve_connection_string_with_store(&connection, &store).unwrap(),
+            "from-secret"
+        );
+    }
+
+    #[test]
+    fn resolve_connection_string_reports_missing_credential_key() {
+        let store = dw_secret::MemorySecretStore::new();
+        let connection = DatabaseConnectionConfig {
+            provider: "sqlserver".into(),
+            connection_string: None,
+            connection_string_environment_variable: None,
+            credential_key: Some("db/missing".into()),
+            readonly: Some(true),
+            max_rows: None,
+            timeout_seconds: None,
+        };
+
+        let error = resolve_connection_string_with_store(&connection, &store)
+            .expect_err("missing secret should fail");
+        assert!(error.contains("Secret SQL introuvable: db/missing"));
     }
 }
