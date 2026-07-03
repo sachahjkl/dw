@@ -1,5 +1,4 @@
 mod cli;
-mod completion;
 mod guide;
 mod handlers;
 mod version;

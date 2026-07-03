@@ -1253,14 +1253,31 @@ dependencies = [
  "clap_complete",
  "dw-ado-commands",
  "dw-agent",
+ "dw-completion",
  "dw-config",
- "dw-contracts",
  "dw-db",
  "dw-doctor",
  "dw-secret",
  "dw-task",
  "dw-ui",
  "dw-upgrade",
+]
+
+[[package]]
+name = "dw-completion"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "clap_complete",
+ "dw-ado-commands",
+ "dw-agent",
+ "dw-config",
+ "dw-contracts",
+ "dw-db",
+ "dw-secret",
+ "dw-task",
+ "dw-ui",
  "serde_json",
 ]
 

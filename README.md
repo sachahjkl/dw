@@ -77,6 +77,7 @@ GitHub Actions runs Rust CI on Linux and Windows:
 ```text
 crates/
   dw-cli            top-level CLI and cross-domain orchestration
+  dw-completion     dynamic shell completion engine
   dw-config         config files, init, refresh and config diagnostics
   dw-ado            Azure DevOps auth/client/mapping
   dw-ado-commands   ADO command handlers and rendering

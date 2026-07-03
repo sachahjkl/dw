@@ -1,8 +1,9 @@
-use clap::{Arg, ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use clap::{Arg, ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
 use clap_complete::Shell;
 use dw_ado_commands::auth::AuthCommand;
 use dw_ado_commands::command::AdoCommand;
 use dw_agent::command::AgentCommand;
+use dw_completion::CompletionOutput;
 use dw_config::command::ConfigCommand;
 use dw_db::command::DbCommand;
 use dw_secret::command::SecretCommand;
@@ -157,12 +158,6 @@ pub(crate) enum CompletionCommand {
         format: CompletionOutput,
         words: Vec<String>,
     },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(crate) enum CompletionOutput {
-    Bash,
-    Json,
 }
 
 #[cfg(test)]

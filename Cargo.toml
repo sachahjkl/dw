@@ -2,6 +2,7 @@
 members = [
   "crates/dw-agent",
   "crates/dw-cli",
+  "crates/dw-completion",
   "crates/dw-config",
   "crates/dw-contracts",
   "crates/dw-ado",

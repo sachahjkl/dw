@@ -1,7 +1,4 @@
 use crate::cli::*;
-use crate::completion::{
-    generate_completion, print_completion_complete, print_completion_install, print_completion_show,
-};
 use crate::guide::print_guide;
 use crate::version::informational_version;
 use anyhow::Result;
@@ -53,10 +50,15 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
 
 fn handle_completion(command: CompletionCommand) -> Result<()> {
     match command {
-        CompletionCommand::Show => print_completion_show(),
-        CompletionCommand::Generate { shell } => generate_completion(shell),
-        CompletionCommand::Install { shell } => print_completion_install(shell),
-        CompletionCommand::Complete { format, words } => print_completion_complete(format, words)?,
+        CompletionCommand::Show => dw_completion::print_completion_show(),
+        CompletionCommand::Generate { shell } => {
+            let mut command = Cli::localized_command();
+            dw_completion::generate_completion(shell, &mut command);
+        }
+        CompletionCommand::Install { shell } => dw_completion::print_completion_install(shell),
+        CompletionCommand::Complete { format, words } => {
+            dw_completion::print_completion_complete(format, words)?
+        }
     }
     Ok(())
 }

@@ -24,6 +24,17 @@ pub fn confirm_or_require_flag(flag: &str, prompt: &str) -> Result<bool> {
         .prompt()?)
 }
 
+pub fn confirm_destructive_or_require_flag(
+    confirmed: bool,
+    flag: &str,
+    prompt: &str,
+) -> Result<bool> {
+    if confirmed {
+        return Ok(true);
+    }
+    confirm_or_require_flag(flag, prompt)
+}
+
 pub fn confirm_when_interactive(prompt: &str) -> Result<bool> {
     if !is_stdin_interactive() {
         return Ok(true);

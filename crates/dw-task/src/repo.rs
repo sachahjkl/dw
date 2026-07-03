@@ -15,7 +15,7 @@ use self::render::{
     add_repo_plan_lines, commit_status_lines, repo_latest_header_lines, teardown_plan_lines,
 };
 use crate::render::{print_styled, print_styled_lines};
-use dw_ui::{confirm_or_require_flag, is_stdin_interactive, select_optional};
+use dw_ui::{confirm_destructive_or_require_flag, is_stdin_interactive, select_optional};
 
 mod render;
 
@@ -284,12 +284,11 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
         return Ok(());
     }
 
-    if !yes
-        && !confirm_or_require_flag(
-            "--yes",
-            &format!("Supprimer ce workspace et ses worktrees ?\n{workspace}"),
-        )?
-    {
+    if !confirm_destructive_or_require_flag(
+        yes,
+        "--yes",
+        &format!("Supprimer ce workspace et ses worktrees ?\n{workspace}"),
+    )? {
         print_styled("Suppression annulée.");
         return Ok(());
     }

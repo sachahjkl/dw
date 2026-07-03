@@ -1,7 +1,7 @@
 use anyhow::Result;
+use clap::ValueEnum;
 use clap_complete::{Shell, generate};
 
-use crate::cli::{Cli, CompletionOutput};
 use dw_config::resolve_root;
 use dw_contracts::completion::CompletionContext;
 use dw_ui::TerminalTheme;
@@ -10,12 +10,17 @@ mod catalog;
 
 use catalog::{
     option_allowed, option_requires_value, options_for_path, root_command_labels,
-    subcommands_for_path,
+    subcommands_for_path, values_for_path as catalog_values_for_path,
 };
 
-pub fn generate_completion(shell: Shell) {
-    let mut command = Cli::localized_command();
-    generate(shell, &mut command, "dw", &mut std::io::stdout());
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum CompletionOutput {
+    Bash,
+    Json,
+}
+
+pub fn generate_completion(shell: Shell, command: &mut clap::Command) {
+    generate(shell, command, "dw", &mut std::io::stdout());
 }
 
 pub fn print_completion_show() {
@@ -61,8 +66,10 @@ pub fn print_completion_install(shell: Shell) {
         Shell::PowerShell => println!(
             "Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock {{ param($wordToComplete, $commandAst, $cursorPosition) dw completion complete --format json -- @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object {{ $_.Extent.Text }}) | ConvertFrom-Json | ForEach-Object {{ [System.Management.Automation.CompletionResult]::new($_.label, $_.label, 'ParameterValue', $_.description) }} }}"
         ),
-        Shell::Elvish => generate_completion(shell),
-        _ => generate_completion(shell),
+        Shell::Elvish => {
+            println!("Utiliser `dw completion generate elvish` pour générer ce shell.")
+        }
+        _ => println!("Utiliser `dw completion generate {shell}` pour générer ce shell."),
     }
 }
 
@@ -147,8 +154,8 @@ fn complete_option_value(option: &str, words: &[String], current: &str) -> Vec<C
         .into_iter()
         .filter(|value| value.starts_with(current))
         .map(|label| CompletionItem {
+            description: value_description(option, &label),
             label,
-            description: String::new(),
         })
         .collect()
 }
@@ -157,7 +164,7 @@ fn values_for_path(path: &[&str], option: &str, words: &[String], root: &str) ->
     let project = option_value(words, "--project");
     let workspace = option_value(words, "--workspace");
     let work_item = option_value(words, "--work-item");
-    catalog::values_for_path(
+    catalog_values_for_path(
         path,
         option,
         CompletionContext {
@@ -196,7 +203,7 @@ fn complete_options(words: &[String]) -> Vec<CompletionItem> {
         .filter(|option| option_allowed(&path, option, &selected))
         .map(|label| CompletionItem {
             label: label.into(),
-            description: String::new(),
+            description: option_description(label),
         })
         .collect()
 }
@@ -229,11 +236,15 @@ fn command_path(words: &[String]) -> Vec<&str> {
 }
 
 fn complete_subcommands(words: &[String]) -> Vec<CompletionItem> {
+    let path = command_path(words);
     subcommands_for_path(&command_path(words))
         .unwrap_or_default()
         .iter()
         .copied()
-        .map(simple_completion)
+        .map(|label| CompletionItem {
+            label: label.into(),
+            description: subcommand_description(&path, label),
+        })
         .collect()
 }
 
@@ -241,14 +252,96 @@ fn root_commands() -> Vec<CompletionItem> {
     root_command_labels()
         .iter()
         .copied()
-        .map(simple_completion)
+        .map(|label| CompletionItem {
+            label: label.into(),
+            description: root_command_description(label),
+        })
         .collect()
 }
 
-fn simple_completion(label: &str) -> CompletionItem {
-    CompletionItem {
-        label: label.into(),
-        description: String::new(),
+fn option_description(option: &str) -> String {
+    match option {
+        "--root" => "Root DevWorkflow à utiliser".into(),
+        "--project" => "Projet configuré".into(),
+        "--work-item" => "Work item pour résoudre le workspace".into(),
+        "--workspace" => "Workspace task existant".into(),
+        "--repo" | "--only" => "Repository configuré".into(),
+        "--database" => "Connexion base déclarée dans databases.json".into(),
+        "--env" => "Alias d'environnement base".into(),
+        "--json" => "Sortie JSON déterministe".into(),
+        "--execute" => "Appliquer réellement l'action".into(),
+        "--yes" => "Confirmer sans prompt interactif".into(),
+        "--format" => "Format de sortie".into(),
+        "--agent" => "Agent IA à lancer".into(),
+        "--max-rows" => "Nombre maximum de lignes".into(),
+        "--sql" => "Requête SQL read-only".into(),
+        "--message" => "Message explicite".into(),
+        "--title" => "Titre explicite".into(),
+        "--state" => "État local".into(),
+        "--type" => "Type de branche/workspace".into(),
+        "--profile" => "Profil de templates".into(),
+        "--check" => "Vérifier sans mettre à jour".into(),
+        "--rid" => "Runtime identifier de l'artefact".into(),
+        "--continue" => "Reprendre le workspace récent".into(),
+        "--help" => "Afficher l'aide".into(),
+        _ => String::new(),
+    }
+}
+
+fn value_description(option: &str, value: &str) -> String {
+    match option {
+        "--project" => "Projet configuré".into(),
+        "--repo" | "--only" => "Repository".into(),
+        "--database" => "Connexion base".into(),
+        "--env" => "Environnement base".into(),
+        "--workspace" => "Workspace task".into(),
+        "--work-item" => "Work item local".into(),
+        "--agent" => "Agent IA".into(),
+        "--format" => "Format de sortie".into(),
+        "--max-rows" => "Limite de lignes".into(),
+        "--type" => "Type de branche/workspace".into(),
+        "--profile" => "Profil".into(),
+        _ if !value.trim().is_empty() => "Valeur".into(),
+        _ => String::new(),
+    }
+}
+
+fn root_command_description(label: &str) -> String {
+    match label {
+        "version" => "Afficher la version".into(),
+        "guide" => "Parcours de démarrage".into(),
+        "doctor" => "Diagnostic machine et configuration".into(),
+        "init" => "Initialiser un root DevWorkflow".into(),
+        "refresh" => "Régénérer schémas et contextes agents".into(),
+        "agent" => "Ouvrir/configurer les agents IA".into(),
+        "auth" => "Connexion Azure DevOps".into(),
+        "completion" => "Installer/interroger l'autocomplétion".into(),
+        "config" => "Lire/modifier la configuration".into(),
+        "ado" => "Commandes Azure DevOps".into(),
+        "db" => "Accès base read-only".into(),
+        "secret" => "Secrets locaux".into(),
+        "upgrade" => "Mettre à jour le binaire".into(),
+        "task" => "Cycle workspace/worktrees/PR".into(),
+        _ => String::new(),
+    }
+}
+
+fn subcommand_description(path: &[&str], label: &str) -> String {
+    match (path, label) {
+        (["task"], "start") => "Créer/préparer un workspace task".into(),
+        (["task"], "finish") => "Commit, push, PR et état ADO".into(),
+        (["task"], "prune") => "Nettoyer les workspaces terminés".into(),
+        (["task"], "teardown") => "Supprimer un workspace".into(),
+        (["ado"], "assigned") => "Work items assignés".into(),
+        (["ado"], "changelog") => "Changelog depuis PR/git/work items".into(),
+        (["db"], "schema") => "Lister tables et vues".into(),
+        (["db"], "describe") => "Décrire une table".into(),
+        (["db"], "query") => "Exécuter une requête read-only".into(),
+        (["agent"], "open") => "Ouvrir un agent sur un workspace".into(),
+        (["completion"], "show") => "Afficher les commandes d'installation".into(),
+        (["completion"], "generate") => "Générer une completion statique".into(),
+        (["completion"], "install") => "Afficher le snippet shell dynamique".into(),
+        _ => String::new(),
     }
 }
 
@@ -293,6 +386,23 @@ mod tests {
         assert!(values.contains(&"--workspace".into()));
         assert!(values.contains(&"--agent".into()));
         assert!(!values.contains(&"--json".into()));
+    }
+
+    #[test]
+    fn completions_include_descriptions_for_powershell() {
+        let root_commands = complete_words(&words(&[]));
+        let task = root_commands
+            .iter()
+            .find(|item| item.label == "task")
+            .expect("task command");
+        assert_eq!(task.description, "Cycle workspace/worktrees/PR");
+
+        let options = complete_words(&words(&["task", "open", "--"]));
+        let workspace = options
+            .iter()
+            .find(|item| item.label == "--workspace")
+            .expect("workspace option");
+        assert_eq!(workspace.description, "Workspace task existant");
     }
 
     #[test]
@@ -594,6 +704,34 @@ mod tests {
         assert_eq!(workspace_values, vec![workspace.display().to_string()]);
         assert_eq!(work_item_values, vec!["#42 Demo", "#43 Child"]);
         assert_eq!(repository_values, vec!["front", "back"]);
+    }
+
+    #[test]
+    fn dynamic_values_include_descriptions() {
+        let root = temp_root("completion-value-descriptions");
+        fs::create_dir_all(root.join("config")).expect("config dir");
+        fs::write(
+            root.join("config/projects.json"),
+            r#"{"projects":{"ha":{"displayName":"HA","repositories":{"front":{}}}}}"#,
+        )
+        .expect("projects config");
+
+        let items = complete_words(&words(&[
+            "ado",
+            "changelog",
+            "--root",
+            root.to_str().expect("root"),
+            "--project",
+            "ha",
+            "--repo",
+            "",
+        ]));
+        let front = items
+            .iter()
+            .find(|item| item.label == "front")
+            .expect("front repo");
+
+        assert_eq!(front.description, "Repository");
     }
 
     fn words(values: &[&str]) -> Vec<String> {
