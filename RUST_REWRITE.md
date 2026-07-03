@@ -6,6 +6,33 @@ Rewrite `dw` fully as a native Rust CLI/TUI to remove the .NET runtime dependenc
 
 This is a full migration target, not a partial sidecar.
 
+## Current Rust Rewrite Status
+
+As of the `rust-rewrite` branch, the Rust implementation is no longer a feasibility-only spike.
+
+Implemented in `rust/`:
+
+- self-contained Rust workspace, `VERSION`, Nix flake, schemas, release scripts and GitHub workflows
+- command crates for config, ADO, DB, task/workspace, agent, secret, git and UI
+- dynamic completion catalogs exposed by each domain crate and composed by `dw-cli`
+- MSAL/keyring-based ADO auth plus PAT/environment fallback
+- ADO read flows: `assigned`, `work-item`, `context`, `ai-context`, `changelog`
+- ADO write flows used by task lifecycle: child task creation, PR creation/linking, work item state updates
+- DB guard/schema/describe/query using `tiberius`, readonly guard and SQL Server ApplicationIntent readonly
+- task workspace flows: start/open/list/current/status/sync/rename/preflight/handoff-validate/add/remove work items/add repo/repo-latest/commit/finish/teardown/prune
+- richer terminal output via `dw-ui`, plus interactive project/work-item selection where useful
+- Linux and Windows release artifact scripts plus `release.json` continuity for `dw upgrade`
+
+Remaining proof gates before replacing .NET:
+
+- validate ADO auth/read/write flows on real Windows environments
+- validate DB schema/describe/query against a real SQL Server connection
+- validate PR creation and work item linking on a safe real ADO project
+- validate `.NET dw upgrade` installing the first Rust release
+- validate Rust self-upgrade on Windows, including running-executable replacement behavior
+- run side-by-side parity checks on representative real work items and workspaces
+- capture/update real golden fixtures for ADO context, preflight and handoff validation
+
 The rewrite must preserve the workflow semantics and deterministic contracts of the current tool, while intentionally improving the terminal UX in the areas where Rust is better:
 
 - richer terminal rendering
@@ -902,24 +929,27 @@ Reason:
 
 ## Concrete Next Step
 
-Before any rewrite starts, assign a short feasibility spike with these outputs:
+The rewrite is now implementation-heavy enough that the next step is a real parity and release-readiness pass, not another feasibility spike.
 
-1. Rust POC: silent/interactive ADO auth on Windows
-2. Rust POC: fetch one real expanded work item + comments + relations
-3. Rust POC: readonly SQL query against SQL Server with `tiberius`
-4. Written recommendation: continue / stop
+Run and document, on real target environments:
 
-If those 3 technical spikes succeed, the rewrite becomes a product decision, not a feasibility gamble.
+1. Windows ADO auth: login, status, silent refresh, logout
+2. ADO reads: assigned, work-item, context, ai-context, changelog from PR and git
+3. ADO writes on a safe project: task start state update, child task creation, task finish PR creation/linking/state update
+4. DB: guard, schema, describe and query against a real readonly SQL Server connection
+5. Delivery: `nix build`, Linux artifact, Windows artifact, Rust `dw upgrade --check`, Rust self-upgrade dry path where possible
+6. Migration: prove an installed .NET `dw` can consume the Rust `release.json` and install the Rust binary
+
+If any of these fail, keep .NET as source of truth and fix the Rust implementation before cutover.
 
 ## Immediate Handoff Brief For Another Agent
 
-If another agent picks this up now, its first mission should be:
+If another agent picks this up now, its mission should be:
 
-1. execute Phase 0 only
-2. validate real Windows ADO auth
-3. validate one real expanded work item read path
-4. validate one readonly SQL Server query path with `tiberius`
-5. assess whether the current release/upgrade model can bridge `.NET dw` to Rust `dw`
-6. produce a written go/no-go recommendation
+1. keep the `rust/` workspace buildable and self-contained
+2. run the real-environment parity pass above
+3. fix concrete gaps found by that pass
+4. continue removing obsolete .NET assumptions only after the Rust behavior is proven
+5. produce a go/no-go recommendation for replacing `.NET dw`
 
-The next agent should not start broad rewriting before these checks pass.
+The next agent should not reorganize broad architecture again unless a real parity or UX issue proves the current crate split is blocking progress.

@@ -130,6 +130,7 @@ async fn query_sql_server_async_inner(
 ) -> Result<QueryResult, String> {
     let mut config =
         Config::from_ado_string(connection_string).map_err(|error| error.to_string())?;
+    config.readonly(true);
     config.trust_cert();
     let tcp = TcpStream::connect(config.get_addr())
         .await
