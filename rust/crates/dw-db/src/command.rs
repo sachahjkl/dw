@@ -7,45 +7,70 @@ use crate::commands;
 pub enum DbCommand {
     #[command(about = "Verifie qu'une requete SQL respecte le mode read-only.")]
     Guard {
-        #[arg(long)]
+        #[arg(long, help = "Requete SQL a analyser sans execution.")]
         sql: String,
     },
     #[command(about = "Liste les tables et vues accessibles sur une base configuree.")]
     Schema {
-        #[arg(long)]
+        #[arg(long, help = "Projet configure contenant la connexion base.")]
         project: Option<String>,
-        #[arg(long, conflicts_with = "env")]
+        #[arg(
+            long,
+            conflicts_with = "env",
+            help = "Nom de connexion declare dans databases.json."
+        )]
         database: Option<String>,
-        #[arg(long, conflicts_with = "database")]
+        #[arg(
+            long,
+            conflicts_with = "database",
+            help = "Alias d'environnement base declare dans databases.json."
+        )]
         env: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Emettre le resultat JSON deterministe.")]
         json: bool,
     },
     #[command(about = "Decrit les colonnes d'une table SQL.")]
     Describe {
+        #[arg(help = "Table a decrire, au format table ou schema.table.")]
         table: String,
-        #[arg(long)]
+        #[arg(long, help = "Projet configure contenant la connexion base.")]
         project: Option<String>,
-        #[arg(long, conflicts_with = "env")]
+        #[arg(
+            long,
+            conflicts_with = "env",
+            help = "Nom de connexion declare dans databases.json."
+        )]
         database: Option<String>,
-        #[arg(long, conflicts_with = "database")]
+        #[arg(
+            long,
+            conflicts_with = "database",
+            help = "Alias d'environnement base declare dans databases.json."
+        )]
         env: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Emettre le resultat JSON deterministe.")]
         json: bool,
     },
     #[command(about = "Execute une requete SQL read-only avec garde-fous et limite de lignes.")]
     Query {
-        #[arg(long)]
+        #[arg(long, help = "Requete SQL read-only a executer.")]
         sql: String,
-        #[arg(long)]
+        #[arg(long, help = "Projet configure contenant la connexion base.")]
         project: Option<String>,
-        #[arg(long, conflicts_with = "env")]
+        #[arg(
+            long,
+            conflicts_with = "env",
+            help = "Nom de connexion declare dans databases.json."
+        )]
         database: Option<String>,
-        #[arg(long, conflicts_with = "database")]
+        #[arg(
+            long,
+            conflicts_with = "database",
+            help = "Alias d'environnement base declare dans databases.json."
+        )]
         env: Option<String>,
-        #[arg(long = "max-rows")]
+        #[arg(long = "max-rows", help = "Nombre maximum de lignes a afficher.")]
         max_rows: Option<usize>,
-        #[arg(long)]
+        #[arg(long, help = "Emettre le resultat JSON deterministe.")]
         json: bool,
     },
 }

@@ -7,17 +7,31 @@ use crate::{KeyringSecretStore, delete_secret, secret_exists, secret_from_env, s
 
 #[derive(Debug, Subcommand)]
 pub enum SecretCommand {
+    #[command(about = "Enregistre un secret dans le keyring systeme.")]
     Set {
+        #[arg(help = "Cle logique du secret, par exemple une credentialReference.")]
         key: String,
-        #[arg(long, conflicts_with = "from_env")]
+        #[arg(
+            long,
+            conflicts_with = "from_env",
+            help = "Valeur du secret a enregistrer."
+        )]
         value: Option<String>,
-        #[arg(long = "from-env", conflicts_with = "value")]
+        #[arg(
+            long = "from-env",
+            conflicts_with = "value",
+            help = "Nom de variable d'environnement contenant le secret."
+        )]
         from_env: Option<String>,
     },
+    #[command(about = "Verifie si un secret existe sans afficher sa valeur.")]
     Get {
+        #[arg(help = "Cle logique du secret a verifier.")]
         key: String,
     },
+    #[command(about = "Supprime un secret du keyring systeme.")]
     Delete {
+        #[arg(help = "Cle logique du secret a supprimer.")]
         key: String,
     },
 }
