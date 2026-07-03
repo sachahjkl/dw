@@ -4,7 +4,6 @@ use dw_config::{
     InitRequest, default_agent, init_root, load_user_settings, resolve_root, user_settings_path,
 };
 use dw_ui::{ColorMode, TerminalTheme};
-use std::io::IsTerminal;
 use std::path::Path;
 use std::process::Command;
 
@@ -121,11 +120,7 @@ fn theme_from_settings(color: Option<&str>) -> TerminalTheme {
         "never" => ColorMode::Never,
         _ => ColorMode::Auto,
     };
-    TerminalTheme::new(
-        mode,
-        std::io::stdout().is_terminal(),
-        std::env::var_os("NO_COLOR").is_some(),
-    )
+    TerminalTheme::stdout(mode)
 }
 
 fn check_default_agent(root: &str) -> DoctorCheck {

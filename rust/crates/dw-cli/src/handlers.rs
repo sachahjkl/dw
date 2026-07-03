@@ -10,6 +10,7 @@ use dw_config::{
     InitRequest, RefreshRequest, default_agent, init_root, refresh_root, resolve_root,
     set_default_agent,
 };
+use dw_ui::TerminalTheme;
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.command {
@@ -17,10 +18,8 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             println!("dw {}", informational_version());
         }
         Command::Guide => {
-            println!(
-                "dw - Dev Workflow {}\nDemarrer avec `dw init`, puis `dw task start <work-item-id>`.",
-                informational_version()
-            );
+            print_styled(&format!("dw - Dev Workflow {}", informational_version()));
+            print_styled("Demarrer avec `dw init`, puis `dw task start <work-item-id>`.");
         }
         Command::Doctor { fix } => run_doctor(fix)?,
         Command::Init {
@@ -36,23 +35,23 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 dry_run,
             })?;
             if report.dry_run {
-                println!("Dry-run init DevWorkflow: {}", report.root);
-                println!("Profil: {}", report.profile);
+                print_styled(&format!("Dry-run init DevWorkflow: {}", report.root));
+                print_styled(&format!("Profil: {}", report.profile));
                 for path in &report.planned_paths {
-                    println!("  would create/write: {path}");
+                    print_styled(&format!("  would create/write: {path}"));
                 }
                 if report.no_save {
-                    println!("  would not modify user settings (--no-save).");
+                    print_styled("  would not modify user settings (--no-save).");
                 } else {
-                    println!("  would save user root: {}", report.root);
+                    print_styled(&format!("  would save user root: {}", report.root));
                 }
             } else {
-                println!("Root DevWorkflow initialise: {}", report.root);
-                println!("Profil: {}", report.profile);
+                print_styled(&format!("Root DevWorkflow initialise: {}", report.root));
+                print_styled(&format!("Profil: {}", report.profile));
                 if report.no_save {
-                    println!("Settings utilisateur non modifies (--no-save).");
+                    print_styled("Settings utilisateur non modifies (--no-save).");
                 }
-                println!("Prochaine etape conseillee: dw doctor");
+                print_styled("Prochaine etape conseillee: dw doctor");
             }
         }
         Command::Refresh { root, profile } => {
@@ -61,11 +60,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 root,
                 profile: Some(profile),
             })?;
-            println!("Root rafraichi: {}", report.root);
-            println!("Profil: {}", report.profile);
-            println!("Schemas et contextes agents regeneres.");
-            println!(
-                "Fichiers utilisateurs preserves: projects.json, workflow.json, databases.json, plan.md."
+            print_styled(&format!("Root rafraichi: {}", report.root));
+            print_styled(&format!("Profil: {}", report.profile));
+            print_styled("Schemas et contextes agents regeneres.");
+            print_styled(
+                "Fichiers utilisateurs preserves: projects.json, workflow.json, databases.json, plan.md.",
             );
         }
         Command::Agent { command } => match command {
@@ -95,12 +94,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             })?,
             AgentCommand::Config { root } | AgentCommand::Show { root } => {
                 let root = resolve_root(root.as_deref());
-                println!("Agent par defaut: {}", default_agent(&root));
+                print_styled(&format!("Agent par defaut: {}", default_agent(&root)));
             }
             AgentCommand::SetDefault { root, agent } => {
                 let root = resolve_root(root.as_deref());
                 let agent = set_default_agent(&root, &agent)?;
-                println!("Agent par defaut: {agent}");
+                print_styled(&format!("Agent par defaut: {agent}"));
             }
             AgentCommand::Doctor { agent } => run_agent_doctor(agent.as_deref())?,
         },
@@ -116,4 +115,8 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_styled(line: &str) {
+    println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
 }

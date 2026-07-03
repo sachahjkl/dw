@@ -1,10 +1,9 @@
 use anyhow::{Result, anyhow};
 use dw_config::{WorkflowConfig, load_user_settings, load_workflow_config, resolve_root};
-use dw_ui::{ColorMode, TerminalTheme};
+use dw_ui::TerminalTheme;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::IsTerminal;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
@@ -322,11 +321,7 @@ fn print_styled(line: &str) {
 }
 
 fn terminal_theme() -> TerminalTheme {
-    TerminalTheme::new(
-        ColorMode::Auto,
-        std::io::stdout().is_terminal(),
-        std::env::var_os("NO_COLOR").is_some(),
-    )
+    TerminalTheme::stdout_auto()
 }
 
 pub(crate) fn windows_replacement_script(

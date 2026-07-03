@@ -1,13 +1,8 @@
 use dw_ado::{WorkItemGroup, WorkItemSnapshot};
-use dw_ui::{ColorMode, TerminalTheme};
-use std::io::IsTerminal;
+use dw_ui::TerminalTheme;
 
 pub fn terminal_theme() -> TerminalTheme {
-    TerminalTheme::new(
-        ColorMode::Auto,
-        std::io::stdout().is_terminal(),
-        std::env::var_os("NO_COLOR").is_some(),
-    )
+    TerminalTheme::stdout_auto()
 }
 
 pub fn empty_assigned_message(include_final_states: bool) -> &'static str {

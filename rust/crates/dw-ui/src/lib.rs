@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 pub fn banner(title: &str) -> String {
     format!("== {} ==", title)
 }
@@ -15,6 +17,18 @@ pub struct TerminalTheme {
 }
 
 impl TerminalTheme {
+    pub fn stdout(mode: ColorMode) -> Self {
+        Self::new(
+            mode,
+            std::io::stdout().is_terminal(),
+            std::env::var_os("NO_COLOR").is_some(),
+        )
+    }
+
+    pub fn stdout_auto() -> Self {
+        Self::stdout(ColorMode::Auto)
+    }
+
     pub fn new(mode: ColorMode, is_terminal: bool, no_color: bool) -> Self {
         let enabled = match mode {
             ColorMode::Always => true,
@@ -239,6 +253,16 @@ mod tests {
         assert_eq!(
             theme.style_line("Workspace cree: S:/dw", false),
             "Workspace cree: S:/dw"
+        );
+    }
+
+    #[test]
+    fn stdout_auto_is_constructible() {
+        let theme = TerminalTheme::stdout_auto();
+
+        assert_eq!(
+            theme.style_line(r#"{"schema":1}"#, false),
+            r#"{"schema":1}"#
         );
     }
 }
