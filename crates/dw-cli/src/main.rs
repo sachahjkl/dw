@@ -1,9 +1,7 @@
 mod cli;
 mod completion;
-mod doctor;
 mod guide;
 mod handlers;
-mod upgrade;
 mod version;
 
 fn main() {

@@ -6,6 +6,7 @@ pub(super) struct FinishSummary<'a> {
     pub(super) handoff_summaries: &'a [dw_workspace::WorkspaceHandoffSummary],
     pub(super) commit_message: &'a str,
     pub(super) has_changes: bool,
+    pub(super) has_unpushed: bool,
     pub(super) create_pr: bool,
     pub(super) pull_request_candidates: &'a [dw_workspace::PullRequestCandidate],
 }
@@ -54,6 +55,11 @@ pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
                 ));
             }
         }
+    }
+    if summary.has_changes || summary.has_unpushed || summary.create_pr {
+        lines.push(String::new());
+        lines.push("À faire   : dw task finish --execute".into());
+        lines.push("Non-TTY   : ajouter --yes pour confirmer sans prompt".into());
     }
 
     lines
@@ -202,6 +208,7 @@ mod tests {
             handoff_summaries: &[],
             commit_message: "feat(42): demo",
             has_changes: true,
+            has_unpushed: false,
             create_pr: true,
             pull_request_candidates: &pull_request_candidates,
         });
@@ -212,6 +219,8 @@ mod tests {
         assert!(lines.contains(&"Commit à créer".into()));
         assert!(lines.contains(&"Message   : feat(42): demo".into()));
         assert!(lines.contains(&"- front -> develop".into()));
+        assert!(lines.contains(&"À faire   : dw task finish --execute".into()));
+        assert!(lines.contains(&"Non-TTY   : ajouter --yes pour confirmer sans prompt".into()));
     }
 
     #[test]
@@ -241,6 +250,7 @@ mod tests {
             handoff_summaries: &summaries,
             commit_message: "feat(42): demo",
             has_changes: false,
+            has_unpushed: false,
             create_pr: false,
             pull_request_candidates: &[],
         });

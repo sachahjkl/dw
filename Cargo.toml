@@ -7,9 +7,11 @@ members = [
   "crates/dw-ado",
   "crates/dw-ado-commands",
   "crates/dw-db",
+  "crates/dw-doctor",
   "crates/dw-git",
   "crates/dw-secret",
   "crates/dw-task",
+  "crates/dw-upgrade",
   "crates/dw-workspace",
   "crates/dw-ui",
 ]

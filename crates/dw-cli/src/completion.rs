@@ -485,6 +485,117 @@ mod tests {
         assert_eq!(values, vec!["ha".to_string(), "dw".to_string()]);
     }
 
+    #[test]
+    fn repository_values_come_from_config_in_config_order() {
+        let root = temp_root("completion-repositories");
+        fs::create_dir_all(root.join("config")).expect("config dir");
+        fs::write(
+            root.join("config/projects.json"),
+            r#"{"projects":{"ha":{"displayName":"HA","repositories":{"front":{},"back":{},"db":{}}}}}"#,
+        )
+        .expect("projects config");
+
+        let task_values = labels(complete_words(&words(&[
+            "task",
+            "start",
+            "--root",
+            root.to_str().expect("root"),
+            "--project",
+            "ha",
+            "--only",
+            "",
+        ])));
+        let changelog_values = labels(complete_words(&words(&[
+            "ado",
+            "changelog",
+            "--root",
+            root.to_str().expect("root"),
+            "--project",
+            "ha",
+            "--repo",
+            "",
+        ])));
+
+        assert_eq!(task_values, vec!["front", "back", "db"]);
+        assert_eq!(changelog_values, vec!["front", "back", "db"]);
+    }
+
+    #[test]
+    fn database_values_come_from_live_config() {
+        let root = temp_root("completion-databases");
+        fs::create_dir_all(root.join("config")).expect("config dir");
+        fs::write(
+            root.join("config/projects.json"),
+            r#"{"projects":{"ha":{"displayName":"HA","repositories":{}}}}"#,
+        )
+        .expect("projects config");
+        fs::write(
+            root.join("config/databases.json"),
+            r#"{"globals":{"shared":{}},"projects":{"ha":{"databases":{"ha-dev":{},"ha-recette":{}}}}}"#,
+        )
+        .expect("databases config");
+
+        let values = labels(complete_words(&words(&[
+            "db",
+            "schema",
+            "--root",
+            root.to_str().expect("root"),
+            "--project",
+            "ha",
+            "--database",
+            "",
+        ])));
+
+        assert_eq!(values, vec!["ha-dev", "ha-recette", "shared"]);
+    }
+
+    #[test]
+    fn workspace_and_work_item_values_come_from_manifests() {
+        let root = temp_root("completion-workspaces");
+        let workspace = root.join("projects/ha/workspaces/feature-42-demo");
+        fs::create_dir_all(&workspace).expect("workspace dir");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"42","taskId":null,"project":"ha","type":"feature","slug":"demo","branchName":"feature/42-demo","createdAt":"2026-07-03T10:00:00Z","repositories":["front","back"],"status":"created","workItems":[{"id":"42","type":"User Story","title":"Demo","state":"Active"},{"id":"43","type":"Task","title":"Child","state":"Active"}]}"#,
+        )
+        .expect("manifest");
+
+        let workspace_values = labels(complete_words(&words(&[
+            "task",
+            "open",
+            "--root",
+            root.to_str().expect("root"),
+            "--project",
+            "ha",
+            "--workspace",
+            "",
+        ])));
+        let work_item_values = labels(complete_words(&words(&[
+            "task",
+            "open",
+            "--root",
+            root.to_str().expect("root"),
+            "--project",
+            "ha",
+            "--work-item",
+            "",
+        ])));
+        let repository_values = labels(complete_words(&words(&[
+            "task",
+            "open",
+            "--root",
+            root.to_str().expect("root"),
+            "--workspace",
+            workspace.to_str().expect("workspace"),
+            "--repo",
+            "",
+        ])));
+
+        assert_eq!(workspace_values, vec![workspace.display().to_string()]);
+        assert_eq!(work_item_values, vec!["#42 Demo", "#43 Child"]);
+        assert_eq!(repository_values, vec!["front", "back"]);
+    }
+
     fn words(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).into()).collect()
     }

@@ -53,7 +53,7 @@ struct ReleaseAsset {
     url: String,
 }
 
-pub(crate) fn handle_upgrade(check: bool, rid: Option<String>) -> Result<()> {
+pub fn handle_upgrade(check: bool, rid: Option<String>) -> Result<()> {
     ensure_supported_host(std::env::current_exe().ok().as_deref())?;
     let root = resolve_root(load_user_settings().root.as_deref());
     let workflow = load_workflow_config(&root);

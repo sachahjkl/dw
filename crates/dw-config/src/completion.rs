@@ -43,7 +43,9 @@ pub fn database_values(root: &str, project: Option<&str>) -> Vec<String> {
     let config = load_databases_config(root);
     let mut values = config.globals.keys().cloned().collect::<Vec<_>>();
     if let Some(project) = project.and_then(|project| config.projects.get(project))
-        && let Some(map) = project.as_object()
+        && let Some(map) = project
+            .get("databases")
+            .and_then(serde_json::Value::as_object)
     {
         values.extend(map.keys().cloned());
     }

@@ -71,6 +71,7 @@ pub(super) fn teardown_plan_lines(
             "Suppression workspace (prévisualisation)".into()
         },
         format!("Workspace : {workspace}"),
+        format!("Actions   : {}", steps.len()),
         if execute {
             "Actions appliquées".into()
         } else {
@@ -85,7 +86,8 @@ pub(super) fn teardown_plan_lines(
     }
     if !execute {
         lines.push(String::new());
-        lines.push("À faire   : dw task teardown --execute --yes".into());
+        lines.push("À faire   : dw task teardown --execute".into());
+        lines.push("Non-TTY   : ajouter --yes pour confirmer sans prompt".into());
     }
     lines
 }
@@ -197,11 +199,14 @@ mod tests {
         let execute = teardown_plan_lines("/tmp/ws", &steps, true);
 
         assert_eq!(dry_run[0], "Suppression workspace (prévisualisation)");
-        assert_eq!(dry_run[2], "Actions prévues");
+        assert_eq!(dry_run[2], "Actions   : 1");
+        assert_eq!(dry_run[3], "Actions prévues");
         assert_eq!(execute[0], "Suppression workspace exécutée");
-        assert_eq!(execute[2], "Actions appliquées");
+        assert_eq!(execute[2], "Actions   : 1");
+        assert_eq!(execute[3], "Actions appliquées");
         assert!(dry_run.contains(&"- [front] remove-worktree: /tmp/ws/front".into()));
-        assert!(dry_run.contains(&"À faire   : dw task teardown --execute --yes".into()));
-        assert!(!execute.contains(&"À faire   : dw task teardown --execute --yes".into()));
+        assert!(dry_run.contains(&"À faire   : dw task teardown --execute".into()));
+        assert!(dry_run.contains(&"Non-TTY   : ajouter --yes pour confirmer sans prompt".into()));
+        assert!(!execute.contains(&"À faire   : dw task teardown --execute".into()));
     }
 }

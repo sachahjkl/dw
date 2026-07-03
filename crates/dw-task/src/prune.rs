@@ -10,7 +10,7 @@ use dw_workspace::{
 };
 
 use crate::render::{print_styled, print_styled_lines};
-use dw_ui::multiselect_or_require_flag;
+use dw_ui::{is_stdin_interactive, multiselect_or_require_flag};
 use std::collections::HashSet;
 
 pub struct PruneArgs {
@@ -56,7 +56,7 @@ pub fn handle(args: PruneArgs) -> Result<()> {
     if candidates.is_empty() || !execute {
         return Ok(());
     }
-    if !yes {
+    if !yes && !is_stdin_interactive() {
         return Err(anyhow::anyhow!(
             "Suppression destructive refusée: ajouter --yes avec --execute."
         ));
@@ -155,7 +155,8 @@ fn prune_candidate_lines(candidates: &[WorkspaceSummary]) -> Vec<String> {
         "Nettoyage workspaces".into(),
         "Mode      : prévisualisation".into(),
         format!("Candidats : {}", candidates.len()),
-        "À faire   : dw task prune --execute --yes".into(),
+        "À faire   : dw task prune --execute".into(),
+        "Non-TTY   : ajouter --yes pour tout supprimer sans sélection interactive".into(),
     ];
     for candidate in candidates {
         lines.push(String::new());
@@ -279,7 +280,11 @@ mod tests {
         assert_eq!(lines[0], "Nettoyage workspaces");
         assert_eq!(lines[1], "Mode      : prévisualisation");
         assert_eq!(lines[2], "Candidats : 1");
-        assert_eq!(lines[3], "À faire   : dw task prune --execute --yes");
+        assert_eq!(lines[3], "À faire   : dw task prune --execute");
+        assert_eq!(
+            lines[4],
+            "Non-TTY   : ajouter --yes pour tout supprimer sans sélection interactive"
+        );
         assert!(lines.contains(&"Workspace : /tmp/dw/projects/ha/workspaces/feat-1-done".into()));
         assert!(lines.contains(&"Éléments  : ha / #1 Done [Valide]".into()));
         assert!(lines.contains(&"Repositories: front, back".into()));

@@ -15,7 +15,7 @@ pub(crate) struct DoctorCheck {
     pub(crate) remediation: String,
 }
 
-pub(crate) fn run_doctor(fix: bool) -> Result<()> {
+pub fn run_doctor(fix: bool) -> Result<()> {
     let settings = load_user_settings();
     let root = resolve_root(settings.root.as_deref());
     let theme = theme_from_settings(settings.color.as_deref());
@@ -71,6 +71,7 @@ pub(crate) fn run_doctor(fix: bool) -> Result<()> {
 fn render_doctor_report(checks: &[DoctorCheck], theme: &TerminalTheme) -> String {
     let passed_count = checks.iter().filter(|check| check.passed).count();
     let total_count = checks.len();
+    let failed_count = total_count.saturating_sub(passed_count);
     let mut lines = vec![
         theme.command("Diagnostic Dev Workflow"),
         format!(
@@ -81,19 +82,45 @@ fn render_doctor_report(checks: &[DoctorCheck], theme: &TerminalTheme) -> String
                 theme.warning("!")
             }
         ),
+        format!(
+            "Statut    : {}",
+            if failed_count == 0 {
+                "OK"
+            } else {
+                "à corriger"
+            }
+        ),
+        format!("Blocages  : {failed_count}"),
         String::new(),
     ];
-    lines.extend(render_checks(checks, theme));
+    lines.extend(render_check_group(
+        "À corriger",
+        checks.iter().filter(|check| !check.passed).collect(),
+        theme,
+    ));
+    lines.extend(render_check_group(
+        "OK",
+        checks.iter().filter(|check| check.passed).collect(),
+        theme,
+    ));
     lines.join("\n")
 }
 
-fn render_checks(checks: &[DoctorCheck], theme: &TerminalTheme) -> Vec<String> {
+fn render_check_group(
+    title: &str,
+    checks: Vec<&DoctorCheck>,
+    theme: &TerminalTheme,
+) -> Vec<String> {
+    if checks.is_empty() {
+        return Vec::new();
+    }
     let mut lines = Vec::new();
+    lines.push(theme.cyan(title));
     for check in checks {
         let status = if check.passed {
             theme.success("✓ OK")
         } else {
-            theme.warning("! WARN")
+            theme.error("! À corriger")
         };
         lines.push(format!("{:<8} {}", status, check.name));
         if let Some(detail) = check
@@ -107,6 +134,7 @@ fn render_checks(checks: &[DoctorCheck], theme: &TerminalTheme) -> Vec<String> {
             lines.push(format!("         {}", theme.command(&check.remediation)));
         }
     }
+    lines.push(String::new());
     lines
 }
 

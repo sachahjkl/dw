@@ -1224,6 +1224,7 @@ dependencies = [
  "dw-config",
  "dw-contracts",
  "dw-ui",
+ "dw-workspace",
  "inquire",
  "serde_json",
  "tokio",
@@ -1250,27 +1251,17 @@ dependencies = [
  "anyhow",
  "clap",
  "clap_complete",
- "dw-ado",
  "dw-ado-commands",
  "dw-agent",
  "dw-config",
  "dw-contracts",
  "dw-db",
- "dw-git",
+ "dw-doctor",
  "dw-secret",
  "dw-task",
  "dw-ui",
- "dw-workspace",
- "flate2",
- "inquire",
- "msal",
- "reqwest",
- "serde",
+ "dw-upgrade",
  "serde_json",
- "sha2 0.10.9",
- "tar",
- "tokio",
- "zip",
 ]
 
 [[package]]
@@ -1310,6 +1301,16 @@ dependencies = [
  "tiberius",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "dw-doctor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dw-agent",
+ "dw-config",
+ "dw-ui",
 ]
 
 [[package]]
@@ -1360,6 +1361,22 @@ dependencies = [
  "anstyle",
  "anyhow",
  "inquire",
+]
+
+[[package]]
+name = "dw-upgrade"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dw-config",
+ "dw-ui",
+ "flate2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tar",
+ "zip",
 ]
 
 [[package]]

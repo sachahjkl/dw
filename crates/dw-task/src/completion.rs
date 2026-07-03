@@ -80,6 +80,7 @@ pub fn options_for(subcommand: &str) -> Vec<&'static str> {
             "--continue",
             "--root",
             "--execute",
+            "--yes",
             "--message",
             "--create-pr",
             "--ready",

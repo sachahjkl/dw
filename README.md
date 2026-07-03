@@ -81,7 +81,9 @@ crates/
   dw-ado            Azure DevOps auth/client/mapping
   dw-ado-commands   ADO command handlers and rendering
   dw-db             SQL Server readonly commands
+  dw-doctor         machine/config diagnostics
   dw-task           task command handlers and UX
+  dw-upgrade        release manifest checks and binary self-upgrade
   dw-workspace      workspace planning, manifests and contracts
   dw-agent          agent launch/config support
   dw-secret         secret storage

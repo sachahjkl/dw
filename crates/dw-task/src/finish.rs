@@ -8,7 +8,7 @@ use dw_ado::{
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_git::{commit_repository, push_repository, repository_status};
-use dw_ui::{confirm_when_interactive, select_optional};
+use dw_ui::{confirm_or_require_flag, select_optional};
 use dw_workspace::{
     WorkspaceHandoffSummary, build_commit_message, ensure_verification_passed, finish_state,
     plan_task_finish, pull_request_description, pull_request_title, read_handoff_summary,
@@ -27,6 +27,7 @@ pub struct FinishArgs {
     pub r#continue: bool,
     pub root: Option<String>,
     pub execute: bool,
+    pub yes: bool,
     pub message: Option<String>,
     pub create_pr: bool,
     pub ready: bool,
@@ -41,6 +42,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
         r#continue,
         root,
         execute,
+        yes,
         message,
         mut create_pr,
         mut ready,
@@ -127,6 +129,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             handoff_summaries: &handoff_summaries,
             commit_message: &commit_message,
             has_changes: !changed.is_empty(),
+            has_unpushed: !unpushed.is_empty(),
             create_pr,
             pull_request_candidates: &pull_request_candidates,
         }));
@@ -151,13 +154,18 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             "--create-pr ne peut pas être combiné avec --skip-ado."
         ));
     }
-    if !confirm_when_interactive(&finish_confirmation_prompt(
-        &workspace,
-        !changed.is_empty(),
-        !unpushed.is_empty(),
-        create_pr,
-        skip_ado,
-    ))? {
+    if !yes
+        && !confirm_or_require_flag(
+            "--yes",
+            &finish_confirmation_prompt(
+                &workspace,
+                !changed.is_empty(),
+                !unpushed.is_empty(),
+                create_pr,
+                skip_ado,
+            ),
+        )?
+    {
         if !json {
             print_styled("Finalisation annulée.");
         }

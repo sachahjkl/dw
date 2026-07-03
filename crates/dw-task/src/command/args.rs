@@ -405,6 +405,8 @@ pub enum TaskCommand {
             help = "Exécuter les commits, pushs, PR et mises à jour ADO; sans ce flag, affiche le plan."
         )]
         execute: bool,
+        #[arg(long, help = "Confirmer la finalisation destructive avec --execute.")]
+        yes: bool,
         #[arg(
             long,
             help = "Message de commit explicite; sinon généré depuis le manifeste task."

@@ -86,14 +86,17 @@ pub fn option_allowed(option: &str, selected: &[&str]) -> bool {
     }
 }
 
-pub fn values_for(option: &str, root: &str) -> Option<Vec<String>> {
+pub fn values_for(option: &str, root: &str, project: Option<&str>) -> Option<Vec<String>> {
     match option {
         "--project" => Some(dw_config::completion::project_values(root)),
+        "--repo" => Some(dw_workspace::completion::repository_values(
+            root, project, None,
+        )),
         "--format" => Some(vec!["raw".into(), "markdown".into(), "html".into()]),
         _ => None,
     }
 }
 
 fn values_for_catalog(option: &str, context: CompletionContext<'_>) -> Option<Vec<String>> {
-    values_for(option, context.root)
+    values_for(option, context.root, context.project)
 }

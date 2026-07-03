@@ -2,7 +2,6 @@ use crate::cli::*;
 use crate::completion::{
     generate_completion, print_completion_complete, print_completion_install, print_completion_show,
 };
-use crate::doctor::run_doctor;
 use crate::guide::print_guide;
 use crate::version::informational_version;
 use anyhow::Result;
@@ -16,7 +15,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Command::Guide => {
             print_guide(&informational_version());
         }
-        Command::Doctor { fix } => run_doctor(fix)?,
+        Command::Doctor { fix } => dw_doctor::run_doctor(fix)?,
         Command::Init {
             profile,
             root,
@@ -45,7 +44,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Command::Ado { command } => dw_ado_commands::command::handle_ado(command)?,
         Command::Db { command } => dw_db::command::handle_db(command)?,
         Command::Secret { command } => dw_secret::command::handle_secret(command)?,
-        Command::Upgrade { check, rid } => crate::upgrade::handle_upgrade(check, rid)?,
+        Command::Upgrade { check, rid } => dw_upgrade::handle_upgrade(check, rid)?,
         Command::Task { command } => dw_task::command::handle_task(command)?,
     }
 
