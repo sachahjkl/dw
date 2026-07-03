@@ -46,6 +46,7 @@ pub fn handle_task(command: TaskCommand) -> Result<()> {
             only,
             slug,
             skip_ado,
+            with_active_children,
             json,
             execute,
         } => crate::start::handle(crate::start::StartArgs {
@@ -57,6 +58,7 @@ pub fn handle_task(command: TaskCommand) -> Result<()> {
             only,
             slug,
             skip_ado,
+            with_active_children,
             json,
             execute,
         })?,

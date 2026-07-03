@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const RELATION_HIERARCHY_REVERSE: &str = "System.LinkTypes.Hierarchy-Reverse";
+pub const RELATION_HIERARCHY_FORWARD: &str = "System.LinkTypes.Hierarchy-Forward";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangelogFormat {

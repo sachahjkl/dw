@@ -316,6 +316,29 @@ mod tests {
     }
 
     #[test]
+    fn task_start_skip_ado_and_active_children_conflict() {
+        let initial = labels(complete_words(&words(&["task", "start", "--"])));
+        assert!(initial.contains(&"--skip-ado".into()));
+        assert!(initial.contains(&"--with-active-children".into()));
+
+        let offline = labels(complete_words(&words(&[
+            "task",
+            "start",
+            "--skip-ado",
+            "--",
+        ])));
+        assert!(!offline.contains(&"--with-active-children".into()));
+
+        let with_children = labels(complete_words(&words(&[
+            "task",
+            "start",
+            "--with-active-children",
+            "--",
+        ])));
+        assert!(!with_children.contains(&"--skip-ado".into()));
+    }
+
+    #[test]
     fn top_level_command_options_are_specific() {
         let init = labels(complete_words(&words(&["init", "--"])));
         assert!(init.contains(&"--dry-run".into()));

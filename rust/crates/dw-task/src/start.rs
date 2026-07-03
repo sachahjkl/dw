@@ -1,15 +1,18 @@
 use crate::write_workspace_agent_configs;
+use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
-use dw_ado::{env_pat, get_work_item_snapshots};
-use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
+use dw_ado::auth::require_token;
+use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_workspace::{
     TaskStartPlan, TaskStartRequest, execute_task_start, execute_task_start_with_work_items,
     plan_task_start,
 };
 
+use self::ado::load_start_work_items;
 use self::interactive::{interactive_repositories, interactive_start_selection};
 use crate::render::print_styled_lines;
 
+mod ado;
 mod interactive;
 
 #[derive(Debug, Clone)]
@@ -22,6 +25,7 @@ pub struct StartArgs {
     pub only: Option<String>,
     pub slug: Option<String>,
     pub skip_ado: bool,
+    pub with_active_children: bool,
     pub json: bool,
     pub execute: bool,
 }
@@ -36,6 +40,7 @@ pub fn handle(args: StartArgs) -> Result<()> {
         only,
         slug,
         skip_ado,
+        with_active_children,
         json,
         execute,
     } = args;
@@ -45,12 +50,41 @@ pub fn handle(args: StartArgs) -> Result<()> {
     let selection =
         interactive_start_selection(work_item_id, project, &root, &projects, &workflow, skip_ado)?;
     let project = selection.project;
-    let work_item_id = selection.work_item_id;
+    let selected_work_item_id = selection.work_item_id;
     let only = interactive_repositories(only, &projects, project.as_deref());
+    let ado_work_items = if skip_ado {
+        None
+    } else if with_active_children || execute {
+        let project_key = project.as_deref().unwrap_or("default");
+        let mut ado_options = resolve_ado_options(&projects, &workflow, project_key)?;
+        if ado_options.project.trim().is_empty() {
+            ado_options.project = project_key.to_string();
+        }
+        let token = require_token(load_auth_options(Some(&root))?)?;
+        Some(load_start_work_items(
+            &ado_options,
+            &selected_work_item_id,
+            with_active_children,
+            &token,
+        )?)
+    } else {
+        None
+    };
+    let planned_work_item_id = ado_work_items
+        .as_ref()
+        .filter(|_| with_active_children)
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .unwrap_or_else(|| selected_work_item_id.clone());
     let plan = plan_task_start(TaskStartRequest {
         root: &root,
         projects: &projects,
-        work_item_id: &work_item_id,
+        work_item_id: &planned_work_item_id,
         project: project.as_deref(),
         task_id: task.as_deref(),
         type_name: type_name.as_deref(),
@@ -64,15 +98,9 @@ pub fn handle(args: StartArgs) -> Result<()> {
         let manifest = if skip_ado {
             execute_task_start(&plan, None, None, None)?
         } else {
-            let mut ado_options = resolve_project(&projects, &plan.project)
-                .and_then(|project| project.azure_dev_ops)
-                .ok_or_else(|| anyhow::anyhow!("Configuration azureDevOps manquante dans projects.json pour {}. Ajouter --skip-ado pour un start offline.", plan.project))?;
-            if ado_options.project.trim().is_empty() {
-                ado_options.project = plan.project.clone();
-            }
-            let token = env_pat()?;
-            let snapshots = get_work_item_snapshots(&ado_options, &plan.work_item_ids, &token)?;
-            let work_items = if snapshots.is_empty() {
+            let work_items = if let Some(items) = ado_work_items {
+                items
+            } else {
                 plan.work_item_ids
                     .iter()
                     .map(|id| dw_workspace::WorkspaceWorkItem {
@@ -80,16 +108,6 @@ pub fn handle(args: StartArgs) -> Result<()> {
                         kind: None,
                         title: None,
                         state: None,
-                    })
-                    .collect()
-            } else {
-                snapshots
-                    .into_iter()
-                    .map(|snapshot| dw_workspace::WorkspaceWorkItem {
-                        id: snapshot.id,
-                        kind: snapshot.kind,
-                        title: snapshot.title,
-                        state: snapshot.state,
                     })
                     .collect()
             };

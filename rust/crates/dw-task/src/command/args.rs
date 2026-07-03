@@ -88,6 +88,12 @@ pub enum TaskCommand {
             help = "Ne pas interroger Azure DevOps; utiliser les valeurs locales fournies."
         )]
         skip_ado: bool,
+        #[arg(
+            long = "with-active-children",
+            conflicts_with = "skip_ado",
+            help = "Inclure automatiquement les enfants ADO non finaux du sujet sélectionné."
+        )]
+        with_active_children: bool,
         #[arg(long, help = "Émet le plan ou résultat en JSON déterministe.")]
         json: bool,
         #[arg(
