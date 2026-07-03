@@ -259,7 +259,7 @@ pub enum WorkspaceError {
     WorkspaceConflict(String),
     #[error("Fichier ai-context introuvable: {0}")]
     MissingAiContext(String),
-    #[error("Teardown échoué [{repository}]: {message}")]
+    #[error("Suppression workspace échouée [{repository}]: {message}")]
     TeardownFailed { repository: String, message: String },
     #[error("Impossible de retirer tous les work items du workspace.")]
     EmptyWorkItemSet,

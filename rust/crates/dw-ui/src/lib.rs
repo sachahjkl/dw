@@ -94,14 +94,7 @@ impl TerminalTheme {
 
         if starts_with_any_ignore_ascii_case(
             &styled,
-            &[
-                "Dry-run",
-                "Relancer",
-                "Teardown dry-run",
-                "PR non créée",
-                "Teardown annulé",
-                "Prévisualisation",
-            ],
+            &["Dry-run", "Relancer", "PR non créée", "Prévisualisation"],
         ) {
             return self.warning(&styled);
         }
@@ -154,15 +147,14 @@ impl TerminalTheme {
                 "Task prune",
                 "Work items task",
                 "Workspace courant",
-                "Repo latest",
-                "Commit workspace",
-                "Ajout repo",
-                "Teardown",
-                "Finish workspace",
-                "Handoff validation",
+                "Mise à jour dépôts",
+                "Commit des dépôts",
+                "Ajout dépôt",
+                "Suppression workspace",
+                "Finalisation workspace",
                 "Handoff ",
                 "Commit à créer",
-                "Pull requests",
+                "Pull requests à créer",
                 "Preflight task",
                 "Détails preflight",
                 "Validation handoff",
