@@ -33,7 +33,7 @@ pub fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) ->
     let widths = column_widths(&columns, &rows);
     let mut lines = Vec::new();
 
-    lines.push(theme.bold(&theme.cyan("DB query")));
+    lines.push(theme.bold(&theme.cyan("Requête DB")));
     lines.push(format!(
         "Résultat  : {}",
         theme.bold(&row_count_label(result))
@@ -66,7 +66,7 @@ pub fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) ->
 }
 
 pub fn render_sql_guard(result: &SqlGuardResult, theme: &TerminalTheme) -> String {
-    let mut lines = vec![theme.bold(&theme.cyan("DB guard"))];
+    let mut lines = vec![theme.bold(&theme.cyan("Garde SQL"))];
     lines.push(format!("Statut    : {}", status_label(result, theme)));
     if result.is_allowed {
         lines.push(format!("Décision  : {}", theme.success("✓")));
@@ -201,7 +201,7 @@ mod tests {
 
         let output = render_query_result_table(&result, &TerminalTheme::plain());
 
-        assert!(output.contains("DB query"));
+        assert!(output.contains("Requête DB"));
         assert!(output.contains("Résultat  : 1 ligne affichée, résultat tronqué"));
         assert!(output.contains("| Id | Name |"));
         assert!(output.contains("| 1  | NULL |"));
@@ -231,7 +231,7 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("DB guard"));
+        assert!(output.contains("Garde SQL"));
         assert!(output.contains("Statut    : autorisé"));
         assert!(output.contains("Décision  : ✓"));
         assert!(output.contains("Message   : Requête autorisée en lecture seule."));
@@ -248,7 +248,7 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("DB guard"));
+        assert!(output.contains("Garde SQL"));
         assert!(output.contains("Statut    : bloqué"));
         assert!(output.contains("Décision  : !"));
         assert!(output.contains("Message   : Requête bloquée avant exécution."));

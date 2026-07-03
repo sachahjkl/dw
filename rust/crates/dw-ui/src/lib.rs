@@ -163,6 +163,8 @@ impl TerminalTheme {
                 "ADO work item",
                 "ADO context",
                 "Connexion ADO",
+                "Requête DB",
+                "Garde SQL",
                 "Sous-tâche ADO",
                 "Secret",
             ],
