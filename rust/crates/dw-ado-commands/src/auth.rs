@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::Subcommand;
-use dw_ado::auth::{AdoToken, login_browser_interactive, login_device_code, logout, status};
+use dw_ado::auth::{
+    AdoAuthStatus, AdoToken, login_browser_interactive, login_device_code, logout, status,
+};
 use dw_ui::TerminalTheme;
 use inquire::Select;
 
@@ -46,13 +48,10 @@ pub fn handle_auth(command: AuthCommand) -> Result<()> {
         AuthCommand::Login { root } => {
             let auth = load_auth_options(root.as_deref())?;
             match prompt_auth_login_mode()?.mode {
-                AuthLoginMode::Browser => print_auth_token(login_browser_interactive(auth)?)?,
-                AuthLoginMode::DeviceCode => print_auth_token(login_device_code(auth)?)?,
+                AuthLoginMode::Browser => print_auth_token(login_browser_interactive(auth)?),
+                AuthLoginMode::DeviceCode => print_auth_token(login_device_code(auth)?),
                 AuthLoginMode::EnvironmentPat => {
-                    print_styled(
-                        "Définir DW_ADO_TOKEN ou AZURE_DEVOPS_EXT_PAT dans l'environnement.",
-                    );
-                    print_styled("Aucun secret n'est saisi ni stocké par cette commande.");
+                    print_styled_lines(&environment_pat_lines());
                 }
             }
         }
@@ -60,32 +59,16 @@ pub fn handle_auth(command: AuthCommand) -> Result<()> {
             let auth = load_auth_options(root.as_deref())?;
             let status = status(auth)?;
             if status.connected {
-                print_styled(&format!(
-                    "Connecté via {}.",
-                    status.source.unwrap_or_default()
-                ));
-                print_styled(
-                    &status
-                        .expires_on
-                        .map(|value| format!("Expire le {value}."))
-                        .unwrap_or_else(|| "Expiration inconnue.".into()),
-                );
+                print_styled_lines(&auth_status_lines(&status));
             } else {
-                print_styled("Non connecté.");
-                print_styled("Exécuter dw auth login ou définir DW_ADO_TOKEN.");
+                print_styled_lines(&auth_status_lines(&status));
                 std::process::exit(1);
             }
         }
         AuthCommand::Logout { root } => {
             let _ = load_auth_options(root.as_deref())?;
             let removed = logout()?;
-            print_styled(&format!(
-                "Sessions MSAL supprimées: {}.",
-                usize::from(removed)
-            ));
-            print_styled(
-                "Les PAT définis via DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent gérés par l'environnement.",
-            );
+            print_styled_lines(&logout_lines(removed));
         }
     }
     Ok(())
@@ -112,24 +95,84 @@ fn auth_login_choices() -> Vec<AuthLoginChoice> {
     ]
 }
 
-fn print_auth_token(token: AdoToken) -> Result<()> {
-    print_styled(&format!("Connecté via {}.", token.source));
-    print_styled(
-        &token
-            .expires_on
-            .map(|value| format!("Expire le {value}."))
-            .unwrap_or_else(|| "Expiration inconnue.".into()),
-    );
-    Ok(())
+fn print_auth_token(token: AdoToken) {
+    print_styled_lines(&auth_token_lines(&token));
+}
+
+fn auth_token_lines(token: &AdoToken) -> Vec<String> {
+    vec![
+        "ADO auth".into(),
+        "Statut    : connecté".into(),
+        format!("Source    : {}", token.source),
+        expiration_line(token.expires_on.as_deref()),
+    ]
+}
+
+fn auth_status_lines(status: &AdoAuthStatus) -> Vec<String> {
+    if status.connected {
+        vec![
+            "ADO auth".into(),
+            "Statut    : connecté".into(),
+            format!(
+                "Source    : {}",
+                status.source.as_deref().unwrap_or("source inconnue")
+            ),
+            expiration_line(status.expires_on.as_deref()),
+        ]
+    } else {
+        vec![
+            "ADO auth".into(),
+            "Statut    : non connecté".into(),
+            "À faire   : dw auth login ou définir DW_ADO_TOKEN.".into(),
+        ]
+    }
+}
+
+fn environment_pat_lines() -> Vec<String> {
+    vec![
+        "ADO auth".into(),
+        "Mode      : PAT via environnement".into(),
+        "À faire   : définir DW_ADO_TOKEN ou AZURE_DEVOPS_EXT_PAT.".into(),
+        "Secret    : aucun secret n'est saisi ni stocké par cette commande.".into(),
+    ]
+}
+
+fn logout_lines(removed: bool) -> Vec<String> {
+    vec![
+        "ADO auth".into(),
+        format!(
+            "Sessions  : {}",
+            if removed {
+                "MSAL supprimées"
+            } else {
+                "aucune session MSAL locale"
+            }
+        ),
+        "PAT       : les variables DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent gérées par l'environnement.".into(),
+    ]
+}
+
+fn expiration_line(expires_on: Option<&str>) -> String {
+    format!(
+        "Expiration: {}",
+        expires_on.unwrap_or("expiration inconnue")
+    )
 }
 
 fn print_styled(line: &str) {
     println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
 }
 
+fn print_styled_lines(lines: &[String]) {
+    for line in lines {
+        print_styled(line);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dw_ado::auth::AdoAuthScheme;
 
     #[test]
     fn auth_login_choices_keep_browser_first() {
@@ -137,5 +180,45 @@ mod tests {
 
         assert_eq!(choices[0].label, "Navigateur automatique (recommandé)");
         assert!(matches!(choices[0].mode, AuthLoginMode::Browser));
+    }
+
+    #[test]
+    fn auth_token_lines_render_connected_source_and_expiration() {
+        let lines = auth_token_lines(&AdoToken {
+            access_token: "secret".into(),
+            source: "MSAL keyring".into(),
+            scheme: AdoAuthScheme::Bearer,
+            expires_on: Some("2026-07-03T12:14:07Z".into()),
+        });
+
+        assert_eq!(lines[0], "ADO auth");
+        assert_eq!(lines[1], "Statut    : connecté");
+        assert_eq!(lines[2], "Source    : MSAL keyring");
+        assert_eq!(lines[3], "Expiration: 2026-07-03T12:14:07Z");
+    }
+
+    #[test]
+    fn auth_status_lines_render_disconnected_action() {
+        let lines = auth_status_lines(&AdoAuthStatus {
+            connected: false,
+            source: None,
+            expires_on: None,
+        });
+
+        assert_eq!(lines[0], "ADO auth");
+        assert_eq!(lines[1], "Statut    : non connecté");
+        assert_eq!(
+            lines[2],
+            "À faire   : dw auth login ou définir DW_ADO_TOKEN."
+        );
+    }
+
+    #[test]
+    fn logout_lines_keep_pat_warning() {
+        let lines = logout_lines(true);
+
+        assert_eq!(lines[0], "ADO auth");
+        assert_eq!(lines[1], "Sessions  : MSAL supprimées");
+        assert!(lines[2].contains("DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent gérées"));
     }
 }

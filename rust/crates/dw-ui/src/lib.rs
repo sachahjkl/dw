@@ -165,6 +165,7 @@ impl TerminalTheme {
                 "ADO assignés",
                 "ADO work item",
                 "ADO context",
+                "ADO auth",
             ],
         ) {
             return self.bold(&self.cyan(&styled));
