@@ -61,7 +61,7 @@ fn check_known_config(path: &Path, required_properties: &[&str]) -> ConfigDoctor
         return doctor_check(
             path,
             false,
-            Some("la racine doit etre un objet JSON".into()),
+            Some("la racine doit être un objet JSON".into()),
         );
     };
     let missing = required_properties
@@ -75,7 +75,7 @@ fn check_known_config(path: &Path, required_properties: &[&str]) -> ConfigDoctor
         doctor_check(
             path,
             false,
-            Some(format!("proprietes manquantes: {}", missing.join(", "))),
+            Some(format!("propriétés manquantes: {}", missing.join(", "))),
         )
     }
 }

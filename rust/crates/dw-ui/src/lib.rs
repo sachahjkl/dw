@@ -100,6 +100,7 @@ impl TerminalTheme {
                 "Teardown dry-run",
                 "PR non creee",
                 "Teardown annule",
+                "Prévisualisation",
             ],
         ) {
             return self.warning(&styled);
@@ -137,12 +138,14 @@ impl TerminalTheme {
             &styled,
             &[
                 "Prochaine etape",
+                "Prochaine étape",
                 "Puis, pour",
                 "Et pour terminer",
                 "Workspaces disponibles",
                 "Project  WorkItem",
                 "Preparation de l'upgrade",
                 "Schemas et contextes agents regeneres",
+                "Schémas et contextes agents régénérés",
             ],
         ) {
             return self.bold(&self.cyan(&styled));

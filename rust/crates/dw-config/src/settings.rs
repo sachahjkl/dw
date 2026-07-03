@@ -61,7 +61,7 @@ pub fn normalize_color_mode(mode: Option<&str>) -> Result<String, String> {
     match normalized.as_str() {
         "auto" | "always" | "never" => Ok(normalized),
         _ => Err(format!(
-            "Mode couleur inconnu: {}. Valeurs autorisees: auto, always, never.",
+            "Mode couleur inconnu: {}. Valeurs autorisées: auto, always, never.",
             mode.unwrap_or_default()
         )),
     }
