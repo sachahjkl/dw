@@ -45,7 +45,7 @@ pub(crate) fn run_doctor(fix: bool) -> Result<()> {
             "opencode",
             &["--version"],
             "OpenCode",
-            "Installer OpenCode selon la procedure d'equipe, puis verifier le PATH",
+            "Installer OpenCode selon la procédure d'équipe, puis vérifier le PATH",
             |_| true,
         ),
     ];

@@ -169,14 +169,14 @@ pub fn get_work_item_ids_from_pull_requests(
         match matches.len() {
             0 => {
                 return Err(AdoError::Request(format!(
-                    "Pull request #{pull_request_id} introuvable dans les repos Azure DevOps testes: {}",
+                    "Pull request #{pull_request_id} introuvable dans les repos Azure DevOps testés: {}",
                     repositories.join(", ")
                 )));
             }
             1 => ids.extend(matches.remove(0).1),
             _ => {
                 return Err(AdoError::InvalidInput(format!(
-                    "Pull request #{pull_request_id} trouvee dans plusieurs repos ({}). Preciser --repo.",
+                    "Pull request #{pull_request_id} trouvée dans plusieurs repos ({}). Préciser --repo.",
                     matches
                         .into_iter()
                         .map(|item| item.0)

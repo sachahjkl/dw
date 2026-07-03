@@ -190,7 +190,7 @@ async fn exchange_authorization_code(
         .map_err(|error| AdoAuthError::BrowserLogin(error.to_string()))?;
     serde_json::from_str::<OAuthTokenResponse>(&body).map_err(|error| {
         AdoAuthError::BrowserLogin(format!(
-            "Reponse token OAuth invalide: {error}. Body: {body}"
+            "Réponse token OAuth invalide: {error}. Body: {body}"
         ))
     })
 }

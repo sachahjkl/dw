@@ -121,7 +121,7 @@ fn get_latest_release(
         releases
             .into_iter()
             .next()
-            .ok_or_else(|| anyhow!("Aucune release GitHub trouvee."))
+            .ok_or_else(|| anyhow!("Aucune release GitHub trouvée."))
     } else {
         Ok(serde_json::from_str(&body)?)
     }
@@ -142,15 +142,18 @@ fn download_manifest(
     let body = response.text()?;
     if !(200..300).contains(&status) {
         return Err(anyhow!(
-            "Telechargement release.json impossible HTTP {status}: {body}"
+            "Téléchargement release.json impossible HTTP {status}: {body}"
         ));
     }
     Ok(serde_json::from_str(&body)?)
 }
 
 fn print_release_check(release: &GitHubRelease, manifest: &ReleaseManifest) {
-    println!("Latest release: {}", release.tag_name);
-    println!("Manifest version: {}+{}", manifest.version, manifest.commit);
+    println!("Dernière release: {}", release.tag_name);
+    println!(
+        "Version manifeste: {}+{}",
+        manifest.version, manifest.commit
+    );
     for asset in &manifest.assets {
         println!("- {}: {} {}", asset.rid, asset.file_name, asset.sha256);
     }
@@ -168,11 +171,11 @@ fn run_upgrade(
         .ok_or_else(|| anyhow!("Aucun asset pour RID {rid}."))?;
     if asset.url.trim().is_empty() {
         return Err(anyhow!(
-            "release.json doit contenir assets[].url pour telecharger un asset."
+            "release.json doit contenir assets[].url pour télécharger un asset."
         ));
     }
     let executable_path = std::env::current_exe()?;
-    print_styled("Preparation de l'upgrade...");
+    print_styled("Préparation de l'upgrade...");
     let temp_asset = download_asset(client, asset)?;
     let hash = file_sha256(&temp_asset)?;
     if !hash.eq_ignore_ascii_case(&asset.sha256) {
@@ -186,7 +189,7 @@ fn run_upgrade(
     }
     let replacement = prepare_replacement_executable(&asset.file_name, &temp_asset, rid)?;
     replace_executable(&executable_path, &replacement)?;
-    println!("Done: {}+{}", manifest.version, manifest.commit);
+    println!("Upgrade terminé: {}+{}", manifest.version, manifest.commit);
     Ok(())
 }
 
@@ -195,7 +198,7 @@ fn download_asset(client: &reqwest::blocking::Client, asset: &ReleaseAsset) -> R
     let status = response.status().as_u16();
     let body = response.bytes()?;
     if !(200..300).contains(&status) {
-        return Err(anyhow!("Telechargement upgrade impossible HTTP {status}."));
+        return Err(anyhow!("Téléchargement upgrade impossible HTTP {status}."));
     }
     let path = std::env::temp_dir().join(format!(
         "dw-upgrade-{}{}",
