@@ -79,16 +79,8 @@ fn completion_words_from_env() -> Vec<String> {
 
 fn complete_words(words: &[String]) -> Vec<CompletionItem> {
     let current = words.last().map(String::as_str).unwrap_or_default();
-    let option_waiting_for_value = words
-        .iter()
-        .rev()
-        .find(|word| word.starts_with("--"))
-        .map(String::as_str);
 
-    if let Some(option) = option_waiting_for_value
-        && option_requires_value(option)
-        && (!current.starts_with("--") || current == option)
-    {
+    if let Some(option) = option_waiting_for_value(words) {
         let prefix = if current == option { "" } else { current };
         return complete_option_value(option, words, prefix);
     }
@@ -105,6 +97,18 @@ fn complete_words(words: &[String]) -> Vec<CompletionItem> {
     }
 
     complete_subcommands(words)
+}
+
+fn option_waiting_for_value(words: &[String]) -> Option<&str> {
+    let current = words.last()?.as_str();
+    if current.starts_with("--") {
+        return option_requires_value(current).then_some(current);
+    }
+
+    let previous = words
+        .get(words.len().saturating_sub(2))
+        .map(String::as_str)?;
+    option_requires_value(previous).then_some(previous)
 }
 
 fn option_requires_value(option: &str) -> bool {
@@ -452,6 +456,7 @@ fn options_for_path(path: &[&str]) -> Vec<&'static str> {
 
 fn complete_subcommands(words: &[String]) -> Vec<CompletionItem> {
     match command_path(words).as_slice() {
+        [] | [""] => root_commands(),
         ["task"] => [
             "start",
             "status",
@@ -509,7 +514,7 @@ fn complete_subcommands(words: &[String]) -> Vec<CompletionItem> {
             .into_iter()
             .map(simple_completion)
             .collect(),
-        _ => root_commands(),
+        _ => Vec::new(),
     }
 }
 
@@ -708,6 +713,21 @@ mod tests {
         ])));
         assert!(task.contains(&"--project".into()));
         assert!(!task.contains(&"--help".into()));
+    }
+
+    #[test]
+    fn option_value_completion_only_uses_current_option_context() {
+        let option_name = labels(complete_words(&words(&["task", "start", "--type"])));
+        assert_eq!(option_name, vec!["feature", "bugfix", "hotfix", "chore"]);
+
+        let option_value = labels(complete_words(&words(&["task", "start", "--type", "b"])));
+        assert_eq!(option_value, vec!["bugfix"]);
+
+        let positional_after_option_value = labels(complete_words(&words(&[
+            "task", "start", "--root", "/tmp/dw", "42",
+        ])));
+        assert!(positional_after_option_value.is_empty());
+        assert!(!positional_after_option_value.contains(&"task".into()));
     }
 
     #[test]
