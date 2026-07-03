@@ -188,7 +188,7 @@ pub fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&updated)?);
     } else {
         print_styled(&format!(
-            "Sous-tache enregistree dans le workspace: {} -> #{} {}",
+            "Sous-tâche enregistrée dans le workspace: {} -> #{} {}",
             repo, result.id, result.title
         ));
     }

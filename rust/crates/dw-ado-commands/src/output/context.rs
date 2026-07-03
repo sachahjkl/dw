@@ -21,7 +21,7 @@ pub fn render_context_items(
             item.work_item.kind.as_deref().unwrap_or("inconnu")
         ));
         lines.push(format!(
-            "Etat: {}",
+            "État: {}",
             item.work_item.state.as_deref().unwrap_or("inconnu")
         ));
         lines.push(format!(
@@ -29,7 +29,7 @@ pub fn render_context_items(
             item.work_item.title.as_deref().unwrap_or("inconnu")
         ));
         lines.push(format!(
-            "Assigne a: {}",
+            "Assigné à: {}",
             item.work_item
                 .assigned_to
                 .as_deref()

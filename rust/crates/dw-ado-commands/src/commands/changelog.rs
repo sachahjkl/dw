@@ -175,7 +175,7 @@ fn extract_work_item_ids_from_git_range(from: &str, to: Option<&str>) -> Result<
             .into_iter()
             .find(|value| !value.is_empty())
             .unwrap_or("erreur inconnue");
-        return Err(anyhow::anyhow!("git log a echoue: {message}"));
+        return Err(anyhow::anyhow!("git log a échoué: {message}"));
     }
     Ok(extract_work_item_ids_from_commit_messages(
         &String::from_utf8_lossy(&output.stdout),

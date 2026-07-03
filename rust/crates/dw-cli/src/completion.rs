@@ -18,7 +18,7 @@ pub fn generate_completion(shell: Shell) {
 }
 
 pub fn print_completion_show() {
-    println!("Installer l'autocompletion:");
+    println!("Installer l'autocomplétion:");
     println!("  dw completion install bash >> ~/.bashrc");
     println!("  dw completion install zsh >> ~/.zshrc");
     println!("  dw completion install fish > ~/.config/fish/completions/dw.fish");

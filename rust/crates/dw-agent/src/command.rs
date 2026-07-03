@@ -7,7 +7,7 @@ use std::process::Command;
 
 #[derive(Debug, Subcommand)]
 pub enum AgentCommand {
-    #[command(about = "Affiche le contexte DevWorkflow injecte aux agents IA.")]
+    #[command(about = "Affiche le contexte DevWorkflow injecté aux agents IA.")]
     Context,
     #[command(about = "Ouvre ou reprend un agent sur un workspace task.")]
     Open {
@@ -40,7 +40,7 @@ pub enum AgentCommand {
         repo: Option<String>,
         #[arg(
             long,
-            help = "Agent a lancer: opencode, cursor, claude, codex ou copilot."
+            help = "Agent à lancer: opencode, cursor, claude, codex ou copilot."
         )]
         agent: Option<String>,
         #[arg(help = "Alias positionnel du work item pour résoudre le workspace.")]
@@ -48,12 +48,12 @@ pub enum AgentCommand {
     },
     #[command(about = "Affiche la configuration agent effective.")]
     Config {
-        #[arg(long, help = "Root DevWorkflow a lire.")]
+        #[arg(long, help = "Root DevWorkflow à lire.")]
         root: Option<String>,
     },
     #[command(about = "Affiche la configuration agent effective.")]
     Show {
-        #[arg(long, help = "Root DevWorkflow a lire.")]
+        #[arg(long, help = "Root DevWorkflow à lire.")]
         root: Option<String>,
     },
     #[command(about = "Définit l'agent par défaut du root DevWorkflow.")]
@@ -65,7 +65,7 @@ pub enum AgentCommand {
     },
     #[command(about = "Diagnostique la disponibilité des agents installés.")]
     Doctor {
-        #[arg(long, help = "Limiter le diagnostic a un agent.")]
+        #[arg(long, help = "Limiter le diagnostic à un agent.")]
         agent: Option<String>,
     },
 }
@@ -169,13 +169,13 @@ fn render_agent_report(checks: &[AgentDoctorCheck], theme: &TerminalTheme) -> St
     let mut lines = vec![
         theme.command("Agents disponibles"),
         String::new(),
-        format!("{:<12} {:<12} Status", "Agent", "Command"),
+        format!("{:<12} {:<12} Statut", "Agent", "Commande"),
     ];
     for check in checks {
         let status = if check.available {
             theme.success("✓ OK")
         } else {
-            theme.warning("! missing")
+            theme.warning("! manquant")
         };
         lines.push(format!(
             "{:<12} {:<12} {}",
@@ -261,6 +261,6 @@ mod tests {
         assert!(report.contains("Agents disponibles"));
         assert!(report.contains("codex"));
         assert!(report.contains("✓ OK"));
-        assert!(report.contains("! missing"));
+        assert!(report.contains("! manquant"));
     }
 }

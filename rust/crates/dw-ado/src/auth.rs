@@ -87,7 +87,7 @@ pub fn login_browser_interactive(auth: Option<AdoAuthOptions>) -> Result<AdoToke
     let auth = auth.ok_or(AdoAuthError::MissingConfig)?;
     let token = auth_browser::login(&auth)?;
     let refresh_token = token.refresh_token.as_deref().ok_or_else(|| {
-        AdoAuthError::BrowserLogin("Microsoft n'a pas renvoye de refresh_token.".into())
+        AdoAuthError::BrowserLogin("Microsoft n'a pas renvoyé de refresh_token.".into())
     })?;
     store_refresh_token(refresh_token)?;
     Ok(oauth_token_result(token, "MSAL interactive"))

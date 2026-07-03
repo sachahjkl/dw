@@ -2000,7 +2000,7 @@ fn build_attachment_issues(ai_context: &AdoAiContextItem) -> Vec<TaskPreflightIs
         severity: "warning".into(),
         work_item_id: ai_context.work_item.id.clone(),
         message: format!(
-            "Le work item #{} a des pieces jointes a traiter comme source factuelle.",
+            "Le work item #{} a des pièces jointes à traiter comme source factuelle.",
             ai_context.work_item.id
         ),
         details: Some(if names.is_empty() {

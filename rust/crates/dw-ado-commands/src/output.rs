@@ -35,7 +35,7 @@ pub fn render_work_item_snapshots(
             item.kind.as_deref().unwrap_or("inconnu")
         ));
         lines.push(format!(
-            "Etat: {}",
+            "État: {}",
             item.state.as_deref().unwrap_or("inconnu")
         ));
         lines.push(format!(

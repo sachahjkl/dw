@@ -18,7 +18,7 @@ pub enum TaskCommand {
         #[arg(long, help = "Émettre la liste JSON déterministe.")]
         json: bool,
     },
-    #[command(about = "Affiche le workspace task courant depuis le repertoire actuel.")]
+    #[command(about = "Affiche le workspace task courant depuis le répertoire actuel.")]
     Current {
         #[arg(long, help = "Émettre le workspace courant en JSON déterministe.")]
         json: bool,
@@ -50,7 +50,7 @@ pub enum TaskCommand {
         repo: Option<String>,
         #[arg(
             long,
-            help = "Agent a lancer: opencode, cursor, claude, codex ou copilot."
+            help = "Agent à lancer: opencode, cursor, claude, codex ou copilot."
         )]
         agent: Option<String>,
         #[arg(long, help = "Émettre la résolution JSON au lieu de lancer l'agent.")]
@@ -96,9 +96,9 @@ pub enum TaskCommand {
         )]
         execute: bool,
     },
-    #[command(about = "Valide les bloqueurs et avertissements avant implementation.")]
+    #[command(about = "Valide les bloqueurs et avertissements avant implémentation.")]
     Preflight {
-        #[arg(long, help = "Chemin du workspace a auditer.")]
+        #[arg(long, help = "Chemin du workspace à auditer.")]
         workspace: String,
         #[arg(
             long = "ai-context-file",
@@ -171,7 +171,7 @@ pub enum TaskCommand {
         #[arg(help = "Alias positionnel du work item pour résoudre le workspace.")]
         positional_work_item: Option<String>,
     },
-    #[command(about = "Met les repositories du workspace a jour depuis leur branche cible.")]
+    #[command(about = "Met les repositories du workspace à jour depuis leur branche cible.")]
     RepoLatest {
         #[arg(
             long,
@@ -187,7 +187,7 @@ pub enum TaskCommand {
         r#continue: bool,
         #[arg(
             long = "only",
-            help = "Limiter la synchronisation a un repository du workspace."
+            help = "Limiter la synchronisation à un repository du workspace."
         )]
         only: Option<String>,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]
@@ -202,7 +202,7 @@ pub enum TaskCommand {
         #[arg(
             long,
             conflicts_with = "continue",
-            help = "Chemin du workspace a committer."
+            help = "Chemin du workspace à committer."
         )]
         workspace: Option<String>,
         #[arg(
@@ -325,7 +325,7 @@ pub enum TaskCommand {
     CreateChildTask {
         #[arg(
             long,
-            help = "Repository du workspace qui portera le handoff de la tache."
+            help = "Repository du workspace qui portera le handoff de la tâche."
         )]
         repo: String,
         #[arg(long, help = "Titre de la tâche enfant ADO à créer.")]
@@ -405,7 +405,7 @@ pub enum TaskCommand {
     HandoffValidate {
         #[arg(
             long,
-            help = "Chemin du workspace dont les handoffs doivent etre valides."
+            help = "Chemin du workspace dont les handoffs doivent être valides."
         )]
         workspace: String,
         #[arg(long, help = "Émettre le rapport JSON déterministe.")]
