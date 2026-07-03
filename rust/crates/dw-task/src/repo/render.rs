@@ -2,8 +2,9 @@ use dw_git::RepositoryStatus;
 
 pub(super) fn repo_latest_header_lines(workspace: &str, branch_name: &str) -> Vec<String> {
     vec![
-        format!("Workspace: {workspace}"),
-        format!("Branche: {branch_name}"),
+        "Repo latest".into(),
+        format!("Workspace : {workspace}"),
+        format!("Branche   : {branch_name}"),
     ]
 }
 
@@ -15,14 +16,16 @@ pub(super) fn commit_status_lines(
     nothing_to_commit: bool,
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("Workspace: {workspace}"),
-        format!("Branche: {branch_name}"),
+        "Commit workspace".into(),
+        format!("Workspace : {workspace}"),
+        format!("Branche   : {branch_name}"),
     ];
 
     for (target, status) in statuses {
         lines.push(String::new());
-        lines.push(format!("[{}] {}", target.repository, status.path));
-        lines.push(repository_status_label(status).into());
+        lines.push(format!("Repo      : {}", target.repository));
+        lines.push(format!("Path      : {}", status.path));
+        lines.push(format!("Statut    : {}", repository_status_label(status)));
         if !status.detail.trim().is_empty() {
             lines.push(status.detail.clone());
         }
@@ -32,20 +35,20 @@ pub(super) fn commit_status_lines(
     if nothing_to_commit {
         lines.push("Rien à committer.".into());
     } else {
-        lines.push(format!("Message: {commit_message}"));
+        lines.push(format!("Message   : {commit_message}"));
     }
     lines
 }
 
 pub(super) fn add_repo_plan_lines(plan: &dw_workspace::TaskAddRepoPlan) -> Vec<String> {
     vec![
-        "Prévisualisation ajout repo:".into(),
-        format!("- workspace: {}", plan.workspace),
-        format!("- repo: {}", plan.repository),
-        format!("- worktree: {}", plan.worktree_path),
-        format!("- branche: {}", plan.branch_name),
+        "Ajout repo (prévisualisation)".into(),
+        format!("Workspace : {}", plan.workspace),
+        format!("Repo      : {}", plan.repository),
+        format!("Worktree  : {}", plan.worktree_path),
+        format!("Branche   : {}", plan.branch_name),
         format!(
-            "- anchor: {}/repositories/{}",
+            "Anchor    : {}/repositories/{}",
             plan.project_root, plan.anchor_name
         ),
     ]
@@ -57,11 +60,16 @@ pub(super) fn teardown_plan_lines(
     execute: bool,
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("Workspace: {workspace}"),
         if execute {
-            "Teardown exécuté:".into()
+            "Teardown exécuté".into()
         } else {
-            "Prévisualisation teardown:".into()
+            "Teardown (prévisualisation)".into()
+        },
+        format!("Workspace : {workspace}"),
+        if execute {
+            "Actions appliquées".into()
+        } else {
+            "Actions prévues".into()
         },
     ];
     for step in steps {
@@ -129,8 +137,39 @@ mod tests {
 
         let lines = add_repo_plan_lines(&plan);
 
-        assert_eq!(lines[0], "Prévisualisation ajout repo:");
-        assert!(lines.contains(&"- anchor: /tmp/project/repositories/front-anchor".into()));
+        assert_eq!(lines[0], "Ajout repo (prévisualisation)");
+        assert!(lines.contains(&"Anchor    : /tmp/project/repositories/front-anchor".into()));
+    }
+
+    #[test]
+    fn commit_status_lines_render_aligned_summary() {
+        let target = dw_workspace::TaskCommitTarget {
+            repository: "front".into(),
+            path: "/tmp/repo".into(),
+        };
+        let status = RepositoryStatus {
+            path: "/tmp/repo".into(),
+            is_git_repository: true,
+            has_changes: true,
+            has_unpushed: false,
+            detail: " M src/lib.rs".into(),
+        };
+        let statuses = vec![(&target, status)];
+
+        let lines = commit_status_lines(
+            "/tmp/ws",
+            "feat/42-demo",
+            &statuses,
+            "feat(42): demo",
+            false,
+        );
+
+        assert_eq!(lines[0], "Commit workspace");
+        assert!(lines.contains(&"Workspace : /tmp/ws".into()));
+        assert!(lines.contains(&"Repo      : front".into()));
+        assert!(lines.contains(&"Path      : /tmp/repo".into()));
+        assert!(lines.contains(&"Statut    : Changements détectés:".into()));
+        assert!(lines.contains(&"Message   : feat(42): demo".into()));
     }
 
     #[test]
@@ -145,8 +184,10 @@ mod tests {
         let dry_run = teardown_plan_lines("/tmp/ws", &steps, false);
         let execute = teardown_plan_lines("/tmp/ws", &steps, true);
 
-        assert_eq!(dry_run[1], "Prévisualisation teardown:");
-        assert_eq!(execute[1], "Teardown exécuté:");
+        assert_eq!(dry_run[0], "Teardown (prévisualisation)");
+        assert_eq!(dry_run[2], "Actions prévues");
+        assert_eq!(execute[0], "Teardown exécuté");
+        assert_eq!(execute[2], "Actions appliquées");
         assert!(dry_run.contains(&"- [front] remove-worktree: /tmp/ws/front".into()));
     }
 }
