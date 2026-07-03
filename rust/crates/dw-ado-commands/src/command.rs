@@ -50,7 +50,7 @@ pub enum AdoCommand {
             help = "Extraire les work items depuis les commits git."
         )]
         from_git: bool,
-        #[arg(long, help = "Dépôt local utilisé pour le mode --from-git.")]
+        #[arg(long, help = "Repository local utilisé pour le mode --from-git.")]
         repo: Option<String>,
         #[arg(
             long = "group-by-parent",

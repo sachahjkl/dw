@@ -199,7 +199,7 @@ pub fn pull_request_description(
         .join(", ");
 
     format!(
-        "## Résumé\n- Travail réalisé pour `{}`\n- Dépôt concerné : `{}`\n- Work items : `{}`\n\n## Plan\n{}\n\n## Handoff\n{}\n\n## Vérifications\n{}\n",
+        "## Résumé\n- Travail réalisé pour `{}`\n- Repository concerné : `{}`\n- Work items : `{}`\n\n## Plan\n{}\n\n## Handoff\n{}\n\n## Vérifications\n{}\n",
         manifest.slug, candidate.repository, work_items, plan, handoff, verification
     )
 }

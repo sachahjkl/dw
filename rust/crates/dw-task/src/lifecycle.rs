@@ -230,7 +230,7 @@ fn child_task_lines(workspace: &str, repo: &str, id: &str, title: &str) -> Vec<S
         "Sous-tâche ADO".into(),
         "Statut    : enregistrée dans le workspace".into(),
         format!("Workspace : {workspace}"),
-        format!("Dépôt     : {repo}"),
+        format!("Repository: {repo}"),
         format!("Item      : #{id}"),
         format!("Titre     : {title}"),
     ]
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(lines[0], "Sous-tâche ADO");
         assert_eq!(lines[1], "Statut    : enregistrée dans le workspace");
         assert_eq!(lines[2], "Workspace : /tmp/ws");
-        assert_eq!(lines[3], "Dépôt     : front");
+        assert_eq!(lines[3], "Repository: front");
         assert_eq!(lines[4], "Item      : #42");
         assert_eq!(lines[5], "Titre     : [FRONT] Corriger");
     }

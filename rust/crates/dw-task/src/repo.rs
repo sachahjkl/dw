@@ -84,7 +84,7 @@ pub fn repo_latest(args: RepoLatestArgs) -> Result<()> {
         print_styled_lines(&repo_latest_header_lines(&workspace, &manifest.branch_name));
         for target in &targets {
             print_styled(&format!(
-                "Dépôt {}: synchronisation depuis la branche par défaut...",
+                "Repository {}: synchronisation depuis la branche par défaut...",
                 target.repository
             ));
             update_repository(&target.repository_path, &target.default_branch)?;
@@ -202,7 +202,7 @@ pub fn add_repo(args: AddRepoArgs) -> Result<()> {
     write_workspace_agent_configs(&workspace, &updated)?;
     if !json {
         print_styled(&format!(
-            "Dépôt ajouté: {} - {} - {}",
+            "Repository ajouté: {} - {} - {}",
             result.repository, result.status, result.message
         ));
     }

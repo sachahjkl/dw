@@ -46,7 +46,7 @@ pub enum TaskCommand {
             help = "Reprendre le workspace task le plus récent correspondant."
         )]
         r#continue: bool,
-        #[arg(long, help = "Dépôt à ouvrir dans le workspace.")]
+        #[arg(long, help = "Repository à ouvrir dans le workspace.")]
         repo: Option<String>,
         #[arg(
             long,
@@ -78,7 +78,7 @@ pub enum TaskCommand {
         type_name: Option<String>,
         #[arg(
             long = "only",
-            help = "Dépôt à inclure; répétable via sélection interactive si omis."
+            help = "Repository à inclure; répétable via sélection interactive si omis."
         )]
         only: Option<String>,
         #[arg(long, help = "Slug explicite pour le nom de branche et workspace.")]
@@ -340,7 +340,7 @@ pub enum TaskCommand {
     },
     #[command(about = "Ajoute un repository au workspace task.")]
     AddRepo {
-        #[arg(help = "Dépôt configuré à ajouter au workspace.")]
+        #[arg(help = "Repository configuré à ajouter au workspace.")]
         repo: Option<String>,
         #[arg(long, help = "Chemin du workspace à modifier.")]
         workspace: Option<String>,
@@ -356,7 +356,10 @@ pub enum TaskCommand {
     },
     #[command(about = "Crée une tâche enfant ADO et l'ajoute au handoff repository.")]
     CreateChildTask {
-        #[arg(long, help = "Dépôt du workspace qui portera le handoff de la tâche.")]
+        #[arg(
+            long,
+            help = "Repository du workspace qui portera le handoff de la tâche."
+        )]
         repo: String,
         #[arg(long, help = "Titre de la tâche enfant ADO à créer.")]
         title: String,

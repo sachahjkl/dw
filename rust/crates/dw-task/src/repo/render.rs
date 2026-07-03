@@ -2,7 +2,7 @@ use dw_git::RepositoryStatus;
 
 pub(super) fn repo_latest_header_lines(workspace: &str, branch_name: &str) -> Vec<String> {
     vec![
-        "Mise à jour dépôts".into(),
+        "Mise à jour repositories".into(),
         format!("Workspace : {workspace}"),
         format!("Branche   : {branch_name}"),
     ]
@@ -17,14 +17,14 @@ pub(super) fn commit_status_lines(
     execute: bool,
 ) -> Vec<String> {
     let mut lines = vec![
-        "Commit des dépôts".into(),
+        "Commit des repositories".into(),
         format!("Workspace : {workspace}"),
         format!("Branche   : {branch_name}"),
     ];
 
     for (target, status) in statuses {
         lines.push(String::new());
-        lines.push(format!("Dépôt     : {}", target.repository));
+        lines.push(format!("Repository: {}", target.repository));
         lines.push(format!("Chemin    : {}", status.path));
         lines.push(format!("Statut    : {}", repository_status_label(status)));
         if !status.detail.trim().is_empty() {
@@ -46,9 +46,9 @@ pub(super) fn commit_status_lines(
 
 pub(super) fn add_repo_plan_lines(plan: &dw_workspace::TaskAddRepoPlan) -> Vec<String> {
     vec![
-        "Ajout dépôt (prévisualisation)".into(),
+        "Ajout repository (prévisualisation)".into(),
         format!("Workspace : {}", plan.workspace),
-        format!("Dépôt     : {}", plan.repository),
+        format!("Repository: {}", plan.repository),
         format!("Worktree  : {}", plan.worktree_path),
         format!("Branche   : {}", plan.branch_name),
         format!(
@@ -146,7 +146,7 @@ mod tests {
 
         let lines = add_repo_plan_lines(&plan);
 
-        assert_eq!(lines[0], "Ajout dépôt (prévisualisation)");
+        assert_eq!(lines[0], "Ajout repository (prévisualisation)");
         assert!(lines.contains(&"Ancrage   : /tmp/project/repositories/front-anchor".into()));
         assert!(lines.contains(&"À faire   : dw task add-repo front --execute".into()));
     }
@@ -175,9 +175,9 @@ mod tests {
             false,
         );
 
-        assert_eq!(lines[0], "Commit des dépôts");
+        assert_eq!(lines[0], "Commit des repositories");
         assert!(lines.contains(&"Workspace : /tmp/ws".into()));
-        assert!(lines.contains(&"Dépôt     : front".into()));
+        assert!(lines.contains(&"Repository: front".into()));
         assert!(lines.contains(&"Chemin    : /tmp/repo".into()));
         assert!(lines.contains(&"Statut    : Changements détectés:".into()));
         assert!(lines.contains(&"Message   : feat(42): demo".into()));

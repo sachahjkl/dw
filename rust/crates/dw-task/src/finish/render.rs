@@ -45,7 +45,7 @@ pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
         lines.push(String::new());
         lines.push("Pull requests à créer".into());
         if summary.pull_request_candidates.is_empty() {
-            lines.push("Aucun dépôt candidat détecté.".into());
+            lines.push("Aucun repository candidat détecté.".into());
         } else {
             for candidate in summary.pull_request_candidates {
                 lines.push(format!(
@@ -92,7 +92,7 @@ pub(super) fn finish_dry_run_hint(no_changes: bool, create_pr: bool) -> &'static
 fn repository_status_lines(repository: &str, status: &dw_git::RepositoryStatus) -> Vec<String> {
     let mut lines = vec![
         String::new(),
-        format!("Dépôt     : {repository}"),
+        format!("Repository: {repository}"),
         format!("Chemin    : {}", status.path),
         format!("Statut    : {}", repository_status_label(status)),
     ];
@@ -149,7 +149,7 @@ mod tests {
 
         let lines = repository_status_lines("front", &status);
 
-        assert!(lines.contains(&"Dépôt     : front".into()));
+        assert!(lines.contains(&"Repository: front".into()));
         assert!(lines.contains(&"Chemin    : /tmp/repo".into()));
         assert!(lines.contains(&"Statut    : Changements détectés:".into()));
         assert!(lines.contains(&" M src/lib.rs".into()));
