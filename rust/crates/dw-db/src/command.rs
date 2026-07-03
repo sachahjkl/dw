@@ -32,7 +32,7 @@ pub enum DbCommand {
     #[command(about = "Décrit les colonnes d'une table SQL.")]
     Describe {
         #[arg(help = "Table à décrire, au format table ou schema.table.")]
-        table: String,
+        table: Option<String>,
         #[arg(long, help = "Projet configuré contenant la connexion base.")]
         project: Option<String>,
         #[arg(

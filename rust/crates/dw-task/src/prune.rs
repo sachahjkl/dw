@@ -9,8 +9,8 @@ use dw_workspace::{
     filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
 };
 
-use crate::interactive::multiselect_or_require_flag;
 use crate::render::{print_styled, print_styled_lines};
+use dw_ui::multiselect_or_require_flag;
 use std::collections::HashSet;
 
 pub struct PruneArgs {

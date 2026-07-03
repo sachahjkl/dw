@@ -8,3 +8,5 @@ repository.workspace = true
 
 [dependencies]
 anstyle.workspace = true
+anyhow.workspace = true
+inquire.workspace = true

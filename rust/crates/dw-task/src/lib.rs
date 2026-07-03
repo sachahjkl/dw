@@ -2,7 +2,6 @@ mod agent_config;
 pub mod command;
 pub mod completion;
 pub mod finish;
-mod interactive;
 pub mod lifecycle;
 pub mod open;
 pub mod prune;

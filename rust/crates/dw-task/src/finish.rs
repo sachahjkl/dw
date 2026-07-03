@@ -1,4 +1,3 @@
-use crate::interactive::confirm_when_interactive;
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
@@ -9,6 +8,7 @@ use dw_ado::{
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_git::{commit_repository, push_repository, repository_status};
+use dw_ui::confirm_when_interactive;
 use dw_workspace::{
     WorkspaceHandoffSummary, build_commit_message, ensure_verification_passed, finish_state,
     plan_task_finish, pull_request_description, pull_request_title, read_handoff_summary,

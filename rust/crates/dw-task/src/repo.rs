@@ -14,8 +14,8 @@ use dw_workspace::{
 use self::render::{
     add_repo_plan_lines, commit_status_lines, repo_latest_header_lines, teardown_plan_lines,
 };
-use crate::interactive::confirm_or_require_flag;
 use crate::render::{print_styled, print_styled_lines};
+use dw_ui::confirm_or_require_flag;
 
 mod render;
 
