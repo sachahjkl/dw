@@ -1,4 +1,5 @@
 use crate::init_templates::{WORKSPACE_CODEX_CONFIG, detect_profile, resolve_profile};
+use crate::settings::normalize_path_lossy;
 use crate::{UserSettings, default_root, save_user_settings};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -272,15 +273,7 @@ fn normalize_root(value: Option<&str>) -> String {
     let root = value
         .filter(|value| !value.trim().is_empty())
         .unwrap_or(&fallback);
-    let expanded = if let Some(rest) = root.strip_prefix("~/") {
-        match std::env::var("HOME") {
-            Ok(home) => format!("{home}/{rest}"),
-            Err(_) => root.into(),
-        }
-    } else {
-        root.into()
-    };
-    Path::new(&expanded).display().to_string()
+    normalize_path_lossy(root)
 }
 
 #[cfg(test)]

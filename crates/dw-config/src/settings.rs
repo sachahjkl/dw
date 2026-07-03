@@ -4,18 +4,24 @@ use std::path::{Component, Path, PathBuf};
 use std::{env, fs};
 
 pub fn default_root() -> String {
-    let home = env::var("HOME").unwrap_or_else(|_| "~".into());
+    let home = home_directory().unwrap_or_else(|| "~".into());
     format!("{home}/dev/dw")
 }
 
 pub fn user_config_directory() -> String {
+    if cfg!(windows)
+        && let Some(local_app_data) = env_value("LOCALAPPDATA")
+    {
+        return format!("{local_app_data}/DevWorkflow");
+    }
+
     if let Ok(xdg) = env::var("XDG_CONFIG_HOME")
         && !xdg.trim().is_empty()
     {
         return format!("{xdg}/DevWorkflow");
     }
 
-    let home = env::var("HOME").unwrap_or_else(|_| "~".into());
+    let home = home_directory().unwrap_or_else(|| "~".into());
     format!("{home}/.config/DevWorkflow")
 }
 
@@ -96,12 +102,32 @@ fn normalize_path(value: &str) -> std::io::Result<String> {
 }
 
 fn expand_home(value: &str) -> String {
+    if value == "~" {
+        return home_directory().unwrap_or_else(|| value.into());
+    }
+
     if let Some(stripped) = value.strip_prefix("~/") {
-        let home = env::var("HOME").unwrap_or_else(|_| "~".into());
+        let home = home_directory().unwrap_or_else(|| "~".into());
         return format!("{home}/{stripped}");
     }
 
     value.to_string()
+}
+
+fn home_directory() -> Option<String> {
+    env_value("HOME")
+        .or_else(|| env_value("USERPROFILE"))
+        .or_else(|| match (env_value("HOMEDRIVE"), env_value("HOMEPATH")) {
+            (Some(drive), Some(path)) => Some(format!("{drive}{path}")),
+            _ => None,
+        })
+}
+
+fn env_value(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn expand_environment_variables(value: &str) -> String {
@@ -188,4 +214,71 @@ fn normalize_components(path: &Path) -> PathBuf {
 #[allow(dead_code)]
 fn _is_absolute(path: &Path) -> bool {
     path.is_absolute()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn default_root_uses_userprofile_when_home_is_missing() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let home = env::var("HOME").ok();
+        let userprofile = env::var("USERPROFILE").ok();
+        unsafe {
+            env::remove_var("HOME");
+            env::set_var("USERPROFILE", "/tmp/windows-home");
+        }
+
+        let root = default_root();
+
+        restore_env("HOME", home);
+        restore_env("USERPROFILE", userprofile);
+        assert_eq!(root, "/tmp/windows-home/dev/dw");
+    }
+
+    #[test]
+    fn normalize_expands_bare_tilde_with_windows_home_fallback() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let home = env::var("HOME").ok();
+        let userprofile = env::var("USERPROFILE").ok();
+        unsafe {
+            env::remove_var("HOME");
+            env::set_var("USERPROFILE", "/tmp/windows-home");
+        }
+
+        let path = normalize_path_lossy("~/dev/dw");
+
+        restore_env("HOME", home);
+        restore_env("USERPROFILE", userprofile);
+        assert_eq!(path, "/tmp/windows-home/dev/dw");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_user_config_uses_local_app_data() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let local_app_data = env::var("LOCALAPPDATA").ok();
+        unsafe {
+            env::set_var("LOCALAPPDATA", "C:/Users/demo/AppData/Local");
+        }
+
+        let directory = user_config_directory();
+
+        restore_env("LOCALAPPDATA", local_app_data);
+        assert_eq!(directory, "C:/Users/demo/AppData/Local/DevWorkflow");
+    }
+
+    fn restore_env(key: &str, previous: Option<String>) {
+        unsafe {
+            if let Some(value) = previous {
+                env::set_var(key, value);
+            } else {
+                env::remove_var(key);
+            }
+        }
+    }
 }
