@@ -82,7 +82,10 @@ pub fn repo_latest(args: RepoLatestArgs) -> Result<()> {
     } else {
         print_styled_lines(&repo_latest_header_lines(&workspace, &manifest.branch_name));
         for target in &targets {
-            print_styled(&format!("Repo {}: sync latest...", target.repository));
+            print_styled(&format!(
+                "Dépôt {}: synchronisation depuis la branche par défaut...",
+                target.repository
+            ));
             update_repository(&target.repository_path, &target.default_branch)?;
         }
         print_styled("Repos synchronisés avec la remote.");
@@ -197,7 +200,7 @@ pub fn add_repo(args: AddRepoArgs) -> Result<()> {
     write_workspace_agent_configs(&workspace, &updated)?;
     if !json {
         print_styled(&format!(
-            "Repo ajouté: {} - {} - {}",
+            "Dépôt ajouté: {} - {} - {}",
             result.repository, result.status, result.message
         ));
     }

@@ -52,7 +52,7 @@ pub(super) fn add_repo_plan_lines(plan: &dw_workspace::TaskAddRepoPlan) -> Vec<S
         format!("Worktree  : {}", plan.worktree_path),
         format!("Branche   : {}", plan.branch_name),
         format!(
-            "Anchor    : {}/repositories/{}",
+            "Ancrage   : {}/repositories/{}",
             plan.project_root, plan.anchor_name
         ),
         format!("À faire   : dw task add-repo {} --execute", plan.repository),
@@ -147,7 +147,7 @@ mod tests {
         let lines = add_repo_plan_lines(&plan);
 
         assert_eq!(lines[0], "Ajout dépôt (prévisualisation)");
-        assert!(lines.contains(&"Anchor    : /tmp/project/repositories/front-anchor".into()));
+        assert!(lines.contains(&"Ancrage   : /tmp/project/repositories/front-anchor".into()));
         assert!(lines.contains(&"À faire   : dw task add-repo front --execute".into()));
     }
 

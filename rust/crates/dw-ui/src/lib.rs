@@ -200,7 +200,7 @@ fn is_success_status_line(line: &str) -> bool {
             "Workspace renommé",
             "Workspace synchronisé",
             "Workspace supprimé",
-            "Repo ajouté",
+            "Dépôt ajouté",
             "Work items ajoutés",
             "Work items retirés",
             "Binaire remplacé",
