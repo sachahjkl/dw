@@ -1,4 +1,4 @@
-use crate::query::QueryResult;
+use crate::{SqlGuardResult, query::QueryResult};
 use dw_ui::TerminalTheme;
 
 const MAX_CELL_WIDTH: usize = 48;
@@ -65,6 +65,38 @@ pub fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) ->
     lines.join("\n")
 }
 
+pub fn render_sql_guard(result: &SqlGuardResult, theme: &TerminalTheme) -> String {
+    let mut lines = vec![format!(
+        "{} {}",
+        theme.cyan("SQL guard"),
+        status_label(result, theme)
+    )];
+    if result.is_allowed {
+        lines.push(format!(
+            "{} Requête autorisée en lecture seule.",
+            theme.success("✓")
+        ));
+        lines.push(format!(
+            "  {}",
+            theme.dim("Aucune exécution n'a été lancée par cette commande.")
+        ));
+    } else {
+        lines.push(format!(
+            "{} Requête bloquée avant exécution.",
+            theme.error("!")
+        ));
+        lines.push(format!(
+            "  Raison: {}",
+            result.reason.as_deref().unwrap_or("raison inconnue")
+        ));
+        lines.push(format!(
+            "  {}",
+            theme.warning("Utiliser uniquement SELECT/WITH ou les commandes d'introspection.")
+        ));
+    }
+    lines.join("\n")
+}
+
 fn row_count_label(result: &QueryResult) -> String {
     let suffix = if result.rows.len() > 1 { "s" } else { "" };
     if result.truncated {
@@ -74,6 +106,14 @@ fn row_count_label(result: &QueryResult) -> String {
         )
     } else {
         format!("{} ligne{suffix}", result.rows.len())
+    }
+}
+
+fn status_label(result: &SqlGuardResult, theme: &TerminalTheme) -> String {
+    if result.is_allowed {
+        theme.success("autorisé")
+    } else {
+        theme.error("bloqué")
     }
 }
 
@@ -185,5 +225,36 @@ mod tests {
         let output = render_query_result_table(&result, &TerminalTheme::plain());
 
         assert!(output.contains('…'));
+    }
+
+    #[test]
+    fn renders_allowed_sql_guard_with_status_and_hint() {
+        let output = render_sql_guard(
+            &SqlGuardResult {
+                is_allowed: true,
+                reason: None,
+            },
+            &TerminalTheme::plain(),
+        );
+
+        assert!(output.contains("SQL guard autorisé"));
+        assert!(output.contains("✓ Requête autorisée en lecture seule."));
+        assert!(output.contains("Aucune exécution n'a été lancée"));
+    }
+
+    #[test]
+    fn renders_blocked_sql_guard_with_reason_and_remediation() {
+        let output = render_sql_guard(
+            &SqlGuardResult {
+                is_allowed: false,
+                reason: Some("Mot-clé SQL interdit en mode read-only: DROP.".into()),
+            },
+            &TerminalTheme::plain(),
+        );
+
+        assert!(output.contains("SQL guard bloqué"));
+        assert!(output.contains("! Requête bloquée avant exécution."));
+        assert!(output.contains("Raison: Mot-clé SQL interdit"));
+        assert!(output.contains("Utiliser uniquement SELECT/WITH"));
     }
 }
