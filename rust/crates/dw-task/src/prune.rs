@@ -46,7 +46,7 @@ pub fn handle(args: PruneArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&candidates)?);
     } else if candidates.is_empty() {
-        print_styled("Aucun workspace eligible au prune.");
+        print_styled("Aucun workspace éligible au prune.");
     } else {
         for candidate in &candidates {
             print_styled(&prune_candidate_line(candidate));
@@ -57,7 +57,7 @@ pub fn handle(args: PruneArgs) -> Result<()> {
         if !candidates.is_empty() && !json {
             print_styled("");
             print_styled(
-                "Dry-run uniquement. Relancer avec --execute --yes pour supprimer les workspaces eligibles.",
+                "Prévisualisation uniquement. Relancer avec --execute --yes pour supprimer les workspaces éligibles.",
             );
         }
         return Ok(());
@@ -76,7 +76,7 @@ pub fn handle(args: PruneArgs) -> Result<()> {
                 worktree_remove(git_dir, target).map_err(|error| error.to_string())
             }
             ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
-            _ => Err(format!("commande git non supportee: {}", args.join(" "))),
+            _ => Err(format!("commande git non supportée: {}", args.join(" "))),
         })?;
         if !json {
             print_styled(&format!("Workspace supprime: {}", candidate.path));
@@ -93,7 +93,7 @@ fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary], json: bool) {
         Ok(options) => options,
         Err(error) => {
             if !json {
-                print_styled(&format!("Sync ignoree (auth indisponible): {error}"));
+                print_styled(&format!("Sync ignorée (auth indisponible): {error}"));
             }
             return;
         }
@@ -128,7 +128,7 @@ fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary], json: bool) {
             && !json
         {
             print_styled(&format!(
-                "Sync ignoree [{}]: {}",
+                "Sync ignorée [{}]: {}",
                 display_work_items(&workspace.manifest.parent_work_items(), false),
                 error
             ));

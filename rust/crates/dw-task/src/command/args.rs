@@ -2,7 +2,7 @@ use clap::Subcommand;
 
 #[derive(Debug, Subcommand)]
 pub enum TaskCommand {
-    #[command(about = "Liste les workspaces task detectes sous le root.")]
+    #[command(about = "Liste les workspaces task détectés sous le root.")]
     Status {
         #[arg(long, help = "Root DevWorkflow à scanner.")]
         root: Option<String>,
@@ -451,7 +451,7 @@ pub enum TaskCommand {
         work_item: Option<String>,
         #[arg(
             long,
-            help = "Supprimer vraiment les workspaces eligibles; sans ce flag, affiche le plan."
+            help = "Supprimer vraiment les workspaces éligibles; sans ce flag, affiche le plan."
         )]
         execute: bool,
         #[arg(long, help = "Confirmer la suppression destructive avec --execute.")]

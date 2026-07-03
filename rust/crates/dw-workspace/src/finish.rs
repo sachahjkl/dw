@@ -128,7 +128,7 @@ pub fn run_verification(
         };
         for command in commands {
             let resolved = resolve_node_package_manager_command(command);
-            println!("Verification [{}]: {}", candidate.repository, resolved);
+            println!("Vérification [{}]: {}", candidate.repository, resolved);
             let output = run_shell(&candidate.path, &resolved);
             results.push(VerificationResult {
                 repository: candidate.repository.clone(),
@@ -186,7 +186,7 @@ pub fn pull_request_description(
 ) -> String {
     let verification = render_verification(&candidate.repository, verification_results);
     let plan = if plan.trim().is_empty() {
-        "_Plan non trouve._".to_string()
+        "_Plan non trouvé._".to_string()
     } else {
         plan.trim().to_string()
     };

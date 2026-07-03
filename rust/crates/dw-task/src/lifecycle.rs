@@ -211,7 +211,7 @@ fn sync_lines(workspace: &str, items: &[dw_workspace::WorkspaceWorkItem]) -> Vec
 
 fn rename_plan_lines(plan: &dw_workspace::TaskRenamePlan) -> Vec<String> {
     vec![
-        "Rename dry-run:".into(),
+        "Prévisualisation rename:".into(),
         format!("- slug: {} -> {}", plan.old_slug, plan.new_slug),
         format!("- branch: {} -> {}", plan.old_branch, plan.new_branch),
         format!("- workspace: {} -> {}", plan.workspace, plan.new_workspace),
@@ -246,7 +246,7 @@ mod tests {
 
         let lines = rename_plan_lines(&plan);
 
-        assert_eq!(lines[0], "Rename dry-run:");
+        assert_eq!(lines[0], "Prévisualisation rename:");
         assert!(lines.contains(&"- slug: old -> new".into()));
         assert!(lines.contains(&"- branch: feat/1-old -> feat/1-new".into()));
     }

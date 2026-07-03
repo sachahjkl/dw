@@ -37,7 +37,7 @@ pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
     if summary.create_pr {
         lines.push(String::new());
         if summary.pull_request_candidates.is_empty() {
-            lines.push("PR: aucun depot candidat detecte.".into());
+            lines.push("PR: aucun dépôt candidat détecté.".into());
         } else {
             for candidate in summary.pull_request_candidates {
                 lines.push(format!(
@@ -53,11 +53,11 @@ pub(super) fn finish_summary_lines(summary: FinishSummary<'_>) -> Vec<String> {
 
 pub(super) fn finish_dry_run_hint(no_changes: bool, create_pr: bool) -> &'static str {
     if create_pr {
-        "Dry-run uniquement. Relancer avec --execute pour pousser/creer PR."
+        "Prévisualisation uniquement. Relancer avec --execute pour pousser/créer PR."
     } else if no_changes {
-        "Dry-run uniquement. Relancer avec --execute --skip-ado pour pousser."
+        "Prévisualisation uniquement. Relancer avec --execute --skip-ado pour pousser."
     } else {
-        "Dry-run uniquement. Relancer avec --execute --skip-ado pour committer/pousser."
+        "Prévisualisation uniquement. Relancer avec --execute --skip-ado pour committer/pousser."
     }
 }
 
@@ -77,9 +77,9 @@ fn repository_status_label(status: &dw_git::RepositoryStatus) -> &'static str {
     if !status.is_git_repository {
         "Pas un repo Git utilisable."
     } else if status.has_changes {
-        "Changements detectes:"
+        "Changements détectés:"
     } else if status.has_unpushed {
-        "Commits non pousses."
+        "Commits non poussés."
     } else {
         "Aucun changement."
     }
@@ -96,15 +96,15 @@ mod tests {
     fn finish_dry_run_hint_matches_action() {
         assert_eq!(
             finish_dry_run_hint(false, false),
-            "Dry-run uniquement. Relancer avec --execute --skip-ado pour committer/pousser."
+            "Prévisualisation uniquement. Relancer avec --execute --skip-ado pour committer/pousser."
         );
         assert_eq!(
             finish_dry_run_hint(true, false),
-            "Dry-run uniquement. Relancer avec --execute --skip-ado pour pousser."
+            "Prévisualisation uniquement. Relancer avec --execute --skip-ado pour pousser."
         );
         assert_eq!(
             finish_dry_run_hint(false, true),
-            "Dry-run uniquement. Relancer avec --execute pour pousser/creer PR."
+            "Prévisualisation uniquement. Relancer avec --execute pour pousser/créer PR."
         );
     }
 
@@ -121,7 +121,7 @@ mod tests {
         let lines = repository_status_lines("front", &status);
 
         assert!(lines.contains(&"[front] /tmp/repo".into()));
-        assert!(lines.contains(&"Changements detectes:".into()));
+        assert!(lines.contains(&"Changements détectés:".into()));
         assert!(lines.contains(&" M src/lib.rs".into()));
     }
 

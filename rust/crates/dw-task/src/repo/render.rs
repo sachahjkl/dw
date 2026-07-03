@@ -30,7 +30,7 @@ pub(super) fn commit_status_lines(
 
     lines.push(String::new());
     if nothing_to_commit {
-        lines.push("Rien a committer.".into());
+        lines.push("Rien à committer.".into());
     } else {
         lines.push(format!("Message: {commit_message}"));
     }
@@ -39,7 +39,7 @@ pub(super) fn commit_status_lines(
 
 pub(super) fn add_repo_plan_lines(plan: &dw_workspace::TaskAddRepoPlan) -> Vec<String> {
     vec![
-        "Add repo dry-run:".into(),
+        "Prévisualisation ajout repo:".into(),
         format!("- workspace: {}", plan.workspace),
         format!("- repo: {}", plan.repository),
         format!("- worktree: {}", plan.worktree_path),
@@ -59,9 +59,9 @@ pub(super) fn teardown_plan_lines(
     let mut lines = vec![
         format!("Workspace: {workspace}"),
         if execute {
-            "Teardown execute:".into()
+            "Teardown exécuté:".into()
         } else {
-            "Teardown dry-run:".into()
+            "Prévisualisation teardown:".into()
         },
     ];
     for step in steps {
@@ -77,9 +77,9 @@ fn repository_status_label(status: &RepositoryStatus) -> &'static str {
     if !status.is_git_repository {
         "Pas un repo Git utilisable."
     } else if status.has_changes {
-        "Changements detectes:"
+        "Changements détectés:"
     } else if status.has_unpushed {
-        "Commits non pousses."
+        "Commits non poussés."
     } else {
         "Aucun changement."
     }
@@ -109,7 +109,7 @@ mod tests {
                 has_unpushed: false,
                 detail: String::new(),
             }),
-            "Changements detectes:"
+            "Changements détectés:"
         );
     }
 
@@ -129,7 +129,7 @@ mod tests {
 
         let lines = add_repo_plan_lines(&plan);
 
-        assert_eq!(lines[0], "Add repo dry-run:");
+        assert_eq!(lines[0], "Prévisualisation ajout repo:");
         assert!(lines.contains(&"- anchor: /tmp/project/repositories/front-anchor".into()));
     }
 
@@ -145,8 +145,8 @@ mod tests {
         let dry_run = teardown_plan_lines("/tmp/ws", &steps, false);
         let execute = teardown_plan_lines("/tmp/ws", &steps, true);
 
-        assert_eq!(dry_run[1], "Teardown dry-run:");
-        assert_eq!(execute[1], "Teardown execute:");
+        assert_eq!(dry_run[1], "Prévisualisation teardown:");
+        assert_eq!(execute[1], "Teardown exécuté:");
         assert!(dry_run.contains(&"- [front] remove-worktree: /tmp/ws/front".into()));
     }
 }

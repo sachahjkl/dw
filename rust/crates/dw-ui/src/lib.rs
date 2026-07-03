@@ -99,6 +99,7 @@ impl TerminalTheme {
                 "Relancer",
                 "Teardown dry-run",
                 "PR non creee",
+                "PR non créée",
                 "Teardown annule",
                 "Prévisualisation",
             ],
@@ -129,7 +130,14 @@ impl TerminalTheme {
 
         if starts_with_any_ignore_ascii_case(
             &styled,
-            &["Aucun", "Sync ignoree", "PR ignoree", "ADO ignore"],
+            &[
+                "Aucun",
+                "Sync ignoree",
+                "Sync ignorée",
+                "PR ignoree",
+                "PR ignorée",
+                "ADO ignore",
+            ],
         ) {
             return self.warning(&styled);
         }
@@ -177,6 +185,8 @@ fn is_success_status_line(line: &str) -> bool {
         line,
         &[
             "Workspace cree",
+            "Workspace créé",
+            "Worktree créé",
             "Workspace renomme",
             "Workspace synchronise",
             "Workspace supprime",
@@ -186,7 +196,9 @@ fn is_success_status_line(line: &str) -> bool {
             "Binaire remplace",
             "Commits/push terminés",
             "PR creee",
+            "PR créée",
             "Root rafraichi",
+            "Workspace mis à jour",
         ],
     ) || (line.starts_with_ignore_ascii_case("Repo ") && line.contains(':'))
 }
@@ -233,10 +245,10 @@ mod tests {
     #[test]
     fn style_line_colors_status_lines() {
         let theme = TerminalTheme::new(ColorMode::Always, false, false);
-        let styled = theme.style_line("Workspace cree: S:/dw", false);
+        let styled = theme.style_line("Workspace créé: S:/dw", false);
 
         assert!(styled.contains("\u{1b}"));
-        assert!(styled.contains("Workspace cree"));
+        assert!(styled.contains("Workspace créé"));
     }
 
     #[test]
@@ -254,8 +266,8 @@ mod tests {
         let theme = TerminalTheme::plain();
 
         assert_eq!(
-            theme.style_line("Workspace cree: S:/dw", false),
-            "Workspace cree: S:/dw"
+            theme.style_line("Workspace créé: S:/dw", false),
+            "Workspace créé: S:/dw"
         );
     }
 

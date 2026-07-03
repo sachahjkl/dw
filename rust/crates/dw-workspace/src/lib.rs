@@ -244,9 +244,9 @@ pub enum WorkspaceError {
     InvalidManifest(String),
     #[error("Workspace introuvable: {0}")]
     MissingWorkspace(String),
-    #[error("Aucun workspace task trouve.")]
+    #[error("Aucun workspace task trouvé.")]
     NoWorkspaceFound,
-    #[error("Aucun workspace task trouve depuis le dossier courant.")]
+    #[error("Aucun workspace task trouvé depuis le dossier courant.")]
     NoCurrentWorkspace,
     #[error("work-item-id et --work-item doivent pointer vers le meme work item.")]
     ConflictingWorkItemSelection,
@@ -256,7 +256,7 @@ pub enum WorkspaceError {
     WorkspaceConflict(String),
     #[error("Fichier ai-context introuvable: {0}")]
     MissingAiContext(String),
-    #[error("Teardown echoue [{repository}]: {message}")]
+    #[error("Teardown échoué [{repository}]: {message}")]
     TeardownFailed { repository: String, message: String },
     #[error("Impossible de retirer tous les work items du workspace.")]
     EmptyWorkItemSet,
@@ -1535,7 +1535,7 @@ pub fn try_parse_summary(
             continue;
         }
 
-        return Err(format!("ligne handoff non supportee: '{trimmed}'"));
+        return Err(format!("ligne handoff non supportée: '{trimmed}'"));
     }
 
     if status.trim().is_empty() {
@@ -1548,7 +1548,7 @@ pub fn try_parse_summary(
 
     if !repository.eq_ignore_ascii_case(expected_repository) {
         return Err(format!(
-            "repository attendu '{}', trouve '{}'",
+            "repository attendu '{}', trouvé '{}'",
             expected_repository, repository
         ));
     }
@@ -2113,7 +2113,7 @@ artifacts:
 "#;
 
         let error = try_parse_summary(text, "front").expect_err("unsupported line should fail");
-        assert!(error.contains("ligne handoff non supportee"));
+        assert!(error.contains("ligne handoff non supportée"));
     }
 
     #[test]

@@ -113,16 +113,16 @@ fn planned_workspace_lines(plan: &TaskStartPlan) -> Vec<String> {
         format!("Branche cible: {}", plan.branch_name),
         format!("Workspace cible: {}", plan.workspace),
         format!("Repos: {}", plan.repositories.join(", ")),
-        "Relancer avec --execute pour creer le workspace.".into(),
+        "Relancer avec --execute pour créer le workspace.".into(),
     ]
 }
 
 fn created_workspace_lines(plan: &TaskStartPlan) -> Vec<String> {
     vec![
-        format!("Workspace cree: {}", plan.workspace),
+        format!("Workspace créé: {}", plan.workspace),
         format!("Branche cible: {}", plan.branch_name),
         format!("Repos: {}", plan.repositories.join(", ")),
-        "Prochaine etape conseillee: ouvrir le workspace ou lancer l'agent.".into(),
+        "Prochaine étape conseillée: ouvrir le workspace ou lancer l'agent.".into(),
     ]
 }
 
@@ -149,7 +149,7 @@ mod tests {
         let lines = planned_workspace_lines(&plan);
 
         assert_eq!(lines[0], "Plan task start");
-        assert!(lines.contains(&"Relancer avec --execute pour creer le workspace.".into()));
+        assert!(lines.contains(&"Relancer avec --execute pour créer le workspace.".into()));
     }
 
     #[test]
@@ -170,11 +170,11 @@ mod tests {
 
         let lines = created_workspace_lines(&plan);
 
-        assert_eq!(lines[0], "Workspace cree: /tmp/dw/ha/42-titre");
+        assert_eq!(lines[0], "Workspace créé: /tmp/dw/ha/42-titre");
         assert!(
             lines
                 .iter()
-                .any(|line| line.starts_with("Prochaine etape conseillee"))
+                .any(|line| line.starts_with("Prochaine étape conseillée"))
         );
     }
 }

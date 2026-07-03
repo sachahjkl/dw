@@ -159,7 +159,7 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
         write_workspace_agent_configs(&new_workspace, &updated)?;
         if !json {
-            print_styled(&format!("Workspace mis a jour: {new_workspace}"));
+            print_styled(&format!("Workspace mis à jour: {new_workspace}"));
         }
     } else if !json {
         print_styled("Relancer avec --execute pour appliquer.");
@@ -198,7 +198,7 @@ pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
         let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
         write_workspace_agent_configs(&new_workspace, &updated)?;
         if !json {
-            print_styled(&format!("Workspace mis a jour: {new_workspace}"));
+            print_styled(&format!("Workspace mis à jour: {new_workspace}"));
         }
     } else if !json {
         print_styled("Relancer avec --execute pour appliquer.");
@@ -211,7 +211,7 @@ fn work_item_update_plan_lines(
     plan: &dw_workspace::TaskWorkItemUpdatePlan,
 ) -> Vec<String> {
     vec![
-        format!("{label} dry-run:"),
+        format!("Prévisualisation {label}:"),
         format!("- branch: {} -> {}", plan.old_branch, plan.new_branch),
         format!("- workspace: {} -> {}", plan.workspace, plan.new_workspace),
         format!(
@@ -252,9 +252,9 @@ mod tests {
             ],
         };
 
-        let lines = work_item_update_plan_lines("Add work-item", &plan);
+        let lines = work_item_update_plan_lines("ajout work-item", &plan);
 
-        assert_eq!(lines[0], "Add work-item dry-run:");
+        assert_eq!(lines[0], "Prévisualisation ajout work-item:");
         assert!(lines.contains(&"- branch: feat/1-old -> feat/1-2-new".into()));
         assert!(lines.contains(&"- work items: #1, #2".into()));
     }

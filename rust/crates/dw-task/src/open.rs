@@ -26,9 +26,9 @@ pub fn status(root: Option<String>) {
     let root = resolve_root(root.as_deref());
     let items = task_status(&root);
     print_styled(&format!("Root: {}", root));
-    print_styled("Workspaces detectes:");
+    print_styled("Workspaces détectés:");
     if items.is_empty() {
-        print_styled("  Aucun workspace task trouve.");
+        print_styled("  Aucun workspace task trouvé.");
     } else {
         for item in items {
             print_styled(&format!("  {item}"));
@@ -47,7 +47,7 @@ pub fn list(
     if json {
         println!("{}", serde_json::to_string_pretty(&items)?);
     } else if items.is_empty() {
-        print_styled("Aucun workspace task trouve.");
+        print_styled("Aucun workspace task trouvé.");
     } else {
         print_styled_lines(&task_list_lines(&items));
     }
@@ -146,7 +146,7 @@ fn interactive_workspace_selection(
 ) -> Result<String> {
     let items = task_list(root, project, work_item);
     if items.is_empty() {
-        return Err(anyhow::anyhow!("Aucun workspace task trouve."));
+        return Err(anyhow::anyhow!("Aucun workspace task trouvé."));
     }
     if items.len() == 1 {
         return Ok(items[0].path.clone());

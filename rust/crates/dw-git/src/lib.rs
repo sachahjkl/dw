@@ -310,11 +310,11 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
         status: "prepared".into(),
         message: if branch_exists {
             format!(
-                "Worktree cree depuis la branche existante {}.",
+                "Worktree créé depuis la branche existante {}.",
                 request.branch_name
             )
         } else {
-            format!("Worktree cree depuis {base_ref}.")
+            format!("Worktree créé depuis {base_ref}.")
         },
     })
 }

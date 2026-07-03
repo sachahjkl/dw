@@ -175,7 +175,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
     }
     if !create_pr {
         if !json {
-            print_styled("PR non creee. Relancer avec --create-pr pour ouvrir les PR ADO.");
+            print_styled("PR non créée. Relancer avec --create-pr pour ouvrir les PR ADO.");
         }
         return Ok(());
     }
@@ -183,7 +183,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
     if !changed.is_empty() && !json {
         print_styled("Commits/push terminés. Création PR en cours.");
     } else if changed.is_empty() && unpushed.is_empty() && !json {
-        print_styled("Aucun commit local a pousser. Verification PR en cours.");
+        print_styled("Aucun commit local à pousser. Vérification PR en cours.");
     }
 
     let mut options = resolve_ado_options(&projects, &workflow, &manifest.project)?;
@@ -197,7 +197,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
     for candidate in &pull_request_candidates {
         let Some(ado_repository) = candidate.ado_repository.as_ref() else {
             print_styled(&format!(
-                "PR ignoree pour {}: azureDevOpsRepository manquant.",
+                "PR ignorée pour {}: azureDevOpsRepository manquant.",
                 candidate.repository
             ));
             continue;
@@ -249,7 +249,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             }
         }
         print_styled(&format!(
-            "PR creee pour {}: {}",
+            "PR créée pour {}: {}",
             candidate.repository,
             created.url.as_deref().unwrap_or("(url non retournee)")
         ));

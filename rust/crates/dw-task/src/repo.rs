@@ -145,7 +145,7 @@ pub fn commit(args: CommitArgs) -> Result<()> {
 
     if changed.is_empty() || !execute {
         if !changed.is_empty() && !json {
-            print_styled("Dry-run uniquement. Relancer avec --execute pour committer.");
+            print_styled("Prévisualisation uniquement. Relancer avec --execute pour committer.");
         }
         return Ok(());
     }
@@ -243,7 +243,7 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
         if !json {
             print_styled("");
             print_styled(
-                "Dry-run uniquement. Relancer avec --execute --yes pour supprimer les worktrees et le workspace.",
+                "Prévisualisation uniquement. Relancer avec --execute --yes pour supprimer les worktrees et le workspace.",
             );
         }
         return Ok(());
@@ -260,7 +260,7 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
             worktree_remove(git_dir, target).map_err(|error| error.to_string())
         }
         ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
-        _ => Err(format!("commande git non supportee: {}", args.join(" "))),
+        _ => Err(format!("commande git non supportée: {}", args.join(" "))),
     })?;
     if !json {
         print_styled(&format!("Workspace supprime: {workspace}"));

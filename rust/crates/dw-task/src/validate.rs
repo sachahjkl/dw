@@ -14,7 +14,7 @@ pub fn preflight(workspace: String, ai_context_file: Vec<String>, json: bool) ->
 
     if files.is_empty() {
         return Err(anyhow::anyhow!(
-            "Aucun fichier ai-context detecte. Fournir --ai-context-file ou placer des fichiers ai-context*.json dans le workspace."
+            "Aucun fichier ai-context détecté. Fournir --ai-context-file ou placer des fichiers ai-context*.json dans le workspace."
         ));
     }
 
@@ -54,7 +54,7 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     ];
 
     if report.issues.is_empty() {
-        lines.push("Aucun warning ni blocage detecte.".into());
+        lines.push("Aucun warning ni blocage détecté.".into());
         return lines;
     }
 
@@ -71,7 +71,7 @@ fn preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     if report.has_blocking_issues {
         lines.push(String::new());
         lines.push(
-            "Blocages detectes: demander confirmation utilisateur avant de forcer l'implementation."
+            "Blocages détectés: demander confirmation utilisateur avant de forcer l'implémentation."
                 .into(),
         );
     }
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(lines[0], "Preflight workspace: /tmp/ws");
         assert!(lines.contains(&"- [blocking] missing_attachment: Piece jointe manquante".into()));
         assert!(lines.contains(
-            &"Blocages detectes: demander confirmation utilisateur avant de forcer l'implementation."
+            &"Blocages détectés: demander confirmation utilisateur avant de forcer l'implémentation."
                 .into()
         ));
     }
