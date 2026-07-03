@@ -1,0 +1,77 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux Rust build, tests and artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v17
+        with:
+          name: sachahjkl
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ github.event_name == 'pull_request' }}
+
+      - name: Check flake
+        uses: DeterminateSystems/flake-checker-action@main
+
+      - name: Build Nix package
+        run: nix build .#default
+
+      - name: Rust checks
+        run: nix run .#check
+
+      - name: Publish linux-x64 artifact
+        run: nix develop -c env VERSION=0.0.0-ci COMMIT=${{ github.sha }} bash ./scripts/publish-linux-x64.sh
+
+      - name: Upload linux artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: dw-linux-x64
+          path: |
+            artifacts/linux-x64/dw-linux-x64.tar.gz
+            artifacts/linux-x64/release.json
+
+  windows:
+    name: Windows Rust build, tests and artifact
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust checks
+        shell: pwsh
+        run: |
+          cargo fmt --all -- --check
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Publish win-x64 artifact
+        shell: pwsh
+        run: .\scripts\publish-win-x64.ps1 -Version 0.0.0-ci -Commit $env:GITHUB_SHA
+
+      - name: Upload win artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: dw-win-x64
+          path: |
+            artifacts/win-x64/dw-win-x64.zip
+            artifacts/win-x64/release.json

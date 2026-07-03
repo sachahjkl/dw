@@ -28,7 +28,9 @@ impl Cli {
     }
 
     pub(crate) fn localized_command() -> clap::Command {
-        localize_command(Self::command())
+        let display_version: &'static str =
+            Box::leak(crate::version::informational_version().into_boxed_str());
+        localize_command(Self::command().version(display_version))
     }
 }
 

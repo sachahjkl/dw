@@ -11,10 +11,10 @@ use dw_ui::TerminalTheme;
 pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Version => {
-            println!("dw {}", informational_version());
+            println!("Dev Workflow {}", informational_version());
         }
         Command::Guide => {
-            print_styled(&format!("dw - Dev Workflow {}", informational_version()));
+            print_styled(&format!("Dev Workflow {}", informational_version()));
             print_styled("Démarrer avec `dw init`, puis `dw task start <work-item-id>`.");
         }
         Command::Doctor { fix } => run_doctor(fix)?,

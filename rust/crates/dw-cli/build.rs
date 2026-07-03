@@ -11,4 +11,9 @@ fn main() {
         .trim()
         .to_owned();
     println!("cargo:rustc-env=DW_VERSION={version}");
+    if let Ok(commit) = std::env::var("DW_COMMIT")
+        && !commit.trim().is_empty()
+    {
+        println!("cargo:rustc-env=DW_COMMIT={commit}");
+    }
 }
