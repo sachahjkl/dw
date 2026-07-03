@@ -1,6 +1,6 @@
 use crate::write_workspace_agent_configs;
 use anyhow::Result;
-use dw_config::{load_projects_config, resolve_root};
+use dw_config::{load_projects_config, resolve_project, resolve_root};
 use dw_git::{
     WorktreePrepareRequest, commit_repository, prepare_worktree, repository_status,
     update_repository, worktree_prune, worktree_remove,
@@ -15,7 +15,7 @@ use self::render::{
     add_repo_plan_lines, commit_status_lines, repo_latest_header_lines, teardown_plan_lines,
 };
 use crate::render::{print_styled, print_styled_lines};
-use dw_ui::confirm_or_require_flag;
+use dw_ui::{confirm_or_require_flag, is_stdin_interactive, select_optional};
 
 mod render;
 
@@ -40,7 +40,7 @@ pub struct CommitArgs {
 
 #[derive(Debug, Clone)]
 pub struct AddRepoArgs {
-    pub repo: String,
+    pub repo: Option<String>,
     pub workspace: Option<String>,
     pub root: Option<String>,
     pub execute: bool,
@@ -177,6 +177,7 @@ pub fn add_repo(args: AddRepoArgs) -> Result<()> {
         &std::env::current_dir()?.display().to_string(),
     )?;
     let projects = load_projects_config(&root);
+    let repo = resolve_add_repo_selection(repo, &projects, &workspace)?;
     let (manifest, plan) = plan_task_add_repo(&root, &projects, &workspace, &repo)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&plan)?);
@@ -206,6 +207,47 @@ pub fn add_repo(args: AddRepoArgs) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn resolve_add_repo_selection(
+    repo: Option<String>,
+    projects: &dw_config::ProjectsConfig,
+    workspace: &str,
+) -> Result<String> {
+    if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
+        return Ok(repo);
+    }
+    if !is_stdin_interactive() {
+        return Err(anyhow::anyhow!(
+            "Repository manquant. Fournir `dw task add-repo <repo>`."
+        ));
+    }
+
+    let manifest = dw_workspace::read_manifest_path(&format!("{workspace}/task.json"))?;
+    let choices = add_repo_choices(projects, &manifest);
+    select_optional("Repository à ajouter", choices)?
+        .ok_or_else(|| anyhow::anyhow!("Aucun repository configuré à ajouter."))
+}
+
+fn add_repo_choices(
+    projects: &dw_config::ProjectsConfig,
+    manifest: &dw_workspace::WorkspaceManifest,
+) -> Vec<String> {
+    resolve_project(projects, &manifest.project)
+        .map(|project| {
+            project
+                .repositories
+                .keys()
+                .filter(|repository| {
+                    !manifest
+                        .repositories
+                        .iter()
+                        .any(|existing| existing.eq_ignore_ascii_case(repository))
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn teardown(args: TeardownArgs) -> Result<()> {
@@ -263,4 +305,48 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
         print_styled(&format!("Workspace supprimé: {workspace}"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::add_repo_choices;
+
+    #[test]
+    fn add_repo_choices_hide_repositories_already_in_workspace() {
+        let projects: dw_config::ProjectsConfig = serde_json::from_str(
+            r#"{
+  "projects": {
+    "ha": {
+      "displayName": "HA",
+      "repositories": {
+        "front": { "url": "", "defaultBranch": "main" },
+        "back": { "url": "", "defaultBranch": "main" },
+        "db": { "url": "", "defaultBranch": "main" }
+      }
+    }
+  }
+}"#,
+        )
+        .expect("projects config should parse");
+        let manifest = dw_workspace::WorkspaceManifest {
+            schema: 1,
+            work_item_id: "42".into(),
+            task_id: None,
+            project: "ha".into(),
+            kind: "feat".into(),
+            slug: "demo".into(),
+            branch_name: "feat/42-demo".into(),
+            created_at: "2026-07-03T10:00:00Z".into(),
+            repositories: vec!["front".into()],
+            status: "created".into(),
+            work_item_type: None,
+            work_item_title: None,
+            work_item_state: None,
+            child_task_ids: None,
+            child_tasks: None,
+            work_items: None,
+        };
+
+        assert_eq!(add_repo_choices(&projects, &manifest), vec!["back", "db"]);
+    }
 }

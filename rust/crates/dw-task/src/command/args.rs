@@ -341,7 +341,7 @@ pub enum TaskCommand {
     #[command(about = "Ajoute un repository au workspace task.")]
     AddRepo {
         #[arg(help = "Dépôt configuré à ajouter au workspace.")]
-        repo: String,
+        repo: Option<String>,
         #[arg(long, help = "Chemin du workspace à modifier.")]
         workspace: Option<String>,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]
