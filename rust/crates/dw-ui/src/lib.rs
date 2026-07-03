@@ -144,6 +144,17 @@ impl TerminalTheme {
                 "Project  WorkItem",
                 "Préparation de l'upgrade",
                 "Schémas et contextes agents régénérés",
+                "Task workspaces",
+                "Workspace courant",
+                "Repo latest",
+                "Commit workspace",
+                "Ajout repo",
+                "Teardown",
+                "Finish workspace",
+                "Handoff validation",
+                "Handoff ",
+                "Commit à créer",
+                "Pull requests",
             ],
         ) {
             return self.bold(&self.cyan(&styled));
