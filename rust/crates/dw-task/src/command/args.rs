@@ -235,25 +235,52 @@ pub enum TaskCommand {
     },
     #[command(about = "Verifie, commit, push et ouvre une PR pour terminer le workspace.")]
     Finish {
-        #[arg(long, conflicts_with = "continue")]
+        #[arg(
+            long,
+            conflicts_with = "continue",
+            help = "Chemin du workspace a terminer."
+        )]
         workspace: Option<String>,
-        #[arg(long = "continue", conflicts_with = "workspace")]
+        #[arg(
+            long = "continue",
+            conflicts_with = "workspace",
+            help = "Reprendre le workspace task le plus recent correspondant."
+        )]
         r#continue: bool,
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a utiliser.")]
         root: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Executer les commits, pushs, PR et mises a jour ADO; sans ce flag, affiche le plan."
+        )]
         execute: bool,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Message de commit explicite; sinon genere depuis le manifeste task."
+        )]
         message: Option<String>,
-        #[arg(long = "create-pr")]
+        #[arg(
+            long = "create-pr",
+            help = "Creer ou verifier les pull requests Azure DevOps apres push."
+        )]
         create_pr: bool,
-        #[arg(long, requires = "create_pr")]
+        #[arg(
+            long,
+            requires = "create_pr",
+            help = "Creer les PR en etat ready au lieu de draft."
+        )]
         ready: bool,
-        #[arg(long = "skip-verify")]
+        #[arg(
+            long = "skip-verify",
+            help = "Ignorer les commandes de verification configurees avant PR."
+        )]
         skip_verify: bool,
-        #[arg(long = "skip-ado")]
+        #[arg(
+            long = "skip-ado",
+            help = "Ne pas appeler Azure DevOps; incompatible avec --create-pr."
+        )]
         skip_ado: bool,
-        #[arg(long)]
+        #[arg(long, help = "Emettre le rapport JSON deterministe.")]
         json: bool,
     },
     #[command(about = "Valide les fichiers handoff avant sous-agents ou finition.")]
