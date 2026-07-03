@@ -1,7 +1,8 @@
 mod finish;
+mod prune;
 
+use crate::ado::resolve_ado_options;
 use crate::cli::TaskCommand;
-use crate::handlers::resolve_ado_options;
 use crate::simple_handlers::load_auth_options;
 use anyhow::Result;
 use dw_ado::auth::require_token;
@@ -22,10 +23,9 @@ use dw_workspace::{
     execute_task_start_with_work_items, execute_task_sync, execute_task_teardown,
     execute_work_item_update, parse_work_item_ids as parse_workspace_work_item_ids,
     plan_add_work_item_snapshots, plan_add_work_items, plan_remove_work_items, plan_task_add_repo,
-    plan_task_commit, plan_task_prune, plan_task_rename, plan_task_repo_latest, plan_task_start,
-    plan_task_teardown, read_manifest_path, requires_child_tasks, resolve_open_target,
-    resolve_workspace, resolve_workspace_for_workspace_command, task_current, task_list,
-    task_status,
+    plan_task_commit, plan_task_rename, plan_task_repo_latest, plan_task_start, plan_task_teardown,
+    read_manifest_path, requires_child_tasks, resolve_open_target, resolve_workspace,
+    resolve_workspace_for_workspace_command, task_current, task_list, task_status,
 };
 use inquire::{MultiSelect, Select, Text};
 use std::io::IsTerminal;
@@ -910,61 +910,15 @@ pub(crate) fn handle_task(command: TaskCommand) -> Result<()> {
             yes,
             no_sync,
             json,
-        } => {
-            if !no_sync {
-                return Err(anyhow::anyhow!(
-                    "Rust task prune exige --no-sync tant que le sync ADO reel n'est pas porte."
-                ));
-            }
-            let root = resolve_root(root.as_deref());
-            let candidates = plan_task_prune(&root, project.as_deref(), work_item.as_deref());
-            if json {
-                println!("{}", serde_json::to_string_pretty(&candidates)?);
-            } else if candidates.is_empty() {
-                println!("Aucun workspace eligible au prune.");
-            } else {
-                for candidate in &candidates {
-                    println!(
-                        "{} / {}: {}",
-                        candidate.manifest.project,
-                        display_work_items(&candidate.manifest.parent_work_items(), true),
-                        candidate.path
-                    );
-                }
-            }
-
-            if candidates.is_empty() || !execute {
-                if !candidates.is_empty() && !json {
-                    println!();
-                    println!(
-                        "Dry-run uniquement. Relancer avec --execute --yes --no-sync pour supprimer les workspaces eligibles."
-                    );
-                }
-                return Ok(());
-            }
-            if !yes {
-                return Err(anyhow::anyhow!(
-                    "Suppression destructive refusee: ajouter --yes avec --execute."
-                ));
-            }
-
-            let projects = load_projects_config(&root);
-            for candidate in candidates {
-                let (_manifest, steps) = plan_task_teardown(&root, &projects, &candidate.path)?;
-                execute_task_teardown(&candidate.path, &steps, |git_dir, args| match args {
-                    ["worktree", "remove", "--force", target] => {
-                        worktree_remove(git_dir, target).map_err(|error| error.to_string())
-                    }
-                    ["worktree", "prune"] => {
-                        worktree_prune(git_dir).map_err(|error| error.to_string())
-                    }
-                    _ => Err(format!("commande git non supportee: {}", args.join(" "))),
-                })?;
-                if !json {
-                    println!("Workspace supprime: {}", candidate.path);
-                }
-            }
-        }
+        } => prune::handle(prune::PruneArgs {
+            root,
+            project,
+            work_item,
+            execute,
+            yes,
+            no_sync,
+            json,
+        })?,
     }
 
     Ok(())

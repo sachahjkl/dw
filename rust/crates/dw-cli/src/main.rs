@@ -1,7 +1,9 @@
 use clap::Parser;
 
+mod ado;
 mod cli;
 mod completion;
+mod db;
 mod doctor;
 mod handlers;
 mod simple_handlers;

@@ -1,4 +1,4 @@
-use crate::handlers::resolve_ado_options;
+use crate::ado::resolve_ado_options;
 use crate::simple_handlers::load_auth_options;
 use anyhow::Result;
 use dw_ado::auth::require_token;
