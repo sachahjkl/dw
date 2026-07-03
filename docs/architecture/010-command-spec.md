@@ -21,8 +21,7 @@ Checks:
 - DevWorkflow root
 - user settings
 - Git
-- .NET 10 runtime
-- OpenCode on PATH
+- configured agents on PATH
 
 `--fix` initializes the default root if it is missing.
 
@@ -104,7 +103,7 @@ Status: functionally implemented. Remaining work is real-environment validation 
 
 ## `dw auth`
 
-Implemented first pass.
+Implemented.
 
 Current behavior:
 
@@ -116,7 +115,7 @@ Current behavior:
 
 ## `dw db`
 
-Implemented first pass.
+Implemented.
 
 Target behavior:
 

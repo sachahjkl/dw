@@ -1,0 +1,23 @@
+[package]
+name = "dw-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+dw-ado-commands = { path = "../dw-ado-commands" }
+dw-agent = { path = "../dw-agent" }
+dw-completion = { path = "../dw-completion" }
+dw-config = { path = "../dw-config" }
+dw-db = { path = "../dw-db" }
+dw-doctor = { path = "../dw-doctor" }
+dw-secret = { path = "../dw-secret" }
+dw-task = { path = "../dw-task" }
+dw-ui = { path = "../dw-ui" }
+dw-upgrade = { path = "../dw-upgrade" }

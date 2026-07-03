@@ -6,24 +6,31 @@ COMMIT="${COMMIT:-dev}"
 OUTPUT="${OUTPUT:-artifacts/linux-x64}"
 RELEASE_BASE_URL="${RELEASE_BASE_URL:-}"
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-output_path="$repo_root/$OUTPUT"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+if [[ "$OUTPUT" = /* ]]; then
+  output_path="$OUTPUT"
+else
+  output_path="$repo_root/$OUTPUT"
+fi
+archive_name="dw-linux-x64.tar.gz"
+archive_path="$output_path/$archive_name"
 
-dotnet publish "$repo_root/src/Dw.Cli/Dw.Cli.csproj" \
-  --configuration Release \
-  --runtime linux-x64 \
-  --self-contained false \
-  -p:PublishSingleFile=true \
-  -p:DebugType=embedded \
-  -p:VersionPrefix="$VERSION" \
-  -p:SourceRevisionId="$COMMIT" \
-  --output "$output_path"
+mkdir -p "$output_path"
 
-exe="$output_path/dw"
-hash="$(sha256sum "$exe" | awk '{print $1}')"
+(
+  cd "$repo_root"
+  DW_COMMIT="$COMMIT" cargo build --locked --release -p dw-cli
+)
+
+cp "$repo_root/target/release/dw-cli" "$output_path/dw"
+chmod 755 "$output_path/dw"
+tar -czf "$archive_path" -C "$output_path" dw
+
+hash="$(sha256sum "$archive_path" | awk '{print $1}')"
 url=""
 if [[ -n "$RELEASE_BASE_URL" ]]; then
-  url="$RELEASE_BASE_URL/dw"
+  url="$RELEASE_BASE_URL/$archive_name"
 fi
 
 cat > "$output_path/release.json" <<EOF
@@ -35,7 +42,7 @@ cat > "$output_path/release.json" <<EOF
   "assets": [
     {
       "rid": "linux-x64",
-      "fileName": "dw",
+      "fileName": "$archive_name",
       "sha256": "$hash",
       "url": "$url"
     }
@@ -43,5 +50,5 @@ cat > "$output_path/release.json" <<EOF
 }
 EOF
 
-echo "Published $exe"
+echo "Published $archive_path"
 echo "SHA256 $hash"

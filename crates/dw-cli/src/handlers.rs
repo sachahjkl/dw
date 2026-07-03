@@ -1,0 +1,64 @@
+use crate::cli::*;
+use crate::guide::print_guide;
+use crate::version::informational_version;
+use anyhow::Result;
+use dw_agent::command::AgentAction;
+
+pub(crate) fn run(cli: Cli) -> Result<()> {
+    match cli.command {
+        Command::Version => {
+            println!("Dev Workflow {}", informational_version());
+        }
+        Command::Guide => {
+            print_guide(&informational_version());
+        }
+        Command::Doctor { fix } => dw_doctor::run_doctor(fix)?,
+        Command::Init {
+            profile,
+            root,
+            dry_run,
+            no_save,
+        } => dw_config::command::handle_init(dw_config::command::InitCommandArgs {
+            root,
+            profile,
+            no_save,
+            dry_run,
+        })?,
+        Command::Refresh { root, profile } => {
+            dw_config::command::handle_refresh(dw_config::command::RefreshCommandArgs {
+                root,
+                profile,
+            })?
+        }
+        Command::Agent { command } => match dw_agent::command::handle_agent(command)? {
+            AgentAction::Handled => {}
+            AgentAction::Open(args) => dw_task::command::handle_agent_open(args)?,
+        },
+        Command::Auth { command } => dw_ado_commands::auth::handle_auth(command)?,
+        Command::Completion { command } => handle_completion(command)?,
+        Command::Config { command } => dw_config::command::handle_config(command)?,
+
+        Command::Ado { command } => dw_ado_commands::command::handle_ado(command)?,
+        Command::Db { command } => dw_db::command::handle_db(command)?,
+        Command::Secret { command } => dw_secret::command::handle_secret(command)?,
+        Command::Upgrade { check, rid } => dw_upgrade::handle_upgrade(check, rid)?,
+        Command::Task { command } => dw_task::command::handle_task(command)?,
+    }
+
+    Ok(())
+}
+
+fn handle_completion(command: CompletionCommand) -> Result<()> {
+    match command {
+        CompletionCommand::Show => dw_completion::print_completion_show(),
+        CompletionCommand::Generate { shell } => {
+            let mut command = Cli::localized_command();
+            dw_completion::generate_completion(shell, &mut command);
+        }
+        CompletionCommand::Install { shell } => dw_completion::print_completion_install(shell),
+        CompletionCommand::Complete { format, words } => {
+            dw_completion::print_completion_complete(format, words)?
+        }
+    }
+    Ok(())
+}

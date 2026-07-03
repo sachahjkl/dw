@@ -3,9 +3,10 @@ result
 bin/
 obj/
 artifacts/
+target/
 
 # Local smoke/test roots
-.smoke/
+.smoke*/
 
 # User/local settings
 .env

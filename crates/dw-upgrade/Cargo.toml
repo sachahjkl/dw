@@ -1,0 +1,19 @@
+[package]
+name = "dw-upgrade"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+dw-config = { path = "../dw-config" }
+dw-ui = { path = "../dw-ui" }
+flate2.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tar.workspace = true
+zip.workspace = true

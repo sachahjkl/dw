@@ -1,0 +1,21 @@
+[package]
+name = "dw-completion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+clap_complete.workspace = true
+dw-ado-commands = { path = "../dw-ado-commands" }
+dw-agent = { path = "../dw-agent" }
+dw-config = { path = "../dw-config" }
+dw-contracts = { path = "../dw-contracts" }
+dw-db = { path = "../dw-db" }
+dw-secret = { path = "../dw-secret" }
+dw-task = { path = "../dw-task" }
+dw-ui = { path = "../dw-ui" }
+serde_json.workspace = true

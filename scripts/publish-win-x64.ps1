@@ -7,20 +7,31 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$outputPath = Join-Path $repoRoot $Output
+if ([System.IO.Path]::IsPathRooted($Output)) {
+    $outputPath = $Output
+}
+else {
+    $outputPath = Join-Path $repoRoot $Output
+}
+$archiveName = "dw-win-x64.zip"
+$archivePath = Join-Path $outputPath $archiveName
 
-dotnet publish (Join-Path $repoRoot "src\Dw.Cli\Dw.Cli.csproj") `
-    --configuration Release `
-    --runtime win-x64 `
-    --self-contained false `
-    -p:PublishSingleFile=true `
-    -p:DebugType=embedded `
-    -p:VersionPrefix=$Version `
-    -p:SourceRevisionId=$Commit `
-    --output $outputPath
+New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 
-$exe = Join-Path $outputPath "dw.exe"
-$hash = (Get-FileHash -Algorithm SHA256 -Path $exe).Hash.ToLowerInvariant()
+Push-Location $repoRoot
+try {
+    $env:DW_COMMIT = $Commit
+    cargo build --locked --release -p dw-cli
+}
+finally {
+    Pop-Location
+}
+
+Copy-Item -Force (Join-Path $repoRoot "target\release\dw-cli.exe") (Join-Path $outputPath "dw.exe")
+Compress-Archive -Path (Join-Path $outputPath "dw.exe") -DestinationPath $archivePath -Force
+
+$hash = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLowerInvariant()
+$url = if ([string]::IsNullOrWhiteSpace($ReleaseBaseUrl)) { "" } else { "$ReleaseBaseUrl/$archiveName" }
 
 $manifest = [ordered]@{
     schema = 1
@@ -30,13 +41,13 @@ $manifest = [ordered]@{
     assets = @(
         [ordered]@{
             rid = "win-x64"
-            fileName = "dw.exe"
+            fileName = $archiveName
             sha256 = $hash
-            url = if ([string]::IsNullOrWhiteSpace($ReleaseBaseUrl)) { "" } else { "$ReleaseBaseUrl/dw.exe" }
+            url = $url
         }
     )
 }
 
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -Path (Join-Path $outputPath "release.json") -Encoding utf8
-Write-Host "Published $exe"
+Write-Host "Published $archivePath"
 Write-Host "SHA256 $hash"

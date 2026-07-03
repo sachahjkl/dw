@@ -19,9 +19,8 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        dotnet = pkgs.dotnetCorePackages.sdk_10_0;
-        dotnetRuntime = pkgs.dotnetCorePackages.runtime_10_0;
-        versionPrefix = pkgs.lib.strings.trim (builtins.readFile ./VERSION);
+        lib = pkgs.lib;
+        versionPrefix = lib.strings.trim (builtins.readFile ./VERSION);
         sourceRevision =
           if self ? shortRev then self.shortRev
           else if self ? rev then builtins.substring 0 7 self.rev
@@ -29,122 +28,76 @@
           else "dev";
         packageVersion = "${versionPrefix}+${sourceRevision}";
 
-        dotnetEnv = ''
-          export DOTNET_CLI_TELEMETRY_OPTOUT=1
-          export DOTNET_NOLOGO=1
-          export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
-        '';
+        nativeBuildInputs = [
+          pkgs.pkg-config
+        ];
 
-        buildScript = pkgs.writeShellApplication {
-          name = "dw-build";
-          runtimeInputs = [ dotnet ];
-          text = ''
-            ${dotnetEnv}
-            dotnet build ./Dw.slnx \
-              --configuration Release \
-              -p:VersionPrefix=${versionPrefix} \
-              -p:SourceRevisionId=${sourceRevision}
-          '';
-        };
+        buildInputs = lib.optionals pkgs.stdenv.isLinux [
+          pkgs.openssl
+        ] ++ lib.optionals pkgs.stdenv.isDarwin [
+          pkgs.darwin.apple_sdk.frameworks.Security
+          pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
+        ];
 
-        checkScript = pkgs.writeShellApplication {
-          name = "dw-check";
-          runtimeInputs = [ dotnet ];
-          text = ''
-            ${dotnetEnv}
-            dotnet build ./Dw.slnx \
-              --configuration Release \
-              -p:VersionPrefix=${versionPrefix} \
-              -p:SourceRevisionId=${sourceRevision}
-
-            dotnet run \
-              --project ./src/Dw.Cli \
-              --configuration Release \
-              --no-build \
-              -- version
-          '';
-        };
-
-        dwPackage = pkgs.buildDotnetModule {
+        dwPackage = pkgs.rustPlatform.buildRustPackage {
           pname = "dw";
           version = packageVersion;
           src = ./.;
-          projectFile = "src/Dw.Cli/Dw.Cli.csproj";
-          nugetDeps = pkgs.mkNugetDeps {
-            name = "dw";
-            sourceFile = ./deps.json;
-          };
-          dotnet-sdk = dotnet;
-          dotnet-runtime = dotnetRuntime;
-          executables = [ "dw" ];
-          selfContainedBuild = false;
-          dotnetFlags = [
-            "-p:VersionPrefix=${versionPrefix}"
-            "-p:SourceRevisionId=${sourceRevision}"
-          ];
-        };
 
-        publishWinX64Script = pkgs.writeShellApplication {
-          name = "dw-publish-win-x64";
-          runtimeInputs = [ dotnet ];
-          text = ''
-            ${dotnetEnv}
-            dotnet publish ./src/Dw.Cli/Dw.Cli.csproj \
-              --configuration Release \
-              --runtime win-x64 \
-              --self-contained false \
-              -p:PublishSingleFile=true \
-              -p:DebugType=embedded \
-              -p:VersionPrefix=${versionPrefix} \
-              -p:SourceRevisionId=${sourceRevision} \
-              --output ./artifacts/win-x64
+          cargoLock.lockFile = ./Cargo.lock;
+          inherit nativeBuildInputs buildInputs;
+
+          cargoBuildFlags = [ "-p" "dw-cli" ];
+          cargoTestFlags = [ "--workspace" ];
+
+          DW_COMMIT = sourceRevision;
+
+          postInstall = ''
+            if [ -x "$out/bin/dw-cli" ]; then
+              mv "$out/bin/dw-cli" "$out/bin/dw"
+            fi
           '';
         };
 
-        publishLinuxX64Script = pkgs.writeShellApplication {
-          name = "dw-publish-linux-x64";
-          runtimeInputs = [ dotnet pkgs.bash pkgs.coreutils ];
-          text = ''
-            ${dotnetEnv}
-            VERSION=${versionPrefix} COMMIT=${sourceRevision} bash ./scripts/publish-linux-x64.sh
-          '';
+        cargoScript = name: command: pkgs.writeShellApplication {
+          inherit name;
+          runtimeInputs = [
+            pkgs.cargo
+            pkgs.clippy
+            pkgs.rustc
+            pkgs.rustfmt
+          ] ++ nativeBuildInputs ++ buildInputs;
+          text = command;
         };
 
-        setVersionScript = pkgs.writeShellApplication {
-          name = "dw-set-version";
-          runtimeInputs = [ pkgs.bash pkgs.coreutils ];
-          text = ''
-            bash ./scripts/set-version.sh "$@"
-          '';
-        };
+        checkScript = cargoScript "dw-check" ''
+          cargo fmt --all -- --check
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+        '';
+
+        fmtScript = cargoScript "dw-fmt" ''
+          cargo fmt --all
+        '';
+
+        testScript = cargoScript "dw-test" ''
+          cargo test --workspace --locked "$@"
+        '';
+
+        clippyScript = cargoScript "dw-clippy" ''
+          cargo clippy --workspace --all-targets --locked -- -D warnings "$@"
+        '';
       in
       {
-        devShells.default = pkgs.mkShell {
-          packages = [
-            dotnet
-            pkgs.git
-          ];
+        packages.default = dwPackage;
+        packages.dw = dwPackage;
 
-          shellHook = ''
-            ${dotnetEnv}
-            echo "dw dev shell"
-            echo "Commands:"
-            echo "  nix run .#build"
-            echo "  nix run .#check"
-            echo "  nix run .#publish-win-x64"
-            echo "  nix run .#publish-linux-x64"
-            echo "  nix run .#set-version"
-            echo "  nix run .#set-version -- 2026.06.20.2"
-            echo ""
-            echo "For release artifacts with explicit metadata:"
-            echo "  nix develop -c env VERSION=2026.06.20.1 COMMIT=abc1234 bash ./scripts/publish-linux-x64.sh"
-          '';
-        };
+        checks.default = dwPackage;
 
         apps = {
-          build = {
+          dw = {
             type = "app";
-            program = "${buildScript}/bin/dw-build";
+            program = "${dwPackage}/bin/dw";
           };
 
           check = {
@@ -152,29 +105,50 @@
             program = "${checkScript}/bin/dw-check";
           };
 
-          publish-win-x64 = {
+          fmt = {
             type = "app";
-            program = "${publishWinX64Script}/bin/dw-publish-win-x64";
+            program = "${fmtScript}/bin/dw-fmt";
           };
 
-          publish-linux-x64 = {
+          test = {
             type = "app";
-            program = "${publishLinuxX64Script}/bin/dw-publish-linux-x64";
+            program = "${testScript}/bin/dw-test";
           };
 
-          set-version = {
+          clippy = {
             type = "app";
-            program = "${setVersionScript}/bin/dw-set-version";
-          };
-
-          dw = {
-            type = "app";
-            program = "${dwPackage}/bin/dw";
+            program = "${clippyScript}/bin/dw-clippy";
           };
 
           default = self.apps.${system}.dw;
         };
 
-        packages.default = dwPackage;
+        devShells.default = pkgs.mkShell {
+          packages = [
+            pkgs.cargo
+            pkgs.clippy
+            pkgs.git
+            pkgs.rust-analyzer
+            pkgs.rustc
+            pkgs.rustfmt
+          ] ++ nativeBuildInputs ++ buildInputs;
+
+          env = {
+            CARGO_TERM_COLOR = "always";
+            RUST_BACKTRACE = "1";
+            DW_COMMIT = sourceRevision;
+          };
+
+          shellHook = ''
+            echo "dw dev shell"
+            echo "Commands:"
+            echo "  nix run .#dw -- version"
+            echo "  nix run .#check"
+            echo "  nix run .#fmt"
+            echo "  nix run .#test"
+            echo "  nix run .#clippy"
+            echo "  cargo run -p dw-cli -- version"
+          '';
+        };
       });
 }
