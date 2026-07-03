@@ -5,10 +5,12 @@ pub use crate::open::{OpenWorkspaceArgs, open_workspace};
 
 #[derive(Debug, Subcommand)]
 pub enum TaskCommand {
+    #[command(about = "Liste les workspaces task detectes sous le root.")]
     Status {
         #[arg(long)]
         root: Option<String>,
     },
+    #[command(about = "Liste les workspaces task avec filtres projet/work item.")]
     List {
         #[arg(long)]
         root: Option<String>,
@@ -19,10 +21,12 @@ pub enum TaskCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Affiche le workspace task courant depuis le repertoire actuel.")]
     Current {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Ouvre ou reprend un workspace task avec l'agent configure.")]
     Open {
         #[arg(long, conflicts_with_all = ["project", "work_item", "continue"])]
         workspace: Option<String>,
@@ -42,6 +46,7 @@ pub enum TaskCommand {
         json: bool,
         positional_work_item: Option<String>,
     },
+    #[command(about = "Prepare ou cree un workspace task depuis des work items ADO.")]
     Start {
         work_item_id: Option<String>,
         #[arg(long)]
@@ -63,6 +68,7 @@ pub enum TaskCommand {
         #[arg(long)]
         execute: bool,
     },
+    #[command(about = "Valide les bloqueurs et avertissements avant implementation.")]
     Preflight {
         #[arg(long)]
         workspace: String,
@@ -71,6 +77,7 @@ pub enum TaskCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Synchronise task.json avec les work items Azure DevOps.")]
     Sync {
         #[arg(long, conflicts_with_all = ["project", "work_item", "continue"])]
         workspace: Option<String>,
@@ -86,6 +93,7 @@ pub enum TaskCommand {
         json: bool,
         positional_work_item: Option<String>,
     },
+    #[command(about = "Renomme un workspace task et sa branche selon un nouveau slug.")]
     Rename {
         slug: String,
         #[arg(long, conflicts_with_all = ["project", "work_item", "continue"])]
@@ -104,6 +112,7 @@ pub enum TaskCommand {
         execute: bool,
         positional_work_item: Option<String>,
     },
+    #[command(about = "Met les repositories du workspace a jour depuis leur branche cible.")]
     RepoLatest {
         #[arg(long, conflicts_with = "continue")]
         workspace: Option<String>,
@@ -116,6 +125,9 @@ pub enum TaskCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(
+        about = "Prepare ou cree un commit intermediaire pour les repositories du workspace."
+    )]
     Commit {
         #[arg(long, conflicts_with = "continue")]
         workspace: Option<String>,
@@ -130,6 +142,7 @@ pub enum TaskCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Ajoute des work items au workspace task courant.")]
     AddWorkItem {
         work_item_ids: String,
         #[arg(long, conflicts_with_all = ["project", "work_item", "continue"])]
@@ -156,6 +169,7 @@ pub enum TaskCommand {
         json: bool,
         positional_work_item: Option<String>,
     },
+    #[command(about = "Retire des work items du workspace task courant.")]
     RemoveWorkItem {
         work_item_ids: String,
         #[arg(long)]
@@ -174,6 +188,7 @@ pub enum TaskCommand {
         json: bool,
         positional_work_item: Option<String>,
     },
+    #[command(about = "Ajoute un repository au workspace task.")]
     AddRepo {
         repo: String,
         #[arg(long)]
@@ -185,6 +200,7 @@ pub enum TaskCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Cree une tache enfant ADO et l'ajoute au handoff repository.")]
     CreateChildTask {
         #[arg(long)]
         repo: String,
@@ -204,6 +220,7 @@ pub enum TaskCommand {
         json: bool,
         positional_work_item: Option<String>,
     },
+    #[command(about = "Verifie, commit, push et ouvre une PR pour terminer le workspace.")]
     Finish {
         #[arg(long, conflicts_with = "continue")]
         workspace: Option<String>,
@@ -226,12 +243,14 @@ pub enum TaskCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Valide les fichiers handoff avant sous-agents ou finition.")]
     HandoffValidate {
         #[arg(long)]
         workspace: String,
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Supprime les worktrees et nettoie un workspace task.")]
     Teardown {
         #[arg(long)]
         workspace: Option<String>,
@@ -251,6 +270,7 @@ pub enum TaskCommand {
         json: bool,
         positional_work_item: Option<String>,
     },
+    #[command(about = "Nettoie les workspaces dont les work items sont termines.")]
     Prune {
         #[arg(long)]
         root: Option<String>,

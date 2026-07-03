@@ -5,10 +5,12 @@ use crate::commands;
 
 #[derive(Debug, Subcommand)]
 pub enum DbCommand {
+    #[command(about = "Verifie qu'une requete SQL respecte le mode read-only.")]
     Guard {
         #[arg(long)]
         sql: String,
     },
+    #[command(about = "Liste les tables et vues accessibles sur une base configuree.")]
     Schema {
         #[arg(long)]
         project: Option<String>,
@@ -19,6 +21,7 @@ pub enum DbCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Decrit les colonnes d'une table SQL.")]
     Describe {
         table: String,
         #[arg(long)]
@@ -30,6 +33,7 @@ pub enum DbCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Execute une requete SQL read-only avec garde-fous et limite de lignes.")]
     Query {
         #[arg(long)]
         sql: String,

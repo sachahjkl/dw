@@ -5,6 +5,7 @@ use crate::commands;
 
 #[derive(Debug, Subcommand)]
 pub enum AdoCommand {
+    #[command(about = "Liste les work items Azure DevOps assignes a l'utilisateur courant.")]
     Assigned {
         #[arg(long)]
         root: Option<String>,
@@ -19,6 +20,7 @@ pub enum AdoCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Construit un changelog depuis des PR, une plage git ou des work items.")]
     Changelog {
         ids: String,
         #[arg(long)]
@@ -42,6 +44,7 @@ pub enum AdoCommand {
         #[arg(long = "git-to", requires = "from_git")]
         git_to: Option<String>,
     },
+    #[command(about = "Affiche un resume lisible de work items Azure DevOps.")]
     WorkItem {
         id: String,
         #[arg(long)]
@@ -51,6 +54,7 @@ pub enum AdoCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Affiche le contexte detaille d'un work item pour lecture humaine.")]
     Context {
         id: String,
         #[arg(long)]
@@ -64,6 +68,7 @@ pub enum AdoCommand {
         #[arg(long)]
         json: bool,
     },
+    #[command(about = "Emet le contexte IA structure et deterministe d'un work item.")]
     AiContext {
         id: String,
         #[arg(long)]
