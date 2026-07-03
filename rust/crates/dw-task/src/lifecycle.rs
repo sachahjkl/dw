@@ -200,7 +200,7 @@ pub fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
 
 fn sync_lines(workspace: &str, items: &[dw_workspace::WorkspaceWorkItem]) -> Vec<String> {
     let mut lines = vec![
-        "Task sync".into(),
+        "Synchronisation task".into(),
         format!("Workspace : {workspace}"),
         format!("Items     : {}", items.len()),
     ];
@@ -216,7 +216,7 @@ fn sync_lines(workspace: &str, items: &[dw_workspace::WorkspaceWorkItem]) -> Vec
 
 fn rename_plan_lines(plan: &dw_workspace::TaskRenamePlan) -> Vec<String> {
     vec![
-        "Task rename".into(),
+        "Renommage workspace".into(),
         "Mode      : prévisualisation".into(),
         format!("Slug      : {} -> {}", plan.old_slug, plan.new_slug),
         format!("Branche   : {} -> {}", plan.old_branch, plan.new_branch),
@@ -230,7 +230,7 @@ fn child_task_lines(workspace: &str, repo: &str, id: &str, title: &str) -> Vec<S
         "Sous-tâche ADO".into(),
         "Statut    : enregistrée dans le workspace".into(),
         format!("Workspace : {workspace}"),
-        format!("Repo      : {repo}"),
+        format!("Dépôt     : {repo}"),
         format!("Item      : #{id}"),
         format!("Titre     : {title}"),
     ]
@@ -274,7 +274,7 @@ mod tests {
 
         let lines = rename_plan_lines(&plan);
 
-        assert_eq!(lines[0], "Task rename");
+        assert_eq!(lines[0], "Renommage workspace");
         assert!(lines.contains(&"Mode      : prévisualisation".into()));
         assert!(lines.contains(&"Slug      : old -> new".into()));
         assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-new".into()));
@@ -293,7 +293,7 @@ mod tests {
             }],
         );
 
-        assert_eq!(lines[0], "Task sync");
+        assert_eq!(lines[0], "Synchronisation task");
         assert_eq!(lines[1], "Workspace : /tmp/ws");
         assert_eq!(lines[2], "Items     : 1");
         assert_eq!(lines[4], "Work items ADO");
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(lines[0], "Sous-tâche ADO");
         assert_eq!(lines[1], "Statut    : enregistrée dans le workspace");
         assert_eq!(lines[2], "Workspace : /tmp/ws");
-        assert_eq!(lines[3], "Repo      : front");
+        assert_eq!(lines[3], "Dépôt     : front");
         assert_eq!(lines[4], "Item      : #42");
         assert_eq!(lines[5], "Titre     : [FRONT] Corriger");
     }
