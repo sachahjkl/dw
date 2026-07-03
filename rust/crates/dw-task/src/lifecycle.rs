@@ -128,8 +128,6 @@ pub fn rename(args: RenameArgs) -> Result<()> {
         if execute {
             let _updated = execute_task_rename(&manifest, &plan)?;
             print_styled(&format!("Workspace renommé: {}", plan.new_workspace));
-        } else {
-            print_styled("Relancer avec --execute pour appliquer.");
         }
     }
     Ok(())
@@ -223,6 +221,7 @@ fn rename_plan_lines(plan: &dw_workspace::TaskRenamePlan) -> Vec<String> {
         format!("Slug      : {} -> {}", plan.old_slug, plan.new_slug),
         format!("Branche   : {} -> {}", plan.old_branch, plan.new_branch),
         format!("Workspace : {} -> {}", plan.workspace, plan.new_workspace),
+        "À faire   : dw task rename <slug> --execute".into(),
     ]
 }
 
@@ -279,6 +278,7 @@ mod tests {
         assert!(lines.contains(&"Mode      : prévisualisation".into()));
         assert!(lines.contains(&"Slug      : old -> new".into()));
         assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-new".into()));
+        assert!(lines.contains(&"À faire   : dw task rename <slug> --execute".into()));
     }
 
     #[test]
