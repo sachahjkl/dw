@@ -5,9 +5,9 @@ use inquire::Select;
 use std::io::IsTerminal;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ProjectChoice {
-    pub(crate) key: String,
-    pub(crate) label: String,
+pub struct ProjectChoice {
+    pub key: String,
+    pub label: String,
 }
 
 impl std::fmt::Display for ProjectChoice {
@@ -16,7 +16,7 @@ impl std::fmt::Display for ProjectChoice {
     }
 }
 
-pub(crate) fn resolve_ado_options(
+pub fn resolve_ado_options(
     projects: &dw_config::ProjectsConfig,
     workflow: &dw_config::WorkflowConfig,
     project_key: &str,
@@ -54,7 +54,7 @@ pub(crate) fn resolve_ado_options(
     }
 }
 
-pub(crate) fn resolve_cli_ado_options(
+pub fn resolve_cli_ado_options(
     root: &str,
     organization: Option<String>,
     project: Option<String>,
@@ -76,7 +76,7 @@ pub(crate) fn resolve_cli_ado_options(
     }
 }
 
-pub(crate) fn resolve_project_key_or_prompt(
+pub fn resolve_project_key_or_prompt(
     project: Option<String>,
     projects: &dw_config::ProjectsConfig,
     command_name: &str,
@@ -102,7 +102,7 @@ pub(crate) fn resolve_project_key_or_prompt(
     Ok(selected.key)
 }
 
-pub(crate) fn project_choices(projects: &dw_config::ProjectsConfig) -> Vec<ProjectChoice> {
+pub fn project_choices(projects: &dw_config::ProjectsConfig) -> Vec<ProjectChoice> {
     projects
         .projects
         .keys()

@@ -4,6 +4,7 @@ mod auth_browser;
 mod changelog;
 mod http;
 mod json;
+mod state;
 mod urls;
 mod wiql;
 
@@ -28,6 +29,7 @@ use http::{
     post_json_authenticated, post_json_with_content_type,
 };
 use json::{clean_text, element_text, field_text, identity_text, work_item_id_from_relation_url};
+pub use state::is_final_state;
 use urls::organization_name;
 pub use urls::{
     active_pull_requests_url, create_work_item_url, expanded_work_item_url,

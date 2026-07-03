@@ -484,27 +484,7 @@ pub fn display_work_items(items: &[WorkspaceWorkItem], include_state: bool) -> S
 }
 
 pub fn is_final_state(work_item_type: Option<&str>, state: Option<&str>) -> bool {
-    let normalized_state = normalize_state_or_type(state);
-    if normalized_state.is_empty() {
-        return false;
-    }
-    let normalized_type = normalize_state_or_type(work_item_type);
-    let final_states = [
-        "valide",
-        "validé",
-        "cloture",
-        "clôturé",
-        "abandonne",
-        "abandonné",
-    ];
-    let final_states_without_validated = ["cloture", "clôturé", "abandonne", "abandonné"];
-    match normalized_type.as_str() {
-        "user story" | "anomalie" => final_states.contains(&normalized_state.as_str()),
-        "bug" | "activite" | "activité" => {
-            final_states_without_validated.contains(&normalized_state.as_str())
-        }
-        _ => final_states.contains(&normalized_state.as_str()),
-    }
+    dw_ado::is_final_state(work_item_type, state)
 }
 
 pub fn task_current(start_path: &str) -> Result<TaskCurrentItem, WorkspaceError> {
@@ -1647,14 +1627,6 @@ fn distinct_repositories(repositories: &[String]) -> Vec<String> {
 
 fn format_work_item(item: &WorkspaceWorkItem) -> String {
     display_work_item(item, false)
-}
-
-fn normalize_state_or_type(value: Option<&str>) -> String {
-    value
-        .unwrap_or_default()
-        .trim()
-        .to_lowercase()
-        .replace('é', "e")
 }
 
 fn resolve_work_item_ids(

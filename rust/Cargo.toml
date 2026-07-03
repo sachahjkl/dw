@@ -5,6 +5,7 @@ members = [
   "crates/dw-config",
   "crates/dw-contracts",
   "crates/dw-ado",
+  "crates/dw-ado-commands",
   "crates/dw-db",
   "crates/dw-git",
   "crates/dw-secret",

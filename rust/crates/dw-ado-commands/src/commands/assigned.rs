@@ -1,21 +1,23 @@
-use crate::ado::{resolve_ado_options, resolve_project_key_or_prompt};
-use crate::simple_handlers::load_auth_options;
+use crate::{load_auth_options, resolve_ado_options, resolve_project_key_or_prompt};
 use anyhow::Result;
-use dw_ado::auth::require_token;
-use dw_ado::{AzureDevOpsOptions, group_work_items_by_parent, query_assigned_work_items};
+use dw_ado::auth::{AdoToken, require_token};
+use dw_ado::{
+    AzureDevOpsOptions, WorkItemSnapshot, group_work_items_by_parent, is_final_state,
+    query_assigned_work_items,
+};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 
 #[derive(Debug, Clone)]
-pub(crate) struct AssignedArgs {
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) top: i32,
-    pub(crate) all: bool,
-    pub(crate) group_by_parent: bool,
-    pub(crate) json: bool,
+pub struct AssignedArgs {
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub top: i32,
+    pub all: bool,
+    pub group_by_parent: bool,
+    pub json: bool,
 }
 
-pub(crate) fn handle(args: AssignedArgs) -> Result<()> {
+pub fn handle(args: AssignedArgs) -> Result<()> {
     let AssignedArgs {
         root,
         project,
@@ -38,9 +40,7 @@ pub(crate) fn handle(args: AssignedArgs) -> Result<()> {
     ))?;
     let items = items
         .into_iter()
-        .filter(|item| {
-            all || !dw_workspace::is_final_state(item.kind.as_deref(), item.state.as_deref())
-        })
+        .filter(|item| all || !is_final_state(item.kind.as_deref(), item.state.as_deref()))
         .collect::<Vec<_>>();
     if group_by_parent {
         print_assigned_items_grouped(&options, &items, &token, &project_key, all, json)?;
@@ -51,7 +51,7 @@ pub(crate) fn handle(args: AssignedArgs) -> Result<()> {
 }
 
 fn print_assigned_items(
-    items: &[dw_ado::WorkItemSnapshot],
+    items: &[WorkItemSnapshot],
     project: &str,
     include_final_states: bool,
     json: bool,
@@ -88,8 +88,8 @@ fn print_assigned_items(
 
 fn print_assigned_items_grouped(
     options: &AzureDevOpsOptions,
-    items: &[dw_ado::WorkItemSnapshot],
-    token: &dw_ado::auth::AdoToken,
+    items: &[WorkItemSnapshot],
+    token: &AdoToken,
     project: &str,
     include_final_states: bool,
     json: bool,
@@ -155,10 +155,7 @@ fn print_assigned_items_grouped(
     Ok(())
 }
 
-fn suggested_start_ids(
-    parent: &dw_ado::WorkItemSnapshot,
-    children: &[dw_ado::WorkItemSnapshot],
-) -> String {
+fn suggested_start_ids(parent: &WorkItemSnapshot, children: &[WorkItemSnapshot]) -> String {
     let mut ids = vec![parent.id.clone()];
     for child in children {
         if !ids.iter().any(|id| id.eq_ignore_ascii_case(&child.id)) {

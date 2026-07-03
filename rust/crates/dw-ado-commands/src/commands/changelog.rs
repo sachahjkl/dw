@@ -1,31 +1,30 @@
-use crate::ado::resolve_ado_options;
-use crate::simple_handlers::load_auth_options;
+use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{
-    extract_work_item_ids_from_commit_messages, get_work_item_ids_from_pull_requests,
-    group_work_items_by_parent, load_changelog_items, parse_changelog_format,
-    render_flat_changelog, render_grouped_changelog,
+    ChangelogFormat, extract_work_item_ids_from_commit_messages,
+    get_work_item_ids_from_pull_requests, group_work_items_by_parent, load_changelog_items,
+    parse_changelog_format, render_flat_changelog, render_grouped_changelog,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use std::process::Command as ProcessCommand;
 
 #[derive(Debug, Clone)]
-pub(crate) struct ChangelogArgs {
-    pub(crate) ids: String,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) from_pr: bool,
-    pub(crate) from_git: bool,
-    pub(crate) repo: Option<String>,
-    pub(crate) group_by_parent: bool,
-    pub(crate) format: Option<String>,
-    pub(crate) table: bool,
-    pub(crate) ids_only: bool,
-    pub(crate) git_to: Option<String>,
+pub struct ChangelogArgs {
+    pub ids: String,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub from_pr: bool,
+    pub from_git: bool,
+    pub repo: Option<String>,
+    pub group_by_parent: bool,
+    pub format: Option<String>,
+    pub table: bool,
+    pub ids_only: bool,
+    pub git_to: Option<String>,
 }
 
-pub(crate) fn handle(args: ChangelogArgs) -> Result<()> {
+pub fn handle(args: ChangelogArgs) -> Result<()> {
     let ChangelogArgs {
         ids,
         root,
@@ -45,7 +44,7 @@ pub(crate) fn handle(args: ChangelogArgs) -> Result<()> {
         ));
     }
     let output_format = parse_changelog_format(format.as_deref())?;
-    if table && output_format != dw_ado::ChangelogFormat::Markdown {
+    if table && output_format != ChangelogFormat::Markdown {
         return Err(anyhow::anyhow!(
             "L'option --table est uniquement disponible avec --format markdown."
         ));

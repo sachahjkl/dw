@@ -1215,6 +1215,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dw-ado-commands"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dw-ado",
+ "dw-config",
+ "dw-contracts",
+ "inquire",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "dw-agent"
 version = "0.1.0"
 dependencies = [
@@ -1230,6 +1243,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "dw-ado",
+ "dw-ado-commands",
  "dw-agent",
  "dw-config",
  "dw-contracts",

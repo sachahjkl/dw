@@ -1,32 +1,32 @@
-use crate::ado::project::{resolve_ado_options, resolve_cli_ado_options};
-use crate::ado::work_item::parse_work_item_ids_as_strings;
-use crate::simple_handlers::load_auth_options;
+use crate::commands::project::{resolve_ado_options, resolve_cli_ado_options};
+use crate::commands::work_item::parse_work_item_ids_as_strings;
+use crate::load_auth_options;
 use anyhow::Result;
 use dw_ado::auth::require_token;
-use dw_ado::get_ai_context;
+use dw_ado::{get_ai_context, get_work_item_expanded};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 
 #[derive(Debug, Clone)]
-pub(crate) struct ContextArgs {
-    pub(crate) id: String,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) summary: bool,
-    pub(crate) comments: i32,
-    pub(crate) json: bool,
+pub struct ContextArgs {
+    pub id: String,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub summary: bool,
+    pub comments: i32,
+    pub json: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct AiContextArgs {
-    pub(crate) root: Option<String>,
-    pub(crate) organization: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) id: String,
-    pub(crate) summary: bool,
-    pub(crate) include_comments: bool,
+pub struct AiContextArgs {
+    pub root: Option<String>,
+    pub organization: Option<String>,
+    pub project: Option<String>,
+    pub id: String,
+    pub summary: bool,
+    pub include_comments: bool,
 }
 
-pub(crate) fn handle_context(args: ContextArgs) -> Result<()> {
+pub fn handle_context(args: ContextArgs) -> Result<()> {
     let ContextArgs {
         id,
         root,
@@ -46,20 +46,20 @@ pub(crate) fn handle_context(args: ContextArgs) -> Result<()> {
     if json {
         let payloads = ids
             .iter()
-            .map(|item_id| dw_ado::get_work_item_expanded(&options, item_id, &token))
+            .map(|item_id| get_work_item_expanded(&options, item_id, &token))
             .collect::<Result<Vec<_>, _>>()?;
         println!("{}", serde_json::to_string_pretty(&payloads)?);
     } else {
         let items = ids
             .iter()
-            .map(|item_id| dw_ado::get_ai_context(&options, item_id, summary, &token))
+            .map(|item_id| get_ai_context(&options, item_id, summary, &token))
             .collect::<Result<Vec<_>, _>>()?;
         print_context_items(&items, comments, &project_key);
     }
     Ok(())
 }
 
-pub(crate) fn handle_ai_context(args: AiContextArgs) -> Result<()> {
+pub fn handle_ai_context(args: AiContextArgs) -> Result<()> {
     let AiContextArgs {
         root,
         organization,

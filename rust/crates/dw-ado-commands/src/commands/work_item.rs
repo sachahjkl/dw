@@ -1,19 +1,18 @@
-use crate::ado::resolve_ado_options;
-use crate::simple_handlers::load_auth_options;
+use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
-use dw_ado::query_work_item_snapshots;
+use dw_ado::{WorkItemSnapshot, query_work_item_snapshots};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 
 #[derive(Debug, Clone)]
-pub(crate) struct WorkItemArgs {
-    pub(crate) id: String,
-    pub(crate) root: Option<String>,
-    pub(crate) project: Option<String>,
-    pub(crate) json: bool,
+pub struct WorkItemArgs {
+    pub id: String,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub json: bool,
 }
 
-pub(crate) fn handle(args: WorkItemArgs) -> Result<()> {
+pub fn handle(args: WorkItemArgs) -> Result<()> {
     let WorkItemArgs {
         id,
         root,
@@ -54,18 +53,14 @@ pub(super) fn parse_work_item_ids(raw: &str) -> Result<Vec<i32>> {
     Ok(ids)
 }
 
-pub(super) fn parse_work_item_ids_as_strings(raw: &str) -> Result<Vec<String>> {
+pub(crate) fn parse_work_item_ids_as_strings(raw: &str) -> Result<Vec<String>> {
     Ok(parse_work_item_ids(raw)?
         .into_iter()
         .map(|id| id.to_string())
         .collect())
 }
 
-fn print_work_item_snapshots(
-    items: &[dw_ado::WorkItemSnapshot],
-    project: &str,
-    json: bool,
-) -> Result<()> {
+fn print_work_item_snapshots(items: &[WorkItemSnapshot], project: &str, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(items)?);
         return Ok(());

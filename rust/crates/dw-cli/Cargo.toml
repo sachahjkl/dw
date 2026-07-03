@@ -12,6 +12,7 @@ anyhow.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 dw-ado = { path = "../dw-ado" }
+dw-ado-commands = { path = "../dw-ado-commands" }
 dw-agent = { path = "../dw-agent" }
 dw-config = { path = "../dw-config" }
 dw-contracts = { path = "../dw-contracts" }
