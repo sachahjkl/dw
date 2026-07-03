@@ -260,7 +260,7 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
         return Ok(WorktreePrepareResult {
             repository: request.repository.clone(),
             status: "prepared".into(),
-            message: "Worktree deja present.".into(),
+            message: "Worktree déjà présent.".into(),
         });
     }
 

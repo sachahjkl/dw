@@ -217,7 +217,7 @@ pub(crate) fn prepare_replacement_executable(
     if asset_file_name.ends_with(".tar.gz") || asset_file_name.ends_with(".tgz") {
         let _ = fs::remove_file(asset_path);
         return Err(anyhow!(
-            "Asset archive non supporte pour l'upgrade automatique: {asset_file_name} ({rid})."
+            "Asset archive non supporté pour l'upgrade automatique: {asset_file_name} ({rid})."
         ));
     }
     if asset_file_name.ends_with(".exe") {
@@ -282,7 +282,7 @@ fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<()> 
         permissions.set_mode(0o755);
         fs::set_permissions(executable_path, permissions)?;
     }
-    print_styled(&format!("Binaire remplace: {}", executable_path.display()));
+    print_styled(&format!("Binaire remplacé: {}", executable_path.display()));
     Ok(())
 }
 
@@ -493,7 +493,7 @@ mod tests {
         let error = prepare_replacement_executable("dw-linux-x64.tar.gz", &path, "linux-x64")
             .expect_err("tar gz should fail");
 
-        assert!(error.to_string().contains("archive non supporte"));
+        assert!(error.to_string().contains("archive non supporté"));
         assert!(!path.exists());
     }
 

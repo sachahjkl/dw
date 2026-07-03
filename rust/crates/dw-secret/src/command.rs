@@ -63,14 +63,14 @@ pub fn handle_secret(command: SecretCommand) -> Result<()> {
         }
         SecretCommand::Get { key } => {
             if secret_exists(&store, &key)? {
-                println!("Secret present.");
+                println!("Secret présent.");
             } else {
                 println!("Secret introuvable.");
             }
         }
         SecretCommand::Delete { key } => {
             delete_secret(&store, &key)?;
-            println!("Secret supprime si present.");
+            println!("Secret supprimé si présent.");
         }
     }
     Ok(())

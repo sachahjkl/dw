@@ -85,7 +85,7 @@ pub fn repo_latest(args: RepoLatestArgs) -> Result<()> {
             print_styled(&format!("Repo {}: sync latest...", target.repository));
             update_repository(&target.repository_path, &target.default_branch)?;
         }
-        print_styled("Repos synchronises avec la remote.");
+        print_styled("Repos synchronisés avec la remote.");
     }
     Ok(())
 }
@@ -202,7 +202,7 @@ pub fn add_repo(args: AddRepoArgs) -> Result<()> {
     write_workspace_agent_configs(&workspace, &updated)?;
     if !json {
         print_styled(&format!(
-            "Repo ajoute: {} - {} - {}",
+            "Repo ajouté: {} - {} - {}",
             result.repository, result.status, result.message
         ));
     }
@@ -251,7 +251,7 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
 
     if !yes {
         return Err(anyhow::anyhow!(
-            "Suppression destructive refusee: ajouter --yes avec --execute."
+            "Suppression destructive refusée: ajouter --yes avec --execute."
         ));
     }
 
@@ -263,7 +263,7 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
         _ => Err(format!("commande git non supportée: {}", args.join(" "))),
     })?;
     if !json {
-        print_styled(&format!("Workspace supprime: {workspace}"));
+        print_styled(&format!("Workspace supprimé: {workspace}"));
     }
     Ok(())
 }

@@ -67,7 +67,7 @@ pub(super) fn interactive_start_selection(
             Ok(Some(selection)) => return Ok(selection),
             Ok(None) => {}
             Err(error) => {
-                print_styled(&format!("Selection ADO indisponible: {error}"));
+                print_styled(&format!("Sélection ADO indisponible: {error}"));
                 print_styled("Saisie manuelle du work item.");
             }
         }
@@ -141,7 +141,7 @@ fn interactive_work_item(
             Ok(Some(selection)) => return Ok(selection),
             Ok(None) => {}
             Err(error) => {
-                print_styled(&format!("Selection ADO indisponible: {error}"));
+                print_styled(&format!("Sélection ADO indisponible: {error}"));
                 print_styled("Saisie manuelle du work item.");
             }
         }

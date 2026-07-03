@@ -64,7 +64,7 @@ pub fn handle(args: PruneArgs) -> Result<()> {
     }
     if !yes {
         return Err(anyhow::anyhow!(
-            "Suppression destructive refusee: ajouter --yes avec --execute."
+            "Suppression destructive refusée: ajouter --yes avec --execute."
         ));
     }
 
@@ -79,7 +79,7 @@ pub fn handle(args: PruneArgs) -> Result<()> {
             _ => Err(format!("commande git non supportée: {}", args.join(" "))),
         })?;
         if !json {
-            print_styled(&format!("Workspace supprime: {}", candidate.path));
+            print_styled(&format!("Workspace supprimé: {}", candidate.path));
         }
     }
 

@@ -60,7 +60,7 @@ pub enum TaskCommand {
     },
     #[command(about = "Prépare ou crée un workspace task depuis des work items ADO.")]
     Start {
-        #[arg(help = "Identifiant du work item ADO parent ou enfant a demarrer.")]
+        #[arg(help = "Identifiant du work item ADO parent ou enfant à démarrer.")]
         work_item_id: Option<String>,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]
         root: Option<String>,
@@ -140,7 +140,7 @@ pub enum TaskCommand {
     Rename {
         #[arg(help = "Nouveau slug pour le workspace et la branche.")]
         slug: String,
-        #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Chemin du workspace a renommer.")]
+        #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Chemin du workspace à renommer.")]
         workspace: Option<String>,
         #[arg(long, help = "Root DevWorkflow à utiliser.")]
         root: Option<String>,

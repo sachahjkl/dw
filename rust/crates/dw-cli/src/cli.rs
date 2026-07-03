@@ -49,7 +49,7 @@ pub(crate) enum Command {
         #[arg(long, default_value = "business")]
         profile: String,
     },
-    #[command(about = "Affiche le contexte workflow IA, ouvre un agent, ou gere sa configuration.")]
+    #[command(about = "Affiche le contexte workflow IA, ouvre un agent, ou gère sa configuration.")]
     Agent {
         #[command(subcommand)]
         command: AgentCommand,

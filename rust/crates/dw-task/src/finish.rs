@@ -135,13 +135,13 @@ pub fn handle(args: FinishArgs) -> Result<()> {
     }
     if create_pr && skip_ado {
         return Err(anyhow::anyhow!(
-            "--create-pr ne peut pas etre combine avec --skip-ado."
+            "--create-pr ne peut pas être combiné avec --skip-ado."
         ));
     }
 
     if !handoff.is_valid {
         return Err(anyhow::anyhow!(
-            "task finish bloque: handoff invalide. Corriger ou completer les handoffs avant push."
+            "task finish bloqué: handoff invalide. Corriger ou compléter les handoffs avant push."
         ));
     }
     let finish_options = task_finish_options(&workflow);
@@ -209,9 +209,9 @@ pub fn handle(args: FinishArgs) -> Result<()> {
             &token,
         )? {
             print_styled(&format!(
-                "PR deja ouverte pour {}: {}",
+                "PR déjà ouverte pour {}: {}",
                 candidate.repository,
-                existing.url.as_deref().unwrap_or("(url non retournee)")
+                existing.url.as_deref().unwrap_or("(url non retournée)")
             ));
             continue;
         }
@@ -242,7 +242,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
                     &token,
                 ) {
                     print_styled(&format!(
-                        "Lien PR/work item deja demande a la creation, lien explicite ignore pour #{}: {}",
+                        "Lien PR/work item déjà demandé à la création, lien explicite ignoré pour #{}: {}",
                         id, error
                     ));
                 }
@@ -251,7 +251,7 @@ pub fn handle(args: FinishArgs) -> Result<()> {
         print_styled(&format!(
             "PR créée pour {}: {}",
             candidate.repository,
-            created.url.as_deref().unwrap_or("(url non retournee)")
+            created.url.as_deref().unwrap_or("(url non retournée)")
         ));
     }
 

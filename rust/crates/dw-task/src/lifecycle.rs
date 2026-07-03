@@ -124,7 +124,7 @@ pub fn rename(args: RenameArgs) -> Result<()> {
         print_styled_lines(&rename_plan_lines(&plan));
         if execute {
             let _updated = execute_task_rename(&manifest, &plan)?;
-            print_styled(&format!("Workspace renomme: {}", plan.new_workspace));
+            print_styled(&format!("Workspace renommé: {}", plan.new_workspace));
         } else {
             print_styled("Relancer avec --execute pour appliquer.");
         }
@@ -196,7 +196,7 @@ pub fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
 }
 
 fn sync_lines(workspace: &str, items: &[dw_workspace::WorkspaceWorkItem]) -> Vec<String> {
-    let mut lines = vec![format!("Workspace synchronise: {workspace}")];
+    let mut lines = vec![format!("Workspace synchronisé: {workspace}")];
     for item in items {
         lines.push(format!(
             "ADO item {}: {} / {} / {}",
@@ -263,7 +263,7 @@ mod tests {
             }],
         );
 
-        assert_eq!(lines[0], "Workspace synchronise: /tmp/ws");
+        assert_eq!(lines[0], "Workspace synchronisé: /tmp/ws");
         assert_eq!(lines[1], "ADO item 42: ? / ? / (sans titre)");
     }
 }

@@ -60,7 +60,7 @@ pub fn resolve_connection(
         })?;
 
     if connection.readonly == Some(false) || !defaults.readonly {
-        return Err("Execution SQL refusee: readonly doit rester true.".into());
+        return Err("Exécution SQL refusée: readonly doit rester true.".into());
     }
 
     Ok(ResolvedDatabase {

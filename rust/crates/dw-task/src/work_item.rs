@@ -81,7 +81,7 @@ pub fn add(args: AddWorkItemArgs) -> Result<()> {
         .collect::<Vec<_>>();
     if missing_ids.is_empty() {
         if !json {
-            print_styled("Tous les work items demandes sont deja presents dans le workspace.");
+            print_styled("Tous les work items demandés sont déjà présents dans le workspace.");
         }
         return Ok(());
     }

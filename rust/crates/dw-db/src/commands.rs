@@ -125,10 +125,10 @@ fn print_db_result(result: &QueryResult, json: bool) -> Result<()> {
 
 fn guard_summary(result: &crate::SqlGuardResult) -> String {
     if result.is_allowed {
-        "SQL autorisee.".into()
+        "SQL autorisée.".into()
     } else {
         format!(
-            "SQL bloquee: {}",
+            "SQL bloquée: {}",
             result
                 .reason
                 .clone()
@@ -165,12 +165,12 @@ mod tests {
     fn guard_summary_reports_allowed_and_blocked_sql() {
         assert_eq!(
             guard_summary(&validate_read_only_sql("select 1")),
-            "SQL autorisee."
+            "SQL autorisée."
         );
 
         let blocked = guard_summary(&validate_read_only_sql("drop table dbo.Users"));
 
-        assert!(blocked.starts_with("SQL bloquee: "));
+        assert!(blocked.starts_with("SQL bloquée: "));
         assert!(blocked.contains("SELECT/WITH"));
     }
 }

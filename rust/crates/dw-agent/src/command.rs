@@ -56,14 +56,14 @@ pub enum AgentCommand {
         #[arg(long, help = "Root DevWorkflow a lire.")]
         root: Option<String>,
     },
-    #[command(about = "Definit l'agent par defaut du root DevWorkflow.")]
+    #[command(about = "Définit l'agent par défaut du root DevWorkflow.")]
     SetDefault {
         #[arg(help = "Agent à utiliser par défaut: opencode, cursor, claude, codex ou copilot.")]
         agent: String,
         #[arg(long, help = "Root DevWorkflow à modifier.")]
         root: Option<String>,
     },
-    #[command(about = "Diagnostique la disponibilite des agents installes.")]
+    #[command(about = "Diagnostique la disponibilité des agents installés.")]
     Doctor {
         #[arg(long, help = "Limiter le diagnostic a un agent.")]
         agent: Option<String>,
@@ -123,13 +123,13 @@ pub fn handle_agent(command: AgentCommand) -> Result<AgentAction> {
         })),
         AgentCommand::Config { root } | AgentCommand::Show { root } => {
             let root = resolve_root(root.as_deref());
-            print_styled(&format!("Agent par defaut: {}", default_agent(&root)));
+            print_styled(&format!("Agent par défaut: {}", default_agent(&root)));
             Ok(AgentAction::Handled)
         }
         AgentCommand::SetDefault { root, agent } => {
             let root = resolve_root(root.as_deref());
             let agent = set_default_agent(&root, &agent)?;
-            print_styled(&format!("Agent par defaut: {agent}"));
+            print_styled(&format!("Agent par défaut: {agent}"));
             Ok(AgentAction::Handled)
         }
         AgentCommand::Doctor { agent } => {

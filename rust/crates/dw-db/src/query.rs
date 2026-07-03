@@ -82,7 +82,7 @@ pub fn query_sql_server(
     max_rows_override: Option<usize>,
 ) -> Result<QueryResult, String> {
     if !connection.provider.eq_ignore_ascii_case("sqlserver") {
-        return Err(format!("Provider DB non supporte: {}", connection.provider));
+        return Err(format!("Provider DB non supporté: {}", connection.provider));
     }
     let guard = validate_read_only_sql(sql);
     if !guard.is_allowed {
@@ -120,7 +120,7 @@ async fn query_sql_server_async(
         query_sql_server_async_inner(connection_string, sql, max_rows),
     )
     .await
-    .map_err(|_| format!("Timeout SQL apres {timeout_seconds}s."))?
+    .map_err(|_| format!("Timeout SQL après {timeout_seconds}s."))?
 }
 
 async fn query_sql_server_async_inner(

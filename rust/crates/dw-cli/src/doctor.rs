@@ -123,13 +123,13 @@ fn check_default_agent(root: &str) -> DoctorCheck {
     let agent = default_agent(root);
     match parse_agent_kind(Some(&agent)) {
         Ok(kind) => DoctorCheck {
-            name: "Agent par defaut".into(),
+            name: "Agent par défaut".into(),
             passed: true,
             detail: Some(kind.name().into()),
             remediation: "Configurer: dw agent config set-default opencode".into(),
         },
         Err(error) => DoctorCheck {
-            name: "Agent par defaut".into(),
+            name: "Agent par défaut".into(),
             passed: false,
             detail: Some(agent),
             remediation: error.to_string(),

@@ -98,9 +98,8 @@ impl TerminalTheme {
                 "Dry-run",
                 "Relancer",
                 "Teardown dry-run",
-                "PR non creee",
                 "PR non créée",
-                "Teardown annule",
+                "Teardown annulé",
                 "Prévisualisation",
             ],
         ) {
@@ -130,14 +129,7 @@ impl TerminalTheme {
 
         if starts_with_any_ignore_ascii_case(
             &styled,
-            &[
-                "Aucun",
-                "Sync ignoree",
-                "Sync ignorée",
-                "PR ignoree",
-                "PR ignorée",
-                "ADO ignore",
-            ],
+            &["Aucun", "Sync ignorée", "PR ignorée", "ADO ignore"],
         ) {
             return self.warning(&styled);
         }
@@ -145,14 +137,12 @@ impl TerminalTheme {
         if starts_with_any_ignore_ascii_case(
             &styled,
             &[
-                "Prochaine etape",
                 "Prochaine étape",
                 "Puis, pour",
                 "Et pour terminer",
                 "Workspaces disponibles",
                 "Project  WorkItem",
-                "Preparation de l'upgrade",
-                "Schemas et contextes agents regeneres",
+                "Préparation de l'upgrade",
                 "Schémas et contextes agents régénérés",
             ],
         ) {
@@ -184,20 +174,18 @@ fn is_success_status_line(line: &str) -> bool {
     starts_with_any_ignore_ascii_case(
         line,
         &[
-            "Workspace cree",
             "Workspace créé",
             "Worktree créé",
-            "Workspace renomme",
-            "Workspace synchronise",
-            "Workspace supprime",
-            "Repo ajoute",
-            "Work items ajoutes",
-            "Work items retires",
-            "Binaire remplace",
+            "Workspace renommé",
+            "Workspace synchronisé",
+            "Workspace supprimé",
+            "Repo ajouté",
+            "Work items ajoutés",
+            "Work items retirés",
+            "Binaire remplacé",
             "Commits/push terminés",
-            "PR creee",
             "PR créée",
-            "Root rafraichi",
+            "Root rafraîchi",
             "Workspace mis à jour",
         ],
     ) || (line.starts_with_ignore_ascii_case("Repo ") && line.contains(':'))

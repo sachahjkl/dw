@@ -248,11 +248,11 @@ pub enum WorkspaceError {
     NoWorkspaceFound,
     #[error("Aucun workspace task trouvé depuis le dossier courant.")]
     NoCurrentWorkspace,
-    #[error("work-item-id et --work-item doivent pointer vers le meme work item.")]
+    #[error("work-item-id et --work-item doivent pointer vers le même work item.")]
     ConflictingWorkItemSelection,
     #[error("Repo absent du workspace: {0}")]
     MissingWorkspaceRepository(String),
-    #[error("Workspace deja existant pour un des work items demandes: {0}")]
+    #[error("Workspace déjà existant pour un des work items demandés: {0}")]
     WorkspaceConflict(String),
     #[error("Fichier ai-context introuvable: {0}")]
     MissingAiContext(String),
@@ -1721,7 +1721,7 @@ fn reject_workspace_conflicts(
 
     let details = conflicts
         .into_iter()
-        .map(|(path, ids)| format!("{} deja present(s) dans {}", ids.join(", "), path))
+        .map(|(path, ids)| format!("{} déjà présent(s) dans {}", ids.join(", "), path))
         .collect::<Vec<_>>()
         .join("; ");
     Err(WorkspaceError::WorkspaceConflict(details))
@@ -2005,12 +2005,12 @@ fn build_attachment_issues(ai_context: &AdoAiContextItem) -> Vec<TaskPreflightIs
         ),
         details: Some(if names.is_empty() {
             format!(
-                "Pieces jointes presentes. Dossier attendu: {}",
+                "Pièces jointes présentes. Dossier attendu: {}",
                 ai_context.attachments.directory_hint
             )
         } else {
             format!(
-                "Pieces jointes presentes: {}. Dossier attendu: {}",
+                "Pièces jointes présentes: {}. Dossier attendu: {}",
                 names.join(", "),
                 ai_context.attachments.directory_hint
             )
