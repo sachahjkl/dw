@@ -1,6 +1,9 @@
-use crate::resolve_ado_options;
+use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
-use dw_ado::{create_child_task as ado_create_child_task, env_pat, get_work_item_snapshots};
+use dw_ado::{
+    auth::require_token, create_child_task_authenticated as ado_create_child_task,
+    get_work_item_snapshots_authenticated,
+};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_workspace::{
     execute_add_child_task, execute_task_rename, execute_task_sync, plan_task_rename,
@@ -78,13 +81,13 @@ pub fn sync(args: SyncArgs) -> Result<()> {
     if options.project.trim().is_empty() {
         options.project = manifest.project.clone();
     }
-    let token = env_pat()?;
+    let token = require_token(load_auth_options(Some(&root))?)?;
     let ids = manifest
         .parent_work_items()
         .into_iter()
         .map(|item| item.id)
         .collect::<Vec<_>>();
-    let snapshots = get_work_item_snapshots(&options, &ids, &token)?;
+    let snapshots = get_work_item_snapshots_authenticated(&options, &ids, &token)?;
     let updated = execute_task_sync(&workspace, &snapshots)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&updated)?);
@@ -157,7 +160,7 @@ pub fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
     let parent = manifest.parent_work_items()[0].clone();
     if !requires_child_tasks(parent.kind.as_deref()) {
         return Err(anyhow::anyhow!(
-            "Cette commande est reservee aux User Story et Anomalie."
+            "Cette commande est réservée aux User Story et Anomalie."
         ));
     }
     let projects = load_projects_config(&root);
@@ -166,7 +169,7 @@ pub fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
     if options.project.trim().is_empty() {
         options.project = manifest.project.clone();
     }
-    let token = env_pat()?;
+    let token = require_token(load_auth_options(Some(&root))?)?;
     let task_title = child_task_title(&repo, &title);
     let result = ado_create_child_task(
         &options,

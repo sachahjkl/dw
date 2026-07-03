@@ -26,7 +26,8 @@ pub use changelog::{
 use http::{
     get_json, get_json_authenticated, get_json_authenticated_optional_404,
     patch_json_authenticated_with_content_type, patch_json_with_content_type, post_json,
-    post_json_authenticated, post_json_with_content_type,
+    post_json_authenticated, post_json_authenticated_with_content_type,
+    post_json_with_content_type,
 };
 use json::{clean_text, element_text, field_text, identity_text, work_item_id_from_relation_url};
 pub use state::is_final_state;
@@ -456,6 +457,41 @@ pub fn create_child_task(
     source: &str,
     token: &str,
 ) -> Result<WorkspaceChildTaskCreateResult, AdoError> {
+    let body = create_child_task_body(options, parent, repository, title, source)?;
+    let root = post_json_with_content_type(
+        &create_work_item_url(options, "Task"),
+        token,
+        &body,
+        "application/json-patch+json",
+    )?;
+    Ok(child_task_result_from_root(root, repository, title))
+}
+
+pub fn create_child_task_authenticated(
+    options: &AzureDevOpsOptions,
+    parent: &WorkItemSnapshot,
+    repository: &str,
+    title: &str,
+    source: &str,
+    token: &AdoToken,
+) -> Result<WorkspaceChildTaskCreateResult, AdoError> {
+    let body = create_child_task_body(options, parent, repository, title, source)?;
+    let root = post_json_authenticated_with_content_type(
+        &create_work_item_url(options, "Task"),
+        token,
+        &body,
+        "application/json-patch+json",
+    )?;
+    Ok(child_task_result_from_root(root, repository, title))
+}
+
+fn create_child_task_body(
+    options: &AzureDevOpsOptions,
+    parent: &WorkItemSnapshot,
+    repository: &str,
+    title: &str,
+    source: &str,
+) -> Result<Value, AdoError> {
     let trace = format!(
         "Créé automatiquement par Dev Workflow Rust via {source}. Parent #{}. Repository: {repository}.",
         parent.id
@@ -473,17 +509,19 @@ pub fn create_child_task(
             }),
         ),
     ];
-    let root = post_json_with_content_type(
-        &create_work_item_url(options, "Task"),
-        token,
-        &serde_json::to_value(body).map_err(|error| AdoError::Json(error.to_string()))?,
-        "application/json-patch+json",
-    )?;
-    Ok(WorkspaceChildTaskCreateResult {
+    serde_json::to_value(body).map_err(|error| AdoError::Json(error.to_string()))
+}
+
+fn child_task_result_from_root(
+    root: Value,
+    repository: &str,
+    title: &str,
+) -> WorkspaceChildTaskCreateResult {
+    WorkspaceChildTaskCreateResult {
         repository: repository.into(),
         id: element_text(root.get("id")).unwrap_or_default(),
         title: title.into(),
-    })
+    }
 }
 
 pub fn update_work_item_state(

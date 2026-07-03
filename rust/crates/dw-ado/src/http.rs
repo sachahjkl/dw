@@ -115,6 +115,23 @@ pub(crate) fn post_json_with_content_type(
     read_json_response(response)
 }
 
+pub(crate) fn post_json_authenticated_with_content_type(
+    url: &str,
+    token: &AdoToken,
+    body: &Value,
+    content_type: &str,
+) -> Result<Value, AdoError> {
+    let response = reqwest::blocking::Client::new()
+        .post(url)
+        .header("Accept", "application/json")
+        .header("Authorization", auth_header(token))
+        .header("Content-Type", content_type)
+        .body(body.to_string())
+        .send()
+        .map_err(|error| AdoError::Request(error.to_string()))?;
+    read_json_response(response)
+}
+
 fn read_json_response(response: reqwest::blocking::Response) -> Result<Value, AdoError> {
     let status = response.status().as_u16();
     let body = response
