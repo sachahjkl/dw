@@ -140,13 +140,11 @@ pub fn commit(args: CommitArgs) -> Result<()> {
             &statuses,
             &commit_message,
             changed.is_empty(),
+            execute,
         ));
     }
 
     if changed.is_empty() || !execute {
-        if !changed.is_empty() && !json {
-            print_styled("Prévisualisation uniquement. Relancer avec --execute pour committer.");
-        }
         return Ok(());
     }
 
@@ -183,9 +181,6 @@ pub fn add_repo(args: AddRepoArgs) -> Result<()> {
     }
 
     if !execute {
-        if !json {
-            print_styled("Relancer avec --execute pour appliquer.");
-        }
         return Ok(());
     }
 
@@ -240,12 +235,6 @@ pub fn teardown(args: TeardownArgs) -> Result<()> {
     }
 
     if !execute {
-        if !json {
-            print_styled("");
-            print_styled(
-                "Prévisualisation uniquement. Relancer avec --execute --yes pour supprimer les worktrees et le workspace.",
-            );
-        }
         return Ok(());
     }
 

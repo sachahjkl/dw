@@ -14,6 +14,7 @@ pub(super) fn commit_status_lines(
     statuses: &[(&dw_workspace::TaskCommitTarget, RepositoryStatus)],
     commit_message: &str,
     nothing_to_commit: bool,
+    execute: bool,
 ) -> Vec<String> {
     let mut lines = vec![
         "Commit workspace".into(),
@@ -36,6 +37,9 @@ pub(super) fn commit_status_lines(
         lines.push("Rien à committer.".into());
     } else {
         lines.push(format!("Message   : {commit_message}"));
+        if !execute {
+            lines.push("À faire   : dw task commit --execute".into());
+        }
     }
     lines
 }
@@ -51,6 +55,7 @@ pub(super) fn add_repo_plan_lines(plan: &dw_workspace::TaskAddRepoPlan) -> Vec<S
             "Anchor    : {}/repositories/{}",
             plan.project_root, plan.anchor_name
         ),
+        format!("À faire   : dw task add-repo {} --execute", plan.repository),
     ]
 }
 
@@ -77,6 +82,10 @@ pub(super) fn teardown_plan_lines(
             "- [{}] {}: {}",
             step.repository, step.action, step.target
         ));
+    }
+    if !execute {
+        lines.push(String::new());
+        lines.push("À faire   : dw task teardown --execute --yes".into());
     }
     lines
 }
@@ -139,6 +148,7 @@ mod tests {
 
         assert_eq!(lines[0], "Ajout repo (prévisualisation)");
         assert!(lines.contains(&"Anchor    : /tmp/project/repositories/front-anchor".into()));
+        assert!(lines.contains(&"À faire   : dw task add-repo front --execute".into()));
     }
 
     #[test]
@@ -162,6 +172,7 @@ mod tests {
             &statuses,
             "feat(42): demo",
             false,
+            false,
         );
 
         assert_eq!(lines[0], "Commit workspace");
@@ -170,6 +181,7 @@ mod tests {
         assert!(lines.contains(&"Path      : /tmp/repo".into()));
         assert!(lines.contains(&"Statut    : Changements détectés:".into()));
         assert!(lines.contains(&"Message   : feat(42): demo".into()));
+        assert!(lines.contains(&"À faire   : dw task commit --execute".into()));
     }
 
     #[test]
@@ -189,5 +201,7 @@ mod tests {
         assert_eq!(execute[0], "Teardown exécuté");
         assert_eq!(execute[2], "Actions appliquées");
         assert!(dry_run.contains(&"- [front] remove-worktree: /tmp/ws/front".into()));
+        assert!(dry_run.contains(&"À faire   : dw task teardown --execute --yes".into()));
+        assert!(!execute.contains(&"À faire   : dw task teardown --execute --yes".into()));
     }
 }
