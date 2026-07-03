@@ -148,6 +148,8 @@ impl TerminalTheme {
                 "Doctor config",
                 "Config mise à jour",
                 "Task workspaces",
+                "Task sync",
+                "Task rename",
                 "Workspace courant",
                 "Repo latest",
                 "Commit workspace",
@@ -166,6 +168,7 @@ impl TerminalTheme {
                 "ADO work item",
                 "ADO context",
                 "ADO auth",
+                "Sous-tâche ADO",
                 "Secret",
             ],
         ) {

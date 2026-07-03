@@ -190,35 +190,61 @@ pub fn create_child_task(args: CreateChildTaskArgs) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&updated)?);
     } else {
-        print_styled(&format!(
-            "Sous-tâche enregistrée dans le workspace: {} -> #{} {}",
-            repo, result.id, result.title
+        print_styled_lines(&child_task_lines(
+            &workspace,
+            &repo,
+            &result.id,
+            &result.title,
         ));
     }
     Ok(())
 }
 
 fn sync_lines(workspace: &str, items: &[dw_workspace::WorkspaceWorkItem]) -> Vec<String> {
-    let mut lines = vec![format!("Workspace synchronisé: {workspace}")];
+    let mut lines = vec![
+        "Task sync".into(),
+        format!("Workspace : {workspace}"),
+        format!("Items     : {}", items.len()),
+    ];
+    if !items.is_empty() {
+        lines.push(String::new());
+        lines.push("Work items ADO".into());
+    }
     for item in items {
-        lines.push(format!(
-            "ADO item {}: {} / {} / {}",
-            item.id,
-            item.kind.as_deref().unwrap_or("?"),
-            item.state.as_deref().unwrap_or("?"),
-            item.title.as_deref().unwrap_or("(sans titre)")
-        ));
+        lines.push(work_item_line(item));
     }
     lines
 }
 
 fn rename_plan_lines(plan: &dw_workspace::TaskRenamePlan) -> Vec<String> {
     vec![
-        "Prévisualisation rename:".into(),
-        format!("- slug: {} -> {}", plan.old_slug, plan.new_slug),
-        format!("- branch: {} -> {}", plan.old_branch, plan.new_branch),
-        format!("- workspace: {} -> {}", plan.workspace, plan.new_workspace),
+        "Task rename".into(),
+        "Mode      : prévisualisation".into(),
+        format!("Slug      : {} -> {}", plan.old_slug, plan.new_slug),
+        format!("Branche   : {} -> {}", plan.old_branch, plan.new_branch),
+        format!("Workspace : {} -> {}", plan.workspace, plan.new_workspace),
     ]
+}
+
+fn child_task_lines(workspace: &str, repo: &str, id: &str, title: &str) -> Vec<String> {
+    vec![
+        "Sous-tâche ADO".into(),
+        "Statut    : enregistrée dans le workspace".into(),
+        format!("Workspace : {workspace}"),
+        format!("Repo      : {repo}"),
+        format!("Item      : #{id}"),
+        format!("Titre     : {title}"),
+    ]
+}
+
+fn work_item_line(item: &dw_workspace::WorkspaceWorkItem) -> String {
+    format!(
+        "#{} [{} / {}] {}",
+        item.id,
+        item.kind.as_deref().unwrap_or("type inconnu"),
+        item.state.as_deref().unwrap_or("état inconnu"),
+        item.title.as_deref().unwrap_or("(sans titre)")
+    )
 }
 
 fn child_task_title(repository: &str, title: &str) -> String {
@@ -249,9 +275,10 @@ mod tests {
 
         let lines = rename_plan_lines(&plan);
 
-        assert_eq!(lines[0], "Prévisualisation rename:");
-        assert!(lines.contains(&"- slug: old -> new".into()));
-        assert!(lines.contains(&"- branch: feat/1-old -> feat/1-new".into()));
+        assert_eq!(lines[0], "Task rename");
+        assert!(lines.contains(&"Mode      : prévisualisation".into()));
+        assert!(lines.contains(&"Slug      : old -> new".into()));
+        assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-new".into()));
     }
 
     #[test]
@@ -266,7 +293,22 @@ mod tests {
             }],
         );
 
-        assert_eq!(lines[0], "Workspace synchronisé: /tmp/ws");
-        assert_eq!(lines[1], "ADO item 42: ? / ? / (sans titre)");
+        assert_eq!(lines[0], "Task sync");
+        assert_eq!(lines[1], "Workspace : /tmp/ws");
+        assert_eq!(lines[2], "Items     : 1");
+        assert_eq!(lines[4], "Work items ADO");
+        assert_eq!(lines[5], "#42 [type inconnu / état inconnu] (sans titre)");
+    }
+
+    #[test]
+    fn child_task_lines_render_workspace_repo_and_item() {
+        let lines = child_task_lines("/tmp/ws", "front", "42", "[FRONT] Corriger");
+
+        assert_eq!(lines[0], "Sous-tâche ADO");
+        assert_eq!(lines[1], "Statut    : enregistrée dans le workspace");
+        assert_eq!(lines[2], "Workspace : /tmp/ws");
+        assert_eq!(lines[3], "Repo      : front");
+        assert_eq!(lines[4], "Item      : #42");
+        assert_eq!(lines[5], "Titre     : [FRONT] Corriger");
     }
 }
