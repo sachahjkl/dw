@@ -74,7 +74,7 @@ fn render_doctor_report(checks: &[DoctorCheck], theme: &TerminalTheme) -> String
     let mut lines = vec![
         theme.command("Diagnostic Dev Workflow"),
         format!(
-            "{} {passed_count}/{total_count} checks OK",
+            "{} {passed_count}/{total_count} vérifications OK",
             if passed_count == total_count {
                 theme.success("✓")
             } else {
@@ -231,7 +231,7 @@ mod tests {
         let report = render_doctor_report(&checks, &TerminalTheme::plain());
 
         assert!(report.contains("Diagnostic Dev Workflow"));
-        assert!(report.contains("! 1/2 checks OK"));
+        assert!(report.contains("! 1/2 vérifications OK"));
         assert!(report.contains("✓ OK"));
         assert!(report.contains("/tmp/dw"));
         assert!(report.contains("Installer Git"));
