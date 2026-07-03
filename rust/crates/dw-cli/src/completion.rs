@@ -4,6 +4,7 @@ use clap_complete::{Shell, generate};
 use crate::cli::{Cli, CompletionOutput};
 use dw_config::resolve_root;
 use dw_contracts::completion::CompletionContext;
+use dw_ui::TerminalTheme;
 
 mod catalog;
 
@@ -18,11 +19,32 @@ pub fn generate_completion(shell: Shell) {
 }
 
 pub fn print_completion_show() {
-    println!("Installer l'autocomplétion:");
-    println!("  dw completion install bash >> ~/.bashrc");
-    println!("  dw completion install zsh >> ~/.zshrc");
-    println!("  dw completion install fish > ~/.config/fish/completions/dw.fish");
-    println!("  dw completion install powershell >> $PROFILE");
+    println!("{}", render_completion_show(&TerminalTheme::stdout_auto()));
+}
+
+fn render_completion_show(theme: &TerminalTheme) -> String {
+    [
+        theme.command("Autocomplétion shell"),
+        "Installer l'intégration adaptée à votre shell:".into(),
+        String::new(),
+        completion_install_line("bash", "dw completion install bash >> ~/.bashrc", theme),
+        completion_install_line("zsh", "dw completion install zsh >> ~/.zshrc", theme),
+        completion_install_line(
+            "fish",
+            "dw completion install fish > ~/.config/fish/completions/dw.fish",
+            theme,
+        ),
+        completion_install_line(
+            "powershell",
+            "dw completion install powershell >> $PROFILE",
+            theme,
+        ),
+    ]
+    .join("\n")
+}
+
+fn completion_install_line(shell: &str, command: &str, theme: &TerminalTheme) -> String {
+    format!("  {:<10} {}", shell, theme.command(command))
 }
 
 pub fn print_completion_install(shell: Shell) {
@@ -427,6 +449,20 @@ mod tests {
         ])));
 
         assert_eq!(values, vec!["bash", "json"]);
+    }
+
+    #[test]
+    fn completion_show_renders_install_commands() {
+        let report = render_completion_show(&TerminalTheme::plain());
+
+        assert!(report.contains("Autocomplétion shell"));
+        assert!(report.contains("Installer l'intégration adaptée à votre shell"));
+        assert!(report.contains("bash       dw completion install bash >> ~/.bashrc"));
+        assert!(report.contains("zsh        dw completion install zsh >> ~/.zshrc"));
+        assert!(report.contains(
+            "fish       dw completion install fish > ~/.config/fish/completions/dw.fish"
+        ));
+        assert!(report.contains("powershell dw completion install powershell >> $PROFILE"));
     }
 
     #[test]
