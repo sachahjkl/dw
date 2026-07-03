@@ -1,3 +1,4 @@
+use crate::output::{render_work_item_snapshots, terminal_theme};
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
@@ -66,20 +67,9 @@ fn print_work_item_snapshots(items: &[WorkItemSnapshot], project: &str, json: bo
         return Ok(());
     }
 
-    for (index, item) in items.iter().enumerate() {
-        if index > 0 {
-            println!();
-            println!("---");
-        }
-        println!("#{}", item.id);
-        println!("Type: {}", item.kind.as_deref().unwrap_or("inconnu"));
-        println!("Etat: {}", item.state.as_deref().unwrap_or("inconnu"));
-        println!("Titre: {}", item.title.as_deref().unwrap_or("inconnu"));
-        println!();
-        println!(
-            "Contexte complet: dw ado context {} --project {}",
-            item.id, project
-        );
-    }
+    println!(
+        "{}",
+        render_work_item_snapshots(items, project, &terminal_theme())
+    );
     Ok(())
 }

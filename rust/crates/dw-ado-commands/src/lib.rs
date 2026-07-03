@@ -1,4 +1,5 @@
 pub mod commands;
+mod output;
 
 use anyhow::Result;
 use dw_ado::auth::AdoAuthOptions;

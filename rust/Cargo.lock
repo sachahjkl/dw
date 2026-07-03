@@ -1222,6 +1222,7 @@ dependencies = [
  "dw-ado",
  "dw-config",
  "dw-contracts",
+ "dw-ui",
  "inquire",
  "serde_json",
  "tokio",

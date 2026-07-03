@@ -1,3 +1,7 @@
+use crate::output::{
+    empty_assigned_message, render_assigned_groups, render_assigned_items, suggested_start_ids,
+    terminal_theme,
+};
 use crate::{load_auth_options, resolve_ado_options, resolve_project_key_or_prompt};
 use anyhow::Result;
 use dw_ado::auth::{AdoToken, require_token};
@@ -57,14 +61,7 @@ fn print_assigned_items(
     json: bool,
 ) -> Result<()> {
     if items.is_empty() {
-        println!(
-            "{}",
-            if include_final_states {
-                "Aucun work item assigne."
-            } else {
-                "Aucun work item assigne hors etats finaux."
-            }
-        );
+        println!("{}", empty_assigned_message(include_final_states));
         return Ok(());
     }
 
@@ -73,16 +70,10 @@ fn print_assigned_items(
         return Ok(());
     }
 
-    for item in items {
-        println!(
-            "#{} [{}] {} - {}",
-            item.id,
-            item.kind.as_deref().unwrap_or("inconnu"),
-            item.state.as_deref().unwrap_or("inconnu"),
-            item.title.as_deref().unwrap_or("inconnu")
-        );
-        println!("  Start: dw task start {} --project {}", item.id, project);
-    }
+    println!(
+        "{}",
+        render_assigned_items(items, project, &terminal_theme())
+    );
     Ok(())
 }
 
@@ -95,14 +86,7 @@ fn print_assigned_items_grouped(
     json: bool,
 ) -> Result<()> {
     if items.is_empty() {
-        println!(
-            "{}",
-            if include_final_states {
-                "Aucun work item assigne."
-            } else {
-                "Aucun work item assigne hors etats finaux."
-            }
-        );
+        println!("{}", empty_assigned_message(include_final_states));
         return Ok(());
     }
 
@@ -126,41 +110,9 @@ fn print_assigned_items_grouped(
         return Ok(());
     }
 
-    for group in groups {
-        println!(
-            "#{} [{}] {} - {}",
-            group.parent.id,
-            group.parent.kind.as_deref().unwrap_or("(inconnu)"),
-            group.parent.state.as_deref().unwrap_or("(inconnu)"),
-            group.parent.title.as_deref().unwrap_or("(sans titre)")
-        );
-        if !group.items.is_empty() {
-            println!(
-                "  Start: dw task start {} --project {}",
-                suggested_start_ids(&group.parent, &group.items),
-                project
-            );
-        }
-        for item in group.items {
-            println!(
-                "  - #{} [{}] {} - {}",
-                item.id,
-                item.kind.as_deref().unwrap_or("(inconnu)"),
-                item.state.as_deref().unwrap_or("(inconnu)"),
-                item.title.as_deref().unwrap_or("(sans titre)")
-            );
-        }
-        println!();
-    }
+    println!(
+        "{}",
+        render_assigned_groups(&groups, project, &terminal_theme())
+    );
     Ok(())
-}
-
-fn suggested_start_ids(parent: &WorkItemSnapshot, children: &[WorkItemSnapshot]) -> String {
-    let mut ids = vec![parent.id.clone()];
-    for child in children {
-        if !ids.iter().any(|id| id.eq_ignore_ascii_case(&child.id)) {
-            ids.push(child.id.clone());
-        }
-    }
-    ids.join(",")
 }
