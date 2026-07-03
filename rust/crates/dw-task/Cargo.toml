@@ -13,6 +13,7 @@ dw-ado = { path = "../dw-ado" }
 dw-agent = { path = "../dw-agent" }
 dw-config = { path = "../dw-config" }
 dw-git = { path = "../dw-git" }
+dw-ui = { path = "../dw-ui" }
 dw-workspace = { path = "../dw-workspace" }
 inquire.workspace = true
 serde_json.workspace = true

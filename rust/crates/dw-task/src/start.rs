@@ -5,8 +5,10 @@ use dw_ado::{env_pat, get_work_item_snapshots, query_assigned_work_items};
 use dw_config::{
     load_projects_config, load_workflow_config, project_choices, resolve_project, resolve_root,
 };
+use dw_ui::TerminalTheme;
 use dw_workspace::{
-    TaskStartRequest, execute_task_start, execute_task_start_with_work_items, plan_task_start,
+    TaskStartPlan, TaskStartRequest, execute_task_start, execute_task_start_with_work_items,
+    plan_task_start,
 };
 use inquire::{MultiSelect, Select, Text};
 use std::io::IsTerminal;
@@ -95,16 +97,9 @@ pub fn handle(args: StartArgs) -> Result<()> {
             execute_task_start_with_work_items(&plan, work_items)?
         };
         write_workspace_agent_configs(&plan.workspace, &manifest)?;
-        println!("Workspace cree: {}", plan.workspace);
-        println!("Branche cible: {}", plan.branch_name);
-        println!("Repos: {}", plan.repositories.join(", "));
+        print_styled_lines(&created_workspace_lines(&plan));
     } else {
-        println!("Project: {}", plan.project);
-        println!("Work items: {}", plan.work_item_ids.join(", "));
-        println!("Slug: {}", plan.slug);
-        println!("Branche cible: {}", plan.branch_name);
-        println!("Workspace cible: {}", plan.workspace);
-        println!("Repos: {}", plan.repositories.join(", "));
+        print_styled_lines(&planned_workspace_lines(&plan));
     }
 
     Ok(())
@@ -170,8 +165,8 @@ fn interactive_start_selection(
             Ok(Some(selection)) => return Ok(selection),
             Ok(None) => {}
             Err(error) => {
-                println!("Selection ADO indisponible: {error}");
-                println!("Saisie manuelle du work item.");
+                print_styled(&format!("Selection ADO indisponible: {error}"));
+                print_styled("Saisie manuelle du work item.");
             }
         }
     }
@@ -216,8 +211,8 @@ fn interactive_work_item(
             Ok(Some(selection)) => return Ok(selection),
             Ok(None) => {}
             Err(error) => {
-                println!("Selection ADO indisponible: {error}");
-                println!("Saisie manuelle du work item.");
+                print_styled(&format!("Selection ADO indisponible: {error}"));
+                print_styled("Saisie manuelle du work item.");
             }
         }
     }
@@ -251,7 +246,7 @@ fn interactive_assigned_project_selection(
     }
 
     if choices.is_empty() {
-        println!("Aucun work item assigne hors etats finaux dans les projets configures.");
+        print_styled("Aucun work item assigne hors etats finaux dans les projets configures.");
         return Ok(None);
     }
 
@@ -279,7 +274,9 @@ fn interactive_assigned_work_item_selection(
     let items = runtime.block_on(query_assigned_work_items(&options, 50, &token))?;
     let items = active_work_items(items);
     if items.is_empty() {
-        println!("Aucun work item assigne hors etats finaux pour {project}.");
+        print_styled(&format!(
+            "Aucun work item assigne hors etats finaux pour {project}."
+        ));
         return Ok(None);
     }
 
@@ -367,6 +364,38 @@ fn interactive_repositories(
     }
 }
 
+fn planned_workspace_lines(plan: &TaskStartPlan) -> Vec<String> {
+    vec![
+        "Plan task start".into(),
+        format!("Project: {}", plan.project),
+        format!("Work items: {}", plan.work_item_ids.join(", ")),
+        format!("Slug: {}", plan.slug),
+        format!("Branche cible: {}", plan.branch_name),
+        format!("Workspace cible: {}", plan.workspace),
+        format!("Repos: {}", plan.repositories.join(", ")),
+        "Relancer avec --execute pour creer le workspace.".into(),
+    ]
+}
+
+fn created_workspace_lines(plan: &TaskStartPlan) -> Vec<String> {
+    vec![
+        format!("Workspace cree: {}", plan.workspace),
+        format!("Branche cible: {}", plan.branch_name),
+        format!("Repos: {}", plan.repositories.join(", ")),
+        "Prochaine etape conseillee: ouvrir le workspace ou lancer l'agent.".into(),
+    ]
+}
+
+fn print_styled_lines(lines: &[String]) {
+    for line in lines {
+        print_styled(line);
+    }
+}
+
+fn print_styled(line: &str) {
+    println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,5 +460,53 @@ mod tests {
         };
 
         assert_eq!(choice.to_string(), "ha - Hommage Agence (2 assignes)");
+    }
+
+    #[test]
+    fn planned_workspace_lines_include_execute_hint() {
+        let plan = TaskStartPlan {
+            project: "ha".into(),
+            work_item_ids: vec!["42".into()],
+            primary_work_item_id: "42".into(),
+            task_id: None,
+            kind: "feat".into(),
+            slug: "titre".into(),
+            branch_name: "feat/42-titre".into(),
+            subject_name: "42-titre".into(),
+            workspace: "/tmp/dw/ha/42-titre".into(),
+            repositories: vec!["front".into(), "back".into()],
+            repository_folders: Default::default(),
+        };
+
+        let lines = planned_workspace_lines(&plan);
+
+        assert_eq!(lines[0], "Plan task start");
+        assert!(lines.contains(&"Relancer avec --execute pour creer le workspace.".into()));
+    }
+
+    #[test]
+    fn created_workspace_lines_include_next_step() {
+        let plan = TaskStartPlan {
+            project: "ha".into(),
+            work_item_ids: vec!["42".into()],
+            primary_work_item_id: "42".into(),
+            task_id: None,
+            kind: "feat".into(),
+            slug: "titre".into(),
+            branch_name: "feat/42-titre".into(),
+            subject_name: "42-titre".into(),
+            workspace: "/tmp/dw/ha/42-titre".into(),
+            repositories: vec!["front".into()],
+            repository_folders: Default::default(),
+        };
+
+        let lines = created_workspace_lines(&plan);
+
+        assert_eq!(lines[0], "Workspace cree: /tmp/dw/ha/42-titre");
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("Prochaine etape conseillee"))
+        );
     }
 }
