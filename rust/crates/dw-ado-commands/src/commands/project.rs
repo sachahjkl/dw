@@ -1,20 +1,8 @@
 use anyhow::Result;
 use dw_ado::{AzureDevOpsOptions, default_api_version};
-use dw_config::resolve_project;
+use dw_config::{project_choices, resolve_project};
 use inquire::Select;
 use std::io::IsTerminal;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectChoice {
-    pub key: String,
-    pub label: String,
-}
-
-impl std::fmt::Display for ProjectChoice {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.label)
-    }
-}
 
 pub fn resolve_ado_options(
     projects: &dw_config::ProjectsConfig,
@@ -102,55 +90,12 @@ pub fn resolve_project_key_or_prompt(
     Ok(selected.key)
 }
 
-pub fn project_choices(projects: &dw_config::ProjectsConfig) -> Vec<ProjectChoice> {
-    projects
-        .projects
-        .keys()
-        .map(|key| {
-            let display_name = resolve_project(projects, key)
-                .map(|project| project.display_name)
-                .filter(|display_name| !display_name.trim().is_empty());
-            ProjectChoice {
-                key: key.clone(),
-                label: match display_name {
-                    Some(display_name) if display_name != *key => format!("{key} - {display_name}"),
-                    _ => key.clone(),
-                },
-            }
-        })
-        .collect::<Vec<_>>()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
-    fn project_choices_keep_config_order_and_include_display_name() {
-        let projects: dw_config::ProjectsConfig = serde_json::from_str(
-            r#"{
-  "projects": {
-    "zz": { "displayName": "Projet Z", "repositories": {} },
-    "ha": { "displayName": "HOMMAGE AGENCE", "repositories": {} }
-  }
-}"#,
-        )
-        .expect("projects config should parse");
+    fn project_choices_are_provided_by_dw_config() {
+        let projects = dw_config::ProjectsConfig::default();
 
-        let choices = project_choices(&projects);
-
-        assert_eq!(
-            choices,
-            vec![
-                ProjectChoice {
-                    key: "zz".into(),
-                    label: "zz - Projet Z".into()
-                },
-                ProjectChoice {
-                    key: "ha".into(),
-                    label: "ha - HOMMAGE AGENCE".into()
-                }
-            ]
-        );
+        assert!(dw_config::project_choices(&projects).is_empty());
     }
 }

@@ -53,6 +53,18 @@ impl Default for ProjectsConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectChoice {
+    pub key: String,
+    pub label: String,
+}
+
+impl std::fmt::Display for ProjectChoice {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.label)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AgentOptions {
     #[serde(default)]

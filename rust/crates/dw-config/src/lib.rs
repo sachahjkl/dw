@@ -9,7 +9,7 @@ mod types;
 
 pub use doctor::{config_doctor, config_show};
 pub use init::{InitReport, InitRequest, RefreshReport, RefreshRequest, init_root, refresh_root};
-pub use projects::{load_projects_config, repository_config, resolve_project};
+pub use projects::{load_projects_config, project_choices, repository_config, resolve_project};
 pub use settings::{
     default_root, load_user_settings, normalize_color_mode, resolve_root, save_user_settings,
     set_color_mode, set_user_root, user_config_directory, user_settings_path,
@@ -17,7 +17,7 @@ pub use settings::{
 pub use store::{default_agent, load_databases_config, load_workflow_config, set_default_agent};
 pub use types::{
     AgentOptions, ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, DatabasesConfig,
-    ProjectConfig, ProjectsConfig, RepositoryConfig, UserSettings, WorkflowConfig,
+    ProjectChoice, ProjectConfig, ProjectsConfig, RepositoryConfig, UserSettings, WorkflowConfig,
 };
 
 #[cfg(test)]
@@ -99,6 +99,35 @@ mod tests {
 
         let repository = repository_config(&project, "front").expect("repository should resolve");
         assert_eq!(repository.folder.as_deref(), Some("custom-front"));
+    }
+
+    #[test]
+    fn project_choices_keep_config_order_and_include_display_name() {
+        let projects: ProjectsConfig = serde_json::from_str(
+            r#"{
+  "projects": {
+    "zz": { "displayName": "Projet Z", "repositories": {} },
+    "ha": { "displayName": "HOMMAGE AGENCE", "repositories": {} }
+  }
+}"#,
+        )
+        .expect("projects config should parse");
+
+        let choices = project_choices(&projects);
+
+        assert_eq!(
+            choices,
+            vec![
+                ProjectChoice {
+                    key: "zz".into(),
+                    label: "zz - Projet Z".into()
+                },
+                ProjectChoice {
+                    key: "ha".into(),
+                    label: "ha - HOMMAGE AGENCE".into()
+                }
+            ]
+        );
     }
 
     #[test]

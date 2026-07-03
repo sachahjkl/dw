@@ -1,5 +1,5 @@
 use crate::json::read_json;
-use crate::types::{ProjectConfig, ProjectsConfig, RepositoryConfig};
+use crate::types::{ProjectChoice, ProjectConfig, ProjectsConfig, RepositoryConfig};
 use serde_json::Map;
 use std::path::Path;
 
@@ -15,6 +15,25 @@ pub fn resolve_project(config: &ProjectsConfig, project: &str) -> Option<Project
 pub fn repository_config(project: &ProjectConfig, repository: &str) -> Option<RepositoryConfig> {
     let value = project.repositories.get(repository)?;
     serde_json::from_value(value.clone()).ok()
+}
+
+pub fn project_choices(config: &ProjectsConfig) -> Vec<ProjectChoice> {
+    config
+        .projects
+        .keys()
+        .map(|key| {
+            let display_name = resolve_project(config, key)
+                .map(|project| project.display_name)
+                .filter(|display_name| !display_name.trim().is_empty());
+            ProjectChoice {
+                key: key.clone(),
+                label: match display_name {
+                    Some(display_name) if display_name != *key => format!("{key} - {display_name}"),
+                    _ => key.clone(),
+                },
+            }
+        })
+        .collect()
 }
 
 fn resolve_project_inner(

@@ -2,7 +2,9 @@ use crate::{load_auth_options, resolve_ado_options, write_workspace_agent_config
 use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{env_pat, get_work_item_snapshots, query_assigned_work_items};
-use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
+use dw_config::{
+    load_projects_config, load_workflow_config, project_choices, resolve_project, resolve_root,
+};
 use dw_workspace::{
     TaskStartRequest, execute_task_start, execute_task_start_with_work_items, plan_task_start,
 };
@@ -137,37 +139,6 @@ impl std::fmt::Display for AssignedProjectChoice {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(&self.label)
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ProjectChoice {
-    key: String,
-    label: String,
-}
-
-impl std::fmt::Display for ProjectChoice {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.label)
-    }
-}
-
-fn project_choices(projects: &dw_config::ProjectsConfig) -> Vec<ProjectChoice> {
-    projects
-        .projects
-        .keys()
-        .map(|key| {
-            let display_name = resolve_project(projects, key)
-                .map(|project| project.display_name)
-                .filter(|display_name| !display_name.trim().is_empty());
-            ProjectChoice {
-                key: key.clone(),
-                label: match display_name {
-                    Some(display_name) if display_name != *key => format!("{key} - {display_name}"),
-                    _ => key.clone(),
-                },
-            }
-        })
-        .collect()
 }
 
 fn interactive_start_selection(
