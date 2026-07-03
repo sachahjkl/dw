@@ -14,16 +14,17 @@ pub fn render_assigned_items(
     project: &str,
     theme: &TerminalTheme,
 ) -> String {
-    let mut lines = vec![theme.success(&format!("Work items assignés ({})", items.len()))];
+    let mut lines = vec![theme.success(&format!("Work items assignés: {}", items.len()))];
     for item in items {
         lines.push(format_work_item_summary(item, theme));
         lines.push(format!(
             "  {} {}",
-            theme.command("Start:"),
+            theme.command("Démarrer:"),
             theme.command(&format!("dw task start {} --project {}", item.id, project))
         ));
+        lines.push(String::new());
     }
-    lines.join("\n")
+    trim_trailing_blank_line(lines).join("\n")
 }
 
 pub fn render_assigned_groups(
@@ -31,13 +32,21 @@ pub fn render_assigned_groups(
     project: &str,
     theme: &TerminalTheme,
 ) -> String {
-    let mut lines = vec![theme.success(&format!("Work items assignés ({})", groups.len()))];
+    let total_items = groups
+        .iter()
+        .map(|group| 1 + group.items.len())
+        .sum::<usize>();
+    let mut lines = vec![theme.success(&format!(
+        "Work items assignés: {} groupe(s), {} item(s)",
+        groups.len(),
+        total_items
+    ))];
     for group in groups {
         lines.push(format_work_item_summary(&group.parent, theme));
         if !group.items.is_empty() {
             lines.push(format!(
                 "  {} {}",
-                theme.command("Start:"),
+                theme.command("Démarrer:"),
                 theme.command(&format!(
                     "dw task start {} --project {}",
                     suggested_start_ids(&group.parent, &group.items),
@@ -46,7 +55,7 @@ pub fn render_assigned_groups(
             ));
         }
         for item in &group.items {
-            lines.push(format!("  - {}", format_work_item_summary(item, theme)));
+            lines.push(format!("  └─ {}", format_work_item_summary(item, theme)));
         }
         lines.push(String::new());
     }
@@ -68,11 +77,14 @@ pub(crate) fn suggested_start_ids(
 
 fn format_work_item_summary(item: &WorkItemSnapshot, theme: &TerminalTheme) -> String {
     format!(
-        "{} [{}] {} - {}",
+        "{} {} {}",
         theme.success(&format!("#{}", item.id)),
-        item.kind.as_deref().unwrap_or("inconnu"),
-        item.state.as_deref().unwrap_or("inconnu"),
-        item.title.as_deref().unwrap_or("inconnu")
+        theme.dim(&format!(
+            "[{} / {}]",
+            item.kind.as_deref().unwrap_or("type inconnu"),
+            item.state.as_deref().unwrap_or("état inconnu")
+        )),
+        item.title.as_deref().unwrap_or("(sans titre)")
     )
 }
 
@@ -101,8 +113,40 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("Work items assignés (1)"));
-        assert!(output.contains("dw task start 42 --project ha"));
+        assert!(output.contains("Work items assignés: 1"));
+        assert!(output.contains("#42 [Bug / En developpement] Corriger"));
+        assert!(output.contains("Démarrer: dw task start 42 --project ha"));
+    }
+
+    #[test]
+    fn grouped_assigned_items_render_parent_children_and_start_command() {
+        let parent = WorkItemSnapshot {
+            id: "42".into(),
+            kind: Some("User Story".into()),
+            state: Some("Actif".into()),
+            title: Some("Parent".into()),
+            url: None,
+        };
+        let child = WorkItemSnapshot {
+            id: "43".into(),
+            kind: Some("Task".into()),
+            state: Some("Actif".into()),
+            title: Some("Enfant".into()),
+            url: None,
+        };
+
+        let output = render_assigned_groups(
+            &[WorkItemGroup {
+                parent,
+                items: vec![child],
+            }],
+            "ha",
+            &TerminalTheme::plain(),
+        );
+
+        assert!(output.contains("Work items assignés: 1 groupe(s), 2 item(s)"));
+        assert!(output.contains("Démarrer: dw task start 42,43 --project ha"));
+        assert!(output.contains("  └─ #43 [Task / Actif] Enfant"));
     }
 
     #[test]
