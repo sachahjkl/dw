@@ -5,10 +5,10 @@ use dw_workspace::{
     read_manifest_path, resolve_open_target, resolve_workspace, task_current, task_list,
     task_status,
 };
-use inquire::Select;
 use std::io::IsTerminal;
 
 use crate::render::{print_styled, print_styled_lines};
+use dw_ui::select_optional;
 
 mod render;
 
@@ -44,6 +44,7 @@ pub fn list(
         print_styled("Aucun workspace task trouvé.");
     } else {
         print_styled_lines(&render::task_list_lines(&items));
+        handle_interactive_list_action(&root, &items)?;
     }
     Ok(())
 }
@@ -162,7 +163,8 @@ fn interactive_workspace_selection(
         .iter()
         .map(|(label, _)| label.clone())
         .collect::<Vec<_>>();
-    let selected = Select::new("Workspace", labels).prompt()?;
+    let selected = select_optional("Workspace", labels)?
+        .ok_or_else(|| anyhow::anyhow!("Sélection workspace annulée."))?;
     options
         .into_iter()
         .find(|(label, _)| *label == selected)
@@ -170,9 +172,100 @@ fn interactive_workspace_selection(
         .ok_or_else(|| anyhow::anyhow!("Sélection workspace invalide"))
 }
 
+fn handle_interactive_list_action(root: &str, items: &[dw_workspace::TaskListItem]) -> Result<()> {
+    if !std::io::stdin().is_terminal() {
+        return Ok(());
+    }
+
+    let Some(workspace) = select_optional("Workspace", workspace_action_choices(items))? else {
+        return Ok(());
+    };
+    let Some(item) = items
+        .iter()
+        .find(|item| workspace.ends_with(&item.path))
+        .or_else(|| items.iter().find(|item| workspace.contains(&item.path)))
+    else {
+        return Err(anyhow::anyhow!("Sélection workspace invalide"));
+    };
+
+    let Some(action) = select_optional(
+        "Action",
+        vec![
+            "Ne rien faire".into(),
+            "Ouvrir avec l'agent configuré".into(),
+            "Lancer preflight".into(),
+            "Valider les handoffs".into(),
+            "Prévisualiser teardown".into(),
+        ],
+    )?
+    else {
+        return Ok(());
+    };
+
+    match action.as_str() {
+        "Ouvrir avec l'agent configuré" => open_workspace(OpenWorkspaceArgs {
+            workspace: Some(item.path.clone()),
+            project: None,
+            work_item: None,
+            positional_work_item: None,
+            r#continue: false,
+            repo: None,
+            agent: None,
+            json: false,
+            root: Some(root.to_string()),
+        }),
+        "Lancer preflight" => crate::validate::preflight(crate::validate::PreflightArgs {
+            workspace: Some(item.path.clone()),
+            root: Some(root.to_string()),
+            project: None,
+            work_item: None,
+            r#continue: false,
+            ai_context_file: Vec::new(),
+            json: false,
+            positional_work_item: None,
+        }),
+        "Valider les handoffs" => {
+            crate::validate::handoff_validate(crate::validate::HandoffValidateArgs {
+                workspace: Some(item.path.clone()),
+                root: Some(root.to_string()),
+                project: None,
+                work_item: None,
+                r#continue: false,
+                json: false,
+                positional_work_item: None,
+            })
+        }
+        "Prévisualiser teardown" => crate::repo::teardown(crate::repo::TeardownArgs {
+            workspace: Some(item.path.clone()),
+            root: Some(root.to_string()),
+            project: None,
+            work_item: None,
+            r#continue: false,
+            positional_work_item: None,
+            execute: false,
+            yes: false,
+            json: false,
+        }),
+        _ => Ok(()),
+    }
+}
+
+fn workspace_action_choices(items: &[dw_workspace::TaskListItem]) -> Vec<String> {
+    items
+        .iter()
+        .map(|item| {
+            format!(
+                "{} / {} / {}",
+                item.project, item.display_work_items, item.path
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::render::{current_workspace_lines, task_list_lines, task_status_lines};
+    use super::workspace_action_choices;
 
     #[test]
     fn task_list_lines_render_table_and_paths() {
@@ -246,5 +339,29 @@ mod tests {
         let filled = task_status_lines("/tmp/root", &["/tmp/root/projects/ha/tasks/ws".into()]);
         assert!(filled.contains(&"Détectés  : 1".into()));
         assert!(filled.contains(&"- /tmp/root/projects/ha/tasks/ws".into()));
+    }
+
+    #[test]
+    fn workspace_action_choices_include_project_work_items_and_path() {
+        let items = vec![dw_workspace::TaskListItem {
+            path: "/tmp/ws".into(),
+            project: "ha".into(),
+            work_item_id: "42".into(),
+            display_work_items: "#42 Titre [Actif]".into(),
+            task_id: None,
+            kind: "feat".into(),
+            slug: "titre".into(),
+            branch_name: "feat/42-titre".into(),
+            created_at: "2026-07-02T10:00:00Z".into(),
+            work_item_type: Some("User Story".into()),
+            work_item_title: Some("Titre".into()),
+            work_item_state: Some("Actif".into()),
+            repositories: vec!["front".into()],
+        }];
+
+        assert_eq!(
+            workspace_action_choices(&items),
+            vec!["ha / #42 Titre [Actif] / /tmp/ws"]
+        );
     }
 }
