@@ -117,6 +117,7 @@ fn option_requires_value(option: &str) -> bool {
             | "--only"
             | "--database"
             | "--env"
+            | "--max-rows"
             | "--format"
             | "--type"
             | "--agent"
@@ -144,6 +145,7 @@ fn complete_option_value(option: &str, words: &[String], current: &str) -> Vec<C
         "--work-item" => work_item_values(&root, option_value(words, "--project").as_deref()),
         "--database" => database_values(&root, option_value(words, "--project").as_deref()),
         "--env" => env_values(&root, option_value(words, "--project").as_deref()),
+        "--max-rows" => vec!["50".into(), "100".into(), "500".into(), "1000".into()],
         "--format" => vec!["raw".into(), "markdown".into(), "html".into()],
         "--type" => vec![
             "feature".into(),
@@ -303,7 +305,14 @@ fn options_for_path(path: &[&str]) -> Vec<&'static str> {
             "--include-comments",
             "--json",
         ],
-        ["db", "query"] => vec!["--sql", "--project", "--database", "--env", "--json"],
+        ["db", "query"] => vec![
+            "--sql",
+            "--project",
+            "--database",
+            "--env",
+            "--max-rows",
+            "--json",
+        ],
         ["db", _] => vec!["--project", "--database", "--env", "--json"],
         ["config", _] => vec!["--root", "--json"],
         ["task", _] => vec![
@@ -531,6 +540,27 @@ mod tests {
             "--",
         ])));
         assert!(with_format.contains(&"--table".into()));
+    }
+
+    #[test]
+    fn db_commands_offer_database_env_and_max_rows_where_supported() {
+        let schema = labels(complete_words(&words(&["db", "schema", "--"])));
+        assert!(schema.contains(&"--database".into()));
+        assert!(schema.contains(&"--env".into()));
+
+        let describe = labels(complete_words(&words(&["db", "describe", "--"])));
+        assert!(describe.contains(&"--database".into()));
+        assert!(describe.contains(&"--env".into()));
+
+        let query = labels(complete_words(&words(&["db", "query", "--"])));
+        assert!(query.contains(&"--max-rows".into()));
+    }
+
+    #[test]
+    fn max_rows_completion_offers_common_limits() {
+        let values = labels(complete_words(&words(&["db", "query", "--max-rows", ""])));
+
+        assert_eq!(values, vec!["50", "100", "500", "1000"]);
     }
 
     #[test]

@@ -278,6 +278,10 @@ pub(crate) enum DbCommand {
     Schema {
         #[arg(long)]
         project: Option<String>,
+        #[arg(long, conflicts_with = "env")]
+        database: Option<String>,
+        #[arg(long, conflicts_with = "database")]
+        env: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -287,6 +291,8 @@ pub(crate) enum DbCommand {
         project: Option<String>,
         #[arg(long, conflicts_with = "env")]
         database: Option<String>,
+        #[arg(long, conflicts_with = "database")]
+        env: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -299,6 +305,8 @@ pub(crate) enum DbCommand {
         database: Option<String>,
         #[arg(long, conflicts_with = "database")]
         env: Option<String>,
+        #[arg(long = "max-rows")]
+        max_rows: Option<usize>,
         #[arg(long)]
         json: bool,
     },

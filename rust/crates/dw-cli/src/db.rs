@@ -19,19 +19,36 @@ pub(crate) fn handle_db(command: DbCommand) -> Result<()> {
                 );
             }
         }
-        DbCommand::Schema { project, json } => {
-            let result = execute_db_query(project.as_deref(), None, None, schema_sql(), Some(0))?;
+        DbCommand::Schema {
+            project,
+            database,
+            env,
+            json,
+        } => {
+            let result = execute_db_query(
+                project.as_deref(),
+                database.as_deref(),
+                env.as_deref(),
+                schema_sql(),
+                Some(0),
+            )?;
             print_db_result(&result, json)?;
         }
         DbCommand::Describe {
             project,
             database,
+            env,
             table,
             json,
         } => {
             let sql = describe_table_sql(&table);
-            let result =
-                execute_db_query(project.as_deref(), database.as_deref(), None, &sql, Some(0))?;
+            let result = execute_db_query(
+                project.as_deref(),
+                database.as_deref(),
+                env.as_deref(),
+                &sql,
+                Some(0),
+            )?;
             print_db_result(&result, json)?;
         }
         DbCommand::Query {
@@ -39,6 +56,7 @@ pub(crate) fn handle_db(command: DbCommand) -> Result<()> {
             database,
             env,
             sql,
+            max_rows,
             json,
         } => {
             let result = execute_db_query(
@@ -46,7 +64,7 @@ pub(crate) fn handle_db(command: DbCommand) -> Result<()> {
                 database.as_deref(),
                 env.as_deref(),
                 &sql,
-                None,
+                max_rows,
             )?;
             print_db_result(&result, json)?;
         }
