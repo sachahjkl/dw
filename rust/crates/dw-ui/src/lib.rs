@@ -142,6 +142,7 @@ impl TerminalTheme {
                 "Et pour terminer",
                 "Workspaces disponibles",
                 "Project  WorkItem",
+                "Upgrade",
                 "Préparation de l'upgrade",
                 "Schémas et contextes agents régénérés",
                 "Config DevWorkflow",

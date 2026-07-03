@@ -149,14 +149,7 @@ fn download_manifest(
 }
 
 fn print_release_check(release: &GitHubRelease, manifest: &ReleaseManifest) {
-    println!("Dernière release: {}", release.tag_name);
-    println!(
-        "Version manifeste: {}+{}",
-        manifest.version, manifest.commit
-    );
-    for asset in &manifest.assets {
-        println!("- {}: {} {}", asset.rid, asset.file_name, asset.sha256);
-    }
+    print_styled_lines(&release_check_lines(release, manifest));
 }
 
 fn run_upgrade(
@@ -189,8 +182,32 @@ fn run_upgrade(
     }
     let replacement = prepare_replacement_executable(&asset.file_name, &temp_asset, rid)?;
     replace_executable(&executable_path, &replacement)?;
-    println!("Upgrade terminé: {}+{}", manifest.version, manifest.commit);
+    print_styled_lines(&upgrade_done_lines(manifest));
     Ok(())
+}
+
+fn release_check_lines(release: &GitHubRelease, manifest: &ReleaseManifest) -> Vec<String> {
+    let mut lines = vec![
+        "Upgrade".into(),
+        format!("Release  : {}", release.tag_name),
+        format!("Version  : {}+{}", manifest.version, manifest.commit),
+        format!("Assets   : {}", manifest.assets.len()),
+    ];
+    for asset in &manifest.assets {
+        lines.push(format!(
+            "- {:14} {} {}",
+            asset.rid, asset.file_name, asset.sha256
+        ));
+    }
+    lines
+}
+
+fn upgrade_done_lines(manifest: &ReleaseManifest) -> Vec<String> {
+    vec![
+        "Upgrade".into(),
+        "Statut   : terminé".into(),
+        format!("Version  : {}+{}", manifest.version, manifest.commit),
+    ]
 }
 
 fn download_asset(client: &reqwest::blocking::Client, asset: &ReleaseAsset) -> Result<PathBuf> {
@@ -373,6 +390,12 @@ fn print_styled(line: &str) {
     println!("{}", terminal_theme().style_line(line, false));
 }
 
+fn print_styled_lines(lines: &[String]) {
+    for line in lines {
+        print_styled(line);
+    }
+}
+
 fn terminal_theme() -> TerminalTheme {
     TerminalTheme::stdout_auto()
 }
@@ -523,6 +546,48 @@ mod tests {
             .expect_err("nix path should fail");
 
         assert!(error.to_string().contains("Auto-update indisponible"));
+    }
+
+    #[test]
+    fn release_check_lines_render_manifest_summary_and_assets() {
+        let release = GitHubRelease {
+            tag_name: "v2026.07.03".into(),
+            assets: Vec::new(),
+        };
+        let manifest = ReleaseManifest {
+            version: "2026.07.03".into(),
+            commit: "abcdef0".into(),
+            assets: vec![ReleaseAsset {
+                rid: "linux-x64".into(),
+                file_name: "dw-linux-x64.tar.gz".into(),
+                sha256: "hash".into(),
+                url: "https://example.invalid/dw.tar.gz".into(),
+            }],
+        };
+
+        let lines = release_check_lines(&release, &manifest);
+
+        assert_eq!(lines[0], "Upgrade");
+        assert_eq!(lines[1], "Release  : v2026.07.03");
+        assert_eq!(lines[2], "Version  : 2026.07.03+abcdef0");
+        assert_eq!(lines[3], "Assets   : 1");
+        assert!(lines[4].contains("linux-x64"));
+        assert!(lines[4].contains("dw-linux-x64.tar.gz"));
+    }
+
+    #[test]
+    fn upgrade_done_lines_render_version() {
+        let manifest = ReleaseManifest {
+            version: "2026.07.03".into(),
+            commit: "abcdef0".into(),
+            assets: Vec::new(),
+        };
+
+        let lines = upgrade_done_lines(&manifest);
+
+        assert_eq!(lines[0], "Upgrade");
+        assert_eq!(lines[1], "Statut   : terminé");
+        assert_eq!(lines[2], "Version  : 2026.07.03+abcdef0");
     }
 
     #[test]
