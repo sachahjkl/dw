@@ -160,6 +160,7 @@ impl TerminalTheme {
                 "Validation handoff",
                 "Détails handoff",
                 "ADO assignés",
+                "ADO work item",
             ],
         ) {
             return self.bold(&self.cyan(&styled));

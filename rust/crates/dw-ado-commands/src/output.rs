@@ -29,27 +29,30 @@ pub fn render_work_item_snapshots(
             lines.push("---".into());
             lines.push(String::new());
         }
-        lines.push(format_work_item_snapshot(item, theme));
+        lines.push("ADO work item".into());
+        lines.push(format!(
+            "Item      : {}",
+            theme.success(&format!("#{}", item.id))
+        ));
+        lines.push(format!(
+            "Type      : {}",
+            item.kind.as_deref().unwrap_or("type inconnu")
+        ));
+        lines.push(format!(
+            "État      : {}",
+            item.state.as_deref().unwrap_or("état inconnu")
+        ));
+        lines.push(format!(
+            "Titre     : {}",
+            item.title.as_deref().unwrap_or("(sans titre)")
+        ));
         lines.push(String::new());
         lines.push(format!(
-            "Contexte complet: {}",
+            "Contexte  : {}",
             theme.command(&format!("dw ado context {} --project {}", item.id, project))
         ));
     }
     lines.join("\n")
-}
-
-fn format_work_item_snapshot(item: &WorkItemSnapshot, theme: &TerminalTheme) -> String {
-    format!(
-        "{} {} {}",
-        theme.success(&format!("#{}", item.id)),
-        theme.dim(&format!(
-            "[{} / {}]",
-            item.kind.as_deref().unwrap_or("type inconnu"),
-            item.state.as_deref().unwrap_or("état inconnu")
-        )),
-        item.title.as_deref().unwrap_or("(sans titre)")
-    )
 }
 
 #[cfg(test)]
@@ -70,7 +73,11 @@ mod tests {
             &TerminalTheme::plain(),
         );
 
-        assert!(output.contains("#7 [type inconnu / état inconnu] (sans titre)"));
-        assert!(output.contains("Contexte complet: dw ado context 7 --project ha"));
+        assert!(output.contains("ADO work item"));
+        assert!(output.contains("Item      : #7"));
+        assert!(output.contains("Type      : type inconnu"));
+        assert!(output.contains("État      : état inconnu"));
+        assert!(output.contains("Titre     : (sans titre)"));
+        assert!(output.contains("Contexte  : dw ado context 7 --project ha"));
     }
 }
