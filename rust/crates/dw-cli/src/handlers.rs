@@ -6,10 +6,7 @@ use crate::doctor::{run_agent_doctor, run_doctor};
 use crate::version::informational_version;
 use anyhow::Result;
 use dw_agent::agent_context;
-use dw_config::{
-    InitRequest, RefreshRequest, default_agent, init_root, refresh_root, resolve_root,
-    set_default_agent,
-};
+use dw_config::{default_agent, resolve_root, set_default_agent};
 use dw_ui::TerminalTheme;
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
@@ -27,45 +24,17 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             root,
             dry_run,
             no_save,
-        } => {
-            let report = init_root(InitRequest {
+        } => dw_config::command::handle_init(dw_config::command::InitCommandArgs {
+            root,
+            profile,
+            no_save,
+            dry_run,
+        })?,
+        Command::Refresh { root, profile } => {
+            dw_config::command::handle_refresh(dw_config::command::RefreshCommandArgs {
                 root,
                 profile,
-                no_save,
-                dry_run,
-            })?;
-            if report.dry_run {
-                print_styled(&format!("Dry-run init DevWorkflow: {}", report.root));
-                print_styled(&format!("Profil: {}", report.profile));
-                for path in &report.planned_paths {
-                    print_styled(&format!("  would create/write: {path}"));
-                }
-                if report.no_save {
-                    print_styled("  would not modify user settings (--no-save).");
-                } else {
-                    print_styled(&format!("  would save user root: {}", report.root));
-                }
-            } else {
-                print_styled(&format!("Root DevWorkflow initialise: {}", report.root));
-                print_styled(&format!("Profil: {}", report.profile));
-                if report.no_save {
-                    print_styled("Settings utilisateur non modifies (--no-save).");
-                }
-                print_styled("Prochaine etape conseillee: dw doctor");
-            }
-        }
-        Command::Refresh { root, profile } => {
-            let root = resolve_root(root.as_deref());
-            let report = refresh_root(RefreshRequest {
-                root,
-                profile: Some(profile),
-            })?;
-            print_styled(&format!("Root rafraichi: {}", report.root));
-            print_styled(&format!("Profil: {}", report.profile));
-            print_styled("Schemas et contextes agents regeneres.");
-            print_styled(
-                "Fichiers utilisateurs preserves: projects.json, workflow.json, databases.json, plan.md.",
-            );
+            })?
         }
         Command::Agent { command } => match command {
             AgentCommand::Context => {
