@@ -123,13 +123,19 @@ pub fn handle_agent(command: AgentCommand) -> Result<AgentAction> {
         })),
         AgentCommand::Config { root } | AgentCommand::Show { root } => {
             let root = resolve_root(root.as_deref());
-            print_styled(&format!("Agent par défaut: {}", default_agent(&root)));
+            println!(
+                "{}",
+                render_agent_config(&root, &default_agent(&root), &TerminalTheme::stdout_auto())
+            );
             Ok(AgentAction::Handled)
         }
         AgentCommand::SetDefault { root, agent } => {
             let root = resolve_root(root.as_deref());
             let agent = set_default_agent(&root, &agent)?;
-            print_styled(&format!("Agent par défaut: {agent}"));
+            println!(
+                "{}",
+                render_agent_config_updated(&root, &agent, &TerminalTheme::stdout_auto())
+            );
             Ok(AgentAction::Handled)
         }
         AgentCommand::Doctor { agent } => {
@@ -166,10 +172,19 @@ fn run_agent_doctor(requested: Option<&str>) -> Result<()> {
 }
 
 fn render_agent_report(checks: &[AgentDoctorCheck], theme: &TerminalTheme) -> String {
+    let available_count = checks.iter().filter(|check| check.available).count();
+    let total_count = checks.len();
     let mut lines = vec![
-        theme.command("Agents disponibles"),
+        theme.command("Diagnostic agents"),
+        format!(
+            "{} {available_count}/{total_count} agents disponibles",
+            if available_count == total_count {
+                theme.success("✓")
+            } else {
+                theme.warning("!")
+            }
+        ),
         String::new(),
-        format!("{:<12} {:<12} Statut", "Agent", "Commande"),
     ];
     for check in checks {
         let status = if check.available {
@@ -178,11 +193,38 @@ fn render_agent_report(checks: &[AgentDoctorCheck], theme: &TerminalTheme) -> St
             theme.warning("! manquant")
         };
         lines.push(format!(
-            "{:<12} {:<12} {}",
-            check.agent_name, check.command, status
+            "{:<10} {} via {}",
+            status, check.agent_name, check.command
         ));
+        if !check.available {
+            lines.push(format!(
+                "           {}",
+                theme.command(&format!(
+                    "Installer `{}` ou vérifier le PATH",
+                    check.command
+                ))
+            ));
+        }
     }
     lines.join("\n")
+}
+
+fn render_agent_config(root: &str, agent: &str, theme: &TerminalTheme) -> String {
+    [
+        theme.command("Config agent"),
+        format!("Agent par défaut: {}", theme.bold(agent)),
+        format!("Root DevWorkflow: {}", theme.path(root)),
+    ]
+    .join("\n")
+}
+
+fn render_agent_config_updated(root: &str, agent: &str, theme: &TerminalTheme) -> String {
+    [
+        theme.success("✓ Config agent mise à jour"),
+        format!("Agent par défaut: {}", theme.bold(agent)),
+        format!("Root DevWorkflow: {}", theme.path(root)),
+    ]
+    .join("\n")
 }
 
 fn launch_probe(agent: AgentKind) -> crate::AgentLaunch {
@@ -202,10 +244,6 @@ fn command_available(file_name: &str, arguments: &[&str]) -> bool {
         .args(arguments)
         .output()
         .is_ok_and(|output| output.status.success())
-}
-
-fn print_styled(line: &str) {
-    println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
 }
 
 #[cfg(test)]
@@ -258,9 +296,29 @@ mod tests {
 
         let report = render_agent_report(&checks, &TerminalTheme::plain());
 
-        assert!(report.contains("Agents disponibles"));
+        assert!(report.contains("Diagnostic agents"));
+        assert!(report.contains("! 1/2 agents disponibles"));
         assert!(report.contains("codex"));
         assert!(report.contains("✓ OK"));
         assert!(report.contains("! manquant"));
+        assert!(report.contains("Installer `missing` ou vérifier le PATH"));
+    }
+
+    #[test]
+    fn agent_config_lines_include_root_and_default_agent() {
+        let report = render_agent_config("/tmp/dw", "codex", &TerminalTheme::plain());
+
+        assert!(report.contains("Config agent"));
+        assert!(report.contains("Agent par défaut: codex"));
+        assert!(report.contains("Root DevWorkflow: /tmp/dw"));
+    }
+
+    #[test]
+    fn agent_config_updated_lines_include_status() {
+        let report = render_agent_config_updated("/tmp/dw", "opencode", &TerminalTheme::plain());
+
+        assert!(report.contains("✓ Config agent mise à jour"));
+        assert!(report.contains("Agent par défaut: opencode"));
+        assert!(report.contains("Root DevWorkflow: /tmp/dw"));
     }
 }
