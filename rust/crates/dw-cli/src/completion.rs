@@ -247,7 +247,7 @@ fn options_for_path(path: &[&str]) -> Vec<&'static str> {
             "--json",
             "--execute",
         ],
-        ["task", "open"] | ["agent", "open"] => vec![
+        ["task", "open"] => vec![
             "--workspace",
             "--root",
             "--project",
@@ -256,6 +256,15 @@ fn options_for_path(path: &[&str]) -> Vec<&'static str> {
             "--repo",
             "--agent",
             "--json",
+        ],
+        ["agent", "open"] => vec![
+            "--workspace",
+            "--root",
+            "--project",
+            "--work-item",
+            "--continue",
+            "--repo",
+            "--agent",
         ],
         ["task", "sync"]
         | ["task", "rename"]
@@ -525,6 +534,15 @@ mod tests {
         assert!(!values.contains(&"--project".into()));
         assert!(!values.contains(&"--work-item".into()));
         assert!(!values.contains(&"--continue".into()));
+    }
+
+    #[test]
+    fn agent_open_completion_matches_agent_open_options() {
+        let values = labels(complete_words(&words(&["agent", "open", "--"])));
+
+        assert!(values.contains(&"--workspace".into()));
+        assert!(values.contains(&"--agent".into()));
+        assert!(!values.contains(&"--json".into()));
     }
 
     #[test]

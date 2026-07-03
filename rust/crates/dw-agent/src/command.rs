@@ -7,39 +7,65 @@ use std::process::Command;
 
 #[derive(Debug, Subcommand)]
 pub enum AgentCommand {
+    #[command(about = "Affiche le contexte DevWorkflow injecte aux agents IA.")]
     Context,
+    #[command(about = "Ouvre ou reprend un agent sur un workspace task.")]
     Open {
-        #[arg(long, conflicts_with_all = ["project", "work_item", "continue"])]
+        #[arg(
+            long,
+            conflicts_with_all = ["project", "work_item", "continue"],
+            help = "Chemin du workspace a ouvrir directement."
+        )]
         workspace: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a utiliser.")]
         root: Option<String>,
-        #[arg(long, conflicts_with = "workspace")]
+        #[arg(
+            long,
+            conflicts_with = "workspace",
+            help = "Projet configure a utiliser pour resoudre un workspace."
+        )]
         project: Option<String>,
-        #[arg(long = "work-item")]
+        #[arg(
+            long = "work-item",
+            help = "Work item servant a resoudre le workspace."
+        )]
         work_item: Option<String>,
-        #[arg(long = "continue", conflicts_with = "workspace")]
+        #[arg(
+            long = "continue",
+            conflicts_with = "workspace",
+            help = "Reprendre le workspace task le plus recent correspondant."
+        )]
         r#continue: bool,
-        #[arg(long)]
+        #[arg(long, help = "Repository a ouvrir dans le workspace, si applicable.")]
         repo: Option<String>,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Agent a lancer: opencode, cursor, claude, codex ou copilot."
+        )]
         agent: Option<String>,
+        #[arg(help = "Alias positionnel du work item pour resoudre le workspace.")]
         positional_work_item: Option<String>,
     },
+    #[command(about = "Affiche la configuration agent effective.")]
     Config {
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a lire.")]
         root: Option<String>,
     },
+    #[command(about = "Affiche la configuration agent effective.")]
     Show {
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a lire.")]
         root: Option<String>,
     },
+    #[command(about = "Definit l'agent par defaut du root DevWorkflow.")]
     SetDefault {
+        #[arg(help = "Agent a utiliser par defaut: opencode, cursor, claude, codex ou copilot.")]
         agent: String,
-        #[arg(long)]
+        #[arg(long, help = "Root DevWorkflow a modifier.")]
         root: Option<String>,
     },
+    #[command(about = "Diagnostique la disponibilite des agents installes.")]
     Doctor {
-        #[arg(long)]
+        #[arg(long, help = "Limiter le diagnostic a un agent.")]
         agent: Option<String>,
     },
 }
