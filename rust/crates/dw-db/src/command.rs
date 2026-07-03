@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::Subcommand;
 
 use crate::commands;
@@ -53,7 +53,7 @@ pub enum DbCommand {
     #[command(about = "Exécute une requête SQL read-only avec garde-fous et limite de lignes.")]
     Query {
         #[arg(long, help = "Requête SQL read-only à exécuter.")]
-        sql: String,
+        sql: Option<String>,
         #[arg(long, help = "Projet configuré contenant la connexion base.")]
         project: Option<String>,
         #[arg(
@@ -73,6 +73,12 @@ pub enum DbCommand {
         max_rows: Option<usize>,
         #[arg(long, help = "Émettre le résultat JSON déterministe.")]
         json: bool,
+        #[arg(
+            value_name = "SQL",
+            trailing_var_arg = true,
+            help = "Requête SQL read-only à exécuter."
+        )]
+        sql_parts: Vec<String>,
     },
 }
 
@@ -112,8 +118,9 @@ pub fn handle_db(command: DbCommand) -> Result<()> {
             sql,
             max_rows,
             json,
+            sql_parts,
         } => commands::query(commands::QueryArgs {
-            sql,
+            sql: resolve_query_sql(sql, sql_parts)?,
             project,
             database,
             env,
@@ -135,14 +142,62 @@ fn parse_positive_usize(value: &str) -> Result<usize, String> {
     Ok(parsed)
 }
 
+fn resolve_query_sql(sql: Option<String>, sql_parts: Vec<String>) -> Result<String> {
+    let sql = sql
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let positional = sql_parts.join(" ");
+    let positional = positional.trim();
+
+    match (sql, positional.is_empty()) {
+        (Some(_), false) => Err(anyhow!(
+            "Utiliser soit --sql, soit la requête positionnelle, pas les deux."
+        )),
+        (Some(sql), true) => Ok(sql),
+        (None, false) => Ok(positional.to_string()),
+        (None, true) => Err(anyhow!(
+            "Requête SQL manquante. Fournir --sql \"select ...\" ou une requête positionnelle."
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_positive_usize;
+    use super::{parse_positive_usize, resolve_query_sql};
 
     #[test]
     fn max_rows_rejects_zero_and_non_numeric_values() {
         assert_eq!(parse_positive_usize("25").expect("valid"), 25);
         assert!(parse_positive_usize("0").is_err());
         assert!(parse_positive_usize("wat").is_err());
+    }
+
+    #[test]
+    fn resolve_query_sql_uses_long_option() {
+        let sql = resolve_query_sql(Some(" select 1 ".into()), Vec::new()).expect("valid sql");
+
+        assert_eq!(sql, "select 1");
+    }
+
+    #[test]
+    fn resolve_query_sql_joins_positional_parts() {
+        let sql = resolve_query_sql(None, vec!["select".into(), "1".into()]).expect("valid sql");
+
+        assert_eq!(sql, "select 1");
+    }
+
+    #[test]
+    fn resolve_query_sql_rejects_both_sources() {
+        let err = resolve_query_sql(Some("select 1".into()), vec!["select".into(), "2".into()])
+            .expect_err("exclusive sql sources");
+
+        assert!(err.to_string().contains("soit --sql"));
+    }
+
+    #[test]
+    fn resolve_query_sql_rejects_missing_sql() {
+        let err = resolve_query_sql(Some("   ".into()), Vec::new()).expect_err("missing sql");
+
+        assert!(err.to_string().contains("Requête SQL manquante"));
     }
 }
