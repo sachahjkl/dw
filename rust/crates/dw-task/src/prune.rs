@@ -52,9 +52,6 @@ pub fn handle(args: PruneArgs) -> Result<()> {
     }
 
     if candidates.is_empty() || !execute {
-        if !candidates.is_empty() && !json {
-            print_styled("Relancer  : dw task prune --execute --yes");
-        }
         return Ok(());
     }
     if !yes {
@@ -144,6 +141,7 @@ fn prune_candidate_lines(candidates: &[WorkspaceSummary]) -> Vec<String> {
         "Task prune".into(),
         "Mode      : prévisualisation".into(),
         format!("Candidats : {}", candidates.len()),
+        "À faire   : dw task prune --execute --yes".into(),
     ];
     for candidate in candidates {
         lines.push(String::new());
@@ -243,6 +241,7 @@ mod tests {
         assert_eq!(lines[0], "Task prune");
         assert_eq!(lines[1], "Mode      : prévisualisation");
         assert_eq!(lines[2], "Candidats : 1");
+        assert_eq!(lines[3], "À faire   : dw task prune --execute --yes");
         assert!(lines.contains(&"Workspace : /tmp/dw/projects/ha/workspaces/feat-1-done".into()));
         assert!(lines.contains(&"Items     : ha / #1 Done [Valide]".into()));
         assert!(lines.contains(&"Repos     : front, back".into()));
