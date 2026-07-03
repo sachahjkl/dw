@@ -6,7 +6,7 @@ mod changelog;
 mod context;
 
 pub(crate) use assigned::suggested_start_ids;
-pub use assigned::{empty_assigned_message, render_assigned_groups, render_assigned_items};
+pub use assigned::{render_assigned_groups, render_assigned_items, render_empty_assigned_message};
 pub use changelog::{
     render_changelog_document, render_changelog_ids, render_changelog_resolved_empty,
     render_changelog_source_empty,

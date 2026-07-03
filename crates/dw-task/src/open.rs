@@ -73,11 +73,15 @@ pub fn open_workspace(args: OpenWorkspaceArgs) -> Result<()> {
     } = args;
     let root = resolve_root(root.as_deref());
     let workspace = if workspace.is_none() && !r#continue && std::io::stdin().is_terminal() {
-        interactive_workspace_selection(
+        let Some(workspace) = interactive_workspace_selection(
             &root,
             project.as_deref(),
             work_item.as_deref().or(positional_work_item.as_deref()),
         )?
+        else {
+            return Ok(());
+        };
+        workspace
     } else {
         resolve_workspace(
             &root,
@@ -137,13 +141,14 @@ fn interactive_workspace_selection(
     root: &str,
     project: Option<&str>,
     work_item: Option<&str>,
-) -> Result<String> {
+) -> Result<Option<String>> {
     let items = task_list(root, project, work_item);
     if items.is_empty() {
-        return Err(anyhow::anyhow!("Aucun workspace task trouvé."));
+        print_styled("Aucun workspace task trouvé.");
+        return Ok(None);
     }
     if items.len() == 1 {
-        return Ok(items[0].path.clone());
+        return Ok(Some(items[0].path.clone()));
     }
 
     let options = items
@@ -167,7 +172,7 @@ fn interactive_workspace_selection(
     options
         .into_iter()
         .find(|(label, _)| *label == selected)
-        .map(|(_, path)| path)
+        .map(|(_, path)| Some(path))
         .ok_or_else(|| anyhow::anyhow!("Sélection workspace invalide"))
 }
 

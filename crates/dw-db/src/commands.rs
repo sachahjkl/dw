@@ -60,12 +60,15 @@ pub fn schema(args: SchemaArgs) -> Result<()> {
 }
 
 pub fn describe(args: DescribeArgs) -> Result<()> {
-    let table = resolve_describe_table(
+    let Some(table) = resolve_describe_table(
         args.table,
         args.project.as_deref(),
         args.database.as_deref(),
         args.env.as_deref(),
-    )?;
+    )?
+    else {
+        return Ok(());
+    };
     let sql = describe_table_sql(&table);
     let result = execute_db_query(
         args.project.as_deref(),
@@ -142,9 +145,9 @@ fn resolve_describe_table(
     project: Option<&str>,
     database: Option<&str>,
     env: Option<&str>,
-) -> Result<String> {
+) -> Result<Option<String>> {
     if let Some(table) = table.filter(|value| !value.trim().is_empty()) {
-        return Ok(table);
+        return Ok(Some(table));
     }
     if !is_stdin_interactive() {
         return Err(anyhow::anyhow!(
@@ -153,13 +156,21 @@ fn resolve_describe_table(
     }
     if !confirm_when_interactive("Charger la liste des tables pour choisir une table à décrire ?")?
     {
-        return Err(anyhow::anyhow!("Description DB annulée."));
+        print_styled("Description DB annulée.");
+        return Ok(None);
     }
 
     let schema = execute_db_query(project, database, env, schema_sql(), Some(0))?;
     let choices = schema_table_choices(&schema);
-    select_optional("Table SQL", choices)?
-        .ok_or_else(|| anyhow::anyhow!("Aucune table disponible pour la sélection."))
+    let Some(table) = select_optional("Table SQL", choices)? else {
+        print_styled("Aucune table disponible pour la sélection.");
+        return Ok(None);
+    };
+    Ok(Some(table))
+}
+
+fn print_styled(line: &str) {
+    println!("{}", TerminalTheme::stdout_auto().style_line(line, false));
 }
 
 fn schema_table_choices(result: &QueryResult) -> Vec<String> {

@@ -1,6 +1,6 @@
 use crate::output::{
-    empty_assigned_message, render_assigned_groups, render_assigned_items, suggested_start_ids,
-    terminal_theme,
+    render_assigned_groups, render_assigned_items, render_empty_assigned_message,
+    suggested_start_ids, terminal_theme,
 };
 use crate::{load_auth_options, resolve_ado_options, resolve_project_key_or_prompt};
 use anyhow::Result;
@@ -61,7 +61,14 @@ fn print_assigned_items(
     json: bool,
 ) -> Result<()> {
     if items.is_empty() {
-        println!("{}", empty_assigned_message(include_final_states));
+        if json {
+            println!("[]");
+        } else {
+            println!(
+                "{}",
+                render_empty_assigned_message(include_final_states, &terminal_theme())
+            );
+        }
         return Ok(());
     }
 
@@ -86,7 +93,14 @@ fn print_assigned_items_grouped(
     json: bool,
 ) -> Result<()> {
     if items.is_empty() {
-        println!("{}", empty_assigned_message(include_final_states));
+        if json {
+            println!("[]");
+        } else {
+            println!(
+                "{}",
+                render_empty_assigned_message(include_final_states, &terminal_theme())
+            );
+        }
         return Ok(());
     }
 
