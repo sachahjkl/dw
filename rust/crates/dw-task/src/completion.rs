@@ -78,8 +78,8 @@ pub fn options_for(subcommand: &str) -> Vec<&'static str> {
         "status" => vec!["--root"],
         "list" => vec!["--root", "--project", "--work-item", "--json"],
         "current" => vec!["--json"],
-        "preflight" => vec!["--workspace", "--ai-context-file", "--json"],
-        "handoff-validate" => vec!["--workspace", "--json"],
+        "preflight" => workspace_resolution_options(&["--ai-context-file", "--json"]),
+        "handoff-validate" => workspace_resolution_options(&["--json"]),
         "prune" => vec![
             "--root",
             "--project",

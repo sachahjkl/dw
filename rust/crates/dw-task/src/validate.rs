@@ -1,11 +1,57 @@
 use anyhow::Result;
+use dw_config::resolve_root;
 use dw_contracts::{TaskHandoffValidationReport, TaskPreflightReport};
-use dw_workspace::{build_handoff_validation_report, build_preflight_report_from_ai_context_files};
+use dw_workspace::{
+    build_handoff_validation_report, build_preflight_report_from_ai_context_files,
+    resolve_workspace,
+};
 use std::path::Path;
 
 use crate::render::print_styled_lines;
 
-pub fn preflight(workspace: String, ai_context_file: Vec<String>, json: bool) -> Result<()> {
+#[derive(Debug, Clone)]
+pub struct PreflightArgs {
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub ai_context_file: Vec<String>,
+    pub json: bool,
+    pub positional_work_item: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HandoffValidateArgs {
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub json: bool,
+    pub positional_work_item: Option<String>,
+}
+
+pub fn preflight(args: PreflightArgs) -> Result<()> {
+    let PreflightArgs {
+        workspace,
+        root,
+        project,
+        work_item,
+        r#continue,
+        ai_context_file,
+        json,
+        positional_work_item,
+    } = args;
+    let root = resolve_root(root.as_deref());
+    let workspace = resolve_workspace(
+        &root,
+        workspace.as_deref(),
+        project.as_deref(),
+        work_item.as_deref(),
+        positional_work_item.as_deref(),
+        r#continue,
+    )?;
     let files = if ai_context_file.is_empty() {
         discover_ai_context_files(&workspace)
     } else {
@@ -27,7 +73,25 @@ pub fn preflight(workspace: String, ai_context_file: Vec<String>, json: bool) ->
     Ok(())
 }
 
-pub fn handoff_validate(workspace: String, json: bool) -> Result<()> {
+pub fn handoff_validate(args: HandoffValidateArgs) -> Result<()> {
+    let HandoffValidateArgs {
+        workspace,
+        root,
+        project,
+        work_item,
+        r#continue,
+        json,
+        positional_work_item,
+    } = args;
+    let root = resolve_root(root.as_deref());
+    let workspace = resolve_workspace(
+        &root,
+        workspace.as_deref(),
+        project.as_deref(),
+        work_item.as_deref(),
+        positional_work_item.as_deref(),
+        r#continue,
+    )?;
     let report = build_handoff_validation_report(&workspace)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);

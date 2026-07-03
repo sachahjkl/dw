@@ -408,6 +408,22 @@ mod tests {
     }
 
     #[test]
+    fn validation_commands_offer_workspace_resolution_options() {
+        let preflight = labels(complete_words(&words(&["task", "preflight", "--"])));
+        assert!(preflight.contains(&"--workspace".into()));
+        assert!(preflight.contains(&"--project".into()));
+        assert!(preflight.contains(&"--work-item".into()));
+        assert!(preflight.contains(&"--continue".into()));
+        assert!(preflight.contains(&"--ai-context-file".into()));
+
+        let handoff = labels(complete_words(&words(&["task", "handoff-validate", "--"])));
+        assert!(handoff.contains(&"--workspace".into()));
+        assert!(handoff.contains(&"--project".into()));
+        assert!(handoff.contains(&"--work-item".into()));
+        assert!(handoff.contains(&"--continue".into()));
+    }
+
+    #[test]
     fn max_rows_completion_offers_common_limits() {
         let values = labels(complete_words(&words(&["db", "query", "--max-rows", ""])));
 

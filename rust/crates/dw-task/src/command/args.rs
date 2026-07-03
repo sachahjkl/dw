@@ -110,8 +110,27 @@ pub enum TaskCommand {
     },
     #[command(about = "Valide les bloqueurs et avertissements avant implémentation.")]
     Preflight {
-        #[arg(long, help = "Chemin du workspace à auditer.")]
-        workspace: String,
+        #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Chemin du workspace à auditer.")]
+        workspace: Option<String>,
+        #[arg(long, help = "Root DevWorkflow à utiliser.")]
+        root: Option<String>,
+        #[arg(
+            long,
+            conflicts_with = "workspace",
+            help = "Projet configuré utilisé pour résoudre le workspace."
+        )]
+        project: Option<String>,
+        #[arg(
+            long = "work-item",
+            help = "Work item utilisé pour résoudre le workspace."
+        )]
+        work_item: Option<String>,
+        #[arg(
+            long = "continue",
+            conflicts_with = "workspace",
+            help = "Reprendre le workspace task le plus récent correspondant."
+        )]
+        r#continue: bool,
         #[arg(
             long = "ai-context-file",
             help = "Fichier de contexte IA additionnel à vérifier; option répétable."
@@ -119,6 +138,8 @@ pub enum TaskCommand {
         ai_context_file: Vec<String>,
         #[arg(long, help = "Émettre le rapport preflight JSON déterministe.")]
         json: bool,
+        #[arg(help = "Alias positionnel du work item pour résoudre le workspace.")]
+        positional_work_item: Option<String>,
     },
     #[command(about = "Synchronise task.json avec les work items Azure DevOps.")]
     Sync {
@@ -415,13 +436,31 @@ pub enum TaskCommand {
     },
     #[command(about = "Valide les fichiers handoff avant sous-agents ou finition.")]
     HandoffValidate {
+        #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Chemin du workspace dont les handoffs doivent être valides.")]
+        workspace: Option<String>,
+        #[arg(long, help = "Root DevWorkflow à utiliser.")]
+        root: Option<String>,
         #[arg(
             long,
-            help = "Chemin du workspace dont les handoffs doivent être valides."
+            conflicts_with = "workspace",
+            help = "Projet configuré utilisé pour résoudre le workspace."
         )]
-        workspace: String,
+        project: Option<String>,
+        #[arg(
+            long = "work-item",
+            help = "Work item utilisé pour résoudre le workspace."
+        )]
+        work_item: Option<String>,
+        #[arg(
+            long = "continue",
+            conflicts_with = "workspace",
+            help = "Reprendre le workspace task le plus récent correspondant."
+        )]
+        r#continue: bool,
         #[arg(long, help = "Émettre le rapport JSON déterministe.")]
         json: bool,
+        #[arg(help = "Alias positionnel du work item pour résoudre le workspace.")]
+        positional_work_item: Option<String>,
     },
     #[command(about = "Supprime les worktrees et nettoie un workspace task.")]
     Teardown {

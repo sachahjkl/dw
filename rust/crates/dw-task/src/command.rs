@@ -66,9 +66,23 @@ pub fn handle_task(command: TaskCommand) -> Result<()> {
         })?,
         TaskCommand::Preflight {
             workspace,
+            root,
+            project,
+            work_item,
+            r#continue,
             ai_context_file,
             json,
-        } => crate::validate::preflight(workspace, ai_context_file, json)?,
+            positional_work_item,
+        } => crate::validate::preflight(crate::validate::PreflightArgs {
+            workspace,
+            root,
+            project,
+            work_item,
+            r#continue,
+            ai_context_file,
+            json,
+            positional_work_item,
+        })?,
         TaskCommand::Sync {
             workspace,
             root,
@@ -242,9 +256,23 @@ pub fn handle_task(command: TaskCommand) -> Result<()> {
             skip_ado,
             json,
         })?,
-        TaskCommand::HandoffValidate { workspace, json } => {
-            crate::validate::handoff_validate(workspace, json)?
-        }
+        TaskCommand::HandoffValidate {
+            workspace,
+            root,
+            project,
+            work_item,
+            r#continue,
+            json,
+            positional_work_item,
+        } => crate::validate::handoff_validate(crate::validate::HandoffValidateArgs {
+            workspace,
+            root,
+            project,
+            work_item,
+            r#continue,
+            json,
+            positional_work_item,
+        })?,
         TaskCommand::Teardown {
             workspace,
             root,
