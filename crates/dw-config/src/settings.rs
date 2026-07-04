@@ -1,28 +1,21 @@
+use crate::base_dirs::PlatformBaseDirs;
 use crate::json::read_json;
 use crate::types::UserSettings;
 use std::path::{Component, Path, PathBuf};
 use std::{env, fs};
 
 pub fn default_root() -> String {
-    let home = home_directory().unwrap_or_else(|| "~".into());
-    format!("{home}/dev/dw")
+    PlatformBaseDirs::resolve()
+        .default_root()
+        .display()
+        .to_string()
 }
 
 pub fn user_config_directory() -> String {
-    if cfg!(windows)
-        && let Some(local_app_data) = env_value("LOCALAPPDATA")
-    {
-        return format!("{local_app_data}/DevWorkflow");
-    }
-
-    if let Ok(xdg) = env::var("XDG_CONFIG_HOME")
-        && !xdg.trim().is_empty()
-    {
-        return format!("{xdg}/DevWorkflow");
-    }
-
-    let home = home_directory().unwrap_or_else(|| "~".into());
-    format!("{home}/.config/DevWorkflow")
+    PlatformBaseDirs::resolve()
+        .user_config_directory()
+        .display()
+        .to_string()
 }
 
 pub fn user_settings_path() -> String {
@@ -103,31 +96,18 @@ fn normalize_path(value: &str) -> std::io::Result<String> {
 
 fn expand_home(value: &str) -> String {
     if value == "~" {
-        return home_directory().unwrap_or_else(|| value.into());
+        return PlatformBaseDirs::resolve().home_dir.display().to_string();
     }
 
     if let Some(stripped) = value.strip_prefix("~/") {
-        let home = home_directory().unwrap_or_else(|| "~".into());
-        return format!("{home}/{stripped}");
+        return PlatformBaseDirs::resolve()
+            .home_dir
+            .join(stripped)
+            .display()
+            .to_string();
     }
 
     value.to_string()
-}
-
-fn home_directory() -> Option<String> {
-    env_value("HOME")
-        .or_else(|| env_value("USERPROFILE"))
-        .or_else(|| match (env_value("HOMEDRIVE"), env_value("HOMEPATH")) {
-            (Some(drive), Some(path)) => Some(format!("{drive}{path}")),
-            _ => None,
-        })
-}
-
-fn env_value(key: &str) -> Option<String> {
-    env::var(key)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 fn expand_environment_variables(value: &str) -> String {
@@ -219,42 +199,25 @@ fn _is_absolute(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
     use std::sync::Mutex;
 
+    #[cfg(windows)]
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn default_root_uses_userprofile_when_home_is_missing() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
-        let home = env::var("HOME").ok();
-        let userprofile = env::var("USERPROFILE").ok();
-        unsafe {
-            env::remove_var("HOME");
-            env::set_var("USERPROFILE", "/tmp/windows-home");
-        }
-
-        let root = default_root();
-
-        restore_env("HOME", home);
-        restore_env("USERPROFILE", userprofile);
-        assert_eq!(root, "/tmp/windows-home/dev/dw");
-    }
-
-    #[test]
-    fn normalize_expands_bare_tilde_with_windows_home_fallback() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
-        let home = env::var("HOME").ok();
-        let userprofile = env::var("USERPROFILE").ok();
-        unsafe {
-            env::remove_var("HOME");
-            env::set_var("USERPROFILE", "/tmp/windows-home");
-        }
-
+    fn normalize_expands_tilde_from_platform_home() {
         let path = normalize_path_lossy("~/dev/dw");
 
-        restore_env("HOME", home);
-        restore_env("USERPROFILE", userprofile);
-        assert_eq!(path, "/tmp/windows-home/dev/dw");
+        assert_eq!(
+            path,
+            PlatformBaseDirs::resolve()
+                .home_dir
+                .join("dev")
+                .join("dw")
+                .display()
+                .to_string()
+        );
     }
 
     #[cfg(windows)]
@@ -272,6 +235,7 @@ mod tests {
         assert_eq!(directory, "C:/Users/demo/AppData/Local/DevWorkflow");
     }
 
+    #[cfg(windows)]
     fn restore_env(key: &str, previous: Option<String>) {
         unsafe {
             if let Some(value) = previous {

@@ -1,3 +1,4 @@
+pub mod base_dirs;
 pub mod command;
 pub mod completion;
 mod doctor;
@@ -9,6 +10,7 @@ mod settings;
 mod store;
 mod types;
 
+pub use base_dirs::PlatformBaseDirs;
 pub use doctor::{config_doctor, config_show};
 pub use init::{InitReport, InitRequest, RefreshReport, RefreshRequest, init_root, refresh_root};
 pub use projects::{load_projects_config, project_choices, repository_config, resolve_project};
