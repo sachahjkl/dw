@@ -1,7 +1,6 @@
 use anyhow::{Result, anyhow};
 use dw_config::{WorkflowConfig, load_user_settings, load_workflow_config, resolve_root};
-use dw_ui::TerminalTheme;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
@@ -53,7 +52,43 @@ struct ReleaseAsset {
     url: String,
 }
 
-pub fn handle_upgrade(check: bool, rid: Option<String>) -> Result<()> {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum UpgradeReport {
+    Check(UpgradeCheckReport),
+    Installed(UpgradeInstallReport),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpgradeCheckReport {
+    pub release_tag: String,
+    pub version: String,
+    pub commit: String,
+    pub assets: Vec<UpgradeAssetSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpgradeAssetSummary {
+    pub rid: String,
+    pub file_name: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpgradeInstallReport {
+    pub version: String,
+    pub commit: String,
+    pub executable_path: String,
+    pub deferred_windows_replacement: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReplacementReport {
+    executable_path: PathBuf,
+    deferred_windows_replacement: bool,
+}
+
+pub fn handle_upgrade(check: bool, rid: Option<String>) -> Result<UpgradeReport> {
     ensure_supported_host(std::env::current_exe().ok().as_deref())?;
     let root = resolve_root(load_user_settings().root.as_deref());
     let workflow = load_workflow_config(&root);
@@ -65,8 +100,9 @@ pub fn handle_upgrade(check: bool, rid: Option<String>) -> Result<()> {
     let manifest = download_manifest(&client, &release, &options.asset_name)?;
 
     if check {
-        print_release_check(&release, &manifest);
-        return Ok(());
+        return Ok(UpgradeReport::Check(upgrade_check_report(
+            &release, &manifest,
+        )));
     }
 
     let rid = rid.unwrap_or_else(default_rid);
@@ -148,15 +184,11 @@ fn download_manifest(
     Ok(serde_json::from_str(&body)?)
 }
 
-fn print_release_check(release: &GitHubRelease, manifest: &ReleaseManifest) {
-    print_styled_lines(&release_check_lines(release, manifest));
-}
-
 fn run_upgrade(
     client: &reqwest::blocking::Client,
     manifest: &ReleaseManifest,
     rid: &str,
-) -> Result<()> {
+) -> Result<UpgradeReport> {
     let asset = manifest
         .assets
         .iter()
@@ -168,7 +200,6 @@ fn run_upgrade(
         ));
     }
     let executable_path = std::env::current_exe()?;
-    print_styled("Préparation de la mise à jour...");
     let temp_asset = download_asset(client, asset)?;
     let hash = file_sha256(&temp_asset)?;
     if !hash.eq_ignore_ascii_case(&asset.sha256) {
@@ -181,33 +212,30 @@ fn run_upgrade(
         ));
     }
     let replacement = prepare_replacement_executable(&asset.file_name, &temp_asset, rid)?;
-    replace_executable(&executable_path, &replacement)?;
-    print_styled_lines(&upgrade_done_lines(manifest));
-    Ok(())
+    let replacement = replace_executable(&executable_path, &replacement)?;
+    Ok(UpgradeReport::Installed(UpgradeInstallReport {
+        version: manifest.version.clone(),
+        commit: manifest.commit.clone(),
+        executable_path: replacement.executable_path.display().to_string(),
+        deferred_windows_replacement: replacement.deferred_windows_replacement,
+    }))
 }
 
-fn release_check_lines(release: &GitHubRelease, manifest: &ReleaseManifest) -> Vec<String> {
-    let mut lines = vec![
-        "Mise à jour".into(),
-        format!("Release  : {}", release.tag_name),
-        format!("Version  : {}+{}", manifest.version, manifest.commit),
-        format!("Artefacts : {}", manifest.assets.len()),
-    ];
-    for asset in &manifest.assets {
-        lines.push(format!(
-            "- {:14} {} {}",
-            asset.rid, asset.file_name, asset.sha256
-        ));
+fn upgrade_check_report(release: &GitHubRelease, manifest: &ReleaseManifest) -> UpgradeCheckReport {
+    UpgradeCheckReport {
+        release_tag: release.tag_name.clone(),
+        version: manifest.version.clone(),
+        commit: manifest.commit.clone(),
+        assets: manifest
+            .assets
+            .iter()
+            .map(|asset| UpgradeAssetSummary {
+                rid: asset.rid.clone(),
+                file_name: asset.file_name.clone(),
+                sha256: asset.sha256.clone(),
+            })
+            .collect(),
     }
-    lines
-}
-
-fn upgrade_done_lines(manifest: &ReleaseManifest) -> Vec<String> {
-    vec![
-        "Mise à jour".into(),
-        "Statut   : terminé".into(),
-        format!("Version  : {}+{}", manifest.version, manifest.commit),
-    ]
 }
 
 fn download_asset(client: &reqwest::blocking::Client, asset: &ReleaseAsset) -> Result<PathBuf> {
@@ -339,7 +367,7 @@ fn ensure_unix_executable(path: &Path, display_name: &str, rid: &str) -> Result<
     Ok(())
 }
 
-fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<()> {
+fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<ReplacementReport> {
     if cfg!(windows) {
         return replace_windows_executable(executable_path, replacement);
     }
@@ -352,11 +380,16 @@ fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<()> 
         permissions.set_mode(0o755);
         fs::set_permissions(executable_path, permissions)?;
     }
-    print_styled(&format!("Binaire remplacé: {}", executable_path.display()));
-    Ok(())
+    Ok(ReplacementReport {
+        executable_path: executable_path.to_path_buf(),
+        deferred_windows_replacement: false,
+    })
 }
 
-fn replace_windows_executable(executable_path: &Path, replacement: &Path) -> Result<()> {
+fn replace_windows_executable(
+    executable_path: &Path,
+    replacement: &Path,
+) -> Result<ReplacementReport> {
     let script = std::env::temp_dir().join(format!("dw-upgrade-{}.cmd", unique_upgrade_suffix()));
     let backup = executable_path.with_extension(format!(
         "{}bak",
@@ -379,25 +412,10 @@ fn replace_windows_executable(executable_path: &Path, replacement: &Path) -> Res
         .arg("/c")
         .arg(&script)
         .spawn()?;
-    print_styled(&format!(
-        "Remplacement programme au prochain relachement du binaire: {}",
-        executable_path.display()
-    ));
-    Ok(())
-}
-
-fn print_styled(line: &str) {
-    println!("{}", terminal_theme().style_line(line, false));
-}
-
-fn print_styled_lines(lines: &[String]) {
-    for line in lines {
-        print_styled(line);
-    }
-}
-
-fn terminal_theme() -> TerminalTheme {
-    TerminalTheme::stdout_auto()
+    Ok(ReplacementReport {
+        executable_path: executable_path.to_path_buf(),
+        deferred_windows_replacement: true,
+    })
 }
 
 pub(crate) fn windows_replacement_script(
@@ -454,7 +472,7 @@ pub(crate) fn ensure_supported_host(executable_path: Option<&Path>) -> Result<()
         .is_some_and(|path| path.contains("/nix/store/"))
     {
         return Err(anyhow!(
-            "Auto-update indisponible pour une installation Nix. Utiliser `nix run --refresh github:sachahjkl/dw` ou `nix profile upgrade`."
+            "Auto-update indisponible pour une installation Nix. Utiliser un rafraîchissement Nix explicite ou une mise à jour de profil Nix."
         ));
     }
     Ok(())
@@ -549,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn release_check_lines_render_manifest_summary_and_assets() {
+    fn upgrade_check_report_preserves_manifest_summary_and_assets() {
         let release = GitHubRelease {
             tag_name: "v2026.07.03".into(),
             assets: Vec::new(),
@@ -565,29 +583,14 @@ mod tests {
             }],
         };
 
-        let lines = release_check_lines(&release, &manifest);
+        let report = upgrade_check_report(&release, &manifest);
 
-        assert_eq!(lines[0], "Mise à jour");
-        assert_eq!(lines[1], "Release  : v2026.07.03");
-        assert_eq!(lines[2], "Version  : 2026.07.03+abcdef0");
-        assert_eq!(lines[3], "Artefacts : 1");
-        assert!(lines[4].contains("linux-x64"));
-        assert!(lines[4].contains("dw-linux-x64.tar.gz"));
-    }
-
-    #[test]
-    fn upgrade_done_lines_render_version() {
-        let manifest = ReleaseManifest {
-            version: "2026.07.03".into(),
-            commit: "abcdef0".into(),
-            assets: Vec::new(),
-        };
-
-        let lines = upgrade_done_lines(&manifest);
-
-        assert_eq!(lines[0], "Mise à jour");
-        assert_eq!(lines[1], "Statut   : terminé");
-        assert_eq!(lines[2], "Version  : 2026.07.03+abcdef0");
+        assert_eq!(report.release_tag, "v2026.07.03");
+        assert_eq!(report.version, "2026.07.03");
+        assert_eq!(report.commit, "abcdef0");
+        assert_eq!(report.assets.len(), 1);
+        assert_eq!(report.assets[0].rid, "linux-x64");
+        assert_eq!(report.assets[0].file_name, "dw-linux-x64.tar.gz");
     }
 
     #[test]

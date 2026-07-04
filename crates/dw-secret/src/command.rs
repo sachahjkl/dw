@@ -1,147 +1,106 @@
 use anyhow::Result;
-use clap::Subcommand;
-use dw_ui::TerminalTheme;
-use inquire::{Password, PasswordDisplayMode};
-use std::io::IsTerminal;
+use serde::{Deserialize, Serialize};
 
-use crate::{KeyringSecretStore, delete_secret, secret_exists, secret_from_env, store_secret};
+use crate::{KeyringSecretStore, SecretStore, delete_secret, secret_exists, store_secret};
 
-#[derive(Debug, Subcommand)]
-pub enum SecretCommand {
-    #[command(about = "Enregistre un secret dans le keyring système.")]
-    Set {
-        #[arg(help = "Clé logique du secret, par exemple une credentialReference.")]
-        key: String,
-        #[arg(
-            long,
-            conflicts_with = "from_env",
-            help = "Valeur du secret à enregistrer."
-        )]
-        value: Option<String>,
-        #[arg(
-            long = "from-env",
-            conflicts_with = "value",
-            help = "Nom de variable d'environnement contenant le secret."
-        )]
-        from_env: Option<String>,
-    },
-    #[command(about = "Vérifie si un secret existe sans afficher sa valeur.")]
-    Get {
-        #[arg(help = "Clé logique du secret à vérifier.")]
-        key: String,
-    },
-    #[command(about = "Supprime un secret du keyring système.")]
-    Delete {
-        #[arg(help = "Clé logique du secret à supprimer.")]
-        key: String,
-    },
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretSetReport {
+    pub key: String,
+    pub storage: String,
+    pub value_masked: bool,
 }
 
-pub fn handle_secret(command: SecretCommand) -> Result<()> {
-    let store = KeyringSecretStore;
-    match command {
-        SecretCommand::Set {
-            key,
-            value,
-            from_env,
-        } => {
-            let secret = match (value, from_env) {
-                (Some(secret), None) => secret,
-                (None, Some(name)) => secret_from_env(&name)?,
-                (None, None) if std::io::stdin().is_terminal() => Password::new("Secret")
-                    .with_display_mode(PasswordDisplayMode::Hidden)
-                    .without_confirmation()
-                    .prompt()?,
-                (None, None) => {
-                    return Err(anyhow::anyhow!(
-                        "secret set requiert --value ou --from-env en mode non interactif"
-                    ));
-                }
-                (Some(_), Some(_)) => unreachable!("clap rejects --value with --from-env"),
-            };
-            store_secret(&store, &key, &secret)?;
-            print_styled_lines(&secret_set_lines(&key));
-        }
-        SecretCommand::Get { key } => {
-            print_styled_lines(&secret_get_lines(&key, secret_exists(&store, &key)?));
-        }
-        SecretCommand::Delete { key } => {
-            delete_secret(&store, &key)?;
-            print_styled_lines(&secret_delete_lines(&key));
-        }
-    }
-    Ok(())
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretGetReport {
+    pub key: String,
+    pub exists: bool,
+    pub value_masked: bool,
 }
 
-fn secret_set_lines(key: &str) -> Vec<String> {
-    vec![
-        "Secret".into(),
-        "Statut    : enregistré".into(),
-        format!("Clé       : {key}"),
-        "Stockage  : keyring système".into(),
-        "Valeur    : masquée".into(),
-    ]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretDeleteReport {
+    pub key: String,
+    pub deleted_if_present: bool,
 }
 
-fn secret_get_lines(key: &str, exists: bool) -> Vec<String> {
-    vec![
-        "Secret".into(),
-        format!(
-            "Statut    : {}",
-            if exists { "présent" } else { "introuvable" }
-        ),
-        format!("Clé       : {key}"),
-        "Valeur    : masquée".into(),
-    ]
+pub fn set_secret(key: &str, secret: &str) -> Result<SecretSetReport> {
+    set_secret_with_store(&KeyringSecretStore, key, secret)
 }
 
-fn secret_delete_lines(key: &str) -> Vec<String> {
-    vec![
-        "Secret".into(),
-        "Statut    : supprimé si présent".into(),
-        format!("Clé       : {key}"),
-    ]
+pub fn get_secret(key: &str) -> Result<SecretGetReport> {
+    get_secret_with_store(&KeyringSecretStore, key)
 }
 
-fn print_styled_lines(lines: &[String]) {
-    let theme = TerminalTheme::stdout_auto();
-    for line in lines {
-        println!("{}", theme.style_line(line, false));
-    }
+pub fn delete_secret_key(key: &str) -> Result<SecretDeleteReport> {
+    delete_secret_with_store(&KeyringSecretStore, key)
+}
+
+pub fn set_secret_with_store(
+    store: &impl SecretStore,
+    key: &str,
+    secret: &str,
+) -> Result<SecretSetReport> {
+    store_secret(store, key, secret)?;
+    Ok(SecretSetReport {
+        key: key.into(),
+        storage: "keyring système".into(),
+        value_masked: true,
+    })
+}
+
+pub fn get_secret_with_store(store: &impl SecretStore, key: &str) -> Result<SecretGetReport> {
+    Ok(SecretGetReport {
+        key: key.into(),
+        exists: secret_exists(store, key)?,
+        value_masked: true,
+    })
+}
+
+pub fn delete_secret_with_store(store: &impl SecretStore, key: &str) -> Result<SecretDeleteReport> {
+    delete_secret(store, key)?;
+    Ok(SecretDeleteReport {
+        key: key.into(),
+        deleted_if_present: true,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MemorySecretStore;
 
     #[test]
-    fn secret_set_lines_never_include_secret_value() {
-        let lines = secret_set_lines("db/password");
+    fn secret_set_report_never_includes_secret_value() {
+        let store = MemorySecretStore::new();
+        let report =
+            set_secret_with_store(&store, "db/password", "password-value").expect("set secret");
 
-        assert_eq!(lines[0], "Secret");
-        assert_eq!(lines[1], "Statut    : enregistré");
-        assert_eq!(lines[2], "Clé       : db/password");
-        assert_eq!(lines[3], "Stockage  : keyring système");
-        assert_eq!(lines[4], "Valeur    : masquée");
-        assert!(!lines.join("\n").contains("password-value"));
+        assert_eq!(report.key, "db/password");
+        assert_eq!(report.storage, "keyring système");
+        assert!(report.value_masked);
+        assert!(!format!("{report:?}").contains("password-value"));
     }
 
     #[test]
-    fn secret_get_lines_render_presence_without_value() {
-        let present = secret_get_lines("db/password", true);
-        let missing = secret_get_lines("db/password", false);
+    fn get_report_exposes_presence_only() {
+        let store = MemorySecretStore::new();
+        let missing = get_secret_with_store(&store, "db/password").expect("get missing");
+        set_secret_with_store(&store, "db/password", "password-value").expect("set secret");
+        let present = get_secret_with_store(&store, "db/password").expect("get present");
 
-        assert_eq!(present[1], "Statut    : présent");
-        assert_eq!(missing[1], "Statut    : introuvable");
-        assert!(present.contains(&"Valeur    : masquée".into()));
+        assert!(!missing.exists);
+        assert!(present.exists);
+        assert!(present.value_masked);
     }
 
     #[test]
-    fn secret_delete_lines_render_key() {
-        let lines = secret_delete_lines("db/password");
+    fn delete_report_does_not_reveal_secret() {
+        let store = MemorySecretStore::new();
+        set_secret_with_store(&store, "db/password", "password-value").expect("set secret");
 
-        assert_eq!(lines[0], "Secret");
-        assert_eq!(lines[1], "Statut    : supprimé si présent");
-        assert_eq!(lines[2], "Clé       : db/password");
+        let report = delete_secret_with_store(&store, "db/password").expect("delete secret");
+
+        assert_eq!(report.key, "db/password");
+        assert!(report.deleted_if_present);
     }
 }

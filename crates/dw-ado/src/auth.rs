@@ -53,14 +53,12 @@ pub struct AdoAuthStatus {
 pub enum AdoAuthError {
     #[error("Auth ADO non configurée. Renseigner auth dans workflow.json ou définir DW_ADO_TOKEN.")]
     MissingConfig,
-    #[error("Token ADO indisponible. Exécuter dw auth login ou définir DW_ADO_TOKEN.")]
+    #[error("Token ADO indisponible. Lancer l'action de login auth ou définir DW_ADO_TOKEN.")]
     MissingToken,
     #[error("OAuth Azure DevOps a échoué: {0}")]
     OAuth(String),
     #[error("Stockage credentials OS indisponible: {0}")]
     Keyring(String),
-    #[error("Runtime async indisponible: {0}")]
-    Runtime(String),
     #[error("Connexion ADO expirée avant validation dans le navigateur.")]
     LoginExpired,
     #[error("Login navigateur impossible: {0}")]
@@ -84,9 +82,11 @@ pub fn environment_token() -> Option<AdoToken> {
         })
 }
 
-pub fn login_browser_interactive(auth: Option<AdoAuthOptions>) -> Result<AdoToken, AdoAuthError> {
+pub async fn login_browser_interactive(
+    auth: Option<AdoAuthOptions>,
+) -> Result<AdoToken, AdoAuthError> {
     let auth = auth.ok_or(AdoAuthError::MissingConfig)?;
-    let token = auth_browser::login(&auth)?;
+    let token = auth_browser::login(&auth).await?;
     let refresh_token = token.refresh_token.as_deref().ok_or_else(|| {
         AdoAuthError::BrowserLogin("Microsoft n'a pas renvoyé de refresh_token.".into())
     })?;
@@ -94,27 +94,26 @@ pub fn login_browser_interactive(auth: Option<AdoAuthOptions>) -> Result<AdoToke
     Ok(oauth_token_result(token, "navigateur"))
 }
 
-pub fn login_device_code(auth: Option<AdoAuthOptions>) -> Result<AdoToken, AdoAuthError> {
+pub async fn login_device_code(
+    auth: Option<AdoAuthOptions>,
+    mut on_message: impl FnMut(String),
+) -> Result<AdoToken, AdoAuthError> {
     let auth = auth.ok_or(AdoAuthError::MissingConfig)?;
-    block_on(async move {
-        let scopes = scopes(&auth);
-        let flow = initiate_device_flow(&auth, &scopes).await?;
-        open_browser(&flow.verification_uri);
-        if let Some(message) = &flow.message {
-            println!("{message}");
-        } else {
-            println!(
-                "Ouvrir {} et entrer le code {}.",
-                flow.verification_uri, flow.user_code
-            );
-        }
+    let scopes = scopes(&auth);
+    let flow = initiate_device_flow(&auth, &scopes).await?;
+    open_browser(&flow.verification_uri);
+    on_message(flow.message.clone().unwrap_or_else(|| {
+        format!(
+            "Ouvrir {} et entrer le code {}.",
+            flow.verification_uri, flow.user_code
+        )
+    }));
 
-        let token = acquire_device_token_polling(&auth, flow).await?;
-        if let Some(refresh_token) = token.refresh_token.as_deref() {
-            store_refresh_token(refresh_token)?;
-        }
-        Ok(oauth_token_result(token, "code appareil"))
-    })?
+    let token = acquire_device_token_polling(&auth, flow).await?;
+    if let Some(refresh_token) = token.refresh_token.as_deref() {
+        store_refresh_token(refresh_token)?;
+    }
+    Ok(oauth_token_result(token, "code appareil"))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -204,7 +203,7 @@ fn open_browser(url: &str) {
     }
 }
 
-pub fn token_silent_or_environment(
+pub async fn token_silent_or_environment(
     auth: Option<AdoAuthOptions>,
 ) -> Result<Option<AdoToken>, AdoAuthError> {
     if let Some(token) = environment_token() {
@@ -220,22 +219,22 @@ pub fn token_silent_or_environment(
         None => return Ok(None),
     };
 
-    block_on(async move {
-        let scopes = scopes(&auth);
-        let token = refresh_access_token(&auth, &scopes, &refresh_token).await?;
-        if let Some(refresh_token) = token.refresh_token.as_deref() {
-            store_refresh_token(refresh_token)?;
-        }
-        Ok(Some(oauth_token_result(token, "keyring")))
-    })?
+    let scopes = scopes(&auth);
+    let token = refresh_access_token(&auth, &scopes, &refresh_token).await?;
+    if let Some(refresh_token) = token.refresh_token.as_deref() {
+        store_refresh_token(refresh_token)?;
+    }
+    Ok(Some(oauth_token_result(token, "keyring")))
 }
 
-pub fn require_token(auth: Option<AdoAuthOptions>) -> Result<AdoToken, AdoAuthError> {
-    token_silent_or_environment(auth)?.ok_or(AdoAuthError::MissingToken)
+pub async fn require_token(auth: Option<AdoAuthOptions>) -> Result<AdoToken, AdoAuthError> {
+    token_silent_or_environment(auth)
+        .await?
+        .ok_or(AdoAuthError::MissingToken)
 }
 
-pub fn status(auth: Option<AdoAuthOptions>) -> Result<AdoAuthStatus, AdoAuthError> {
-    Ok(match token_silent_or_environment(auth)? {
+pub async fn status(auth: Option<AdoAuthOptions>) -> Result<AdoAuthStatus, AdoAuthError> {
+    Ok(match token_silent_or_environment(auth).await? {
         Some(token) => AdoAuthStatus {
             connected: true,
             source: Some(token.source),
@@ -377,12 +376,6 @@ fn delete_keyring_credential(user: &str) -> Result<bool, AdoAuthError> {
 
 fn is_missing_keyring_entry(error: &keyring::Error) -> bool {
     matches!(error, keyring::Error::NoEntry)
-}
-
-pub(crate) fn block_on<T>(future: impl std::future::Future<Output = T>) -> Result<T, AdoAuthError> {
-    tokio::runtime::Runtime::new()
-        .map_err(|error| AdoAuthError::Runtime(error.to_string()))?
-        .block_on(async { Ok(future.await) })
 }
 
 #[cfg(test)]

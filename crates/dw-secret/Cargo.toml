@@ -8,11 +8,9 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
 dw-contracts = { path = "../dw-contracts" }
-dw-ui = { path = "../dw-ui" }
-inquire.workspace = true
 keyring.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

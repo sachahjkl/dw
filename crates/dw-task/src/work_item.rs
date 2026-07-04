@@ -1,17 +1,15 @@
 use crate::{load_auth_options, resolve_ado_options, write_workspace_agent_configs};
 use anyhow::Result;
+use dw_ado::WorkItemSnapshot;
 use dw_ado::auth::require_token;
 use dw_ado::{get_work_item_snapshots_authenticated, query_assigned_work_items};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_ui::{is_stdin_interactive, multiselect_optional};
 use dw_workspace::{
-    display_work_items, execute_work_item_update,
+    WorkspaceManifest, WorkspaceWorkItem, execute_work_item_update,
     parse_work_item_ids as parse_workspace_work_item_ids, plan_add_work_item_snapshots,
     plan_add_work_items, plan_remove_work_items, read_manifest_path, resolve_workspace,
 };
-use std::path::Path;
-
-use crate::render::{print_styled, print_styled_lines};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct AddWorkItemArgs {
@@ -26,8 +24,7 @@ pub struct AddWorkItemArgs {
     pub type_name: Option<String>,
     pub title: Option<String>,
     pub state: Option<String>,
-    pub execute: bool,
-    pub json: bool,
+    pub mode: dw_core::ExecutionMode,
 }
 
 #[derive(Debug, Clone)]
@@ -39,321 +36,225 @@ pub struct RemoveWorkItemArgs {
     pub work_item: Option<String>,
     pub r#continue: bool,
     pub positional_work_item: Option<String>,
-    pub execute: bool,
-    pub json: bool,
+    pub mode: dw_core::ExecutionMode,
 }
 
-pub fn add(args: AddWorkItemArgs) -> Result<()> {
-    let AddWorkItemArgs {
-        work_item_ids,
-        workspace,
-        root,
-        project,
-        work_item,
-        r#continue,
-        positional_work_item,
-        skip_ado,
-        type_name,
-        title,
-        state,
-        execute,
-        json,
-    } = args;
-    let root = resolve_root(root.as_deref());
-    let workspace = resolve_workspace(
-        &root,
-        workspace.as_deref(),
-        project.as_deref(),
-        work_item.as_deref(),
-        positional_work_item.as_deref(),
-        r#continue,
-    )?;
-    let current_manifest = read_manifest_path(
-        &Path::new(&workspace)
-            .join("task.json")
-            .display()
-            .to_string(),
-    )?;
+#[derive(Debug, Clone)]
+pub struct WorkItemChoicesArgs {
+    pub workspace: Option<String>,
+    pub root: Option<String>,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub r#continue: bool,
+    pub positional_work_item: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorkItemUpdateAction {
+    Add,
+    Remove,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkItemChoicesReport {
+    pub workspace: String,
+    pub project: String,
+    pub choices: Vec<WorkspaceWorkItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkItemUpdatePlanReport {
+    pub action: WorkItemUpdateAction,
+    pub workspace: String,
+    #[serde(rename = "requestedIds")]
+    pub requested_ids: Vec<String>,
+    #[serde(rename = "skippedExistingIds")]
+    pub skipped_existing_ids: Vec<String>,
+    pub snapshots: Vec<WorkItemSnapshot>,
+    pub plan: Option<dw_workspace::TaskWorkItemUpdatePlan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkItemUpdateExecutionReport {
+    pub action: WorkItemUpdateAction,
+    pub plan: dw_workspace::TaskWorkItemUpdatePlan,
+    pub manifest: WorkspaceManifest,
+    #[serde(rename = "newWorkspace")]
+    pub new_workspace: String,
+}
+
+pub async fn add_work_item_choices_report(
+    args: WorkItemChoicesArgs,
+) -> Result<WorkItemChoicesReport> {
+    let root = resolve_root(args.root.as_deref());
+    let workspace = resolve_workspace_from_args(&root, &args)?;
+    let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let Some(work_item_ids) = resolve_add_work_item_ids(
-        work_item_ids,
+    let mut options = resolve_ado_options(&projects, &workflow, &manifest.project)?;
+    if options.project.trim().is_empty() {
+        options.project = manifest.project.clone();
+    }
+    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let items = query_assigned_work_items(&options, 50, &token).await?;
+    let choices = items
+        .into_iter()
+        .filter(|item| !manifest.matches_work_item(&item.id))
+        .filter(|item| !dw_workspace::is_final_state(item.kind.as_deref(), item.state.as_deref()))
+        .map(|item| WorkspaceWorkItem {
+            id: item.id,
+            kind: item.kind,
+            title: item.title,
+            state: item.state,
+        })
+        .collect::<Vec<_>>();
+
+    Ok(WorkItemChoicesReport {
+        workspace,
+        project: manifest.project,
+        choices,
+    })
+}
+
+pub fn removable_work_item_choices_report(
+    args: WorkItemChoicesArgs,
+) -> Result<WorkItemChoicesReport> {
+    let root = resolve_root(args.root.as_deref());
+    let workspace = resolve_workspace_from_args(&root, &args)?;
+    let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
+    Ok(WorkItemChoicesReport {
+        workspace,
+        project: manifest.project.clone(),
+        choices: removable_work_item_choices(&manifest),
+    })
+}
+
+pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport> {
+    let work_item_ids = args
+        .work_item_ids
+        .as_deref()
+        .filter(|ids| !ids.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!("Work items à ajouter manquants. Fournir au moins un identifiant.")
+        })?
+        .to_owned();
+    let root = resolve_root(args.root.as_deref());
+    let workspace = resolve_workspace(
         &root,
-        &projects,
-        &workflow,
-        &current_manifest,
-        skip_ado,
-        json,
-    )?
-    else {
-        return Ok(());
-    };
+        args.workspace.as_deref(),
+        args.project.as_deref(),
+        args.work_item.as_deref(),
+        args.positional_work_item.as_deref(),
+        args.r#continue,
+    )?;
+    let current_manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     let requested_ids = parse_workspace_work_item_ids(&work_item_ids);
     let missing_ids = requested_ids
         .iter()
         .filter(|id| !current_manifest.matches_work_item(id))
         .cloned()
         .collect::<Vec<_>>();
+    let skipped_existing_ids = requested_ids
+        .iter()
+        .filter(|id| current_manifest.matches_work_item(id))
+        .cloned()
+        .collect::<Vec<_>>();
     if missing_ids.is_empty() {
-        if !json {
-            print_styled("Tous les work items demandés sont déjà présents dans le workspace.");
-        }
-        return Ok(());
+        return Ok(WorkItemUpdatePlanReport {
+            action: WorkItemUpdateAction::Add,
+            workspace,
+            requested_ids,
+            skipped_existing_ids,
+            snapshots: Vec::new(),
+            plan: None,
+        });
     }
-    let (manifest, plan) = if skip_ado {
-        plan_add_work_items(
+
+    let (plan, snapshots) = if args.skip_ado {
+        let (_manifest, plan) = plan_add_work_items(
             &root,
             &workspace,
             &work_item_ids,
-            type_name.as_deref(),
-            title.as_deref(),
-            state.as_deref(),
-        )?
+            args.type_name.as_deref(),
+            args.title.as_deref(),
+            args.state.as_deref(),
+        )?;
+        (plan, Vec::new())
     } else {
+        let projects = load_projects_config(&root);
+        let workflow = load_workflow_config(&root);
         let mut options = resolve_ado_options(&projects, &workflow, &current_manifest.project)?;
         if options.project.trim().is_empty() {
             options.project = current_manifest.project.clone();
         }
-        let token = require_token(load_auth_options(Some(&root))?)?;
+        let token = require_token(load_auth_options(Some(&root))?).await?;
         let snapshots = get_work_item_snapshots_authenticated(&options, &missing_ids, &token)?;
-        if snapshots.len() != missing_ids.len() {
-            let found = snapshots
-                .iter()
-                .map(|snapshot| snapshot.id.clone())
-                .collect::<Vec<_>>();
-            let unresolved = missing_ids
-                .iter()
-                .filter(|id| {
-                    !found
-                        .iter()
-                        .any(|found_id| found_id.eq_ignore_ascii_case(id))
-                })
-                .cloned()
-                .collect::<Vec<_>>();
-            return Err(anyhow::anyhow!(
-                "Work items ADO introuvables ou inaccessibles: {}",
-                unresolved.join(", ")
-            ));
-        }
-        let final_items = snapshots
-            .iter()
-            .filter(|snapshot| {
-                dw_workspace::is_final_state(snapshot.kind.as_deref(), snapshot.state.as_deref())
-            })
-            .collect::<Vec<_>>();
-        if !final_items.is_empty() {
-            let labels = final_items
-                .iter()
-                .map(|item| {
-                    format!(
-                        "#{} ({})",
-                        item.id,
-                        item.state.as_deref().unwrap_or("état inconnu")
-                    )
-                })
-                .collect::<Vec<_>>();
-            return Err(anyhow::anyhow!(
-                "Impossible d'ajouter des work items en état final: {}",
-                labels.join(", ")
-            ));
-        }
-        plan_add_work_item_snapshots(&root, &workspace, &snapshots)?
+        ensure_all_snapshots_resolved(&missing_ids, &snapshots)?;
+        ensure_no_final_snapshots(&snapshots)?;
+        let (_manifest, plan) = plan_add_work_item_snapshots(&root, &workspace, &snapshots)?;
+        (plan, snapshots)
     };
-    if json {
-        println!("{}", serde_json::to_string_pretty(&plan)?);
-    } else {
-        print_styled_lines(&work_item_update_plan_lines("ajout", &plan));
-        if !skip_ado {
-            print_styled("Work items ADO résolus:");
-            print_styled(&display_work_items(&plan.work_items, true));
-        }
-    }
-    if execute {
-        let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
-        write_workspace_agent_configs(&new_workspace, &updated)?;
-        if !json {
-            print_styled(&format!("Workspace mis à jour: {new_workspace}"));
-        }
-    }
-    Ok(())
-}
 
-fn resolve_add_work_item_ids(
-    explicit: Option<String>,
-    root: &str,
-    projects: &dw_config::ProjectsConfig,
-    workflow: &dw_config::WorkflowConfig,
-    manifest: &dw_workspace::WorkspaceManifest,
-    skip_ado: bool,
-    json: bool,
-) -> Result<Option<String>> {
-    if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
-        return Ok(Some(ids));
-    }
-    if json || skip_ado || !is_stdin_interactive() {
-        return Err(anyhow::anyhow!(
-            "Work items à ajouter manquants. Fournir `dw task add-work-item <ids>`."
-        ));
-    }
-
-    let choices = add_work_item_choices(root, projects, workflow, manifest)?;
-    if choices.is_empty() {
-        print_styled(&format!(
-            "Aucun work item assigné disponible à ajouter pour le projet {}.",
-            manifest.project
-        ));
-        return Ok(None);
-    }
-    let Some(selected) = multiselect_optional("Work items à ajouter", choices)? else {
-        return Err(anyhow::anyhow!(
-            "Work items à ajouter manquants. Fournir `dw task add-work-item <ids>`."
-        ));
-    };
-    if selected.is_empty() {
-        print_styled("Aucun work item sélectionné.");
-        return Ok(None);
-    }
-
-    Ok(Some(
-        selected
-            .iter()
-            .map(|label| work_item_id_from_choice(label))
-            .collect::<Vec<_>>()
-            .join(","),
-    ))
-}
-
-fn add_work_item_choices(
-    root: &str,
-    projects: &dw_config::ProjectsConfig,
-    workflow: &dw_config::WorkflowConfig,
-    manifest: &dw_workspace::WorkspaceManifest,
-) -> Result<Vec<String>> {
-    let mut options = resolve_ado_options(projects, workflow, &manifest.project)?;
-    if options.project.trim().is_empty() {
-        options.project = manifest.project.clone();
-    }
-    let token = require_token(load_auth_options(Some(root))?)?;
-    let runtime = tokio::runtime::Runtime::new()?;
-    let items = runtime.block_on(query_assigned_work_items(&options, 50, &token))?;
-    let choices = items
-        .into_iter()
-        .filter(|item| !manifest.matches_work_item(&item.id))
-        .filter(|item| !dw_workspace::is_final_state(item.kind.as_deref(), item.state.as_deref()))
-        .map(|item| {
-            display_add_work_item_choice(&dw_workspace::WorkspaceWorkItem {
-                id: item.id,
-                kind: item.kind,
-                title: item.title,
-                state: item.state,
-            })
-        })
-        .collect::<Vec<_>>();
-    Ok(choices)
-}
-
-fn display_add_work_item_choice(item: &dw_workspace::WorkspaceWorkItem) -> String {
-    display_work_item_choice(item)
-}
-
-pub fn remove(args: RemoveWorkItemArgs) -> Result<()> {
-    let RemoveWorkItemArgs {
-        work_item_ids,
+    Ok(WorkItemUpdatePlanReport {
+        action: WorkItemUpdateAction::Add,
         workspace,
-        root,
-        project,
-        work_item,
-        r#continue,
-        positional_work_item,
-        execute,
-        json,
-    } = args;
-    let root = resolve_root(root.as_deref());
+        requested_ids,
+        skipped_existing_ids,
+        snapshots,
+        plan: Some(plan),
+    })
+}
+
+pub fn remove_plan(args: RemoveWorkItemArgs) -> Result<WorkItemUpdatePlanReport> {
+    let work_item_ids = args
+        .work_item_ids
+        .as_deref()
+        .filter(|ids| !ids.trim().is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!("Work items à retirer manquants. Fournir au moins un identifiant.")
+        })?
+        .to_owned();
+    let root = resolve_root(args.root.as_deref());
     let workspace = resolve_workspace(
         &root,
-        workspace.as_deref(),
-        project.as_deref(),
-        work_item.as_deref(),
-        positional_work_item.as_deref(),
-        r#continue,
+        args.workspace.as_deref(),
+        args.project.as_deref(),
+        args.work_item.as_deref(),
+        args.positional_work_item.as_deref(),
+        args.r#continue,
     )?;
-    let current_manifest = read_manifest_path(
-        &Path::new(&workspace)
-            .join("task.json")
-            .display()
-            .to_string(),
-    )?;
-    let Some(work_item_ids) = resolve_remove_work_item_ids(work_item_ids, &current_manifest, json)?
-    else {
-        return Ok(());
-    };
-    let (manifest, plan) = plan_remove_work_items(&root, &workspace, &work_item_ids)?;
-    if json {
-        println!("{}", serde_json::to_string_pretty(&plan)?);
-    } else {
-        print_styled_lines(&work_item_update_plan_lines("retrait", &plan));
-    }
-    if execute {
-        let (updated, new_workspace) = execute_work_item_update(&manifest, &plan)?;
-        write_workspace_agent_configs(&new_workspace, &updated)?;
-        if !json {
-            print_styled(&format!("Workspace mis à jour: {new_workspace}"));
-        }
-    }
-    Ok(())
+    let requested_ids = parse_workspace_work_item_ids(&work_item_ids);
+    let (_manifest, plan) = plan_remove_work_items(&root, &workspace, &work_item_ids)?;
+
+    Ok(WorkItemUpdatePlanReport {
+        action: WorkItemUpdateAction::Remove,
+        workspace,
+        requested_ids,
+        skipped_existing_ids: Vec::new(),
+        snapshots: Vec::new(),
+        plan: Some(plan),
+    })
 }
 
-fn resolve_remove_work_item_ids(
-    explicit: Option<String>,
-    manifest: &dw_workspace::WorkspaceManifest,
-    json: bool,
-) -> Result<Option<String>> {
-    if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
-        return Ok(Some(ids));
-    }
-    if json || !is_stdin_interactive() {
-        return Err(anyhow::anyhow!(
-            "Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`."
-        ));
-    }
-
-    let choices = removable_work_item_choices(manifest);
-    if choices.is_empty() {
-        print_styled("Aucun work item disponible à retirer.");
+pub fn execute_update(
+    report: &WorkItemUpdatePlanReport,
+) -> Result<Option<WorkItemUpdateExecutionReport>> {
+    let Some(plan) = &report.plan else {
         return Ok(None);
-    }
-    let Some(selected) = multiselect_optional("Work items à retirer", choices)? else {
-        return Err(anyhow::anyhow!(
-            "Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`."
-        ));
     };
-    if selected.is_empty() {
-        print_styled("Aucun work item sélectionné.");
-        return Ok(None);
-    }
-
-    Ok(Some(
-        selected
-            .iter()
-            .map(|label| work_item_id_from_choice(label))
-            .collect::<Vec<_>>()
-            .join(","),
-    ))
+    let manifest = read_manifest_path(&format!("{}/task.json", plan.workspace))?;
+    let (updated, new_workspace) = execute_work_item_update(&manifest, plan)?;
+    write_workspace_agent_configs(&new_workspace, &updated)?;
+    Ok(Some(WorkItemUpdateExecutionReport {
+        action: report.action,
+        plan: plan.clone(),
+        manifest: updated,
+        new_workspace,
+    }))
 }
 
-fn removable_work_item_choices(manifest: &dw_workspace::WorkspaceManifest) -> Vec<String> {
-    manifest
-        .parent_work_items()
-        .iter()
-        .map(display_remove_work_item_choice)
-        .collect()
-}
-
-fn display_remove_work_item_choice(item: &dw_workspace::WorkspaceWorkItem) -> String {
-    display_work_item_choice(item)
-}
-
-fn display_work_item_choice(item: &dw_workspace::WorkspaceWorkItem) -> String {
+pub fn work_item_choice_label(item: &WorkspaceWorkItem) -> String {
     format!(
         "#{}{}{}{}",
         item.id,
@@ -372,7 +273,7 @@ fn display_work_item_choice(item: &dw_workspace::WorkspaceWorkItem) -> String {
     )
 }
 
-fn work_item_id_from_choice(label: &str) -> String {
+pub fn work_item_id_from_choice(label: &str) -> String {
     label
         .trim_start_matches('#')
         .split_whitespace()
@@ -381,26 +282,79 @@ fn work_item_id_from_choice(label: &str) -> String {
         .to_string()
 }
 
-fn work_item_update_plan_lines(
-    action: &str,
-    plan: &dw_workspace::TaskWorkItemUpdatePlan,
-) -> Vec<String> {
-    vec![
-        "Work items workspace".into(),
-        "Mode      : prévisualisation".into(),
-        format!("Action    : {action}"),
-        format!("Branche   : {} -> {}", plan.old_branch, plan.new_branch),
-        format!("Workspace : {} -> {}", plan.workspace, plan.new_workspace),
-        format!(
-            "Éléments  : {}",
-            plan.work_items
+pub fn work_item_fetch_line(item_count: usize) -> String {
+    match item_count {
+        0 => "Chargement ADO: aucun work item à résoudre.".into(),
+        1 => "Chargement ADO: résolution de 1 work item...".into(),
+        count => format!("Chargement ADO: résolution de {count} work items..."),
+    }
+}
+
+fn resolve_workspace_from_args(root: &str, args: &WorkItemChoicesArgs) -> Result<String> {
+    Ok(resolve_workspace(
+        root,
+        args.workspace.as_deref(),
+        args.project.as_deref(),
+        args.work_item.as_deref(),
+        args.positional_work_item.as_deref(),
+        args.r#continue,
+    )?)
+}
+
+fn removable_work_item_choices(manifest: &WorkspaceManifest) -> Vec<WorkspaceWorkItem> {
+    manifest.parent_work_items()
+}
+
+fn ensure_all_snapshots_resolved(
+    requested: &[String],
+    snapshots: &[WorkItemSnapshot],
+) -> Result<()> {
+    if snapshots.len() == requested.len() {
+        return Ok(());
+    }
+    let found = snapshots
+        .iter()
+        .map(|snapshot| snapshot.id.clone())
+        .collect::<Vec<_>>();
+    let unresolved = requested
+        .iter()
+        .filter(|id| {
+            !found
                 .iter()
-                .map(|item| format!("#{}", item.id))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        "À faire   : dw task add-work-item/remove-work-item --execute".into(),
-    ]
+                .any(|found_id| found_id.eq_ignore_ascii_case(id))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    Err(anyhow::anyhow!(
+        "Work items ADO introuvables ou inaccessibles: {}",
+        unresolved.join(", ")
+    ))
+}
+
+fn ensure_no_final_snapshots(snapshots: &[WorkItemSnapshot]) -> Result<()> {
+    let final_items = snapshots
+        .iter()
+        .filter(|snapshot| {
+            dw_workspace::is_final_state(snapshot.kind.as_deref(), snapshot.state.as_deref())
+        })
+        .collect::<Vec<_>>();
+    if final_items.is_empty() {
+        return Ok(());
+    }
+    let labels = final_items
+        .iter()
+        .map(|item| {
+            format!(
+                "#{} ({})",
+                item.id,
+                item.state.as_deref().unwrap_or("état inconnu")
+            )
+        })
+        .collect::<Vec<_>>();
+    Err(anyhow::anyhow!(
+        "Impossible d'ajouter des work items en état final: {}",
+        labels.join(", ")
+    ))
 }
 
 #[cfg(test)]
@@ -408,43 +362,84 @@ mod tests {
     use super::*;
 
     #[test]
-    fn work_item_update_plan_lines_render_branch_workspace_and_ids() {
-        let plan = dw_workspace::TaskWorkItemUpdatePlan {
-            workspace: "/tmp/old".into(),
-            new_workspace: "/tmp/new".into(),
-            old_branch: "feat/1-old".into(),
-            new_branch: "feat/1-2-new".into(),
-            work_items: vec![
-                dw_workspace::WorkspaceWorkItem {
-                    id: "1".into(),
-                    kind: None,
-                    title: None,
-                    state: None,
-                },
-                dw_workspace::WorkspaceWorkItem {
-                    id: "2".into(),
-                    kind: None,
-                    title: None,
-                    state: None,
-                },
-            ],
-        };
+    fn removable_work_item_choices_include_context() {
+        let manifest = workspace_manifest_with_items(vec![
+            WorkspaceWorkItem {
+                id: "1".into(),
+                kind: Some("User Story".into()),
+                title: Some("Parent".into()),
+                state: Some("Active".into()),
+            },
+            WorkspaceWorkItem {
+                id: "2".into(),
+                kind: Some("Bug".into()),
+                title: Some("Secondaire".into()),
+                state: Some("New".into()),
+            },
+        ]);
 
-        let lines = work_item_update_plan_lines("ajout", &plan);
+        let choices = removable_work_item_choices(&manifest);
 
-        assert_eq!(lines[0], "Work items workspace");
-        assert_eq!(lines[1], "Mode      : prévisualisation");
-        assert_eq!(lines[2], "Action    : ajout");
-        assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-2-new".into()));
-        assert!(lines.contains(&"Éléments  : #1, #2".into()));
-        assert!(
-            lines.contains(&"À faire   : dw task add-work-item/remove-work-item --execute".into())
+        assert_eq!(
+            work_item_choice_label(&choices[0]),
+            "#1 [User Story] (Active) Parent"
+        );
+        assert_eq!(
+            work_item_choice_label(&choices[1]),
+            "#2 [Bug] (New) Secondaire"
+        );
+        assert_eq!(
+            work_item_id_from_choice(&work_item_choice_label(&choices[1])),
+            "2"
         );
     }
 
     #[test]
-    fn removable_work_item_choices_include_context() {
-        let manifest = dw_workspace::WorkspaceManifest {
+    fn work_item_fetch_line_handles_counts() {
+        assert_eq!(
+            work_item_fetch_line(0),
+            "Chargement ADO: aucun work item à résoudre."
+        );
+        assert_eq!(
+            work_item_fetch_line(1),
+            "Chargement ADO: résolution de 1 work item..."
+        );
+        assert_eq!(
+            work_item_fetch_line(3),
+            "Chargement ADO: résolution de 3 work items..."
+        );
+    }
+
+    #[test]
+    fn add_work_item_choice_uses_same_context_format() {
+        let item = WorkspaceWorkItem {
+            id: "3".into(),
+            kind: Some("Task".into()),
+            title: Some("À ajouter".into()),
+            state: Some("Active".into()),
+        };
+
+        assert_eq!(
+            work_item_choice_label(&item),
+            "#3 [Task] (Active) À ajouter"
+        );
+    }
+
+    #[test]
+    fn final_snapshots_are_rejected() {
+        let result = ensure_no_final_snapshots(&[WorkItemSnapshot {
+            id: "9".into(),
+            kind: Some("Task".into()),
+            state: Some("Clôturé".into()),
+            title: Some("Done".into()),
+            url: None,
+        }]);
+
+        assert!(result.is_err());
+    }
+
+    fn workspace_manifest_with_items(items: Vec<WorkspaceWorkItem>) -> WorkspaceManifest {
+        WorkspaceManifest {
             schema: 1,
             project: "ha".into(),
             work_item_id: "1".into(),
@@ -460,41 +455,7 @@ mod tests {
             work_item_state: Some("Active".into()),
             child_task_ids: None,
             child_tasks: None,
-            work_items: Some(vec![
-                dw_workspace::WorkspaceWorkItem {
-                    id: "1".into(),
-                    kind: Some("User Story".into()),
-                    title: Some("Parent".into()),
-                    state: Some("Active".into()),
-                },
-                dw_workspace::WorkspaceWorkItem {
-                    id: "2".into(),
-                    kind: Some("Bug".into()),
-                    title: Some("Secondaire".into()),
-                    state: Some("New".into()),
-                },
-            ]),
-        };
-
-        let choices = removable_work_item_choices(&manifest);
-
-        assert_eq!(choices[0], "#1 [User Story] (Active) Parent");
-        assert_eq!(choices[1], "#2 [Bug] (New) Secondaire");
-        assert_eq!(work_item_id_from_choice(&choices[1]), "2");
-    }
-
-    #[test]
-    fn add_work_item_choice_uses_same_context_format() {
-        let item = dw_workspace::WorkspaceWorkItem {
-            id: "3".into(),
-            kind: Some("Task".into()),
-            title: Some("À ajouter".into()),
-            state: Some("Active".into()),
-        };
-
-        assert_eq!(
-            display_add_work_item_choice(&item),
-            "#3 [Task] (Active) À ajouter"
-        );
+            work_items: Some(items),
+        }
     }
 }

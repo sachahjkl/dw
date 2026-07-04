@@ -75,7 +75,7 @@ pub fn resolve_connection_string_with_store(
     Err("Connection string SQL introuvable. Renseigner connectionString, connectionStringEnvironmentVariable ou credentialKey.".into())
 }
 
-pub fn query_sql_server(
+pub async fn query_sql_server(
     connection: &DatabaseConnectionConfig,
     defaults: &DatabaseDefaults,
     sql: &str,
@@ -100,13 +100,7 @@ pub fn query_sql_server(
         .timeout_seconds
         .unwrap_or(defaults.timeout_seconds)
         .max(1);
-    let runtime = tokio::runtime::Runtime::new().map_err(|error| error.to_string())?;
-    runtime.block_on(query_sql_server_async(
-        &connection_string,
-        sql,
-        max_rows,
-        timeout_seconds,
-    ))
+    query_sql_server_async(&connection_string, sql, max_rows, timeout_seconds).await
 }
 
 async fn query_sql_server_async(

@@ -287,12 +287,12 @@ const BUSINESS_DATABASES_JSON: &str = r#"{
 
 const AGENTS_MD: &str = r#"# Règles globales DevWorkflow
 
-Ce root est géré par `dw`.
+Ce root est géré par DevWorkflow.
 
 Règles globales:
 
 1. Utiliser les work items Azure DevOps comme source de vérité.
-2. Utiliser uniquement `dw ado ...`, `dw auth ...` et `dw task ...` pour les opérations Azure DevOps/worktree; ne pas utiliser les outils MCP Azure DevOps.
+2. Utiliser uniquement les actions DevWorkflow ADO, auth et task pour les opérations Azure DevOps/worktree; ne pas utiliser les outils MCP Azure DevOps.
 3. Une fois dans un workspace task, suivre le `AGENTS.md` local comme contrat d'exécution principal.
 4. Écrire tout texte utilisateur/projet en français, sauf convention contraire d'un repository.
 5. Ne pas normaliser les labels métier ni le vocabulaire de domaine issus d'ADO, des screenshots, mockups, attachments ou textes projet. Préserver les termes exacts sauf demande explicite de renommage.
@@ -301,12 +301,12 @@ Règles globales:
 
 const BUSINESS_AGENTS_MD: &str = r#"# Règles globales DevWorkflow BUSINESS
 
-Ce root est géré par `dw`.
+Ce root est géré par DevWorkflow.
 
 Règles globales:
 
 1. Utiliser les work items Azure DevOps comme source de vérité.
-2. Utiliser uniquement `dw ado ...`, `dw auth ...` et `dw task ...` pour les opérations Azure DevOps/worktree; ne pas utiliser les outils MCP Azure DevOps.
+2. Utiliser uniquement les actions DevWorkflow ADO, auth et task pour les opérations Azure DevOps/worktree; ne pas utiliser les outils MCP Azure DevOps.
 3. Une fois dans un workspace task, suivre le `AGENTS.md` local comme contrat d'exécution principal.
 4. Écrire tout texte utilisateur/projet en français, sauf convention contraire d'un repository.
 5. Ne pas normaliser les labels métier ni le vocabulaire de domaine issus d'ADO, des screenshots, mockups, attachments ou textes projet. Préserver les termes exacts sauf demande explicite de renommage.

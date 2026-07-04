@@ -8,75 +8,87 @@ use dw_workspace::{
     WorkspaceSummary, display_work_items, execute_task_sync, execute_task_teardown,
     filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
 };
+use serde::Serialize;
 
-use crate::render::{print_styled, print_styled_lines};
-use dw_ui::{is_stdin_interactive, multiselect_or_require_flag};
-use std::collections::HashSet;
-
+#[derive(Debug, Clone)]
 pub struct PruneArgs {
     pub root: Option<String>,
     pub project: Option<String>,
     pub work_item: Option<String>,
-    pub execute: bool,
+    pub mode: dw_core::ExecutionMode,
     pub yes: bool,
     pub no_sync: bool,
-    pub json: bool,
 }
 
-pub fn handle(args: PruneArgs) -> Result<()> {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PrunePlanReport {
+    pub root: String,
+    pub project: Option<String>,
+    pub work_item: Option<String>,
+    pub sync: Vec<PruneSyncReport>,
+    pub candidates: Vec<WorkspaceSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PruneSyncReport {
+    pub workspace: String,
+    pub status: PruneSyncStatus,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PruneSyncStatus {
+    Skipped,
+    Synced,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PruneExecutionReport {
+    pub root: String,
+    pub deleted: Vec<String>,
+}
+
+pub async fn plan(args: PruneArgs) -> Result<PrunePlanReport> {
     let PruneArgs {
         root,
         project,
         work_item,
-        execute,
-        yes,
         no_sync,
-        json,
+        mode: _,
+        yes: _,
     } = args;
 
     let root = resolve_root(root.as_deref());
-    if !no_sync {
+    let sync = if no_sync {
+        Vec::new()
+    } else {
         let workspaces = filter_workspaces(
             find_workspaces(&root),
             project.as_deref(),
             work_item.as_deref(),
         );
-        sync_workspaces(&root, &workspaces, json);
-    }
+        sync_workspaces(&root, &workspaces).await
+    };
 
     let candidates = plan_task_prune(&root, project.as_deref(), work_item.as_deref());
-    if json {
-        println!("{}", serde_json::to_string_pretty(&candidates)?);
-    } else if candidates.is_empty() {
-        print_styled("Aucun workspace éligible au prune.");
-    } else {
-        print_styled_lines(&prune_candidate_lines(&candidates));
-    }
+    Ok(PrunePlanReport {
+        root,
+        project,
+        work_item,
+        sync,
+        candidates,
+    })
+}
 
-    if candidates.is_empty() || !execute {
-        return Ok(());
-    }
-    if !yes && !is_stdin_interactive() {
-        return Err(anyhow::anyhow!(
-            "Suppression destructive refusée: ajouter --yes avec --execute."
-        ));
-    }
-
-    let selected_candidates = if yes {
-        candidates
-    } else {
-        prompt_prune_candidates(candidates)?
-    };
-    if selected_candidates.is_empty() {
-        if !json {
-            print_styled("Prune annulé.");
-        }
-        return Ok(());
-    }
-
-    let projects = load_projects_config(&root);
+pub fn execute(
+    root: &str,
+    selected_candidates: Vec<WorkspaceSummary>,
+) -> Result<PruneExecutionReport> {
+    let projects = load_projects_config(root);
+    let mut deleted = Vec::new();
     for candidate in selected_candidates {
-        let (_manifest, steps) = plan_task_teardown(&root, &projects, &candidate.path)?;
+        let (_manifest, steps) = plan_task_teardown(root, &projects, &candidate.path)?;
         execute_task_teardown(&candidate.path, &steps, |git_dir, args| match args {
             ["worktree", "remove", "--force", target] => {
                 worktree_remove(git_dir, target).map_err(|error| error.to_string())
@@ -84,35 +96,40 @@ pub fn handle(args: PruneArgs) -> Result<()> {
             ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
             _ => Err(format!("commande git non supportée: {}", args.join(" "))),
         })?;
-        if !json {
-            print_styled(&format!("Workspace supprimé: {}", candidate.path));
-        }
+        deleted.push(candidate.path);
     }
-
-    Ok(())
+    Ok(PruneExecutionReport {
+        root: root.into(),
+        deleted,
+    })
 }
 
-fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary], json: bool) {
+async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<PruneSyncReport> {
     let projects = load_projects_config(root);
     let workflow = load_workflow_config(root);
     let auth_options = match load_auth_options(Some(root)) {
         Ok(options) => options,
         Err(error) => {
-            if !json {
-                print_styled(&format!("Sync ignorée (auth indisponible): {error}"));
-            }
-            return;
+            return workspaces
+                .iter()
+                .map(|workspace| PruneSyncReport {
+                    workspace: workspace.path.clone(),
+                    status: PruneSyncStatus::Skipped,
+                    message: format!("auth indisponible: {error}"),
+                })
+                .collect();
         }
     };
 
+    let mut reports = Vec::new();
     for workspace in workspaces {
-        let result = (|| -> Result<()> {
+        let result: Result<String> = async {
             let mut options =
                 resolve_ado_options(&projects, &workflow, &workspace.manifest.project)?;
             if options.project.trim().is_empty() {
                 options.project = workspace.manifest.project.clone();
             }
-            let token = require_token(auth_options.clone())?;
+            let token = require_token(auth_options.clone()).await?;
             let ids = workspace
                 .manifest
                 .parent_work_items()
@@ -121,28 +138,27 @@ fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary], json: bool) {
                 .collect::<Vec<_>>();
             let snapshots = get_work_item_snapshots_authenticated(&options, &ids, &token)?;
             let updated = execute_task_sync(&workspace.path, &snapshots)?;
-            if !json {
-                print_styled(&format!(
-                    "Sync: {}",
-                    display_work_items(&updated.parent_work_items(), true)
-                ));
-            }
-            Ok(())
-        })();
+            Ok(display_work_items(&updated.parent_work_items(), true))
+        }
+        .await;
 
-        if let Err(error) = result
-            && !json
-        {
-            print_styled(&format!(
-                "Sync ignorée [{}]: {}",
-                display_work_items(&workspace.manifest.parent_work_items(), false),
-                error
-            ));
+        match result {
+            Ok(items) => reports.push(PruneSyncReport {
+                workspace: workspace.path.clone(),
+                status: PruneSyncStatus::Synced,
+                message: items,
+            }),
+            Err(error) => reports.push(PruneSyncReport {
+                workspace: workspace.path.clone(),
+                status: PruneSyncStatus::Skipped,
+                message: error.to_string(),
+            }),
         }
     }
+    reports
 }
 
-fn prune_candidate_line(candidate: &WorkspaceSummary) -> String {
+pub fn prune_candidate_label(candidate: &WorkspaceSummary) -> String {
     format!(
         "{} / {}",
         candidate.manifest.project,
@@ -150,45 +166,10 @@ fn prune_candidate_line(candidate: &WorkspaceSummary) -> String {
     )
 }
 
-fn prune_candidate_lines(candidates: &[WorkspaceSummary]) -> Vec<String> {
-    let mut lines = vec![
-        "Nettoyage workspaces".into(),
-        "Mode      : prévisualisation".into(),
-        format!("Candidats : {}", candidates.len()),
-        "À faire   : dw task prune --execute".into(),
-        "Non-TTY   : ajouter --yes pour tout supprimer sans sélection interactive".into(),
-    ];
-    for candidate in candidates {
-        lines.push(String::new());
-        lines.push(format!("Workspace : {}", candidate.path));
-        lines.push(format!("Éléments  : {}", prune_candidate_line(candidate)));
-        lines.push(format!(
-            "Repositories: {}",
-            candidate.manifest.repositories.join(", ")
-        ));
-    }
-    lines
-}
-
-fn prompt_prune_candidates(candidates: Vec<WorkspaceSummary>) -> Result<Vec<WorkspaceSummary>> {
-    let choices = candidates
-        .iter()
-        .map(prune_candidate_choice)
-        .collect::<Vec<_>>();
-    let selected = multiselect_or_require_flag("--yes", "Workspaces à supprimer", choices)?
-        .into_iter()
-        .collect::<HashSet<_>>();
-
-    Ok(candidates
-        .into_iter()
-        .filter(|candidate| selected.contains(&prune_candidate_choice(candidate)))
-        .collect())
-}
-
-fn prune_candidate_choice(candidate: &WorkspaceSummary) -> String {
+pub fn prune_candidate_choice(candidate: &WorkspaceSummary) -> String {
     format!(
         "{} - {} - {}",
-        prune_candidate_line(candidate),
+        prune_candidate_label(candidate),
         candidate.manifest.repositories.join(", "),
         candidate.path
     )
@@ -199,8 +180,8 @@ mod tests {
     use super::*;
     use dw_workspace::WorkspaceManifest;
 
-    #[test]
-    fn prune_no_sync_dry_run_does_not_require_auth() {
+    #[tokio::test]
+    async fn prune_no_sync_dry_run_does_not_require_auth() {
         let root = unique_temp_root();
         let workspace = root.join("projects/ha/workspaces/feat-1-done");
         std::fs::create_dir_all(&workspace).expect("workspace should be created");
@@ -210,89 +191,38 @@ mod tests {
         )
         .expect("manifest should be written");
 
-        handle(PruneArgs {
+        let report = plan(PruneArgs {
             root: Some(root.display().to_string()),
             project: Some("ha".into()),
             work_item: None,
-            execute: false,
+            mode: dw_core::ExecutionMode::Preview,
             yes: false,
             no_sync: true,
-            json: true,
         })
+        .await
         .expect("offline dry-run should not require auth");
 
+        assert_eq!(report.candidates.len(), 1);
         std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
-    fn prune_candidate_line_includes_project_and_items() {
-        let candidate = WorkspaceSummary {
-            path: "/tmp/dw/projects/ha/workspaces/feat-1-done".into(),
-            manifest: WorkspaceManifest {
-                schema: 1,
-                work_item_id: "1".into(),
-                task_id: None,
-                project: "ha".into(),
-                kind: "feat".into(),
-                slug: "done".into(),
-                branch_name: "feat/1-done".into(),
-                created_at: "2026-07-02T10:00:00Z".into(),
-                repositories: vec!["front".into()],
-                status: "created".into(),
-                work_item_type: Some("User Story".into()),
-                work_item_title: Some("Done".into()),
-                work_item_state: Some("Valide".into()),
-                child_task_ids: None,
-                child_tasks: None,
-                work_items: None,
-            },
-        };
-
-        assert_eq!(prune_candidate_line(&candidate), "ha / #1 Done [Valide]");
-    }
-
-    #[test]
-    fn prune_candidate_lines_render_preview_summary() {
-        let candidate = WorkspaceSummary {
-            path: "/tmp/dw/projects/ha/workspaces/feat-1-done".into(),
-            manifest: WorkspaceManifest {
-                schema: 1,
-                work_item_id: "1".into(),
-                task_id: None,
-                project: "ha".into(),
-                kind: "feat".into(),
-                slug: "done".into(),
-                branch_name: "feat/1-done".into(),
-                created_at: "2026-07-02T10:00:00Z".into(),
-                repositories: vec!["front".into(), "back".into()],
-                status: "created".into(),
-                work_item_type: Some("User Story".into()),
-                work_item_title: Some("Done".into()),
-                work_item_state: Some("Valide".into()),
-                child_task_ids: None,
-                child_tasks: None,
-                work_items: None,
-            },
-        };
-
-        let lines = prune_candidate_lines(&[candidate]);
-
-        assert_eq!(lines[0], "Nettoyage workspaces");
-        assert_eq!(lines[1], "Mode      : prévisualisation");
-        assert_eq!(lines[2], "Candidats : 1");
-        assert_eq!(lines[3], "À faire   : dw task prune --execute");
-        assert_eq!(
-            lines[4],
-            "Non-TTY   : ajouter --yes pour tout supprimer sans sélection interactive"
-        );
-        assert!(lines.contains(&"Workspace : /tmp/dw/projects/ha/workspaces/feat-1-done".into()));
-        assert!(lines.contains(&"Éléments  : ha / #1 Done [Valide]".into()));
-        assert!(lines.contains(&"Repositories: front, back".into()));
+    fn prune_candidate_label_includes_project_and_items() {
+        let candidate = candidate_fixture();
+        assert_eq!(prune_candidate_label(&candidate), "ha / #1 Done [Valide]");
     }
 
     #[test]
     fn prune_candidate_choice_includes_context_and_path() {
-        let candidate = WorkspaceSummary {
+        let candidate = candidate_fixture();
+        assert_eq!(
+            prune_candidate_choice(&candidate),
+            "ha / #1 Done [Valide] - front, back - /tmp/dw/projects/ha/workspaces/feat-1-done"
+        );
+    }
+
+    fn candidate_fixture() -> WorkspaceSummary {
+        WorkspaceSummary {
             path: "/tmp/dw/projects/ha/workspaces/feat-1-done".into(),
             manifest: WorkspaceManifest {
                 schema: 1,
@@ -312,12 +242,7 @@ mod tests {
                 child_tasks: None,
                 work_items: None,
             },
-        };
-
-        assert_eq!(
-            prune_candidate_choice(&candidate),
-            "ha / #1 Done [Valide] - front, back - /tmp/dw/projects/ha/workspaces/feat-1-done"
-        );
+        }
     }
 
     fn unique_temp_root() -> std::path::PathBuf {

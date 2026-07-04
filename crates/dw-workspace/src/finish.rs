@@ -1,6 +1,6 @@
 use dw_config::{ProjectConfig, RepositoryConfig, WorkflowConfig, repository_config};
 use dw_git::RepositoryStatus;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
@@ -24,7 +24,7 @@ pub enum TaskFinishError {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationResult {
     pub repository: String,
     pub command: String,
@@ -36,7 +36,7 @@ pub struct VerificationResult {
     pub standard_error: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PullRequestCandidate {
     pub repository: String,
     pub path: String,
@@ -117,7 +117,6 @@ pub fn run_verification(
     candidates: &[PullRequestCandidate],
 ) -> Vec<VerificationResult> {
     if options.verification_commands.is_empty() {
-        println!("Vérification: aucune commande configurée.");
         return Vec::new();
     }
 
@@ -128,7 +127,6 @@ pub fn run_verification(
         };
         for command in commands {
             let resolved = resolve_node_package_manager_command(command);
-            println!("Vérification [{}]: {}", candidate.repository, resolved);
             let output = run_shell(&candidate.path, &resolved);
             results.push(VerificationResult {
                 repository: candidate.repository.clone(),
@@ -153,22 +151,8 @@ pub fn run_verification(
 }
 
 pub fn ensure_verification_passed(results: &[VerificationResult]) -> Result<(), TaskFinishError> {
-    let failed = results
-        .iter()
-        .filter(|result| result.exit_code != 0)
-        .collect::<Vec<_>>();
-    if failed.is_empty() {
+    if results.iter().all(|result| result.exit_code == 0) {
         return Ok(());
-    }
-
-    for result in failed {
-        eprintln!(
-            "Vérification échouée [{}]: {}",
-            result.repository, result.command
-        );
-        if !result.standard_error.trim().is_empty() {
-            eprintln!("{}", result.standard_error.trim());
-        }
     }
     Err(TaskFinishError::VerificationFailed)
 }

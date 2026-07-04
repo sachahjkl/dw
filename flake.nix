@@ -63,14 +63,17 @@
           inherit name;
           runtimeInputs = [
             pkgs.cargo
+            pkgs.cmake
             pkgs.clippy
             pkgs.rustc
             pkgs.rustfmt
+            pkgs.stdenv.cc
           ] ++ nativeBuildInputs ++ buildInputs;
           text = command;
         };
 
         checkScript = cargoScript "dw-check" ''
+          ${architectureCheckScript}/bin/dw-architecture-check
           cargo fmt --all -- --check
           cargo test --workspace --locked
           cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -87,6 +90,45 @@
         clippyScript = cargoScript "dw-clippy" ''
           cargo clippy --workspace --all-targets --locked -- -D warnings "$@"
         '';
+
+        architectureCheckScript = pkgs.writeShellApplication {
+          name = "dw-architecture-check";
+          runtimeInputs = [ pkgs.ripgrep ];
+          text = ''
+            set -euo pipefail
+            fail_if_matches() {
+              local label="$1"
+              local pattern="$2"
+              shift 2
+              if rg -n "$pattern" "$@"; then
+                echo "Architecture check failed: $label" >&2
+                exit 1
+              fi
+            }
+
+            fail_if_matches \
+              "TUI/UI must not embed CLI command hints or shell relaunches" \
+              "dw-cli-adapter|dw_cli_adapter|current_exe|run_current_dw|LegacyShellAction|Action interne non portée|CommandAction|CompletionShow|QuickOptionAction::Completion|Confirmation CLI|AnsiRender|Non-TTY|dw task |dw ado |dw db |dw auth |dw config " \
+              crates/dw-tui/src crates/dw-tui-adapter/src crates/dw-ui/src
+
+            fail_if_matches \
+              "Core crates must not carry CLI JSON flags or dw command hints" \
+              "\\bjson: bool\\b|pub json: bool|json: _|dw task |dw ado |dw db |dw auth |dw config " \
+              crates/dw-ado/src crates/dw-ado-commands/src crates/dw-config/src crates/dw-agent/src crates/dw-doctor/src crates/dw-secret/src crates/dw-db/src crates/dw-task/src crates/dw-workspace/src crates/dw-upgrade/src
+
+            fail_if_matches \
+              "Core requests must use ExecutionMode instead of execute bool flags" \
+              "\\bexecute: bool\\b|pub execute: bool" \
+              crates/dw-ado/src crates/dw-ado-commands/src crates/dw-config/src crates/dw-agent/src crates/dw-doctor/src crates/dw-secret/src crates/dw-db/src crates/dw-task/src crates/dw-workspace/src crates/dw-upgrade/src
+
+            fail_if_matches \
+              "TUI tests should use action wording, not legacy command wording" \
+              "fn .*_command\\(" \
+              crates/dw-tui/src/actions.rs crates/dw-tui/src/form.rs crates/dw-tui/src/ui.rs
+
+            echo "Architecture check passed."
+          '';
+        };
       in
       {
         packages.default = dwPackage;
@@ -120,6 +162,11 @@
             program = "${clippyScript}/bin/dw-clippy";
           };
 
+          architecture-check = {
+            type = "app";
+            program = "${architectureCheckScript}/bin/dw-architecture-check";
+          };
+
           default = self.apps.${system}.dw;
         };
 
@@ -147,6 +194,7 @@
             echo "  nix run .#fmt"
             echo "  nix run .#test"
             echo "  nix run .#clippy"
+            echo "  nix run .#architecture-check"
             echo "  cargo run -p dw-cli -- version"
           '';
         };

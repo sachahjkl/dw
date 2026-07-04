@@ -1,8 +1,6 @@
 use anyhow::Result;
 use dw_ado::{AzureDevOpsOptions, default_api_version};
-use dw_config::{project_choices, resolve_project};
-use inquire::Select;
-use std::io::IsTerminal;
+use dw_config::resolve_project;
 
 pub fn resolve_ado_options(
     projects: &dw_config::ProjectsConfig,
@@ -59,7 +57,7 @@ pub fn resolve_cli_ado_options(
             resolve_ado_options(&projects, &workflow, &project)
         }
         _ => Err(anyhow::anyhow!(
-            "ado ai-context requiert --project configuré ou --organization avec --project."
+            "ado ai-context requiert un projet configuré, ou une organisation avec un projet explicite."
         )),
     }
 }
@@ -73,21 +71,21 @@ pub fn resolve_project_key_or_prompt(
         return Ok(project);
     }
 
-    if !std::io::stdin().is_terminal() {
-        return Err(anyhow::anyhow!(
-            "{command_name} requiert --project configuré en mode non-interactif."
-        ));
-    }
-
-    let choices = project_choices(projects);
+    let choices = dw_config::project_choices(projects);
     if choices.is_empty() {
         return Err(anyhow::anyhow!(
-            "Aucun projet configuré dans projects.json. Exécuter dw init ou compléter config/projects.json."
+            "Aucun projet configuré dans projects.json. Initialiser la configuration ou compléter config/projects.json."
         ));
     }
 
-    let selected = Select::new("Projet Azure DevOps", choices).prompt()?;
-    Ok(selected.key)
+    let project_names = choices
+        .into_iter()
+        .map(|choice| choice.key)
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(anyhow::anyhow!(
+        "{command_name} requiert un projet configuré. Projets disponibles: {project_names}."
+    ))
 }
 
 #[cfg(test)]

@@ -1,85 +1,11 @@
 use std::io::IsTerminal;
 
-use anyhow::Result;
-use inquire::{Confirm, MultiSelect, Select};
-
 pub fn banner(title: &str) -> String {
     format!("== {} ==", title)
 }
 
 pub fn is_stdin_interactive() -> bool {
     std::io::stdin().is_terminal()
-}
-
-pub fn confirm_or_require_flag(flag: &str, prompt: &str) -> Result<bool> {
-    if !is_stdin_interactive() {
-        return Err(anyhow::anyhow!(
-            "Confirmation interactive indisponible: ajouter {flag}."
-        ));
-    }
-
-    Ok(Confirm::new(prompt)
-        .with_default(false)
-        .with_help_message("Répondre oui pour continuer.")
-        .prompt()?)
-}
-
-pub fn confirm_destructive_or_require_flag(
-    confirmed: bool,
-    flag: &str,
-    prompt: &str,
-) -> Result<bool> {
-    if confirmed {
-        return Ok(true);
-    }
-    confirm_or_require_flag(flag, prompt)
-}
-
-pub fn confirm_when_interactive(prompt: &str) -> Result<bool> {
-    if !is_stdin_interactive() {
-        return Ok(true);
-    }
-
-    Ok(Confirm::new(prompt)
-        .with_default(false)
-        .with_help_message("Répondre oui pour continuer.")
-        .prompt()?)
-}
-
-pub fn multiselect_or_require_flag(
-    flag: &str,
-    prompt: &str,
-    options: Vec<String>,
-) -> Result<Vec<String>> {
-    if !is_stdin_interactive() {
-        return Err(anyhow::anyhow!(
-            "Sélection interactive indisponible: ajouter {flag}."
-        ));
-    }
-
-    Ok(MultiSelect::new(prompt, options)
-        .with_help_message("Espace pour sélectionner, Entrée pour valider.")
-        .prompt()?)
-}
-
-pub fn multiselect_optional(prompt: &str, options: Vec<String>) -> Result<Option<Vec<String>>> {
-    if !is_stdin_interactive() || options.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(
-        MultiSelect::new(prompt, options)
-            .with_help_message("Espace pour sélectionner, Entrée pour valider.")
-            .prompt()?,
-    ))
-}
-
-pub fn select_optional(prompt: &str, options: Vec<String>) -> Result<Option<String>> {
-    if !is_stdin_interactive() || options.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(Select::new(prompt, options).prompt()?))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -263,10 +189,6 @@ impl TerminalTheme {
             return self.bold(&self.cyan(&styled));
         }
 
-        if trimmed.starts_with_ignore_ascii_case("dw ") {
-            return self.bold(&styled);
-        }
-
         styled
     }
 
@@ -294,13 +216,7 @@ impl TerminalTheme {
 
     fn style_known_value(&self, label_name: &str, value: &str) -> String {
         match label_name {
-            "À faire" => {
-                if value.trim_start().starts_with_ignore_ascii_case("dw ") {
-                    self.bold(&self.command(value))
-                } else {
-                    self.warning(value)
-                }
-            }
+            "À faire" => self.warning(value),
             "Décision" => {
                 if value.contains('✓') {
                     self.success(value)
@@ -455,9 +371,9 @@ mod tests {
     #[test]
     fn style_line_colors_action_commands() {
         let theme = TerminalTheme::new(ColorMode::Always, false, false);
-        let styled = theme.style_line("À faire   : dw task commit --execute", false);
+        let styled = theme.style_line("Action    : finaliser le workspace", false);
 
-        assert!(styled.contains("\u{1b}[1m\u{1b}[35mdw task commit --execute"));
+        assert!(styled.contains("\u{1b}[1m\u{1b}[36mAction"));
     }
 
     #[test]
@@ -486,8 +402,8 @@ mod tests {
         let theme = TerminalTheme::plain();
 
         assert_eq!(
-            theme.style_line("À faire   : dw task commit --execute", false),
-            "À faire   : dw task commit --execute"
+            theme.style_line("Action    : finaliser le workspace", false),
+            "Action    : finaliser le workspace"
         );
         assert_eq!(
             theme.style_line("Statut    : bloqué", false),

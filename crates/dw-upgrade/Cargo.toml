@@ -9,7 +9,6 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 dw-config = { path = "../dw-config" }
-dw-ui = { path = "../dw-ui" }
 flate2.workspace = true
 reqwest.workspace = true
 serde.workspace = true

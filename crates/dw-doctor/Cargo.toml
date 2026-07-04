@@ -11,4 +11,4 @@ anyhow.workspace = true
 dw-agent = { path = "../dw-agent" }
 dw-config = { path = "../dw-config" }
 dw-process = { path = "../dw-process" }
-dw-ui = { path = "../dw-ui" }
+serde.workspace = true

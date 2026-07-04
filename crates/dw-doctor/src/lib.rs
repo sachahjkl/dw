@@ -3,27 +3,46 @@ use dw_agent::parse_agent_kind;
 use dw_config::{
     InitRequest, default_agent, init_root, load_user_settings, resolve_root, user_settings_path,
 };
-use dw_ui::{ColorMode, TerminalTheme};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DoctorCheck {
-    pub(crate) name: String,
-    pub(crate) passed: bool,
-    pub(crate) detail: Option<String>,
-    pub(crate) remediation: String,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DoctorReport {
+    pub root: String,
+    pub checks: Vec<DoctorCheck>,
 }
 
-pub fn run_doctor(fix: bool) -> Result<()> {
+impl DoctorReport {
+    pub fn passed_count(&self) -> usize {
+        self.checks.iter().filter(|check| check.passed).count()
+    }
+
+    pub fn failed_count(&self) -> usize {
+        self.checks.len().saturating_sub(self.passed_count())
+    }
+
+    pub fn passed(&self) -> bool {
+        self.failed_count() == 0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DoctorCheck {
+    pub name: String,
+    pub passed: bool,
+    pub detail: Option<String>,
+    pub remediation: String,
+}
+
+pub fn run_doctor(fix: bool) -> Result<DoctorReport> {
     let settings = load_user_settings();
     let root = resolve_root(settings.root.as_deref());
-    let theme = theme_from_settings(settings.color.as_deref());
     let mut checks = vec![
         DoctorCheck {
             name: "Root DevWorkflow".into(),
             passed: Path::new(&root).is_dir(),
             detail: Some(root.clone()),
-            remediation: format!("Exécuter: dw init --root \"{root}\""),
+            remediation: format!("Initialiser le root DevWorkflow: {root}"),
         },
         DoctorCheck {
             name: "Configuration utilisateur".into(),
@@ -59,91 +78,7 @@ pub fn run_doctor(fix: bool) -> Result<()> {
         checks[0].passed = true;
     }
 
-    println!("{}", render_doctor_report(&checks, &theme));
-    if checks.iter().all(|check| check.passed) {
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("doctor a détecté des points à corriger."))
-    }
-}
-
-fn render_doctor_report(checks: &[DoctorCheck], theme: &TerminalTheme) -> String {
-    let passed_count = checks.iter().filter(|check| check.passed).count();
-    let total_count = checks.len();
-    let failed_count = total_count.saturating_sub(passed_count);
-    let mut lines = vec![
-        theme.command("Diagnostic Dev Workflow"),
-        format!(
-            "{} {passed_count}/{total_count} vérifications OK",
-            if passed_count == total_count {
-                theme.success("✓")
-            } else {
-                theme.warning("!")
-            }
-        ),
-        format!(
-            "Statut    : {}",
-            if failed_count == 0 {
-                "OK"
-            } else {
-                "à corriger"
-            }
-        ),
-        format!("Blocages  : {failed_count}"),
-        String::new(),
-    ];
-    lines.extend(render_check_group(
-        "À corriger",
-        checks.iter().filter(|check| !check.passed).collect(),
-        theme,
-    ));
-    lines.extend(render_check_group(
-        "OK",
-        checks.iter().filter(|check| check.passed).collect(),
-        theme,
-    ));
-    lines.join("\n")
-}
-
-fn render_check_group(
-    title: &str,
-    checks: Vec<&DoctorCheck>,
-    theme: &TerminalTheme,
-) -> Vec<String> {
-    if checks.is_empty() {
-        return Vec::new();
-    }
-    let mut lines = Vec::new();
-    lines.push(theme.cyan(title));
-    for check in checks {
-        let status = if check.passed {
-            theme.success("✓ OK")
-        } else {
-            theme.error("! À corriger")
-        };
-        lines.push(format!("{:<8} {}", status, check.name));
-        if let Some(detail) = check
-            .detail
-            .as_ref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            lines.push(format!("         {}", theme.path(detail)));
-        }
-        if !check.passed {
-            lines.push(format!("         {}", theme.command(&check.remediation)));
-        }
-    }
-    lines.push(String::new());
-    lines
-}
-
-fn theme_from_settings(color: Option<&str>) -> TerminalTheme {
-    let mode = match color.unwrap_or("auto").to_ascii_lowercase().as_str() {
-        "always" => ColorMode::Always,
-        "never" => ColorMode::Never,
-        _ => ColorMode::Auto,
-    };
-    TerminalTheme::stdout(mode)
+    Ok(DoctorReport { root, checks })
 }
 
 fn check_default_agent(root: &str) -> DoctorCheck {
@@ -239,28 +174,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn doctor_report_includes_summary_details_and_remediation() {
-        let checks = vec![
-            DoctorCheck {
-                name: "Root DevWorkflow".into(),
-                passed: true,
-                detail: Some("/tmp/dw".into()),
-                remediation: "dw init".into(),
-            },
-            DoctorCheck {
-                name: "Git".into(),
-                passed: false,
-                detail: None,
-                remediation: "Installer Git".into(),
-            },
-        ];
+    fn doctor_report_counts_failures() {
+        let report = DoctorReport {
+            root: "/tmp/dw".into(),
+            checks: vec![
+                DoctorCheck {
+                    name: "Root DevWorkflow".into(),
+                    passed: true,
+                    detail: Some("/tmp/dw".into()),
+                    remediation: "dw init".into(),
+                },
+                DoctorCheck {
+                    name: "Git".into(),
+                    passed: false,
+                    detail: None,
+                    remediation: "Installer Git".into(),
+                },
+            ],
+        };
 
-        let report = render_doctor_report(&checks, &TerminalTheme::plain());
-
-        assert!(report.contains("Diagnostic Dev Workflow"));
-        assert!(report.contains("! 1/2 vérifications OK"));
-        assert!(report.contains("✓ OK"));
-        assert!(report.contains("/tmp/dw"));
-        assert!(report.contains("Installer Git"));
+        assert_eq!(report.passed_count(), 1);
+        assert_eq!(report.failed_count(), 1);
+        assert!(!report.passed());
     }
 }

@@ -6,7 +6,6 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 use tiny_http::{Header, Response, Server};
 use url::Url;
@@ -22,21 +21,24 @@ pub(crate) struct OAuthTokenResponse {
     pub(crate) expires_in: u32,
 }
 
-pub(crate) fn login(auth: &AdoAuthOptions) -> Result<OAuthTokenResponse, AdoAuthError> {
+pub(crate) async fn login(auth: &AdoAuthOptions) -> Result<OAuthTokenResponse, AdoAuthError> {
     let port = reserve_loopback_port()?;
     let redirect_uri = format!("http://localhost:{port}");
     let state = random_url_token(32);
     let verifier = random_url_token(64);
     let challenge = pkce_challenge(&verifier);
     let scopes = interactive_scopes(auth);
-    let tenant = auth.tenant_id.as_deref().unwrap_or(DEFAULT_TENANT_ID);
+    let tenant = auth
+        .tenant_id
+        .clone()
+        .unwrap_or_else(|| DEFAULT_TENANT_ID.into());
     let client_id = auth
         .client_id
-        .as_deref()
-        .unwrap_or(DEFAULT_PUBLIC_CLIENT_ID);
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PUBLIC_CLIENT_ID.into());
     let auth_url = authorization_url(
-        tenant,
-        client_id,
+        &tenant,
+        &client_id,
         &redirect_uri,
         &scopes,
         &state,
@@ -44,24 +46,29 @@ pub(crate) fn login(auth: &AdoAuthOptions) -> Result<OAuthTokenResponse, AdoAuth
     )?;
 
     let (sender, receiver) = mpsc::channel();
-    thread::spawn(move || {
+    tokio::task::spawn_blocking(move || {
         let _ = run_callback_server(port, &state, sender);
     });
 
     webbrowser::open(auth_url.as_str())
         .map_err(|error| AdoAuthError::BrowserLogin(error.to_string()))?;
-    let callback = receiver
-        .recv_timeout(Duration::from_secs(180))
-        .map_err(|_| AdoAuthError::LoginExpired)??;
+    let callback = tokio::task::spawn_blocking(move || {
+        receiver
+            .recv_timeout(Duration::from_secs(180))
+            .map_err(|_| AdoAuthError::LoginExpired)?
+    })
+    .await
+    .map_err(|error| AdoAuthError::BrowserLogin(error.to_string()))??;
 
-    crate::auth::block_on(exchange_authorization_code(
-        tenant,
-        client_id,
+    exchange_authorization_code(
+        &tenant,
+        &client_id,
         &redirect_uri,
         &scopes,
         &callback.code,
         &verifier,
-    ))?
+    )
+    .await
 }
 
 #[derive(Debug)]

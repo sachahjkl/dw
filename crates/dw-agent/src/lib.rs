@@ -1,5 +1,4 @@
 pub mod command;
-pub mod completion;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -77,7 +76,9 @@ pub struct AgentWorkspaceConfigFile {
 
 #[derive(Debug, Error)]
 pub enum AgentError {
-    #[error("Agent inconnu: {0}. Agents disponibles: opencode, cursor, claude, codex-cli, copilot")]
+    #[error(
+        "Agent inconnu: {0}. Agents disponibles: opencode, cursor, claude, codex, codex-cli, copilot"
+    )]
     UnknownAgent(String),
 }
 
@@ -104,6 +105,24 @@ pub fn build_open_launch(
     request: &AgentOpenRequest,
 ) -> Result<AgentLaunch, AgentError> {
     Ok(parse_agent_kind(agent)?.launch(request))
+}
+
+pub fn build_open_launch_plan(
+    agent: Option<&str>,
+    request: &AgentOpenRequest,
+) -> Result<dw_core::ExternalLaunchPlan, AgentError> {
+    Ok(build_open_launch(agent, request)?.into())
+}
+
+impl From<AgentLaunch> for dw_core::ExternalLaunchPlan {
+    fn from(launch: AgentLaunch) -> Self {
+        Self {
+            program: launch.file_name,
+            arguments: launch.arguments,
+            environment: launch.environment,
+            working_directory: Some(launch.working_directory),
+        }
+    }
 }
 
 impl AgentAdapter for AgentKind {
@@ -251,23 +270,22 @@ pub fn agent_context(root: &str) -> String {
 
 Tu travailles dans un environnement géré par DevWorkflow.
 
-Utilise `dw` pour les opérations du workflow:
+Utilise les actions DevWorkflow pour les opérations du workflow:
 
-- `dw doctor` vérifie les prérequis locaux.
-- `dw auth login` connecte Azure DevOps quand la connexion silencieuse est indisponible.
-- `dw ado assigned --project <name>` liste les work items assignés.
-- `dw ado work-item <workItemId> --project <name>` lit le résumé d'un work item.
-- `dw ado ai-context <workItemId> --project <name>` lit le contexte work item structuré et déterministe pour usage IA.
-- `dw task current` affiche le workspace task actif et la branche.
-- `dw task sync --continue` rafraîchit `task.json` depuis ADO quand le contexte local peut être obsolète.
-- `dw task preflight --continue` vérifie les blocages et alertes déterministes avant implémentation ou découpage en child tasks.
-- `dw task handoff-validate --continue` valide les contrats handoff avant `task finish` ou exécution de sub-agents.
-- `dw task open --workspace <path>` ouvre une nouvelle session agent pour un workspace.
-- `dw task open --continue` reprend une session agent existante sur le workspace le plus récent.
-- `dw task create-child-task --continue --repo <front|back|db|foo> --title "<action explicite>"` crée des child tasks ADO après rédaction du plan.
-- `dw task commit --continue --execute` crée un commit intermédiaire sans push ni PR.
-- `dw task finish --continue --execute --create-pr` est le flow commit/push/PR attendu en fin de travail.
-- `dw db schema`, `dw db describe` et `dw db query` sont les points d'entrée SQL et restent read-only par défaut.
+- Diagnostic local vérifie les prérequis.
+- Authentification Azure DevOps connecte l'environnement quand la connexion silencieuse est indisponible.
+- Liste ADO assignée affiche les work items assignés pour le projet courant.
+- Lecture work item ADO charge le résumé d'un work item.
+- Contexte IA ADO lit le contexte work item structuré et déterministe pour usage IA.
+- Workspace courant affiche le workspace task actif et la branche.
+- Synchronisation task rafraîchit `task.json` depuis ADO quand le contexte local peut être obsolète.
+- Préflight task vérifie les blocages et alertes déterministes avant implémentation ou découpage en child tasks.
+- Validation handoff vérifie les contrats handoff avant finalisation task ou exécution de sub-agents.
+- Ouverture task ouvre ou reprend une session agent pour un workspace.
+- Création child task crée des child tasks ADO après rédaction du plan.
+- Commit task crée un commit intermédiaire sans push ni PR.
+- Finalisation task est le flow commit/push/PR attendu en fin de travail.
+- Actions DB schema, describe et query sont les points d'entrée SQL et restent read-only par défaut.
 
 Root configuré courant:
 
@@ -278,15 +296,15 @@ Root configuré courant:
 Règles importantes:
 
 1. Les work items Azure DevOps sont la source de vérité.
-2. Utiliser `dw` pour toute opération ADO, nommage Git, PR et worktree.
+2. Utiliser les actions DevWorkflow pour toute opération ADO, nommage Git, PR et worktree.
 3. Ne pas utiliser les outils MCP Azure DevOps.
-4. Lire le work item avec `dw ado work-item` avant de coder, puis lancer `dw ado ai-context` avant d'agir sur le contexte ADO.
-5. Avant de travailler, vérifier que le setup initial requis par l'environnement est fait: `pnpm install`, `pnpm approve-builds --all`, `npm install` en fallback, ou `dotnet restore` selon le projet.
+4. Lire le work item ADO avant de coder, puis charger le contexte IA ADO avant d'agir sur le contexte ADO.
+5. Avant de travailler, vérifier que le setup initial requis par l'environnement est fait: `pnpm install`, validation des builds pnpm si nécessaire, `npm install` en fallback, ou `dotnet restore` selon le projet.
 6. Mettre à jour `plan.md` avant d'implémenter.
 7. Écrire tout texte utilisateur/projet en français.
 8. Ne pas normaliser les labels métier ni le vocabulaire de domaine issus d'ADO, des screenshots, mockups ou textes projet.
 9. Traiter les screenshots, mockups et attachments comme sources factuelles.
-10. Les branches, commits et titres de PR sont créés par `dw`; ne pas les créer manuellement.
+10. Les branches, commits et titres de PR sont créés par DevWorkflow; ne pas les créer manuellement.
 "#
     )
 }
@@ -311,7 +329,7 @@ fn workspace_agents_md(work_items: &[WorkspaceWorkItemRef], project: &str) -> St
         .join("\n");
 
     format!(
-        "# Workspace DevWorkflow\n\nCe workspace est géré par `dw`.\n\nContexte:\n\n- Project: `{project}`\n- Work items:\n{items}\n\nRègles:\n\n1. Lancer `dw task current` pour identifier le workspace task courant.\n2. Lire chaque work item avec `dw ado work-item <id> --project {project}` avant de coder.\n3. Lire `dw ado ai-context <id> --project {project}` avant d'agir sur le contexte ADO.\n4. Utiliser `dw db schema`, `dw db describe` et `dw db query` quand le contexte base de données peut clarifier le changement.\n5. Avant de travailler, vérifier que le setup initial requis par l'environnement est en place.\n6. Remplir `plan.md` avant d'implémenter.\n7. Lancer `dw task preflight --continue` avant implémentation, création de child tasks ou autre action irréversible.\n8. Lancer `dw task handoff-validate --continue` avant de lancer des sub-agents et avant `dw task finish`.\n9. Si le work item principal est une `User Story` ou une `Anomalie`, une fois `plan.md` complet et avant le début de l'implémentation, créer au moins une child task ADO, puis autant que nécessaire depuis le plan, avec `dw task create-child-task --continue --repo <front|back|db|foo> --title \"<action explicite>\"`.\n10. Écrire tout texte utilisateur/projet en français: plans, commentaires, messages de commit/PR, titres des tasks, synthèses d'avancement et explications finales.\n11. Structurer le plan explicitement par domaine quand c'est possible: front, back, db ou autres repositories. Utiliser des sub-agents pour les chantiers indépendants quand c'est possible.\n12. Utiliser `dw task sync --continue` avant les décisions de cycle de vie si le contexte ADO local peut être obsolète.\n13. Utiliser `dw task commit` pour les commits intermédiaires.\n14. Utiliser `dw task finish` pour les flows finaux push/PR.\n15. Utiliser `dw task teardown` ou `dw task prune` pour le nettoyage.\n"
+        "# Workspace DevWorkflow\n\nCe workspace est géré par DevWorkflow.\n\nContexte:\n\n- Project: `{project}`\n- Work items:\n{items}\n\nRègles:\n\n1. Identifier le workspace task courant avant d'agir.\n2. Lire chaque work item ADO avant de coder.\n3. Lire le contexte IA ADO avant d'agir sur le contexte ADO.\n4. Utiliser les actions DB schema, describe et query quand le contexte base de données peut clarifier le changement.\n5. Avant de travailler, vérifier que le setup initial requis par l'environnement est en place.\n6. Remplir `plan.md` avant d'implémenter.\n7. Lancer le préflight task avant implémentation, création de child tasks ou autre action irréversible.\n8. Valider les contrats handoff avant de lancer des sub-agents et avant la finalisation task.\n9. Si le work item principal est une `User Story` ou une `Anomalie`, une fois `plan.md` complet et avant le début de l'implémentation, créer au moins une child task ADO, puis autant que nécessaire depuis le plan.\n10. Écrire tout texte utilisateur/projet en français: plans, commentaires, messages de commit/PR, titres des tasks, synthèses d'avancement et explications finales.\n11. Structurer le plan explicitement par domaine quand c'est possible: front, back, db ou autres repositories. Utiliser des sub-agents pour les chantiers indépendants quand c'est possible.\n12. Synchroniser la task avant les décisions de cycle de vie si le contexte ADO local peut être obsolète.\n13. Utiliser l'action commit task pour les commits intermédiaires.\n14. Utiliser l'action finalisation task pour les flows finaux push/PR.\n15. Utiliser les actions teardown ou prune pour le nettoyage.\n"
     )
 }
 
@@ -357,6 +375,21 @@ mod tests {
     }
 
     #[test]
+    fn codex_cli_alias_and_unknown_error_are_documented() {
+        assert_eq!(
+            parse_agent_kind(Some("codex-cli")).unwrap(),
+            AgentKind::Codex
+        );
+
+        let error = parse_agent_kind(Some("unknown"))
+            .expect_err("unknown agent should fail")
+            .to_string();
+
+        assert!(error.contains("codex"));
+        assert!(error.contains("codex-cli"));
+    }
+
+    #[test]
     fn workspace_config_files_include_expected_paths() {
         let files = workspace_config_files(&AgentWorkspaceConfigRequest {
             workspace: "/workspace".into(),
@@ -399,13 +432,9 @@ mod tests {
 
         assert!(agents.content.contains("# Workspace DevWorkflow"));
         assert!(agents.content.contains("#11010"));
-        assert!(agents.content.contains("dw task create-child-task"));
-        assert!(agents.content.contains("dw task preflight --continue"));
-        assert!(
-            agents
-                .content
-                .contains("dw task handoff-validate --continue")
-        );
+        assert!(agents.content.contains("child task ADO"));
+        assert!(agents.content.contains("préflight task"));
+        assert!(agents.content.contains("Valider les contrats handoff"));
         assert!(
             agents
                 .content

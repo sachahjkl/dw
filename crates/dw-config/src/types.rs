@@ -118,7 +118,7 @@ impl Default for DatabasesConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigShow {
     pub root: String,
     pub color: String,

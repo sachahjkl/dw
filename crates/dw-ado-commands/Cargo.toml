@@ -8,12 +8,11 @@ repository.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
 dw-ado = { path = "../dw-ado" }
 dw-config = { path = "../dw-config" }
 dw-contracts = { path = "../dw-contracts" }
+dw-core = { path = "../dw-core" }
 dw-workspace = { path = "../dw-workspace" }
-dw-ui = { path = "../dw-ui" }
-inquire.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

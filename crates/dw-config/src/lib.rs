@@ -15,10 +15,13 @@ pub use doctor::{config_doctor, config_show};
 pub use init::{InitReport, InitRequest, RefreshReport, RefreshRequest, init_root, refresh_root};
 pub use projects::{load_projects_config, project_choices, repository_config, resolve_project};
 pub use settings::{
-    default_root, load_user_settings, normalize_color_mode, resolve_root, save_user_settings,
-    set_color_mode, set_user_root, user_config_directory, user_settings_path,
+    COLOR_MODE_CHOICES, default_root, load_user_settings, normalize_color_mode, resolve_root,
+    save_user_settings, set_color_mode, set_user_root, user_config_directory, user_settings_path,
 };
-pub use store::{default_agent, load_databases_config, load_workflow_config, set_default_agent};
+pub use store::{
+    AGENT_DEFAULT_CHOICES, default_agent, load_databases_config, load_workflow_config,
+    normalize_default_agent, set_default_agent,
+};
 pub use types::{
     AgentOptions, ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, DatabasesConfig,
     ProjectChoice, ProjectConfig, ProjectsConfig, RepositoryConfig, UserSettings, WorkflowConfig,
@@ -191,6 +194,54 @@ mod tests {
     fn set_color_rejects_unknown_mode() {
         let error = normalize_color_mode(Some("rainbow")).expect_err("color should fail");
         assert!(error.contains("Mode couleur inconnu"));
+    }
+
+    #[test]
+    fn set_default_agent_accepts_all_documented_choices() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).expect("config dir");
+        std::fs::write(root.join("config/workflow.json"), "{}").expect("workflow");
+
+        for agent in AGENT_DEFAULT_CHOICES {
+            let result = set_default_agent(root.to_str().expect("utf8 path"), agent)
+                .expect("agent should save");
+            assert_eq!(result, *agent);
+        }
+    }
+
+    #[test]
+    fn set_default_agent_normalizes_case_and_spaces() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).expect("config dir");
+        std::fs::write(root.join("config/workflow.json"), "{}").expect("workflow");
+
+        let result = set_default_agent(root.to_str().expect("utf8 path"), "  CODEX-CLI  ")
+            .expect("agent should save");
+
+        assert_eq!(result, "codex-cli");
+        assert_eq!(
+            default_agent(root.to_str().expect("utf8 path")),
+            "codex-cli"
+        );
+        assert_eq!(normalize_default_agent("CoDeX"), Some("codex"));
+    }
+
+    #[test]
+    fn set_default_agent_error_lists_all_choices() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("config")).expect("config dir");
+        std::fs::write(root.join("config/workflow.json"), "{}").expect("workflow");
+
+        let error = set_default_agent(root.to_str().expect("utf8 path"), "unknown")
+            .expect_err("unknown agent should fail")
+            .to_string();
+
+        assert!(error.contains("codex"));
+        assert!(error.contains("codex-cli"));
+        assert!(error.contains(&AGENT_DEFAULT_CHOICES.join(", ")));
     }
 
     #[test]

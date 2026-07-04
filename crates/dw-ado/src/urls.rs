@@ -82,6 +82,20 @@ pub fn pull_requests_url(options: &AzureDevOpsOptions, repository: &str) -> Stri
     )
 }
 
+pub fn pull_request_web_url(
+    options: &AzureDevOpsOptions,
+    repository: &str,
+    pull_request_id: i64,
+) -> String {
+    format!(
+        "{}/{}/_git/{}/pullrequest/{}",
+        options.organization.trim_end_matches('/'),
+        encode_component(&options.project),
+        encode_component(repository),
+        pull_request_id
+    )
+}
+
 pub fn active_pull_requests_url(
     options: &AzureDevOpsOptions,
     repository: &str,
@@ -93,6 +107,19 @@ pub fn active_pull_requests_url(
         options.project,
         encode_component(repository),
         encode_component(source_ref),
+        api_version(options)
+    )
+}
+
+pub fn active_pull_requests_for_repository_url(
+    options: &AzureDevOpsOptions,
+    repository: &str,
+) -> String {
+    format!(
+        "{}/{}/_apis/git/repositories/{}/pullrequests?searchCriteria.status=active&api-version={}",
+        options.organization.trim_end_matches('/'),
+        options.project,
+        encode_component(repository),
         api_version(options)
     )
 }
@@ -132,4 +159,26 @@ fn api_version(options: &AzureDevOpsOptions) -> &str {
 
 fn encode_component(value: &str) -> String {
     value.replace(' ', "%20").replace('/', "%2F")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pull_request_web_url_targets_azure_devops_page_not_api_json() {
+        let options = AzureDevOpsOptions {
+            organization: "https://dev.azure.com/acme/".into(),
+            project: "Hommage Agence".into(),
+            api_version: "7.1".into(),
+        };
+
+        let url = pull_request_web_url(&options, "front app", 55264);
+
+        assert_eq!(
+            url,
+            "https://dev.azure.com/acme/Hommage%20Agence/_git/front%20app/pullrequest/55264"
+        );
+        assert!(!url.contains("_apis"));
+    }
 }

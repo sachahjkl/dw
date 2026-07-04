@@ -33,9 +33,10 @@ use json::{clean_text, element_text, field_text, identity_text, work_item_id_fro
 pub use state::is_final_state;
 use urls::organization_name;
 pub use urls::{
-    active_pull_requests_url, create_work_item_url, expanded_work_item_url,
-    pull_request_work_items_url, pull_requests_url, work_item_api_url, work_item_comments_url,
-    work_item_url, work_item_web_url, work_items_batch_url,
+    active_pull_requests_for_repository_url, active_pull_requests_url, create_work_item_url,
+    expanded_work_item_url, pull_request_web_url, pull_request_work_items_url, pull_requests_url,
+    work_item_api_url, work_item_comments_url, work_item_url, work_item_web_url,
+    work_items_batch_url,
 };
 
 pub const DEFAULT_API_VERSION: &str = "7.1";
@@ -98,6 +99,28 @@ pub struct PullRequestSummary {
     #[serde(rename = "pullRequestId")]
     pub pull_request_id: i64,
     pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PullRequestListItem {
+    pub repository: String,
+    #[serde(rename = "pullRequestId")]
+    pub pull_request_id: i64,
+    pub title: Option<String>,
+    pub status: Option<String>,
+    #[serde(rename = "sourceRefName")]
+    pub source_ref_name: Option<String>,
+    #[serde(rename = "targetRefName")]
+    pub target_ref_name: Option<String>,
+    #[serde(rename = "isDraft")]
+    pub is_draft: bool,
+    #[serde(rename = "createdBy")]
+    pub created_by: Option<String>,
+    pub url: Option<String>,
+    #[serde(rename = "webUrl")]
+    pub web_url: Option<String>,
+    #[serde(rename = "workItemIds")]
+    pub work_item_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -612,6 +635,52 @@ pub fn try_find_active_pull_request_authenticated(
         token,
     )?;
     pull_request_summary_from_response(root, source_ref)
+}
+
+pub fn list_active_pull_requests_authenticated(
+    options: &AzureDevOpsOptions,
+    repository: &str,
+    token: &AdoToken,
+) -> Result<Vec<PullRequestListItem>, AdoError> {
+    let root = get_json_authenticated(
+        &active_pull_requests_for_repository_url(options, repository),
+        token,
+    )?;
+    let values = root
+        .get("value")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut items = Vec::new();
+    for value in values {
+        let Some(pull_request_id) = value.get("pullRequestId").and_then(Value::as_i64) else {
+            continue;
+        };
+        let work_item_ids =
+            try_get_pull_request_work_item_ids(options, repository, pull_request_id, token)?
+                .unwrap_or_default();
+        items.push(PullRequestListItem {
+            repository: repository.into(),
+            pull_request_id,
+            title: field_text(&value, "title"),
+            status: field_text(&value, "status"),
+            source_ref_name: field_text(&value, "sourceRefName"),
+            target_ref_name: field_text(&value, "targetRefName"),
+            is_draft: value
+                .get("isDraft")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            created_by: identity_text(value.get("createdBy")),
+            url: field_text(&value, "url"),
+            web_url: value
+                .get("_links")
+                .and_then(|links| links.get("web"))
+                .and_then(|web| field_text(web, "href"))
+                .or_else(|| Some(pull_request_web_url(options, repository, pull_request_id))),
+            work_item_ids,
+        });
+    }
+    Ok(items)
 }
 
 pub fn create_pull_request(

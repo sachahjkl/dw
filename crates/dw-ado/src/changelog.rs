@@ -145,7 +145,7 @@ pub fn get_work_item_ids_from_pull_requests(
 ) -> Result<Vec<String>, AdoError> {
     if repositories.is_empty() {
         return Err(AdoError::InvalidInput(
-            "Le mode PR requiert --repo, ou un --project avec des repositories AzureDevOpsRepository configurés.".into(),
+            "Le mode PR requiert un repository explicite, ou un projet avec des repositories AzureDevOpsRepository configurés.".into(),
         ));
     }
 
@@ -176,7 +176,7 @@ pub fn get_work_item_ids_from_pull_requests(
             1 => ids.extend(matches.remove(0).1),
             _ => {
                 return Err(AdoError::InvalidInput(format!(
-                    "Pull request #{pull_request_id} trouvée dans plusieurs repos ({}). Préciser --repo.",
+                    "Pull request #{pull_request_id} trouvée dans plusieurs repos ({}). Préciser le repository.",
                     matches
                         .into_iter()
                         .map(|item| item.0)

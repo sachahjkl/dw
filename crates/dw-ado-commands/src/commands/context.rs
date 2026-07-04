@@ -1,11 +1,13 @@
 use crate::commands::project::{resolve_ado_options, resolve_cli_ado_options};
 use crate::commands::work_item::parse_work_item_ids_as_strings;
 use crate::load_auth_options;
-use crate::output::{render_context_items, terminal_theme};
 use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{get_ai_context, get_work_item_expanded};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
+use dw_core::ActionEvent;
+use serde::Serialize;
+use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct ContextArgs {
@@ -14,7 +16,26 @@ pub struct ContextArgs {
     pub project: Option<String>,
     pub summary: bool,
     pub comments: i32,
-    pub json: bool,
+    pub mode: ContextMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextMode {
+    AiContext,
+    Expanded,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ContextReport {
+    pub root: String,
+    pub project: String,
+    #[serde(rename = "requestedIds")]
+    pub requested_ids: Vec<String>,
+    pub summary: bool,
+    pub comments: i32,
+    pub expanded: Vec<Value>,
+    pub items: Vec<dw_contracts::AdoAiContextItem>,
+    pub events: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -28,40 +49,95 @@ pub struct AiContextArgs {
     pub include_comments: bool,
 }
 
-pub fn handle_context(args: ContextArgs) -> Result<()> {
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AiContextReport {
+    pub root: String,
+    #[serde(rename = "requestedIds")]
+    pub requested_ids: Vec<String>,
+    pub summary: bool,
+    pub comments: i32,
+    #[serde(rename = "includeComments")]
+    pub include_comments: bool,
+    pub items: Vec<dw_contracts::AdoAiContextItem>,
+    pub events: Vec<String>,
+}
+
+pub async fn context_report(args: ContextArgs) -> Result<ContextReport> {
+    context_report_with_events(args, |_| {}).await
+}
+
+pub async fn context_report_with_events(
+    args: ContextArgs,
+    mut emit: impl FnMut(ActionEvent),
+) -> Result<ContextReport> {
     let ContextArgs {
         id,
         root,
         project,
         summary,
         comments,
-        json,
+        mode,
     } = args;
     let root = resolve_root(root.as_deref());
     let project_key =
-        project.ok_or_else(|| anyhow::anyhow!("ado context requiert --project configuré."))?;
+        project.ok_or_else(|| anyhow::anyhow!("ado context requiert un projet configuré."))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
     let options = resolve_ado_options(&projects, &workflow, &project_key)?;
-    let token = require_token(load_auth_options(Some(&root))?)?;
+    let mut events = Vec::new();
+    push_event(
+        &mut events,
+        &mut emit,
+        format!("Connexion Azure DevOps pour le projet {project_key}..."),
+    );
+    let token = require_token(load_auth_options(Some(&root))?).await?;
     let ids = parse_work_item_ids_as_strings(&id)?;
-    if json {
-        let payloads = ids
+    push_event(
+        &mut events,
+        &mut emit,
+        context_fetch_line(ids.len(), mode == ContextMode::AiContext, comments),
+    );
+    if mode == ContextMode::Expanded {
+        let expanded = ids
             .iter()
             .map(|item_id| get_work_item_expanded(&options, item_id, &token))
             .collect::<Result<Vec<_>, _>>()?;
-        println!("{}", serde_json::to_string_pretty(&payloads)?);
+        Ok(ContextReport {
+            root,
+            project: project_key,
+            requested_ids: ids,
+            summary,
+            comments,
+            expanded,
+            items: Vec::new(),
+            events,
+        })
     } else {
         let items = ids
             .iter()
             .map(|item_id| get_ai_context(&options, item_id, summary, comments, &token))
             .collect::<Result<Vec<_>, _>>()?;
-        print_context_items(&items, comments, &project_key);
+        Ok(ContextReport {
+            root,
+            project: project_key,
+            requested_ids: ids,
+            summary,
+            comments,
+            expanded: Vec::new(),
+            items,
+            events,
+        })
     }
-    Ok(())
 }
 
-pub fn handle_ai_context(args: AiContextArgs) -> Result<()> {
+pub async fn ai_context_report(args: AiContextArgs) -> Result<AiContextReport> {
+    ai_context_report_with_events(args, |_| {}).await
+}
+
+pub async fn ai_context_report_with_events(
+    args: AiContextArgs,
+    mut emit: impl FnMut(ActionEvent),
+) -> Result<AiContextReport> {
     let AiContextArgs {
         root,
         organization,
@@ -73,8 +149,20 @@ pub fn handle_ai_context(args: AiContextArgs) -> Result<()> {
     } = args;
     let root = resolve_root(root.as_deref());
     let options = resolve_cli_ado_options(&root, organization, project)?;
-    let token = require_token(load_auth_options(Some(&root))?)?;
-    let contexts = parse_work_item_ids_as_strings(&id)?
+    let mut events = Vec::new();
+    push_event(
+        &mut events,
+        &mut emit,
+        "Connexion Azure DevOps pour le contexte IA...".into(),
+    );
+    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let ids = parse_work_item_ids_as_strings(&id)?;
+    push_event(
+        &mut events,
+        &mut emit,
+        context_fetch_line(ids.len(), include_comments, comments),
+    );
+    let items = ids
         .iter()
         .map(|item_id| {
             get_ai_context(
@@ -98,17 +186,52 @@ pub fn handle_ai_context(args: AiContextArgs) -> Result<()> {
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    println!("{}", serde_json::to_string_pretty(&contexts)?);
-    Ok(())
+    Ok(AiContextReport {
+        root,
+        requested_ids: ids,
+        summary,
+        comments,
+        include_comments,
+        items,
+        events,
+    })
 }
 
-fn print_context_items(
-    items: &[dw_contracts::AdoAiContextItem],
-    comment_limit: i32,
-    project: &str,
-) {
-    println!(
-        "{}",
-        render_context_items(items, comment_limit, project, &terminal_theme())
-    );
+fn push_event(events: &mut Vec<String>, emit: &mut impl FnMut(ActionEvent), message: String) {
+    emit(ActionEvent::info(message.clone()));
+    events.push(message);
+}
+
+pub fn context_fetch_line(count: usize, include_comments: bool, comments: i32) -> String {
+    let comment_part = if include_comments && comments > 0 {
+        format!(" avec {comments} commentaire(s)")
+    } else {
+        String::new()
+    };
+    match count {
+        0 => format!("Chargement contexte ADO: aucun work item{comment_part}."),
+        1 => format!("Chargement contexte ADO: 1 work item{comment_part}..."),
+        count => format!("Chargement contexte ADO: {count} work items{comment_part}..."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_fetch_line_handles_counts_and_comments() {
+        assert_eq!(
+            context_fetch_line(0, true, 5),
+            "Chargement contexte ADO: aucun work item avec 5 commentaire(s)."
+        );
+        assert_eq!(
+            context_fetch_line(1, false, 5),
+            "Chargement contexte ADO: 1 work item..."
+        );
+        assert_eq!(
+            context_fetch_line(3, true, 2),
+            "Chargement contexte ADO: 3 work items avec 2 commentaire(s)..."
+        );
+    }
 }

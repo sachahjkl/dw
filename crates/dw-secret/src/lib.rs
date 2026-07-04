@@ -1,5 +1,4 @@
 pub mod command;
-pub mod completion;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

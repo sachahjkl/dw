@@ -1,35 +1,4 @@
 use crate::{load_databases_config, load_projects_config};
-use dw_contracts::completion::{CompletionCatalog, CompletionContext};
-
-pub fn catalog() -> CompletionCatalog {
-    CompletionCatalog {
-        subcommands,
-        options_for,
-        option_requires_value,
-        option_allowed,
-        values_for: values_for_catalog,
-    }
-}
-
-pub fn subcommands() -> &'static [&'static str] {
-    &["show", "set-root", "set-color", "doctor"]
-}
-
-pub fn options_for(subcommand: &str) -> Vec<&'static str> {
-    match subcommand {
-        "show" | "doctor" => vec!["--root", "--json"],
-        "set-root" | "set-color" => Vec::new(),
-        _ => Vec::new(),
-    }
-}
-
-pub fn option_requires_value(option: &str) -> bool {
-    matches!(option, "--root" | "--project" | "--env")
-}
-
-pub fn option_allowed(_option: &str, _selected: &[&str]) -> bool {
-    true
-}
 
 pub fn project_values(root: &str) -> Vec<String> {
     load_projects_config(root)
@@ -58,9 +27,74 @@ pub fn env_values(root: &str, project: Option<&str>) -> Vec<String> {
     database_values(root, project)
 }
 
-fn values_for_catalog(option: &str, _context: CompletionContext<'_>) -> Option<Vec<String>> {
-    match option {
-        "--root" => Some(Vec::new()),
-        _ => None,
+pub fn secret_key_values(root: &str) -> Vec<String> {
+    let config = load_databases_config(root);
+    let globals = config.globals.values().filter_map(database_credential_key);
+    let projects = config
+        .projects
+        .values()
+        .filter_map(|project| {
+            project
+                .get("databases")
+                .and_then(serde_json::Value::as_object)
+        })
+        .flat_map(|databases| databases.values().filter_map(database_credential_key));
+
+    let mut values = globals
+        .chain(projects)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
+}
+
+fn database_credential_key(value: &serde_json::Value) -> Option<&str> {
+    value
+        .get("credentialKey")
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn secret_key_values_come_from_database_credentials() {
+        let root = temp_root("secret-key-completion");
+        fs::create_dir_all(root.join("config")).expect("config dir");
+        fs::write(
+            root.join("config/databases.json"),
+            r#"{
+  "globals": {
+    "shared": { "provider": "sqlserver", "credentialKey": "db/shared" }
+  },
+  "projects": {
+    "ha": {
+      "databases": {
+        "dev": { "provider": "sqlserver", "credentialKey": "db/ha-dev" },
+        "inline": { "provider": "sqlserver", "connectionString": "Server=." }
+      }
+    }
+  }
+}"#,
+        )
+        .expect("databases config");
+
+        assert_eq!(
+            secret_key_values(root.to_str().expect("root")),
+            vec!["db/ha-dev", "db/shared"]
+        );
+    }
+
+    fn temp_root(name: &str) -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        std::env::temp_dir().join(format!("dw-{name}-{suffix}"))
     }
 }

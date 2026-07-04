@@ -4,6 +4,22 @@ use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
+pub const AGENT_DEFAULT_CHOICES: &[&str] = &[
+    "opencode",
+    "cursor",
+    "claude",
+    "codex",
+    "codex-cli",
+    "copilot",
+];
+
+pub fn normalize_default_agent(agent: &str) -> Option<&'static str> {
+    AGENT_DEFAULT_CHOICES
+        .iter()
+        .copied()
+        .find(|item| item.eq_ignore_ascii_case(agent.trim()))
+}
+
 pub fn load_workflow_config(root: &str) -> WorkflowConfig {
     let path = Path::new(root).join("config").join("workflow.json");
     read_json::<WorkflowConfig>(&path).unwrap_or_default()
@@ -15,22 +31,15 @@ pub fn load_databases_config(root: &str) -> DatabasesConfig {
 }
 
 pub fn set_default_agent(root: &str, agent: &str) -> std::io::Result<String> {
-    let allowed = [
-        "opencode",
-        "cursor",
-        "claude",
-        "codex",
-        "codex-cli",
-        "copilot",
-    ];
-    if !allowed.iter().any(|item| item.eq_ignore_ascii_case(agent)) {
+    let Some(normalized_agent) = normalize_default_agent(agent) else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             format!(
-                "Agent inconnu: {agent}. Agents disponibles: opencode, cursor, claude, codex-cli, copilot"
+                "Agent inconnu: {agent}. Agents disponibles: {}",
+                AGENT_DEFAULT_CHOICES.join(", ")
             ),
         ));
-    }
+    };
     let path = Path::new(root).join("config").join("workflow.json");
     let text = fs::read_to_string(&path)?;
     let mut value: Value = serde_json::from_str(&text).map_err(std::io::Error::other)?;
@@ -43,9 +52,9 @@ pub fn set_default_agent(root: &str, agent: &str) -> std::io::Result<String> {
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
         .ok_or_else(|| std::io::Error::other("workflow.agent doit etre un objet JSON"))?;
-    agent_node.insert("default".into(), Value::String(agent.into()));
+    agent_node.insert("default".into(), Value::String(normalized_agent.into()));
     fs::write(path, serde_json::to_string_pretty(&value)?)?;
-    Ok(agent.into())
+    Ok(normalized_agent.into())
 }
 
 pub fn default_agent(root: &str) -> String {

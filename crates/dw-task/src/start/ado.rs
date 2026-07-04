@@ -6,9 +6,7 @@ use dw_ado::{
 };
 use dw_workspace::{WorkspaceChildTask, WorkspaceWorkItem};
 
-use crate::render::print_styled;
-
-pub(super) fn load_start_work_items(
+pub fn load_start_work_items(
     options: &AzureDevOpsOptions,
     selected_work_item_id: &str,
     with_active_children: bool,
@@ -38,7 +36,7 @@ pub(super) fn load_start_work_items(
     Ok(merge_start_snapshots(snapshots, child_snapshots))
 }
 
-pub(super) fn create_start_child_tasks(
+pub fn create_start_child_tasks(
     options: &AzureDevOpsOptions,
     token: &AdoToken,
     parent: Option<&WorkspaceWorkItem>,
@@ -65,13 +63,9 @@ pub(super) fn create_start_child_tasks(
             &parent_snapshot,
             repository,
             &title,
-            "dw task start",
+            "task start",
             token,
         )?;
-        print_styled(&format!(
-            "ADO task créée [{}]: #{} {}",
-            repository, result.id, result.title
-        ));
         created.push(WorkspaceChildTask {
             repository: repository.clone(),
             id: result.id,
@@ -105,7 +99,7 @@ fn active_child_ids(
     Ok(child_ids)
 }
 
-fn merge_start_snapshots(
+pub fn merge_start_snapshots(
     mut snapshots: Vec<WorkItemSnapshot>,
     child_snapshots: Vec<WorkItemSnapshot>,
 ) -> Vec<dw_workspace::WorkspaceWorkItem> {
@@ -132,7 +126,7 @@ fn merge_start_snapshots(
         .collect()
 }
 
-fn parse_selected_work_item_ids(value: &str) -> Vec<String> {
+pub fn parse_selected_work_item_ids(value: &str) -> Vec<String> {
     value
         .split(',')
         .map(str::trim)
@@ -141,7 +135,7 @@ fn parse_selected_work_item_ids(value: &str) -> Vec<String> {
         .collect()
 }
 
-fn child_task_title(repository: &str, title: &str) -> String {
+pub fn child_task_title(repository: &str, title: &str) -> String {
     let normalized = repository.to_ascii_lowercase();
     let prefix = match normalized.as_str() {
         "front" => "FRONT",

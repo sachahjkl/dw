@@ -228,7 +228,7 @@ pub struct TaskStartRequest<'a> {
     pub slug: Option<&'a str>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceHandoffSummary {
     pub repository: String,
     pub status: String,
@@ -251,7 +251,7 @@ pub enum WorkspaceError {
     NoWorkspaceFound,
     #[error("Aucun workspace task trouvé depuis le dossier courant.")]
     NoCurrentWorkspace,
-    #[error("work-item-id et --work-item doivent pointer vers le même work item.")]
+    #[error("Les deux sélections de work item doivent pointer vers le même work item.")]
     ConflictingWorkItemSelection,
     #[error("Repo absent du workspace: {0}")]
     MissingWorkspaceRepository(String),

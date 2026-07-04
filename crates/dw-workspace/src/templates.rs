@@ -21,7 +21,7 @@ pub(crate) fn plan_markdown(manifest: &WorkspaceManifest) -> String {
 
 pub(crate) fn handoff_markdown(manifest: &WorkspaceManifest, repository: &str) -> String {
     format!(
-        "# Handoff {repository}\n\n## Contexte\n\n- Projet: `{}`\n- Repository: `{repository}`\n- Branche: `{}`\n- Work items parents: {}\n- Child tasks connus: (aucune)\n\n## Entrées déterministes à relire\n\n1. `task.json`\n2. `plan.md`\n3. `AGENTS.md`\n4. `dw ado ai-context <id> --project {}` pour chaque work item parent\n5. `dw task preflight --continue`\n\n## Objectif du lot\n\nDécrire ici, dans `plan.md`, ce qui relève de `{repository}` et ce qui doit être traité par ce handoff.\n\n## Contraintes\n\n- Préserver les labels métier exacts\n- Tout texte utilisateur/projet en français\n- Traiter les screenshots, mockups et attachments comme sources factuelles\n- Demander à l'utilisateur au lieu de deviner si le contexte manque\n- Vérifier les impacts API et les contrats front/back quand pertinent\n\n## Travail attendu\n\n- Limiter le travail à `{repository}`\n- Lister clairement les fichiers/zones impactés\n- Signaler les dépendances vers d'autres domaines\n- Mettre à jour la synthèse structurée ci-dessous\n\n## Synthèse structurée attendue\n\nRemplir ce bloc sans changer les labels.\n\n```yaml\nstatus: todo\nrepository: {repository}\nsummary:\n  done: []\n  decisions: []\n  risks: []\n  blockers: []\n  follow_up: []\nverification:\n  commands: []\n  manual_checks: []\nartifacts:\n  files: []\n  screenshots: []\n  attachments: []\n```\n",
+        "# Handoff {repository}\n\n## Contexte\n\n- Projet: `{}`\n- Repository: `{repository}`\n- Branche: `{}`\n- Work items parents: {}\n- Child tasks connus: (aucune)\n\n## Entrées déterministes à relire\n\n1. `task.json`\n2. `plan.md`\n3. `AGENTS.md`\n4. Contexte IA ADO pour chaque work item parent\n5. Rapport de préflight task\n\n## Objectif du lot\n\nDécrire ici, dans `plan.md`, ce qui relève de `{repository}` et ce qui doit être traité par ce handoff.\n\n## Contraintes\n\n- Préserver les labels métier exacts\n- Tout texte utilisateur/projet en français\n- Traiter les screenshots, mockups et attachments comme sources factuelles\n- Demander à l'utilisateur au lieu de deviner si le contexte manque\n- Vérifier les impacts API et les contrats front/back quand pertinent\n\n## Travail attendu\n\n- Limiter le travail à `{repository}`\n- Lister clairement les fichiers/zones impactés\n- Signaler les dépendances vers d'autres domaines\n- Mettre à jour la synthèse structurée ci-dessous\n\n## Synthèse structurée attendue\n\nRemplir ce bloc sans changer les labels.\n\n```yaml\nstatus: todo\nrepository: {repository}\nsummary:\n  done: []\n  decisions: []\n  risks: []\n  blockers: []\n  follow_up: []\nverification:\n  commands: []\n  manual_checks: []\nartifacts:\n  files: []\n  screenshots: []\n  attachments: []\n```\n",
         manifest.project,
         manifest.branch_name,
         manifest
@@ -30,7 +30,6 @@ pub(crate) fn handoff_markdown(manifest: &WorkspaceManifest, repository: &str) -
             .map(|item| format!("`#{}`", item.id))
             .collect::<Vec<_>>()
             .join(", "),
-        manifest.project,
     )
 }
 
@@ -60,7 +59,7 @@ mod tests {
 
         assert!(text.contains("# Handoff front"));
         assert!(text.contains("- Repository: `front`"));
-        assert!(text.contains("dw ado ai-context <id> --project ha"));
+        assert!(text.contains("Contexte IA ADO"));
         assert!(text.contains("status: todo"));
         assert!(text.contains("manual_checks: []"));
     }

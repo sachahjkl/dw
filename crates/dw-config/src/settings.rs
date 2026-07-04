@@ -4,6 +4,8 @@ use crate::types::UserSettings;
 use std::path::{Component, Path, PathBuf};
 use std::{env, fs};
 
+pub const COLOR_MODE_CHOICES: &[&str] = &["auto", "always", "never"];
+
 pub fn default_root() -> String {
     PlatformBaseDirs::resolve()
         .default_root()
@@ -57,12 +59,14 @@ pub fn normalize_color_mode(mode: Option<&str>) -> Result<String, String> {
         .filter(|value| !value.trim().is_empty())
         .map(|value| value.trim().to_ascii_lowercase())
         .unwrap_or_else(|| "auto".into());
-    match normalized.as_str() {
-        "auto" | "always" | "never" => Ok(normalized),
-        _ => Err(format!(
-            "Mode couleur inconnu: {}. Valeurs autorisées: auto, always, never.",
-            mode.unwrap_or_default()
-        )),
+    if COLOR_MODE_CHOICES.contains(&normalized.as_str()) {
+        Ok(normalized)
+    } else {
+        Err(format!(
+            "Mode couleur inconnu: {}. Valeurs autorisées: {}.",
+            mode.unwrap_or_default(),
+            COLOR_MODE_CHOICES.join(", ")
+        ))
     }
 }
 

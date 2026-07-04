@@ -46,18 +46,6 @@ pub fn work_item_values(root: &str, project: Option<&str>) -> Vec<String> {
     dedup_preserving_order(values)
 }
 
-pub fn workspace_resolution_options(extra: &[&'static str]) -> Vec<&'static str> {
-    let mut options = vec![
-        "--workspace",
-        "--root",
-        "--project",
-        "--work-item",
-        "--continue",
-    ];
-    options.extend_from_slice(extra);
-    options
-}
-
 fn dedup_preserving_order(values: Vec<String>) -> Vec<String> {
     let mut seen = Vec::<String>::new();
     let mut deduped = Vec::new();
