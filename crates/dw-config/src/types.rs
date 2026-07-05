@@ -151,3 +151,12 @@ pub struct ConfigDoctorCheck {
     pub passed: bool,
     pub message: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RootStatus {
+    pub root: String,
+    #[serde(rename = "initialized")]
+    pub initialized: bool,
+    #[serde(rename = "missingPaths")]
+    pub missing_paths: Vec<String>,
+}

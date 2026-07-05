@@ -2720,6 +2720,7 @@ mod tests {
                 workspace: "/tmp/dw/ha/42-titre".into(),
                 repositories: vec!["front".into(), "back".into()],
                 repository_folders: Default::default(),
+                repository_worktrees: Vec::new(),
             },
             work_items: Vec::new(),
             child_tasks: Vec::new(),

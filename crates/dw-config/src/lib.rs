@@ -11,7 +11,7 @@ mod store;
 mod types;
 
 pub use base_dirs::PlatformBaseDirs;
-pub use doctor::{config_doctor, config_show};
+pub use doctor::{config_doctor, config_show, root_status};
 pub use init::{InitReport, InitRequest, RefreshReport, RefreshRequest, init_root, refresh_root};
 pub use projects::{load_projects_config, project_choices, repository_config, resolve_project};
 pub use settings::{
@@ -24,7 +24,8 @@ pub use store::{
 };
 pub use types::{
     AgentOptions, ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, DatabasesConfig,
-    ProjectChoice, ProjectConfig, ProjectsConfig, RepositoryConfig, UserSettings, WorkflowConfig,
+    ProjectChoice, ProjectConfig, ProjectsConfig, RepositoryConfig, RootStatus, UserSettings,
+    WorkflowConfig,
 };
 
 #[cfg(test)]
@@ -60,6 +61,39 @@ mod tests {
                 .databases_path
                 .ends_with("/tmp/demo-root/config/databases.json")
         );
+    }
+
+    #[test]
+    fn root_status_reports_missing_init_files() {
+        let temp = tempdir().expect("tempdir");
+        let status = root_status(Some(temp.path().to_str().expect("utf8 path")));
+
+        assert!(!status.initialized);
+        assert_eq!(status.missing_paths.len(), 3);
+        assert!(
+            status
+                .missing_paths
+                .iter()
+                .any(|path| path.ends_with("config/projects.json"))
+        );
+    }
+
+    #[test]
+    fn root_status_is_initialized_after_init() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let temp = tempdir().expect("tempdir");
+
+        init_root(InitRequest {
+            root: Some(temp.path().display().to_string()),
+            profile: "business".into(),
+            no_save: true,
+            dry_run: false,
+        })
+        .expect("init should create root");
+        let status = root_status(Some(temp.path().to_str().expect("utf8 path")));
+
+        assert!(status.initialized);
+        assert!(status.missing_paths.is_empty());
     }
 
     #[test]

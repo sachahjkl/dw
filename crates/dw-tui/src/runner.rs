@@ -91,6 +91,10 @@ async fn dispatch_internal_action(
             let report = dw_config::command::show(root.as_deref());
             Ok(render::config_show_lines(&report, &theme).join("\n"))
         }
+        TuiActionRequest::ConfigInit(args) => {
+            let report = dw_config::command::init(args.clone())?;
+            Ok(render::init_report_lines(&report).join("\n"))
+        }
         TuiActionRequest::ConfigDoctor { root } => {
             let report = dw_config::command::doctor(root.as_deref());
             Ok(render::config_doctor_lines(&report, &theme).join("\n"))

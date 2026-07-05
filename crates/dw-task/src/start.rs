@@ -237,8 +237,8 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
     let project_config = resolve_project(&projects, &args.project);
-    let repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_deref());
-    if repositories.is_empty() {
+    let ado_repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_deref());
+    if ado_repositories.is_empty() {
         return Err(anyhow::anyhow!(
             "task start-pr requires an explicit repository, or a project with configured azureDevOpsRepository entries."
         ));
@@ -246,7 +246,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
     let options = resolve_ado_options(&projects, &workflow, &args.project)?;
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let work_item_options = options.clone();
-    let work_item_repositories = repositories.clone();
+    let work_item_repositories = ado_repositories.clone();
     let pull_request_id = args.pull_request_id.clone();
     let work_item_token = token.clone();
     let work_item_ids = tokio::task::spawn_blocking(move || {
@@ -263,9 +263,11 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
         return Err(anyhow::anyhow!(
             "No work item linked to PR #{} in tested repositories: {}.",
             args.pull_request_id,
-            repositories.join(", ")
+            ado_repositories.join(", ")
         ));
     }
+    let workspace_repositories =
+        resolve_workspace_repositories(project_config.as_ref(), args.repo.as_deref());
 
     let start = start_plan(StartArgs {
         work_item_id: Some(work_item_ids.join(",")),
@@ -273,7 +275,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
         project: Some(args.project.clone()),
         task: None,
         type_name: args.type_name.clone(),
-        only: args.repo.clone(),
+        only: workspace_repositories.join(",").into(),
         slug: args.slug.clone(),
         skip_ado: false,
         with_active_children: false,
@@ -284,7 +286,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
 
     Ok(StartPrPlanReport {
         pull_request_id: args.pull_request_id,
-        repositories,
+        repositories: ado_repositories,
         work_item_ids,
         start,
     })
@@ -381,6 +383,55 @@ pub fn resolve_ado_repositories(
                 })
         })
         .unwrap_or_default()
+}
+
+fn resolve_workspace_repositories(
+    project_config: Option<&dw_config::ProjectConfig>,
+    repository: Option<&str>,
+) -> Vec<String> {
+    if let Some(repository) = repository.filter(|value| !value.trim().is_empty()) {
+        return repository
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|repo| resolve_workspace_repository(project_config, repo))
+            .fold(Vec::new(), |mut repos, repo| {
+                if !repos
+                    .iter()
+                    .any(|existing| existing.eq_ignore_ascii_case(&repo))
+                {
+                    repos.push(repo);
+                }
+                repos
+            });
+    }
+
+    project_config
+        .map(|project| project.repositories.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn resolve_workspace_repository(
+    project_config: Option<&dw_config::ProjectConfig>,
+    repository: &str,
+) -> String {
+    let Some(project) = project_config else {
+        return repository.to_string();
+    };
+    if project.repositories.contains_key(repository) {
+        return repository.to_string();
+    }
+    project
+        .repositories
+        .keys()
+        .find_map(|key| {
+            repository_config(project, key)?
+                .azure_dev_ops_repository
+                .as_deref()
+                .is_some_and(|ado| ado.eq_ignore_ascii_case(repository))
+                .then(|| key.clone())
+        })
+        .unwrap_or_else(|| repository.to_string())
 }
 
 fn resolve_ado_repository(
@@ -484,6 +535,45 @@ mod tests {
         assert_eq!(
             start_pr_resolved_line(&["123".into(), "456".into()]),
             "PR linked to 2 work items: #123, #456."
+        );
+    }
+
+    #[test]
+    fn pr_repository_resolution_keeps_ado_and_workspace_names_separate() {
+        let project: dw_config::ProjectConfig = serde_json::from_str(
+            r#"{
+  "displayName": "HA",
+  "repositories": {
+    "front": {
+      "url": "git@example.invalid/front.git",
+      "defaultBranch": "develop",
+      "azureDevOpsRepository": "gesco-front"
+    },
+    "back": {
+      "url": "git@example.invalid/back.git",
+      "defaultBranch": "main",
+      "azureDevOpsRepository": "gesco-back"
+    }
+  }
+}"#,
+        )
+        .expect("project config");
+
+        assert_eq!(
+            resolve_ado_repositories(Some(&project), Some("front")),
+            ["gesco-front"]
+        );
+        assert_eq!(
+            resolve_workspace_repositories(Some(&project), Some("gesco-front")),
+            ["front"]
+        );
+        assert_eq!(
+            resolve_workspace_repositories(Some(&project), Some("front")),
+            ["front"]
+        );
+        assert_eq!(
+            resolve_workspace_repositories(Some(&project), None),
+            ["front", "back"]
         );
     }
 

@@ -127,24 +127,26 @@ impl App {
     pub fn new(root: Option<String>) -> Self {
         let snapshot = TuiSnapshot::loading(root.as_deref());
         let mut background = BackgroundJobs::new();
-        let _ = background.start_snapshot(root.clone());
-        let mut app = Self::from_snapshot(
-            root,
-            snapshot,
-            background,
-            vec![
-                "TUI ready. Enter runs the selected operation.".into(),
-                "Loading snapshot, work items and PRs in the background...".into(),
-            ],
-        );
-        app.reload_assigned_after_snapshot = true;
-        app.reload_pull_requests_after_snapshot = true;
+        let needs_init = snapshot.needs_init;
+        let mut messages = vec!["TUI ready. Enter runs the selected operation.".into()];
+        if needs_init {
+            messages.push("DevWorkflow root is not initialized. Init is required.".into());
+        } else {
+            let _ = background.start_snapshot(root.clone());
+            messages.push("Loading snapshot, work items and PRs in the background...".into());
+        }
+        let mut app = Self::from_snapshot(root, snapshot, background, messages);
+        if !needs_init {
+            app.reload_assigned_after_snapshot = true;
+            app.reload_pull_requests_after_snapshot = true;
+        }
         app
     }
 
     #[cfg(test)]
     pub(crate) fn new_ready(root: Option<String>) -> Self {
-        let snapshot = TuiSnapshot::load(root.as_deref());
+        let mut snapshot = TuiSnapshot::load(root.as_deref());
+        snapshot.needs_init = false;
         Self::from_snapshot(
             root,
             snapshot,
@@ -579,6 +581,10 @@ impl App {
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
+        if self.snapshot.needs_init {
+            return self.handle_init_required_key(key, terminal);
+        }
+
         if self.form.is_some() {
             return self.handle_form_key(key, terminal);
         }
@@ -648,6 +654,42 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn handle_init_required_key(
+        &mut self,
+        key: KeyEvent,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<()> {
+        match key.code {
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.should_quit = true;
+            }
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Enter | KeyCode::Char('i') => {
+                if self.action_loading() {
+                    self.messages.push("Init already running.".into());
+                } else {
+                    self.run_action(self.init_required_action(), terminal)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn init_required_action(&self) -> TuiAction {
+        TuiAction {
+            label: "Initialize DevWorkflow root".into(),
+            request: TuiActionRequest::ConfigInit(dw_config::command::InitCommandArgs {
+                root: Some(self.snapshot.root.clone()),
+                profile: "business".into(),
+                dry_run: false,
+                no_save: false,
+            }),
+            description: "Create the root config, schemas, cache and project directories".into(),
+            kind: ActionRisk::Destructive,
+        }
     }
 
     fn handle_view_navigation_key(&mut self, key: KeyEvent) -> bool {
@@ -1613,6 +1655,13 @@ impl App {
                 self.messages
                     .push(format!("Cockpit option applied: root {root}"));
             }
+            Some(ActionEffect::InitializedRoot(root)) => {
+                self.root_override = Some(root.clone());
+                self.snapshot.root = root.clone();
+                self.snapshot.needs_init = false;
+                self.messages
+                    .push(format!("DevWorkflow root initialized: {root}"));
+            }
             None => {}
         }
     }
@@ -1629,6 +1678,11 @@ impl App {
     }
 
     fn reload(&mut self) {
+        if self.snapshot.needs_init {
+            self.messages
+                .push("Init required before data can be loaded.".into());
+            return;
+        }
         if self.background.start_snapshot(self.root_override.clone()) {
             self.reload_assigned_after_snapshot = true;
             self.reload_pull_requests_after_snapshot = true;
@@ -1646,6 +1700,11 @@ impl App {
         let should_load_pull_requests = self.reload_pull_requests_after_snapshot;
         self.reload_assigned_after_snapshot = false;
         self.reload_pull_requests_after_snapshot = false;
+        if self.snapshot.needs_init {
+            self.messages
+                .push("DevWorkflow root is not initialized. Init is required.".into());
+            return;
+        }
         if should_load_assigned {
             self.restart_assigned_load();
         }
@@ -2182,6 +2241,17 @@ fn snapshot_reload_summary(snapshot: &TuiSnapshot) -> String {
 mod tests {
     use super::*;
     use crate::model::AdoAssignedProject;
+    use std::fs;
+
+    fn initialized_root() -> tempfile::TempDir {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_dir = temp.path().join("config");
+        fs::create_dir_all(&config_dir).expect("config dir");
+        fs::write(config_dir.join("projects.json"), "{}").expect("projects config");
+        fs::write(config_dir.join("workflow.json"), "{}").expect("workflow config");
+        fs::write(config_dir.join("databases.json"), "{}").expect("databases config");
+        temp
+    }
 
     #[test]
     fn view_filter_keeps_task_actions_in_workspace_view() {
@@ -2197,10 +2267,11 @@ mod tests {
 
     #[test]
     fn new_starts_with_minimal_snapshot_and_background_load() {
-        let app = App::new(Some("/tmp/missing-dw-root".into()));
+        let root = initialized_root();
+        let app = App::new(Some(root.path().display().to_string()));
 
         assert!(app.snapshot_loading());
-        assert_eq!(app.snapshot.root, "/tmp/missing-dw-root");
+        assert_eq!(app.snapshot.root, root.path().display().to_string());
         assert!(app.snapshot.workspaces.is_empty());
         assert!(
             app.messages
@@ -2213,7 +2284,8 @@ mod tests {
 
     #[test]
     fn background_status_lines_explain_loading_and_idle_work() {
-        let app = App::new(Some("/tmp/missing-dw-root".into()));
+        let root = initialized_root();
+        let app = App::new(Some(root.path().display().to_string()));
 
         let lines = app.background_status_lines();
 

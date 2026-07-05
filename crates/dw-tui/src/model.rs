@@ -1,7 +1,7 @@
 use dw_config::{
     ConfigDoctorReport, ConfigShow, DatabasesConfig, ProjectsConfig, WorkflowConfig, config_doctor,
     load_databases_config, load_projects_config, load_user_settings, load_workflow_config,
-    project_choices, repository_config, resolve_project, resolve_root,
+    project_choices, repository_config, resolve_project, resolve_root, root_status,
 };
 use dw_workspace::{TaskListItem, plan_task_prune, task_list};
 
@@ -109,6 +109,7 @@ pub enum ActionKind {
     Guide,
     Refresh,
     ConfigShow,
+    ConfigInit,
     ConfigDoctor,
     ConfigSetColor,
     ConfigSetRoot,
@@ -169,6 +170,7 @@ pub enum ActionEffect {
     ColorMode(String),
     DefaultAgent(String),
     Root(String),
+    InitializedRoot(String),
 }
 
 #[allow(dead_code)]
@@ -179,6 +181,7 @@ pub enum TuiActionRequest {
     Guide,
     Refresh(dw_config::command::RefreshCommandArgs),
     ConfigShow { root: Option<String> },
+    ConfigInit(dw_config::command::InitCommandArgs),
     ConfigDoctor { root: Option<String> },
     ConfigSetColor { mode: String },
     ConfigSetRoot { path: String },
@@ -366,6 +369,7 @@ impl TuiAction {
             TuiActionRequest::Guide => ActionKind::Guide,
             TuiActionRequest::Refresh(_) => ActionKind::Refresh,
             TuiActionRequest::ConfigShow { .. } => ActionKind::ConfigShow,
+            TuiActionRequest::ConfigInit(_) => ActionKind::ConfigInit,
             TuiActionRequest::ConfigDoctor { .. } => ActionKind::ConfigDoctor,
             TuiActionRequest::ConfigSetColor { .. } => ActionKind::ConfigSetColor,
             TuiActionRequest::ConfigSetRoot { .. } => ActionKind::ConfigSetRoot,
@@ -438,6 +442,7 @@ impl TuiAction {
     pub fn should_refresh_after_success(&self) -> bool {
         match &self.request {
             TuiActionRequest::Refresh(_)
+            | TuiActionRequest::ConfigInit(_)
             | TuiActionRequest::ConfigSetRoot { .. }
             | TuiActionRequest::ConfigSetColor { .. }
             | TuiActionRequest::AgentSetDefault { .. }
@@ -466,6 +471,7 @@ impl TuiAction {
             self.request,
             TuiActionRequest::Doctor
                 | TuiActionRequest::Refresh(_)
+                | TuiActionRequest::ConfigInit(_)
                 | TuiActionRequest::AdoAssigned(_)
                 | TuiActionRequest::AdoPrs(_)
                 | TuiActionRequest::AdoChangelog(_)
@@ -506,6 +512,9 @@ impl TuiAction {
                 Some(ActionEffect::DefaultAgent(agent.clone()))
             }
             TuiActionRequest::ConfigSetRoot { path } => Some(ActionEffect::Root(path.clone())),
+            TuiActionRequest::ConfigInit(args) => Some(ActionEffect::InitializedRoot(
+                resolve_root(args.root.as_deref()),
+            )),
             _ => None,
         }
     }
@@ -576,6 +585,7 @@ impl TuiAction {
 #[derive(Debug, Clone)]
 pub struct TuiSnapshot {
     pub root: String,
+    pub needs_init: bool,
     pub projects: ProjectsConfig,
     pub workflow: WorkflowConfig,
     pub databases: DatabasesConfig,
@@ -642,6 +652,7 @@ struct PullRequestTarget {
 impl TuiSnapshot {
     pub fn loading(root: Option<&str>) -> Self {
         let root = resolve_root(root);
+        let needs_init = !root_status(Some(&root)).initialized;
         let projects = ProjectsConfig::default();
         let workflow = WorkflowConfig::default();
         let databases = DatabasesConfig::default();
@@ -658,6 +669,7 @@ impl TuiSnapshot {
             .unwrap_or_else(|| "auto".into());
         Self {
             root,
+            needs_init,
             projects,
             workflow,
             databases,
@@ -676,6 +688,7 @@ impl TuiSnapshot {
 
     pub fn load(root: Option<&str>) -> Self {
         let root = resolve_root(root);
+        let needs_init = !root_status(Some(&root)).initialized;
         let projects = load_projects_config(&root);
         let workflow = load_workflow_config(&root);
         let databases = load_databases_config(&root);
@@ -690,6 +703,7 @@ impl TuiSnapshot {
             .unwrap_or_else(|| "auto".into());
         Self {
             root,
+            needs_init,
             projects,
             workflow,
             databases,

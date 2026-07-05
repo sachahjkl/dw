@@ -1,6 +1,6 @@
 use crate::json::{read_json_value, read_jsonc_value};
 use crate::settings::{resolve_root, user_settings_path};
-use crate::types::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow};
+use crate::types::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, RootStatus};
 use std::path::Path;
 
 pub fn config_show(explicit_root: Option<&str>) -> ConfigShow {
@@ -21,6 +21,25 @@ pub fn config_show(explicit_root: Option<&str>) -> ConfigShow {
         workflow_exists: workflow_path.exists(),
         projects_exists: projects_path.exists(),
         databases_exists: databases_path.exists(),
+    }
+}
+
+pub fn root_status(explicit_root: Option<&str>) -> RootStatus {
+    let root = resolve_root(explicit_root);
+    let required_paths = [
+        Path::new(&root).join("config").join("projects.json"),
+        Path::new(&root).join("config").join("workflow.json"),
+        Path::new(&root).join("config").join("databases.json"),
+    ];
+    let missing_paths = required_paths
+        .iter()
+        .filter(|path| !path.is_file())
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    RootStatus {
+        root,
+        initialized: missing_paths.is_empty(),
+        missing_paths,
     }
 }
 

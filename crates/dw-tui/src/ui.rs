@@ -79,6 +79,11 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     render_body(frame, root[2], app);
     render_footer(frame, root[3], app);
 
+    if app.snapshot.needs_init {
+        render_init_required(frame, area, app);
+        return;
+    }
+
     if let Some(action) = &app.confirmation {
         render_confirmation(frame, area, action);
     }
@@ -1524,6 +1529,13 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 fn footer_buttons(app: &App) -> Vec<ActionButton> {
+    if app.snapshot.needs_init {
+        return vec![
+            ActionButton::new("Init root", "Enter", ActionIntent::Primary),
+            ActionButton::new("Init root", "i", ActionIntent::Primary),
+            ActionButton::new("Quit", "q", ActionIntent::Review),
+        ];
+    }
     let mut actions = match app.view {
         View::Dashboard => vec![
             ActionButton::new("Select", "j/k", ActionIntent::Review),
@@ -1558,6 +1570,53 @@ fn footer_buttons(app: &App) -> Vec<ActionButton> {
         ActionButton::new("Quit", "q", ActionIntent::Review),
     ]);
     actions
+}
+
+fn render_init_required(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    frame.render_widget(
+        Paragraph::new("").style(
+            Style::default()
+                .fg(Color::DarkGray)
+                .bg(Color::Black)
+                .add_modifier(Modifier::DIM),
+        ),
+        area,
+    );
+    let popup = centered_rect(62, 34, area);
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .title("Initialize DevWorkflow")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::White).bg(Color::Black));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(5), Constraint::Length(1)])
+        .split(inner);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(vec![Span::styled(
+                "This root is not initialized.",
+                Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD),
+            )]),
+            Line::from(""),
+            target_line("Root", app.snapshot.root.clone()),
+            Line::from(""),
+            Line::from("The TUI is locked until the root config, schemas, cache and project directories exist."),
+            Line::from("The init action uses the same core init path as the CLI."),
+        ])
+        .wrap(Wrap { trim: true }),
+        chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(action_bar_line(&[
+            ActionButton::new("Initialize", "Enter", ActionIntent::Primary),
+            ActionButton::new("Initialize", "i", ActionIntent::Primary),
+            ActionButton::new("Quit", "q", ActionIntent::Review),
+        ])),
+        chunks[1],
+    );
 }
 
 fn styled_shortcut_line(text: &str) -> Line<'static> {

@@ -263,6 +263,17 @@ fn form_preview_lines_for(form: &FormState, app: &App) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::form::{FormState, FormTemplate};
+    use std::fs;
+
+    fn initialized_root() -> tempfile::TempDir {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_dir = temp.path().join("config");
+        fs::create_dir_all(&config_dir).expect("config dir");
+        fs::write(config_dir.join("projects.json"), "{}").expect("projects config");
+        fs::write(config_dir.join("workflow.json"), "{}").expect("workflow config");
+        fs::write(config_dir.join("databases.json"), "{}").expect("databases config");
+        temp
+    }
 
     #[test]
     fn dashboard_hint_points_to_accelerators() {
@@ -274,7 +285,8 @@ mod tests {
 
     #[test]
     fn dashboard_hint_stays_actionable_while_snapshot_loads() {
-        let app = App::new(Some("/tmp/missing-dw-root".into()));
+        let root = initialized_root();
+        let app = App::new(Some(root.path().display().to_string()));
 
         assert!(app.snapshot_loading());
         assert!(view_hint(&app).contains("cockpit"));

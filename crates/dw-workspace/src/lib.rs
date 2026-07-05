@@ -7,7 +7,10 @@ use dw_contracts::{
     PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightIssue,
     TaskPreflightReport,
 };
-use dw_git::{build_branch_name, build_subject_name, slug_from_phrase_or_fallback};
+use dw_git::{
+    WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
+    slug_from_phrase_or_fallback,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -147,6 +150,24 @@ pub struct TaskStartPlan {
     pub repositories: Vec<String>,
     #[serde(rename = "repositoryFolders")]
     pub repository_folders: BTreeMap<String, String>,
+    #[serde(rename = "repositoryWorktrees")]
+    pub repository_worktrees: Vec<TaskStartRepositoryPlan>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskStartRepositoryPlan {
+    pub repository: String,
+    #[serde(rename = "projectRoot")]
+    pub project_root: String,
+    #[serde(rename = "worktreePath")]
+    pub worktree_path: String,
+    pub url: String,
+    #[serde(rename = "defaultBranch")]
+    pub default_branch: String,
+    #[serde(rename = "anchorName")]
+    pub anchor_name: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -263,6 +284,8 @@ pub enum WorkspaceError {
     MissingAiContext(String),
     #[error("Suppression workspace échouée [{repository}]: {message}")]
     TeardownFailed { repository: String, message: String },
+    #[error("Préparation worktree échouée [{repository}]: {message}")]
+    WorktreePrepareFailed { repository: String, message: String },
     #[error("Impossible de retirer tous les work items du workspace.")]
     EmptyWorkItemSet,
 }
@@ -1128,10 +1151,28 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
     let workspace = Path::new(&plan.workspace);
     fs::create_dir_all(workspace)
         .map_err(|_| WorkspaceError::MissingWorkspace(plan.workspace.clone()))?;
-    for folder in plan.repository_folders.values() {
-        fs::create_dir_all(workspace.join(folder)).map_err(|_| {
-            WorkspaceError::MissingWorkspace(workspace.join(folder).display().to_string())
-        })?;
+    if plan.repository_worktrees.is_empty() {
+        for folder in plan.repository_folders.values() {
+            fs::create_dir_all(workspace.join(folder)).map_err(|_| {
+                WorkspaceError::MissingWorkspace(workspace.join(folder).display().to_string())
+            })?;
+        }
+    } else {
+        for target in &plan.repository_worktrees {
+            prepare_worktree(&WorktreePrepareRequest {
+                project_root: target.project_root.clone(),
+                repository: target.repository.clone(),
+                url: target.url.clone(),
+                default_branch: target.default_branch.clone(),
+                anchor_name: target.anchor_name.clone(),
+                branch_name: target.branch_name.clone(),
+                worktree_path: target.worktree_path.clone(),
+            })
+            .map_err(|error| WorkspaceError::WorktreePrepareFailed {
+                repository: target.repository.clone(),
+                message: error.to_string(),
+            })?;
+        }
     }
 
     let work_items = if work_items.is_empty() {
@@ -1219,6 +1260,9 @@ pub fn start_plan_with_child_tasks(
         }
     }
     plan.branch_name = build_branch_name(&plan.kind, &branch_work_item_ids, &plan.slug);
+    for worktree in &mut plan.repository_worktrees {
+        worktree.branch_name = plan.branch_name.clone();
+    }
     plan
 }
 
@@ -1296,6 +1340,45 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
         .join(&subject_name)
         .display()
         .to_string();
+    let project_root = Path::new(request.root)
+        .join("projects")
+        .join(&project)
+        .display()
+        .to_string();
+    let repository_worktrees = repositories
+        .iter()
+        .map(|repository_key| {
+            let repository = project_config
+                .as_ref()
+                .and_then(|project| repository_config(project, repository_key))
+                .unwrap_or(RepositoryConfig {
+                    url: String::new(),
+                    default_branch: "main".into(),
+                    pull_request_target_branch: None,
+                    azure_dev_ops_repository: None,
+                    anchor_name: None,
+                    folder: Some(repository_key.clone()),
+                });
+            let folder = repository_folders
+                .get(repository_key)
+                .cloned()
+                .unwrap_or_else(|| repository_key.clone());
+            let anchor_name = repository
+                .anchor_name
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| format!("{repository_key}.git"));
+            TaskStartRepositoryPlan {
+                repository: repository_key.clone(),
+                project_root: project_root.clone(),
+                worktree_path: Path::new(&workspace).join(folder).display().to_string(),
+                url: repository.url,
+                default_branch: repository.default_branch,
+                anchor_name,
+                branch_name: branch_name.clone(),
+            }
+        })
+        .collect::<Vec<_>>();
 
     Ok(TaskStartPlan {
         work_item_ids,
@@ -1309,6 +1392,7 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
         workspace,
         repositories,
         repository_folders,
+        repository_worktrees,
     })
 }
 
@@ -2073,7 +2157,23 @@ fn build_attachment_issues(ai_context: &AdoAiContextItem) -> Vec<TaskPreflightIs
 mod tests {
     use super::*;
     use std::fs;
+    use std::process::Command;
     use tempfile::tempdir;
+
+    fn run_git(cwd: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .current_dir(cwd)
+            .args(args)
+            .output()
+            .expect("git should run");
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout:\n{}\nstderr:\n{}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     #[test]
     fn parses_valid_handoff_summary() {
@@ -2590,6 +2690,114 @@ artifacts:
             plan.repository_folders.get("front").map(String::as_str),
             Some("custom-front")
         );
+        assert_eq!(plan.repository_worktrees.len(), 1);
+        assert_eq!(plan.repository_worktrees[0].repository, "front");
+        assert!(
+            plan.repository_worktrees[0]
+                .worktree_path
+                .ends_with("custom-front")
+        );
+        assert_eq!(plan.repository_worktrees[0].default_branch, "develop");
+    }
+
+    #[test]
+    fn execute_task_start_rejects_unpreparable_repository() {
+        let temp = tempdir().expect("tempdir should be created");
+        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        let project_root = temp.path().join("projects/ha");
+        let plan = TaskStartPlan {
+            work_item_ids: vec!["123".into()],
+            primary_work_item_id: "123".into(),
+            project: "ha".into(),
+            task_id: None,
+            kind: "feat".into(),
+            slug: "demo".into(),
+            branch_name: "feat/123-demo".into(),
+            subject_name: "feat-123-demo".into(),
+            workspace: workspace.display().to_string(),
+            repositories: vec!["front".into()],
+            repository_folders: BTreeMap::from([("front".into(), "front".into())]),
+            repository_worktrees: vec![TaskStartRepositoryPlan {
+                repository: "front".into(),
+                project_root: project_root.display().to_string(),
+                worktree_path: workspace.join("front").display().to_string(),
+                url: temp.path().join("missing-remote.git").display().to_string(),
+                default_branch: "develop".into(),
+                anchor_name: "front.git".into(),
+                branch_name: "feat/123-demo".into(),
+            }],
+        };
+
+        let error = execute_task_start(&plan, None, None, None)
+            .expect_err("invalid repository must not leave a fake workspace");
+
+        assert!(matches!(
+            error,
+            WorkspaceError::WorktreePrepareFailed { repository, .. } if repository == "front"
+        ));
+        assert!(!workspace.join("task.json").exists());
+    }
+
+    #[test]
+    fn execute_task_start_prepares_bare_repository_and_worktree() {
+        let temp = tempdir().expect("tempdir should be created");
+        let source = temp.path().join("source-front");
+        fs::create_dir_all(&source).expect("source should exist");
+        run_git(&source, &["init", "-b", "develop"]);
+        fs::write(source.join("README.md"), "front\n").expect("file should be written");
+        run_git(&source, &["add", "README.md"]);
+        run_git(
+            &source,
+            &[
+                "-c",
+                "user.name=dw test",
+                "-c",
+                "user.email=dw@example.invalid",
+                "commit",
+                "-m",
+                "init",
+            ],
+        );
+
+        let root = temp.path().join("dw-root");
+        let projects: ProjectsConfig = serde_json::from_str(&format!(
+            r#"{{
+  "projects": {{
+    "ha": {{
+      "displayName": "HA",
+      "repositories": {{
+        "front": {{
+          "url": "{}",
+          "defaultBranch": "develop",
+          "anchorName": "front.git",
+          "folder": "front"
+        }}
+      }}
+    }}
+  }}
+}}"#,
+            source.display()
+        ))
+        .expect("projects should parse");
+        let plan = plan_task_start(TaskStartRequest {
+            root: root.to_str().expect("utf8 path"),
+            projects: &projects,
+            work_item_id: "123",
+            project: Some("ha"),
+            task_id: None,
+            type_name: Some("feat"),
+            only: Some("front"),
+            slug: Some("demo"),
+        })
+        .expect("plan should build");
+
+        execute_task_start(&plan, None, None, None).expect("start should execute");
+
+        let anchor = root.join("projects/ha/repositories/front.git");
+        let worktree = root.join("projects/ha/workspaces/feat-123-demo/front");
+        assert!(anchor.join("HEAD").exists());
+        assert!(worktree.join(".git").exists());
+        assert!(worktree.join("README.md").exists());
     }
 
     #[test]
@@ -2611,6 +2819,7 @@ artifacts:
                 ("front".into(), "front".into()),
                 ("back".into(), "back".into()),
             ]),
+            repository_worktrees: Vec::new(),
         };
 
         let manifest = execute_task_start(&plan, None, None, None).expect("start should execute");
@@ -2644,6 +2853,7 @@ artifacts:
             workspace: "/tmp/workspace".into(),
             repositories: vec!["front".into()],
             repository_folders: BTreeMap::from([("front".into(), "front".into())]),
+            repository_worktrees: Vec::new(),
         };
 
         let updated = start_plan_with_child_tasks(
@@ -2675,6 +2885,7 @@ artifacts:
             workspace: workspace.display().to_string(),
             repositories: vec!["front".into()],
             repository_folders: BTreeMap::from([("front".into(), "front".into())]),
+            repository_worktrees: Vec::new(),
         };
 
         let manifest = execute_task_start_with_work_items_and_child_tasks(

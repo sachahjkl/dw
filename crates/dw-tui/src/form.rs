@@ -935,6 +935,7 @@ mod tests {
     fn snapshot() -> TuiSnapshot {
         TuiSnapshot {
             root: "/tmp/dw".into(),
+            needs_init: false,
             projects: ProjectsConfig::default(),
             workflow: WorkflowConfig::default(),
             databases: DatabasesConfig::default(),
