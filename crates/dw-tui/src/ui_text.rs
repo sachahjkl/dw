@@ -118,7 +118,7 @@ pub(crate) fn view_hint(app: &App) -> &'static str {
             "ADO is loading in the background; you can keep navigating."
         }
         View::Ado => {
-            "prepare workspace [n]    create workspace [x]    move state [e]    state form [E]    context [c]    card [w]    open ADO [u]"
+            "project previous [K]    project next [J]    item down [j]    item up [k]    prepare workspace [n]    create workspace [x]    move state [e]    state form [E]    context [c]    card [w]    open ADO [u]"
         }
         View::PullRequests if app.pull_requests_loading() => {
             "PRs are loading in the background; you can keep navigating."

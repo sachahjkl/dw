@@ -35,7 +35,7 @@ fn localize_command(command: clap::Command) -> clap::Command {
         "{about-with-newline}\nUtilisation: {usage}\n\n{all-args}"
     };
 
-    command
+    let command = command
         .help_template(help_template)
         .subcommand_help_heading("Commandes")
         .disable_help_subcommand(true)
@@ -55,7 +55,57 @@ fn localize_command(command: clap::Command) -> clap::Command {
                 .action(ArgAction::Version)
                 .help("Afficher la version."),
         )
-        .mut_subcommands(localize_command)
+        .mut_subcommands(localize_command);
+
+    sort_help_options(sort_help_subcommands(command))
+}
+
+fn sort_help_options(command: clap::Command) -> clap::Command {
+    let mut ordered_args = command
+        .get_arguments()
+        .filter(|arg| !arg.is_positional())
+        .map(|arg| {
+            (
+                arg.get_id().to_string(),
+                arg.get_long()
+                    .map(str::to_string)
+                    .or_else(|| arg.get_short().map(|short| short.to_string()))
+                    .unwrap_or_else(|| arg.get_id().to_string())
+                    .to_lowercase(),
+            )
+        })
+        .collect::<Vec<_>>();
+    ordered_args.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+
+    ordered_args
+        .into_iter()
+        .enumerate()
+        .fold(command, |command, (index, (arg_id, _))| {
+            command.mut_arg(arg_id, |arg| arg.display_order(index + 1))
+        })
+}
+
+fn sort_help_subcommands(command: clap::Command) -> clap::Command {
+    let mut ordered_subcommands = command
+        .get_subcommands()
+        .map(|subcommand| {
+            let name = subcommand.get_name().to_string();
+            (name.clone(), name.to_lowercase(), name.len())
+        })
+        .collect::<Vec<_>>();
+    ordered_subcommands.sort_by(|left, right| {
+        left.1
+            .cmp(&right.1)
+            .then_with(|| left.2.cmp(&right.2))
+            .then_with(|| left.0.cmp(&right.0))
+    });
+
+    ordered_subcommands
+        .into_iter()
+        .enumerate()
+        .fold(command, |command, (index, (name, _, _))| {
+            command.mut_subcommand(name, |subcommand| subcommand.display_order(index + 1))
+        })
 }
 
 #[derive(Debug, Subcommand)]
@@ -1138,5 +1188,72 @@ mod tests {
         assert!(help.contains("Afficher la version."));
         assert!(!help.contains("Print help"));
         assert!(!help.contains("Print version"));
+    }
+
+    #[test]
+    fn localized_options_are_sorted_alphabetically_in_help() {
+        let error = Cli::localized_command()
+            .try_get_matches_from(["dw", "task", "open", "--help"])
+            .expect_err("help exits through clap");
+        let help = error.to_string();
+        let options = help
+            .lines()
+            .filter_map(|line| line.find("--").map(|index| &line[index + 2..]))
+            .filter_map(|line| line.split_whitespace().next())
+            .map(|option| option.trim_end_matches(','))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            options,
+            vec![
+                "agent",
+                "continue",
+                "help",
+                "json",
+                "pr",
+                "project",
+                "repo",
+                "root",
+                "version",
+                "work-item",
+                "workspace",
+            ]
+        );
+    }
+
+    #[test]
+    fn localized_subcommands_are_sorted_alphabetically_in_help() {
+        let mut command = Cli::localized_command();
+        let mut output = Vec::new();
+        command.write_long_help(&mut output).expect("help output");
+        let help = String::from_utf8(output).expect("utf8 help");
+        let commands = help
+            .lines()
+            .skip_while(|line| line.trim() != "Commandes:")
+            .skip(1)
+            .take_while(|line| !line.trim().is_empty())
+            .filter_map(|line| line.split_whitespace().next())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            commands,
+            vec![
+                "ado",
+                "agent",
+                "auth",
+                "completion",
+                "config",
+                "db",
+                "doctor",
+                "guide",
+                "init",
+                "refresh",
+                "secret",
+                "task",
+                "tui",
+                "upgrade",
+                "version",
+            ]
+        );
     }
 }

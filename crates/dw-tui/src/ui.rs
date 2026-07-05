@@ -262,30 +262,31 @@ fn render_cockpit(frame: &mut Frame<'_>, area: Rect, app: &App) {
             .style(style)
         });
     frame.render_widget(
-        Table::new(
-            rows,
-            [
-                Constraint::Length(12),
-                Constraint::Min(28),
-                Constraint::Length(14),
-                Constraint::Length(22),
-                Constraint::Min(20),
-            ],
-        )
-        .header(
-            Row::new(["Section", "Subject", "Status", "Operation", "Context"]).style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
+        Table::new(rows, cockpit_table_constraints())
+            .header(
+                Row::new(["Section", "Subject", "Status", "Operation", "Context"]).style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            )
+            .block(
+                Block::default()
+                    .title("Cockpit · Enter runs the primary operation")
+                    .borders(Borders::ALL),
             ),
-        )
-        .block(
-            Block::default()
-                .title("Cockpit · Enter runs the primary operation")
-                .borders(Borders::ALL),
-        ),
         area,
     );
+}
+
+fn cockpit_table_constraints() -> [Constraint; 5] {
+    [
+        Constraint::Length(12),
+        Constraint::Min(28),
+        Constraint::Length(14),
+        Constraint::Length(22),
+        Constraint::Length(28),
+    ]
 }
 
 fn cockpit_color(severity: CockpitSeverity) -> Color {
@@ -536,44 +537,45 @@ fn render_pull_requests(frame: &mut Frame<'_>, area: Rect, app: &App) {
             .style(style)
         });
     frame.render_widget(
-        Table::new(
-            rows,
-            [
-                Constraint::Length(10),
-                Constraint::Length(18),
-                Constraint::Length(9),
-                Constraint::Length(9),
-                Constraint::Length(14),
-                Constraint::Length(9),
-                Constraint::Min(24),
-                Constraint::Min(24),
-            ],
-        )
-        .header(
-            Row::new([
-                "Project",
-                "Repository",
-                "PR",
-                "State",
-                "Work items",
-                "Workspace",
-                "Branch",
-                "Title",
-            ])
-            .style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
+        Table::new(rows, pull_request_table_constraints())
+            .header(
+                Row::new([
+                    "Project",
+                    "Repository",
+                    "PR",
+                    "State",
+                    "Work items",
+                    "Workspace",
+                    "Branch",
+                    "Title",
+                ])
+                .style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            )
+            .block(
+                Block::default()
+                    .title("Pull requests")
+                    .borders(Borders::ALL),
             ),
-        )
-        .block(
-            Block::default()
-                .title("Pull requests")
-                .borders(Borders::ALL),
-        ),
         chunks[0],
     );
     render_pull_request_actions(frame, chunks[1], app);
+}
+
+fn pull_request_table_constraints() -> [Constraint; 8] {
+    [
+        Constraint::Length(10),
+        Constraint::Length(18),
+        Constraint::Length(9),
+        Constraint::Length(9),
+        Constraint::Length(14),
+        Constraint::Length(9),
+        Constraint::Length(28),
+        Constraint::Min(30),
+    ]
 }
 
 fn render_pull_request_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -680,6 +682,19 @@ fn action_if_available(
     }
 }
 
+fn action_if_enabled(
+    enabled: bool,
+    label: &'static str,
+    key: &'static str,
+    intent: ActionIntent,
+) -> ActionButton {
+    if enabled {
+        ActionButton::new(label, key, intent)
+    } else {
+        ActionButton::disabled(label, key)
+    }
+}
+
 fn render_loading_panel(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -762,11 +777,7 @@ fn render_workspace_summary(frame: &mut Frame<'_>, area: Rect, app: &App) {
 fn render_workspaces(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(8),
-            Constraint::Length(7),
-            Constraint::Min(7),
-        ])
+        .constraints([Constraint::Min(10), Constraint::Length(8)])
         .split(area);
     let workspace_visible_height = table_visible_height(chunks[0]);
     let workspace_offset = scroll_offset(app.selected_workspace, workspace_visible_height);
@@ -793,34 +804,28 @@ fn render_workspaces(frame: &mut Frame<'_>, area: Rect, app: &App) {
             .style(style)
         });
     frame.render_widget(
-        Table::new(
-            rows,
-            [
-                Constraint::Length(12),
-                Constraint::Length(22),
-                Constraint::Length(10),
-                Constraint::Length(24),
-                Constraint::Min(16),
-            ],
-        )
-        .header(
-            Row::new(["Project", "Work items", "Type", "Slug", "Repositories"]).style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        )
-        .block(
-            Block::default()
-                .title(
-                    "Workspaces  Enter/o open  p check  s sync  l latest  v handoff  c commit  f/F finish  t/x remove",
-                )
-                .borders(Borders::ALL),
-        ),
+        Table::new(rows, workspace_table_constraints())
+            .header(
+                Row::new(["Project", "Work items", "Type", "Slug", "Repositories"]).style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            )
+            .block(Block::default().title("Workspaces").borders(Borders::ALL)),
         chunks[0],
     );
     render_workspace_actions(frame, chunks[1], app);
-    render_actions(frame, chunks[2], app);
+}
+
+fn workspace_table_constraints() -> [Constraint; 5] {
+    [
+        Constraint::Length(12),
+        Constraint::Min(32),
+        Constraint::Length(10),
+        Constraint::Length(24),
+        Constraint::Length(20),
+    ]
 }
 
 fn render_workspace_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -844,6 +849,22 @@ fn selected_workspace_target_lines(app: &App) -> Vec<Line<'static>> {
                 "{} · {} · {}",
                 workspace.project, workspace.display_work_items, workspace.slug
             ),
+        ),
+        target_line(
+            "Path",
+            if workspace.path.is_empty() {
+                "-".into()
+            } else {
+                workspace.path.clone()
+            },
+        ),
+        target_line(
+            "Branch",
+            if workspace.branch_name.is_empty() {
+                "-".into()
+            } else {
+                workspace.branch_name.clone()
+            },
         ),
         target_line(
             "Repos",
@@ -1333,6 +1354,23 @@ fn selected_ado_target_lines(app: &App) -> Vec<Line<'static>> {
 }
 
 fn ado_action_buttons(app: &App) -> Vec<ActionButton> {
+    let mut buttons = vec![
+        action_if_enabled(
+            app.snapshot.assigned.len() > 1,
+            "Project prev",
+            "K",
+            ActionIntent::Review,
+        ),
+        action_if_enabled(
+            app.snapshot.assigned.len() > 1,
+            "Project next",
+            "J",
+            ActionIntent::Review,
+        ),
+        ActionButton::new("Item up", "k", ActionIntent::Review),
+        ActionButton::new("Item down", "j", ActionIntent::Review),
+    ];
+
     if app
         .snapshot
         .assigned
@@ -1340,15 +1378,16 @@ fn ado_action_buttons(app: &App) -> Vec<ActionButton> {
         .and_then(|project| project.items.get(app.selected_ado_item))
         .is_none()
     {
-        return vec![
+        buttons.extend([
             ActionButton::disabled("Prepare", "n"),
             ActionButton::disabled("Create", "x"),
             ActionButton::disabled("Move state", "e"),
             ActionButton::disabled("Context", "c"),
-        ];
+        ]);
+        return buttons;
     }
 
-    vec![
+    buttons.extend([
         action_if_available(
             selected_ado_action_preview(app, AdoItemAction::StartPreview),
             "Prepare",
@@ -1387,7 +1426,8 @@ fn ado_action_buttons(app: &App) -> Vec<ActionButton> {
             ActionIntent::Review,
         ),
         ActionButton::new("Open ADO", "u", ActionIntent::External),
-    ]
+    ]);
+    buttons
 }
 
 fn selected_ado_action_preview(app: &App, action: AdoItemAction) -> Option<String> {
@@ -2272,6 +2312,13 @@ mod tests {
     }
 
     #[test]
+    fn title_like_table_columns_take_remaining_width() {
+        assert_eq!(cockpit_table_constraints()[1], Constraint::Min(28));
+        assert_eq!(pull_request_table_constraints()[7], Constraint::Min(30));
+        assert_eq!(workspace_table_constraints()[1], Constraint::Min(32));
+    }
+
+    #[test]
     fn shortcut_line_renders_gitui_like_action_key_chips() {
         let line = styled_shortcut_line("cockpit down [j]    decision [Enter] | quit [q]");
         let text = line
@@ -2495,6 +2542,7 @@ mod tests {
             work_item_id: "42".into(),
             display_work_items: "#42 Demo".into(),
             task_id: None,
+            all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: slug.into(),
             branch_name: format!("feature/42-{slug}"),

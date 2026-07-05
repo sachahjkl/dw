@@ -91,6 +91,8 @@ pub struct TaskListItem {
     pub display_work_items: String,
     #[serde(rename = "taskId")]
     pub task_id: Option<String>,
+    #[serde(rename = "allKnownWorkItemIds")]
+    pub all_known_work_item_ids: Vec<String>,
     #[serde(rename = "type")]
     pub kind: String,
     pub slug: String,
@@ -441,6 +443,7 @@ pub fn task_list(root: &str, project: Option<&str>, work_item: Option<&str>) -> 
             work_item_id: workspace.manifest.display_work_item_ids(),
             display_work_items: workspace.manifest.display_work_items(),
             task_id: workspace.manifest.task_id.clone(),
+            all_known_work_item_ids: workspace.manifest.all_known_work_item_ids(),
             kind: workspace.manifest.kind.clone(),
             slug: workspace.manifest.slug.clone(),
             branch_name: workspace.manifest.branch_name.clone(),

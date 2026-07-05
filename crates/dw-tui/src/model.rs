@@ -741,7 +741,8 @@ impl TuiSnapshot {
     ) -> Option<&TaskListItem> {
         self.workspaces.iter().find(|workspace| {
             workspace.project == project
-                && dw_workspace::parse_work_item_ids(&workspace.work_item_id)
+                && workspace
+                    .all_known_work_item_ids
                     .iter()
                     .any(|id| id.eq_ignore_ascii_case(work_item_id))
         })
@@ -1018,6 +1019,9 @@ fn pull_request_targets(
 ) -> Vec<PullRequestTarget> {
     let mut targets = Vec::new();
     for choice in choices {
+        if is_aggregate_project_key(&choice.key) {
+            continue;
+        }
         let project_config = resolve_project(projects, &choice.key);
         let options = dw_ado_commands::resolve_options(projects, workflow, &choice.key).ok();
         let Some(project_config) = project_config.as_ref() else {
@@ -1042,6 +1046,10 @@ fn pull_request_targets(
         }
     }
     targets
+}
+
+fn is_aggregate_project_key(key: &str) -> bool {
+    key.trim().to_ascii_lowercase().starts_with("cross-")
 }
 
 async fn load_pull_request_targets(
@@ -1285,10 +1293,9 @@ pub fn workspace_actions_for_tui(workspace: &TaskListItem) -> Vec<TuiAction> {
 
 pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> TuiAction {
     let workspace_arg = workspace.path.clone();
-    let label_context = format!("{} {}", workspace.project, workspace.display_work_items);
     match action {
         WorkspaceAction::Open => TuiAction {
-            label: format!("Open · {label_context}"),
+            label: "Open workspace".into(),
             request: TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
                 workspace: Some(workspace_arg),
                 root: None,
@@ -1304,7 +1311,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::OpensExternal,
         },
         WorkspaceAction::Preflight => TuiAction {
-            label: format!("Check · {label_context}"),
+            label: "Check workspace".into(),
             request: TuiActionRequest::TaskPreflight(dw_task::validate::PreflightArgs {
                 workspace: Some(workspace_arg),
                 root: None,
@@ -1318,7 +1325,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::Safe,
         },
         WorkspaceAction::Sync => TuiAction {
-            label: format!("Sync · {label_context}"),
+            label: "Sync ADO metadata".into(),
             request: TuiActionRequest::TaskSync(dw_task::lifecycle::SyncArgs {
                 workspace: Some(workspace_arg),
                 root: None,
@@ -1331,7 +1338,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::Safe,
         },
         WorkspaceAction::RepoLatest => TuiAction {
-            label: format!("Update repos · {label_context}"),
+            label: "Update repositories".into(),
             request: TuiActionRequest::TaskRepoLatest(dw_task::repo::RepoLatestArgs {
                 workspace: Some(workspace_arg),
                 r#continue: false,
@@ -1342,7 +1349,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::DryRun,
         },
         WorkspaceAction::HandoffValidate => TuiAction {
-            label: format!("Validate handoff · {label_context}"),
+            label: "Validate handoff".into(),
             request: TuiActionRequest::TaskHandoffValidate(
                 dw_task::validate::HandoffValidateArgs {
                     workspace: Some(workspace_arg),
@@ -1357,7 +1364,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::Safe,
         },
         WorkspaceAction::CommitPreview => TuiAction {
-            label: format!("Preview commit · {label_context}"),
+            label: "Preview commit".into(),
             request: TuiActionRequest::TaskCommit(dw_task::repo::CommitArgs {
                 workspace: Some(workspace_arg),
                 r#continue: false,
@@ -1369,7 +1376,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::DryRun,
         },
         WorkspaceAction::FinishPreview => TuiAction {
-            label: format!("Preview finish · {label_context}"),
+            label: "Preview finish".into(),
             request: TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
                 workspace: Some(workspace_arg),
                 r#continue: false,
@@ -1386,7 +1393,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::DryRun,
         },
         WorkspaceAction::FinishExecute => TuiAction {
-            label: format!("Finish workspace · {label_context}"),
+            label: "Finish workspace".into(),
             request: TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
                 workspace: Some(workspace_arg.clone()),
                 r#continue: false,
@@ -1403,7 +1410,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::Destructive,
         },
         WorkspaceAction::TeardownPreview => TuiAction {
-            label: format!("Preview removal · {label_context}"),
+            label: "Preview removal".into(),
             request: TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
                 workspace: Some(workspace_arg.clone()),
                 root: None,
@@ -1418,7 +1425,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::DryRun,
         },
         WorkspaceAction::TeardownExecute => TuiAction {
-            label: format!("Remove workspace · {label_context}"),
+            label: "Remove workspace".into(),
             request: TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
                 workspace: Some(workspace_arg),
                 root: None,
@@ -1587,6 +1594,7 @@ mod tests {
             work_item_id: "42".into(),
             display_work_items: "#42 Demo".into(),
             task_id: None,
+            all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: "demo".into(),
             branch_name: "feature/42-demo".into(),
@@ -1849,6 +1857,55 @@ mod tests {
     }
 
     #[test]
+    fn pull_request_targets_skip_aggregate_cross_projects() {
+        let projects: ProjectsConfig = serde_json::from_str(
+            r#"{
+  "projects": {
+    "ha": {
+      "displayName": "HA",
+      "azureDevOps": { "organization": "https://dev.azure.com/acme", "project": "HA" },
+      "repositories": {
+        "front": {
+          "url": "",
+          "defaultBranch": "develop",
+          "azureDevOpsRepository": "HA Front"
+        }
+      }
+    },
+    "cross-ha-he": {
+      "displayName": "HA + HE",
+      "azureDevOps": { "organization": "https://dev.azure.com/acme", "project": "HA" },
+      "repositories": {
+        "front": {
+          "url": "",
+          "defaultBranch": "develop",
+          "azureDevOpsRepository": "HA Front"
+        },
+        "he": {
+          "url": "",
+          "defaultBranch": "develop",
+          "azureDevOpsRepository": "HE"
+        }
+      }
+    }
+  }
+}"#,
+        )
+        .expect("projects config");
+        let choices = project_choices(&projects);
+
+        let targets = pull_request_targets(&projects, &WorkflowConfig::default(), choices);
+
+        assert_eq!(
+            targets
+                .iter()
+                .map(|target| format!("{}:{}", target.project, target.repository))
+                .collect::<Vec<_>>(),
+            ["ha:front"]
+        );
+    }
+
+    #[test]
     fn pull_request_error_keeps_action_context() {
         let item = pull_request_error(
             PullRequestTarget {
@@ -1874,6 +1931,7 @@ mod tests {
             work_item_id: "42".into(),
             display_work_items: "#42 Demo".into(),
             task_id: None,
+            all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: "demo".into(),
             branch_name: "feature/42-demo".into(),

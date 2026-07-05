@@ -641,6 +641,8 @@ impl App {
         if key.code == KeyCode::Enter {
             if self.view == View::Dashboard {
                 self.request_or_run_selected_cockpit_item(terminal)?;
+            } else if self.view == View::Workspaces {
+                self.request_or_run_workspace_action(WorkspaceAction::Open, terminal)?;
             } else {
                 self.request_or_run_selected_action(terminal)?;
             }
@@ -665,6 +667,12 @@ impl App {
             }
             KeyCode::Down | KeyCode::Char('j') if self.view == View::PullRequests => {
                 self.move_pull_request_down()
+            }
+            KeyCode::Up | KeyCode::Char('k') if self.view == View::Workspaces => {
+                self.move_workspace_up()
+            }
+            KeyCode::Down | KeyCode::Char('j') if self.view == View::Workspaces => {
+                self.move_workspace_down()
             }
             KeyCode::Up | KeyCode::Char('k') if self.view == View::Db => self.move_database_up(),
             KeyCode::Down | KeyCode::Char('j') if self.view == View::Db => {
@@ -2323,6 +2331,28 @@ mod tests {
     }
 
     #[test]
+    fn workspace_view_jk_moves_workspace_selection_not_hidden_actions() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.snapshot.workspaces = vec![
+            workspace("/tmp/ws-one", "one"),
+            workspace("/tmp/ws-two", "two"),
+        ];
+        app.set_view(View::Workspaces);
+
+        assert!(
+            app.handle_view_navigation_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE))
+        );
+        assert_eq!(app.selected_workspace, 1);
+        assert_eq!(app.selected_action, 0);
+
+        assert!(
+            app.handle_view_navigation_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE))
+        );
+        assert_eq!(app.selected_workspace, 0);
+        assert_eq!(app.selected_action, 0);
+    }
+
+    #[test]
     fn workspace_view_hides_global_task_catalog_actions() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.workspaces = vec![workspace("/tmp/ws-one", "one")];
@@ -3233,6 +3263,7 @@ mod tests {
             work_item_id: "42".into(),
             display_work_items: "#42 Demo".into(),
             task_id: None,
+            all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: slug.into(),
             branch_name: format!("feature/42-{slug}"),

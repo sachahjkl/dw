@@ -1342,6 +1342,7 @@ mod tests {
             work_item_id: "42".into(),
             display_work_items: "#42 Demo".into(),
             task_id: None,
+            all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: "demo".into(),
             branch_name: "feature/42-demo".into(),

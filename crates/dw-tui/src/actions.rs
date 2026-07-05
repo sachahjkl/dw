@@ -625,6 +625,38 @@ mod tests {
     }
 
     #[test]
+    fn ado_existing_workspace_matches_child_task_ids() {
+        let mut snapshot = snapshot();
+        let mut workspace = workspace("/tmp/ws-42", "demo");
+        workspace.task_id = Some("456".into());
+        workspace.all_known_work_item_ids = vec!["42".into(), "456".into()];
+        snapshot.workspaces = vec![workspace];
+        snapshot.assigned = vec![AdoAssignedProject {
+            key: "ha".into(),
+            label: "Hommage Agence".into(),
+            items: vec![AdoAssignedItem {
+                id: "456".into(),
+                kind: "Task".into(),
+                state: "Active".into(),
+                title: "Child task".into(),
+                url: None,
+            }],
+            error: None,
+        }];
+
+        assert!(selected_ado_action(&snapshot, 0, 0, AdoItemAction::StartExecute).is_none());
+        let action =
+            selected_ado_action(&snapshot, 0, 0, AdoItemAction::OpenAgent).expect("open action");
+
+        match &action.request {
+            TuiActionRequest::AgentOpen(args) => {
+                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws-42"));
+            }
+            _ => panic!("expected agent open request"),
+        }
+    }
+
+    #[test]
     fn ado_set_start_state_uses_workflow_state_and_bypasses_cli_confirmation() {
         let mut snapshot = snapshot();
         snapshot.assigned = vec![AdoAssignedProject {
@@ -945,6 +977,7 @@ mod tests {
             work_item_id: "42".into(),
             display_work_items: "#42 Demo".into(),
             task_id: None,
+            all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: slug.into(),
             branch_name: format!("feature/42-{slug}"),

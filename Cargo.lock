@@ -937,7 +937,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dw-ado"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "azure_core",
@@ -961,7 +961,7 @@ dependencies = [
 
 [[package]]
 name = "dw-ado-commands"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dw-ado",
@@ -976,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "dw-agent"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dw-config",
@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "dw-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1016,7 +1016,7 @@ dependencies = [
 
 [[package]]
 name = "dw-cli-adapter"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1041,7 +1041,7 @@ dependencies = [
 
 [[package]]
 name = "dw-completion"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1055,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "dw-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "directories",
@@ -1068,14 +1068,14 @@ dependencies = [
 
 [[package]]
 name = "dw-contracts"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "dw-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "serde",
@@ -1084,7 +1084,7 @@ dependencies = [
 
 [[package]]
 name = "dw-db"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dw-config",
@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "dw-doctor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dw-agent",
@@ -1111,7 +1111,7 @@ dependencies = [
 
 [[package]]
 name = "dw-git"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "deunicode",
@@ -1120,11 +1120,11 @@ dependencies = [
 
 [[package]]
 name = "dw-process"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "dw-secret"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dw-contracts",
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "dw-task"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dw-ado",
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "dw-tui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -1179,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "dw-tui-adapter"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dw-ado",
  "dw-ado-commands",
@@ -1201,14 +1201,14 @@ dependencies = [
 
 [[package]]
 name = "dw-ui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anstyle",
 ]
 
 [[package]]
 name = "dw-upgrade"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dw-config",
@@ -1223,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "dw-workspace"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "dw-ado",

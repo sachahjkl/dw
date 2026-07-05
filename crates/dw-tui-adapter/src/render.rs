@@ -1957,6 +1957,7 @@ mod tests {
                 work_item_id: "42".into(),
                 display_work_items: "#42 Titre [Actif]".into(),
                 task_id: None,
+                all_known_work_item_ids: vec!["42".into()],
                 kind: "feat".into(),
                 slug: "titre".into(),
                 branch_name: "feature/42-titre".into(),
