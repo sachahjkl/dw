@@ -16,20 +16,20 @@ const MAX_DB_CELL_WIDTH: usize = 48;
 pub fn auth_login_lines(report: &AuthLoginReport) -> Vec<String> {
     if report.uses_environment_pat {
         return vec![
-            "Connexion ADO".into(),
-            "Mode      : PAT via environnement".into(),
-            "À faire   : définir DW_ADO_TOKEN ou AZURE_DEVOPS_EXT_PAT.".into(),
-            "Sécurité : aucun secret n'est saisi ni stocké par cette action.".into(),
+            "ADO connection".into(),
+            "Mode      : PAT from environment".into(),
+            "Next      : set DW_ADO_TOKEN or AZURE_DEVOPS_EXT_PAT.".into(),
+            "Security  : no secret is read or stored by this action.".into(),
         ];
     }
 
     vec![
-        "Connexion ADO".into(),
-        "Statut    : connecté".into(),
+        "ADO connection".into(),
+        "Status    : connected".into(),
         format!("Mode      : {}", auth_login_mode_label(report.mode)),
         format!(
             "Source    : {}",
-            report.source.as_deref().unwrap_or("source inconnue")
+            report.source.as_deref().unwrap_or("unknown source")
         ),
         expiration_line(report.expires_on.as_deref()),
     ]
@@ -38,43 +38,43 @@ pub fn auth_login_lines(report: &AuthLoginReport) -> Vec<String> {
 pub fn auth_status_lines(report: &AuthStatusReport) -> Vec<String> {
     if report.connected {
         vec![
-            "Connexion ADO".into(),
-            "Statut    : connecté".into(),
+            "ADO connection".into(),
+            "Status    : connected".into(),
             format!(
                 "Source    : {}",
-                report.source.as_deref().unwrap_or("source inconnue")
+                report.source.as_deref().unwrap_or("unknown source")
             ),
             expiration_line(report.expires_on.as_deref()),
         ]
     } else {
         vec![
-            "Connexion ADO".into(),
-            "Statut    : non connecté".into(),
-            "À faire   : lancer l'authentification ADO ou définir DW_ADO_TOKEN.".into(),
+            "ADO connection".into(),
+            "Status    : not connected".into(),
+            "Next      : start ADO authentication or set DW_ADO_TOKEN.".into(),
         ]
     }
 }
 
 pub fn auth_logout_lines(report: &AuthLogoutReport) -> Vec<String> {
     vec![
-        "Connexion ADO".into(),
+        "ADO connection".into(),
         format!(
             "Sessions  : {}",
             if report.removed_local_session {
-                "session locale supprimée"
+                "local session removed"
             } else {
-                "aucune session locale"
+                "no local session"
             }
         ),
-        "PAT       : les variables DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT restent gérées par l'environnement.".into(),
+        "PAT       : DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT remain managed by the environment.".into(),
     ]
 }
 
 fn auth_login_mode_label(mode: AuthLoginMode) -> &'static str {
     match mode {
-        AuthLoginMode::Browser => "navigateur",
-        AuthLoginMode::DeviceCode => "code appareil",
-        AuthLoginMode::EnvironmentPat => "PAT environnement",
+        AuthLoginMode::Browser => "browser",
+        AuthLoginMode::DeviceCode => "device code",
+        AuthLoginMode::EnvironmentPat => "environment PAT",
     }
 }
 
@@ -82,10 +82,10 @@ pub fn config_show_lines(report: &ConfigShow, theme: &TerminalTheme) -> Vec<Stri
     vec![
         theme.command("Configuration DevWorkflow"),
         format!("Root      : {}", theme.path(&report.root)),
-        format!("Couleur   : {}", theme.bold(&report.color)),
-        format!("Réglages  : {}", theme.path(&report.settings_path)),
+        format!("Color     : {}", theme.bold(&report.color)),
+        format!("Settings  : {}", theme.path(&report.settings_path)),
         String::new(),
-        "Fichiers".into(),
+        "Files".into(),
         config_file_line(
             theme,
             "projects",
@@ -111,31 +111,31 @@ pub fn config_doctor_lines(report: &ConfigDoctorReport, theme: &TerminalTheme) -
     let mut lines = vec![
         theme.command("Diagnostic configuration"),
         format!(
-            "Statut    : {}",
+            "Status    : {}",
             if report.passed {
-                theme.success("valide")
+                theme.success("valid")
             } else {
-                theme.warning("à corriger")
+                theme.warning("needs fixes")
             }
         ),
         format!("Root      : {}", theme.path(&report.root)),
         String::new(),
-        "Vérifications".into(),
+        "Checks".into(),
     ];
     for check in &report.checks {
         lines.push(config_check_line(theme, check));
         if let Some(message) = &check.message {
-            lines.push(format!("  Détail  : {message}"));
+            lines.push(format!("  Detail  : {message}"));
         }
     }
     lines.push(String::new());
     lines.push(if report.passed {
-        format!("Résultat  : {}", theme.success("Configuration valide."))
+        format!("Result    : {}", theme.success("Configuration is valid."))
     } else {
         format!(
-            "Résultat  : {}",
+            "Result    : {}",
             theme.warning(
-                "Configuration incomplète. Corriger les points signalés puis relancer le diagnostic."
+                "Configuration is incomplete. Fix reported points, then run diagnostics again."
             )
         )
     });
@@ -145,41 +145,40 @@ pub fn config_doctor_lines(report: &ConfigDoctorReport, theme: &TerminalTheme) -
 pub fn init_report_lines(report: &InitReport) -> Vec<String> {
     if report.dry_run {
         let mut lines = vec![
-            format!("Prévisualisation init DevWorkflow: {}", report.root),
-            format!("Profil: {}", report.profile),
+            format!("DevWorkflow init preview: {}", report.root),
+            format!("Profile: {}", report.profile),
         ];
         lines.extend(
             report
                 .planned_paths
                 .iter()
-                .map(|path| format!("  + créer/mettre à jour: {path}")),
+                .map(|path| format!("  + create/update: {path}")),
         );
         lines.push(if report.no_save {
-            "  - settings utilisateur inchangés.".into()
+            "  - user settings unchanged.".into()
         } else {
-            format!("  + enregistrer le root utilisateur: {}", report.root)
+            format!("  + save user root: {}", report.root)
         });
         return lines;
     }
 
     let mut lines = vec![
-        format!("Root DevWorkflow initialisé: {}", report.root),
-        format!("Profil: {}", report.profile),
+        format!("DevWorkflow root initialized: {}", report.root),
+        format!("Profile: {}", report.profile),
     ];
     if report.no_save {
-        lines.push("Settings utilisateur non modifiés.".into());
+        lines.push("User settings unchanged.".into());
     }
-    lines.push("Prochaine étape conseillée: diagnostic global".into());
+    lines.push("Suggested next step: global diagnostics".into());
     lines
 }
 
 pub fn refresh_report_lines(report: &RefreshReport) -> Vec<String> {
     vec![
-        format!("Root rafraîchi: {}", report.root),
-        format!("Profil: {}", report.profile),
-        "Schémas et contextes agents régénérés.".into(),
-        "Fichiers utilisateurs préservés: projects.json, workflow.json, databases.json, plan.md."
-            .into(),
+        format!("Root refreshed: {}", report.root),
+        format!("Profile: {}", report.profile),
+        "Schemas and agent contexts regenerated.".into(),
+        "User files preserved: projects.json, workflow.json, databases.json, plan.md.".into(),
     ]
 }
 
@@ -187,9 +186,9 @@ pub fn agent_doctor_lines(report: &AgentDoctorReport, theme: &TerminalTheme) -> 
     let available_count = report.available_count();
     let total_count = report.total_count();
     let mut lines = vec![
-        theme.command("Diagnostic agents"),
+        theme.command("Agent doctor"),
         format!(
-            "{} {available_count}/{total_count} agents disponibles",
+            "{} {available_count}/{total_count} agents available",
             if available_count == total_count {
                 theme.success("✓")
             } else {
@@ -206,26 +205,26 @@ pub fn agent_doctor_lines(report: &AgentDoctorReport, theme: &TerminalTheme) -> 
 
 pub fn agent_config_lines(root: &str, agent: &str, theme: &TerminalTheme) -> Vec<String> {
     vec![
-        theme.command("Config agent"),
-        format!("Agent par défaut: {}", theme.bold(agent)),
+        theme.command("Agent config"),
+        format!("Default agent: {}", theme.bold(agent)),
         format!("Root DevWorkflow: {}", theme.path(root)),
     ]
 }
 
 pub fn agent_config_updated_lines(root: &str, agent: &str, theme: &TerminalTheme) -> Vec<String> {
     vec![
-        theme.success("✓ Config agent mise à jour"),
-        format!("Agent par défaut: {}", theme.bold(agent)),
+        theme.success("✓ Agent config updated"),
+        format!("Default agent: {}", theme.bold(agent)),
         format!("Root DevWorkflow: {}", theme.path(root)),
     ]
 }
 
 pub fn ado_prs_lines(report: &dw_ado_commands::commands::prs::PrsReport) -> Vec<String> {
     if report.items.is_empty() {
-        return vec![format!("Aucune PR active pour {}.", report.project)];
+        return vec![format!("No active PR for {}.", report.project)];
     }
 
-    let mut lines = vec![format!("PR actives · {}", report.project)];
+    let mut lines = vec![format!("Active PRs · {}", report.project)];
     for item in &report.items {
         let work_items = if item.work_item_ids.is_empty() {
             "-".into()
@@ -273,8 +272,8 @@ pub fn ado_assigned_lines(
     }
 
     let mut lines = vec![
-        theme.success("ADO assignés"),
-        format!("Éléments  : {}", report.items.len()),
+        theme.success("ADO assigned"),
+        format!("Items     : {}", report.items.len()),
     ];
     for item in &report.items {
         lines.push(String::new());
@@ -292,9 +291,9 @@ pub fn ado_set_state_execution_lines(
     report: &dw_ado_commands::commands::set_state::SetStateExecutionReport,
 ) -> Vec<String> {
     let mut lines = vec![
-        "Mise à jour ADO".into(),
-        format!("Projet    : {}", report.plan.project),
-        format!("État      : {}", report.plan.state),
+        "ADO update".into(),
+        format!("Project   : {}", report.plan.project),
+        format!("State     : {}", report.plan.state),
         format!(
             "Work items: {}",
             report
@@ -305,14 +304,16 @@ pub fn ado_set_state_execution_lines(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        dw_ado_commands::commands::set_state::set_state_done_line(
+        format!(
+            "{} work item{} moved to `{}`.",
             report.updated.len(),
-            &report.plan.state,
+            if report.updated.len() == 1 { "" } else { "s" },
+            report.plan.state
         ),
     ];
     if !report.events.is_empty() {
         lines.push(String::new());
-        lines.push("Événements".into());
+        lines.push("Events".into());
         lines.extend(report.events.iter().map(|event| format!("- {event}")));
     }
     lines
@@ -336,19 +337,19 @@ pub fn ado_work_item_lines(
         ));
         lines.push(format!(
             "Type      : {}",
-            item.kind.as_deref().unwrap_or("type inconnu")
+            item.kind.as_deref().unwrap_or("unknown type")
         ));
         lines.push(format!(
-            "État      : {}",
-            item.state.as_deref().unwrap_or("état inconnu")
+            "State     : {}",
+            item.state.as_deref().unwrap_or("unknown state")
         ));
         lines.push(format!(
-            "Titre     : {}",
-            item.title.as_deref().unwrap_or("(sans titre)")
+            "Title     : {}",
+            item.title.as_deref().unwrap_or("(untitled)")
         ));
         lines.push(String::new());
         lines.push(format!(
-            "Contexte  : action disponible pour #{} ({})",
+            "Context   : action available for #{} ({})",
             item.id, report.project
         ));
     }
@@ -370,16 +371,16 @@ pub fn ado_context_lines(
         lines.push("ADO context".into());
         lines.extend(ado_context_header(item, theme));
         lines.push(format!(
-            "Assigné   : {}",
+            "Assigned  : {}",
             item.work_item
                 .assigned_to
                 .as_deref()
-                .unwrap_or("non assigné")
+                .unwrap_or("unassigned")
         ));
         if let Some(metadata) = ado_context_metadata(item)
             && !metadata.is_empty()
         {
-            lines.push(format!("Métadonnées: {metadata}"));
+            lines.push(format!("Metadata : {metadata}"));
         }
 
         if let Some(description) = &item.content.description
@@ -394,17 +395,14 @@ pub fn ado_context_lines(
             && !acceptance_criteria.trim().is_empty()
         {
             lines.push(String::new());
-            lines.push(theme.bold("Critères d'acceptation"));
+            lines.push(theme.bold("Acceptance criteria"));
             lines.push(acceptance_criteria.trim().into());
         }
 
         if !item.attachments.items.is_empty() {
             lines.push(String::new());
-            lines.push(theme.bold(&format!(
-                "Pièces jointes ({})",
-                item.attachments.items.len()
-            )));
-            lines.push(format!("Dossier   : {}", item.attachments.directory_hint));
+            lines.push(theme.bold(&format!("Attachments ({})", item.attachments.items.len())));
+            lines.push(format!("Folder    : {}", item.attachments.directory_hint));
             for attachment in &item.attachments.items {
                 lines.push(format!(
                     "- {}",
@@ -412,7 +410,7 @@ pub fn ado_context_lines(
                         .name
                         .as_deref()
                         .or(attachment.url.as_deref())
-                        .unwrap_or("pièce jointe sans nom")
+                        .unwrap_or("unnamed attachment")
                 ));
             }
         }
@@ -427,11 +425,11 @@ pub fn ado_context_lines(
 
         if report.comments != 0 && !item.comments.is_empty() {
             lines.push(String::new());
-            lines.push(theme.bold("Commentaires"));
+            lines.push(theme.bold("Comments"));
             for comment in item.comments.iter().take(report.comments.max(0) as usize) {
                 lines.push(format!(
                     "- {}: {}",
-                    comment.author.as_deref().unwrap_or("inconnu"),
+                    comment.author.as_deref().unwrap_or("unknown"),
                     comment.text.as_deref().unwrap_or("").trim()
                 ));
             }
@@ -439,7 +437,7 @@ pub fn ado_context_lines(
 
         lines.push(String::new());
         lines.push(format!(
-            "Contexte IA: action disponible pour #{} ({})",
+            "AI context: action available for #{} ({})",
             item.work_item.id, report.project
         ));
     }
@@ -452,16 +450,16 @@ pub fn ado_changelog_lines(
 ) -> Vec<String> {
     if report.source_empty {
         return vec![theme.warning(if report.from_git {
-            "Aucun work item détecté dans les messages de commit de la plage git."
+            "No work item detected in commit messages from the git range."
         } else {
-            "Aucun work item détecté pour les pull requests données."
+            "No work item detected for the given pull requests."
         })];
     }
     if report.ids_only {
         return vec![report.work_item_ids.join(" ")];
     }
     if report.resolved_empty {
-        return vec![theme.warning("Aucun work item résolu dans Azure DevOps.")];
+        return vec![theme.warning("No work item resolved in Azure DevOps.")];
     }
     let format = changelog_format_from_name(&report.format);
     let document = if report.group_by_parent {
@@ -494,10 +492,10 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     match report {
         dw_upgrade::UpgradeReport::Check(report) => {
             let mut lines = vec![
-                "Mise à jour".into(),
+                "Upgrade".into(),
                 format!("Release  : {}", report.release_tag),
                 format!("Version  : {}+{}", report.version, report.commit),
-                format!("Artefacts : {}", report.assets.len()),
+                format!("Artifacts: {}", report.assets.len()),
             ];
             lines.extend(
                 report.assets.iter().map(|asset| {
@@ -508,15 +506,15 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
         }
         dw_upgrade::UpgradeReport::Installed(report) => {
             let status = if report.deferred_windows_replacement {
-                "remplacement programmé"
+                "replacement scheduled"
             } else {
-                "terminé"
+                "done"
             };
             vec![
-                "Mise à jour".into(),
-                format!("Statut   : {status}"),
+                "Upgrade".into(),
+                format!("Status   : {status}"),
                 format!("Version  : {}+{}", report.version, report.commit),
-                format!("Binaire  : {}", report.executable_path),
+                format!("Binary   : {}", report.executable_path),
             ]
         }
     }
@@ -526,25 +524,25 @@ pub fn task_status_lines(report: &TaskStatusReport) -> Vec<String> {
     let mut lines = vec![
         "Workspaces task".into(),
         format!("Root      : {}", report.root),
-        format!("Détectés  : {}", report.items.len()),
+        format!("Detected  : {}", report.items.len()),
     ];
 
     if report.items.is_empty() {
-        lines.push("Aucun workspace task trouvé.".into());
+        lines.push("No task workspace found.".into());
         return lines;
     }
 
-    lines.push("Détails".into());
+    lines.push("Details".into());
     for item in &report.items {
         lines.push(format!(
             "- {} {} {}",
             item.project, item.kind, item.display_work_items
         ));
-        lines.push(format!("  Branche     : {}", item.branch_name));
+        lines.push(format!("  Branch      : {}", item.branch_name));
         if !item.repositories.is_empty() {
             lines.push(format!("  Repositories: {}", item.repositories.join(", ")));
         }
-        lines.push(format!("  Chemin      : {}", item.path));
+        lines.push(format!("  Path        : {}", item.path));
     }
     lines
 }
@@ -552,7 +550,7 @@ pub fn task_status_lines(report: &TaskStatusReport) -> Vec<String> {
 pub fn task_list_lines(report: &TaskListReport) -> Vec<String> {
     let mut lines = vec![
         format!("Workspaces task: {}", report.items.len()),
-        "Projet  Créé        Type   Work items".into(),
+        "Project Created     Type   Work items".into(),
     ];
 
     for item in &report.items {
@@ -563,11 +561,11 @@ pub fn task_list_lines(report: &TaskListReport) -> Vec<String> {
             item.kind,
             item.display_work_items
         ));
-        lines.push(format!("  Branche: {}", item.branch_name));
+        lines.push(format!("  Branch: {}", item.branch_name));
         if !item.repositories.is_empty() {
             lines.push(format!("  Repositories: {}", item.repositories.join(", ")));
         }
-        lines.push(format!("  Chemin: {}", item.path));
+        lines.push(format!("  Path: {}", item.path));
     }
 
     lines
@@ -575,10 +573,10 @@ pub fn task_list_lines(report: &TaskListReport) -> Vec<String> {
 
 pub fn task_current_lines(item: &TaskCurrentItem) -> Vec<String> {
     let mut lines = vec![
-        "Workspace courant".into(),
+        "Current workspace".into(),
         format!("Workspace : {}", item.workspace),
-        format!("Projet    : {}", item.project),
-        format!("Branche   : {}", item.branch),
+        format!("Project   : {}", item.project),
+        format!("Branch    : {}", item.branch),
         format!(
             "Work items: {}",
             format_current_work_items(&item.work_items)
@@ -586,7 +584,7 @@ pub fn task_current_lines(item: &TaskCurrentItem) -> Vec<String> {
     ];
 
     if !item.child_tasks.is_empty() || !item.child_task_ids.is_empty() {
-        lines.push(format!("Tâches enfants: {}", format_child_tasks(item)));
+        lines.push(format!("Child tasks: {}", format_child_tasks(item)));
     }
 
     lines.push(format!("Repositories: {}", item.repositories.join(", ")));
@@ -595,13 +593,13 @@ pub fn task_current_lines(item: &TaskCurrentItem) -> Vec<String> {
 
 pub fn task_preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     let mut lines = vec![
-        "Préflight task".into(),
+        "Task preflight".into(),
         format!(
-            "Statut    : {}",
+            "Status    : {}",
             validation_status_label(!report.has_blocking_issues)
         ),
         format!("Workspace : {}", report.workspace),
-        format!("Projet    : {}", report.project),
+        format!("Project   : {}", report.project),
         format!(
             "Work items: {}",
             report
@@ -615,7 +613,7 @@ pub fn task_preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     ];
 
     if report.issues.is_empty() {
-        lines.push("✓ Aucun avertissement ni blocage détecté.".into());
+        lines.push("✓ No warning or blocker detected.".into());
         return lines;
     }
 
@@ -633,11 +631,11 @@ pub fn task_preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
         .issues
         .len()
         .saturating_sub(blocking_count + warning_count);
-    lines.push(format!("Blocages  : {blocking_count}"));
+    lines.push(format!("Blockers  : {blocking_count}"));
     lines.push(format!("Warnings  : {warning_count}"));
     lines.push(format!("Infos     : {other_count}"));
     lines.push(String::new());
-    push_preflight_issue_group(&mut lines, "Blocages", report, is_blocking_severity);
+    push_preflight_issue_group(&mut lines, "Blockers", report, is_blocking_severity);
     push_preflight_issue_group(&mut lines, "Warnings", report, is_warning_severity);
     push_preflight_issue_group(&mut lines, "Infos", report, |severity| {
         !is_blocking_severity(severity) && !is_warning_severity(severity)
@@ -646,8 +644,7 @@ pub fn task_preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     if report.has_blocking_issues {
         lines.push(String::new());
         lines.push(
-            "Blocages détectés: demander confirmation utilisateur avant de forcer l'implémentation."
-                .into(),
+            "Blockers detected: require user confirmation before forcing implementation.".into(),
         );
     }
 
@@ -657,25 +654,23 @@ pub fn task_preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
 pub fn task_handoff_validation_lines(report: &TaskHandoffValidationReport) -> Vec<String> {
     let mut lines = vec![
         "Validation handoff".into(),
-        format!("Statut    : {}", validation_status_label(report.is_valid)),
+        format!("Status    : {}", validation_status_label(report.is_valid)),
         format!("Workspace : {}", report.workspace),
-        format!("Projet    : {}", report.project),
+        format!("Project   : {}", report.project),
         format!(
-            "Handoffs  : {}/{} valides",
+            "Handoffs  : {}/{} valid",
             report.items.iter().filter(|item| item.valid).count(),
             report.items.len()
         ),
         String::new(),
     ];
 
-    push_handoff_group(&mut lines, "À corriger", report, |item| !item.valid);
-    push_handoff_group(&mut lines, "Valides", report, |item| item.valid);
+    push_handoff_group(&mut lines, "Needs fixes", report, |item| !item.valid);
+    push_handoff_group(&mut lines, "Valid", report, |item| item.valid);
 
     if !report.is_valid {
         lines.push(String::new());
-        lines.push(
-            "Validation handoff échouée: compléter/corriger les handoffs avant task finish.".into(),
-        );
+        lines.push("Handoff validation failed: complete/fix handoffs before task finish.".into());
     }
 
     lines
@@ -683,17 +678,17 @@ pub fn task_handoff_validation_lines(report: &TaskHandoffValidationReport) -> Ve
 
 pub fn task_prune_plan_lines(report: &dw_task::prune::PrunePlanReport) -> Vec<String> {
     let mut lines = vec![
-        "Nettoyage workspaces".into(),
-        "Mode      : prévisualisation".into(),
+        "Workspace cleanup".into(),
+        "Mode      : preview".into(),
         format!("Root      : {}", report.root),
-        format!("Candidats : {}", report.candidates.len()),
-        "Action    : activer l’exécution pour supprimer les candidats".into(),
-        "Confirmation: gérée par le TUI avant suppression".into(),
+        format!("Candidates: {}", report.candidates.len()),
+        "Action    : enable execution to delete candidates".into(),
+        "Confirmation: handled by the TUI before deletion".into(),
     ];
 
     if !report.sync.is_empty() {
         lines.push(String::new());
-        lines.push("Synchronisation ADO".into());
+        lines.push("ADO synchronization".into());
         for item in &report.sync {
             lines.push(format!(
                 "- {} [{}] {}",
@@ -706,7 +701,7 @@ pub fn task_prune_plan_lines(report: &dw_task::prune::PrunePlanReport) -> Vec<St
 
     if report.candidates.is_empty() {
         lines.push(String::new());
-        lines.push("Aucun workspace éligible au prune.".into());
+        lines.push("No workspace eligible for pruning.".into());
         return lines;
     }
 
@@ -714,7 +709,7 @@ pub fn task_prune_plan_lines(report: &dw_task::prune::PrunePlanReport) -> Vec<St
         lines.push(String::new());
         lines.push(format!("Workspace : {}", candidate.path));
         lines.push(format!(
-            "Éléments  : {}",
+            "Items     : {}",
             dw_task::prune::prune_candidate_label(candidate)
         ));
         lines.push(format!(
@@ -727,10 +722,10 @@ pub fn task_prune_plan_lines(report: &dw_task::prune::PrunePlanReport) -> Vec<St
 
 pub fn task_prune_execution_lines(report: &dw_task::prune::PruneExecutionReport) -> Vec<String> {
     let mut lines = vec![
-        "Nettoyage workspaces".into(),
-        "Mode      : exécution".into(),
+        "Workspace cleanup".into(),
+        "Mode      : execution".into(),
         format!("Root      : {}", report.root),
-        format!("Supprimés : {}", report.deleted.len()),
+        format!("Deleted   : {}", report.deleted.len()),
     ];
     for path in &report.deleted {
         lines.push(format!("- {path}"));
@@ -740,9 +735,9 @@ pub fn task_prune_execution_lines(report: &dw_task::prune::PruneExecutionReport)
 
 pub fn task_repo_latest_plan_lines(report: &dw_task::repo::RepoLatestPlanReport) -> Vec<String> {
     vec![
-        "Mise à jour repositories".into(),
+        "Repository update".into(),
         format!("Workspace : {}", report.workspace),
-        format!("Branche   : {}", report.branch_name),
+        format!("Branch    : {}", report.branch_name),
         format!("Repositories: {}", report.targets.len()),
     ]
 }
@@ -751,14 +746,14 @@ pub fn task_repo_latest_execution_lines(
     report: &dw_task::repo::RepoLatestExecutionReport,
 ) -> Vec<String> {
     let mut lines = vec![
-        "Mise à jour repositories".into(),
+        "Repository update".into(),
         format!("Workspace : {}", report.workspace),
-        format!("Branche   : {}", report.branch_name),
-        format!("Synchronisés: {}", report.updated.len()),
+        format!("Branch    : {}", report.branch_name),
+        format!("Synced    : {}", report.updated.len()),
     ];
     for item in &report.updated {
         lines.push(format!(
-            "- {} depuis {} ({})",
+            "- {} from {} ({})",
             item.repository, item.default_branch, item.path
         ));
     }
@@ -771,17 +766,17 @@ pub fn task_commit_plan_lines(
 ) -> Vec<String> {
     let nothing_to_commit = dw_task::repo::changed_commit_targets(report).is_empty();
     let mut lines = vec![
-        "Commit des repositories".into(),
+        "Repository commit".into(),
         format!("Workspace : {}", report.workspace),
-        format!("Branche   : {}", report.branch_name),
+        format!("Branch    : {}", report.branch_name),
     ];
 
     for item in &report.targets {
         lines.push(String::new());
         lines.push(format!("Repository: {}", item.target.repository));
-        lines.push(format!("Chemin    : {}", item.status.path));
+        lines.push(format!("Path      : {}", item.status.path));
         lines.push(format!(
-            "Statut    : {}",
+            "Status    : {}",
             repository_status_label(&item.status)
         ));
         if !item.status.detail.trim().is_empty() {
@@ -791,11 +786,11 @@ pub fn task_commit_plan_lines(
 
     lines.push(String::new());
     if nothing_to_commit {
-        lines.push("Rien à committer.".into());
+        lines.push("Nothing to commit.".into());
     } else {
         lines.push(format!("Message   : {}", report.message));
         if !execute {
-            lines.push("Action    : activer l’exécution pour créer les commits".into());
+            lines.push("Action    : enable execution to create commits".into());
         }
     }
     lines
@@ -803,10 +798,10 @@ pub fn task_commit_plan_lines(
 
 pub fn task_commit_execution_lines(report: &dw_task::repo::CommitExecutionReport) -> Vec<String> {
     let mut lines = vec![
-        "Commit des repositories".into(),
-        "Mode      : exécution".into(),
+        "Repository commit".into(),
+        "Mode      : execution".into(),
         format!("Workspace : {}", report.workspace),
-        format!("Branche   : {}", report.branch_name),
+        format!("Branch    : {}", report.branch_name),
         format!("Message   : {}", report.message),
         format!("Commits   : {}", report.committed.len()),
     ];
@@ -814,7 +809,7 @@ pub fn task_commit_execution_lines(report: &dw_task::repo::CommitExecutionReport
         lines.push(format!("- {repository}"));
     }
     if report.committed.is_empty() {
-        lines.push("Rien à committer.".into());
+        lines.push("Nothing to commit.".into());
     }
     lines
 }
@@ -822,19 +817,16 @@ pub fn task_commit_execution_lines(report: &dw_task::repo::CommitExecutionReport
 pub fn task_add_repo_plan_lines(report: &dw_task::repo::AddRepoPlanReport) -> Vec<String> {
     let plan = &report.plan;
     vec![
-        "Ajout repository (prévisualisation)".into(),
+        "Add repository (preview)".into(),
         format!("Workspace : {}", plan.workspace),
         format!("Repository: {}", plan.repository),
         format!("Worktree  : {}", plan.worktree_path),
-        format!("Branche   : {}", plan.branch_name),
+        format!("Branch    : {}", plan.branch_name),
         format!(
-            "Ancrage   : {}/repositories/{}",
+            "Anchor    : {}/repositories/{}",
             plan.project_root, plan.anchor_name
         ),
-        format!(
-            "Action    : activer l’exécution pour ajouter {}",
-            plan.repository
-        ),
+        format!("Action    : enable execution to add {}", plan.repository),
     ]
 }
 
@@ -842,12 +834,12 @@ pub fn task_add_repo_execution_lines(
     report: &dw_task::repo::AddRepoExecutionReport,
 ) -> Vec<String> {
     vec![
-        "Ajout repository".into(),
-        "Mode      : exécution".into(),
+        "Add repository".into(),
+        "Mode      : execution".into(),
         format!("Workspace : {}", report.plan.workspace),
         format!("Repository: {}", report.worktree.repository),
-        format!("Statut    : {}", report.worktree.status),
-        format!("Détail    : {}", report.worktree.message),
+        format!("Status    : {}", report.worktree.status),
+        format!("Detail    : {}", report.worktree.message),
     ]
 }
 
@@ -856,20 +848,20 @@ pub fn task_teardown_plan_lines(
     execute: bool,
 ) -> Vec<String> {
     let Some(workspace) = &report.workspace else {
-        return vec!["Aucun workspace task trouvé.".into()];
+        return vec!["No task workspace found.".into()];
     };
     let mut lines = vec![
         if execute {
-            "Suppression workspace exécutée".into()
+            "Workspace removal executed".into()
         } else {
-            "Suppression workspace (prévisualisation)".into()
+            "Workspace removal (preview)".into()
         },
         format!("Workspace : {workspace}"),
         format!("Actions   : {}", report.steps.len()),
         if execute {
-            "Actions appliquées".into()
+            "Applied actions".into()
         } else {
-            "Actions prévues".into()
+            "Planned actions".into()
         },
     ];
     for step in &report.steps {
@@ -880,8 +872,8 @@ pub fn task_teardown_plan_lines(
     }
     if !execute {
         lines.push(String::new());
-        lines.push("Action    : activer l’exécution pour supprimer le workspace".into());
-        lines.push("Confirmation: gérée par le TUI avant exécution".into());
+        lines.push("Action    : enable execution to remove the workspace".into());
+        lines.push("Confirmation: handled by the TUI before execution".into());
     }
     lines
 }
@@ -890,8 +882,8 @@ pub fn task_teardown_execution_lines(
     report: &dw_task::repo::TeardownExecutionReport,
 ) -> Vec<String> {
     let mut lines = vec![
-        "Suppression workspace".into(),
-        "Mode      : exécution".into(),
+        "Workspace removal".into(),
+        "Mode      : execution".into(),
         format!("Workspace : {}", report.workspace),
         format!("Actions   : {}", report.steps.len()),
     ];
@@ -901,14 +893,14 @@ pub fn task_teardown_execution_lines(
             step.repository, step.action, step.target
         ));
     }
-    lines.push(format!("Workspace supprimé: {}", report.workspace));
+    lines.push(format!("Workspace removed: {}", report.workspace));
     lines
 }
 
 pub fn task_sync_lines(report: &dw_task::lifecycle::SyncReport) -> Vec<String> {
     let items = report.manifest.parent_work_items();
     let mut lines = vec![
-        "Synchronisation task".into(),
+        "Task synchronization".into(),
         format!("Workspace : {}", report.workspace),
         format!("Items     : {}", items.len()),
     ];
@@ -925,12 +917,12 @@ pub fn task_sync_lines(report: &dw_task::lifecycle::SyncReport) -> Vec<String> {
 pub fn task_rename_plan_lines(report: &dw_task::lifecycle::RenamePlanReport) -> Vec<String> {
     let plan = &report.plan;
     vec![
-        "Renommage workspace".into(),
-        "Mode      : prévisualisation".into(),
+        "Workspace rename".into(),
+        "Mode      : preview".into(),
         format!("Slug      : {} -> {}", plan.old_slug, plan.new_slug),
-        format!("Branche   : {} -> {}", plan.old_branch, plan.new_branch),
+        format!("Branch    : {} -> {}", plan.old_branch, plan.new_branch),
         format!("Workspace : {} -> {}", plan.workspace, plan.new_workspace),
-        "Action    : activer l’exécution pour renommer le workspace".into(),
+        "Action    : enable execution to rename the workspace".into(),
     ]
 }
 
@@ -938,32 +930,32 @@ pub fn task_rename_execution_lines(
     report: &dw_task::lifecycle::RenameExecutionReport,
 ) -> Vec<String> {
     vec![
-        "Renommage workspace".into(),
-        "Mode      : exécution".into(),
+        "Workspace rename".into(),
+        "Mode      : execution".into(),
         format!(
             "Slug      : {} -> {}",
             report.plan.old_slug, report.plan.new_slug
         ),
         format!(
-            "Branche   : {} -> {}",
+            "Branch    : {} -> {}",
             report.plan.old_branch, report.plan.new_branch
         ),
         format!(
             "Workspace : {} -> {}",
             report.plan.workspace, report.plan.new_workspace
         ),
-        format!("Workspace renommé: {}", report.plan.new_workspace),
+        format!("Workspace renamed: {}", report.plan.new_workspace),
     ]
 }
 
 pub fn task_child_task_lines(report: &dw_task::lifecycle::CreateChildTaskReport) -> Vec<String> {
     vec![
-        "Sous-tâche ADO".into(),
-        "Statut    : enregistrée dans le workspace".into(),
+        "ADO child task".into(),
+        "Status    : saved in workspace".into(),
         format!("Workspace : {}", report.workspace),
         format!("Repository: {}", report.repository),
         format!("Item      : #{}", report.created.id),
-        format!("Titre     : {}", report.created.title),
+        format!("Title     : {}", report.created.title),
     ]
 }
 
@@ -973,21 +965,21 @@ pub fn task_work_item_plan_lines(
     let Some(plan) = &report.plan else {
         return vec![
             "Work items workspace".into(),
-            "Mode      : prévisualisation".into(),
+            "Mode      : preview".into(),
             format!("Action    : {}", work_item_action_label(report.action)),
             format!("Workspace : {}", report.workspace),
-            "Statut    : aucun changement".into(),
-            "Tous les work items demandés sont déjà présents dans le workspace.".into(),
+            "Status    : no change".into(),
+            "All requested work items are already present in the workspace.".into(),
         ];
     };
     vec![
         "Work items workspace".into(),
-        "Mode      : prévisualisation".into(),
+        "Mode      : preview".into(),
         format!("Action    : {}", work_item_action_label(report.action)),
-        format!("Branche   : {} -> {}", plan.old_branch, plan.new_branch),
+        format!("Branch    : {} -> {}", plan.old_branch, plan.new_branch),
         format!("Workspace : {} -> {}", plan.workspace, plan.new_workspace),
         format!(
-            "Éléments  : {}",
+            "Items     : {}",
             plan.work_items
                 .iter()
                 .map(|item| format!("#{}", item.id))
@@ -995,7 +987,7 @@ pub fn task_work_item_plan_lines(
                 .join(", ")
         ),
         format!(
-            "Action    : activer l’exécution pour {}",
+            "Action    : enable execution for {}",
             work_item_action_label(report.action)
         ),
     ]
@@ -1006,10 +998,10 @@ pub fn task_work_item_execution_lines(
 ) -> Vec<String> {
     vec![
         "Work items workspace".into(),
-        "Mode      : exécution".into(),
+        "Mode      : execution".into(),
         format!("Action    : {}", work_item_action_label(report.action)),
         format!(
-            "Branche   : {} -> {}",
+            "Branch    : {} -> {}",
             report.plan.old_branch, report.plan.new_branch
         ),
         format!(
@@ -1017,7 +1009,7 @@ pub fn task_work_item_execution_lines(
             report.plan.workspace, report.plan.new_workspace
         ),
         format!(
-            "Éléments  : {}",
+            "Items     : {}",
             report
                 .plan
                 .work_items
@@ -1026,7 +1018,7 @@ pub fn task_work_item_execution_lines(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        format!("Workspace mis à jour: {}", report.new_workspace),
+        format!("Workspace updated: {}", report.new_workspace),
     ]
 }
 
@@ -1037,46 +1029,46 @@ pub fn task_start_plan_lines(report: &dw_task::start::StartPlanReport) -> Vec<St
         format!("Project: {}", plan.project),
         format!("Work items: {}", plan.work_item_ids.join(", ")),
         format!("Slug: {}", plan.slug),
-        format!("Branche cible: {}", plan.branch_name),
-        format!("Workspace cible: {}", plan.workspace),
+        format!("Target branch: {}", plan.branch_name),
+        format!("Target workspace: {}", plan.workspace),
         format!("Repositories: {}", plan.repositories.join(", ")),
-        "Action    : activer l’exécution pour créer le workspace.".into(),
+        "Action    : enable execution to create the workspace.".into(),
     ]
 }
 
 pub fn task_start_execution_lines(report: &dw_task::start::StartExecutionReport) -> Vec<String> {
     let mut lines = vec![
-        format!("Workspace créé: {}", report.plan.workspace),
-        format!("Branche cible: {}", report.plan.branch_name),
+        format!("Workspace created: {}", report.plan.workspace),
+        format!("Target branch: {}", report.plan.branch_name),
         format!("Repositories: {}", report.plan.repositories.join(", ")),
     ];
     for task in &report.child_tasks {
         lines.push(format!(
-            "ADO task créée [{}]: #{} {}",
+            "ADO task created [{}]: #{} {}",
             task.repository,
             task.id,
-            task.title.as_deref().unwrap_or("(sans titre)")
+            task.title.as_deref().unwrap_or("(untitled)")
         ));
     }
     for update in &report.state_updates {
         if update.changed {
             lines.push(format!(
-                "ADO item {}: état -> {}",
+                "ADO item {}: state -> {}",
                 update.label, update.target_state
             ));
         }
     }
-    lines.push("Prochaine étape conseillée: ouvrir le workspace ou lancer l'agent.".into());
+    lines.push("Suggested next step: open the workspace or launch the agent.".into());
     lines
 }
 
 pub fn task_start_pr_plan_lines(report: &dw_task::start::StartPrPlanReport) -> Vec<String> {
     let mut lines = vec![
         format!(
-            "Résolution PR: #{} dans {}",
+            "PR resolution: #{} in {}",
             report.pull_request_id,
             if report.repositories.is_empty() {
-                "aucun repository".into()
+                "no repository".into()
             } else {
                 report.repositories.join(", ")
             }
@@ -1090,9 +1082,9 @@ pub fn task_start_pr_plan_lines(report: &dw_task::start::StartPrPlanReport) -> V
 
 pub fn task_finish_plan_lines(report: &dw_task::finish::FinishPlanReport) -> Vec<String> {
     let mut lines = vec![
-        "Finalisation workspace".into(),
+        "Workspace finish".into(),
         format!("Workspace : {}", report.workspace),
-        format!("Branche   : {}", report.manifest.branch_name),
+        format!("Branch    : {}", report.manifest.branch_name),
     ];
 
     for item in &report.targets {
@@ -1105,7 +1097,7 @@ pub fn task_finish_plan_lines(report: &dw_task::finish::FinishPlanReport) -> Vec
     lines.push(String::new());
     lines.push("Validation handoff".into());
     lines.push(format!(
-        "Statut    : {}",
+        "Status    : {}",
         if report.handoff.is_valid { "OK" } else { "KO" }
     ));
     for item in &report.handoff.items {
@@ -1119,14 +1111,14 @@ pub fn task_finish_plan_lines(report: &dw_task::finish::FinishPlanReport) -> Vec
     }
     if !report.changed_repositories.is_empty() {
         lines.push(String::new());
-        lines.push("Commit à créer".into());
+        lines.push("Commit to create".into());
         lines.push(format!("Message   : {}", report.commit_message));
     }
     if report.create_pr {
         lines.push(String::new());
-        lines.push("Pull requests à créer".into());
+        lines.push("Pull requests to create".into());
         if report.pull_request_candidates.is_empty() {
-            lines.push("Aucun repository candidat détecté.".into());
+            lines.push("No candidate repository detected.".into());
         } else {
             for candidate in &report.pull_request_candidates {
                 lines.push(format!(
@@ -1138,8 +1130,8 @@ pub fn task_finish_plan_lines(report: &dw_task::finish::FinishPlanReport) -> Vec
     }
     if dw_task::finish::finish_has_work(report) {
         lines.push(String::new());
-        lines.push("Action    : activer l’exécution pour finaliser le workspace".into());
-        lines.push("Confirmation: gérée par le TUI avant exécution".into());
+        lines.push("Action    : enable execution to finish the workspace".into());
+        lines.push("Confirmation: handled by the TUI before execution".into());
     }
 
     lines
@@ -1147,19 +1139,19 @@ pub fn task_finish_plan_lines(report: &dw_task::finish::FinishPlanReport) -> Vec
 
 pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionReport) -> Vec<String> {
     let mut lines = vec![
-        "Finalisation workspace".into(),
-        "Mode      : exécution".into(),
+        "Workspace finish".into(),
+        "Mode      : execution".into(),
         format!("Workspace : {}", report.plan.workspace),
-        format!("Branche   : {}", report.plan.manifest.branch_name),
+        format!("Branch    : {}", report.plan.manifest.branch_name),
     ];
     if !report.events.is_empty() {
         lines.push(String::new());
-        lines.push("Événements".into());
+        lines.push("Events".into());
         lines.extend(report.events.iter().map(|event| format!("- {event}")));
     }
     if !report.verification_results.is_empty() {
         lines.push(String::new());
-        lines.push("Vérification".into());
+        lines.push("Verification".into());
         for result in &report.verification_results {
             lines.push(format!(
                 "- [{}] {} ({})",
@@ -1196,18 +1188,18 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
         && report.work_item_updates.is_empty()
     {
         lines.push(String::new());
-        lines.push("Rien à terminer.".into());
+        lines.push("Nothing to finish.".into());
     }
     lines
 }
 
 pub fn task_finish_dry_run_hint(no_changes: bool, create_pr: bool) -> &'static str {
     if create_pr {
-        "Prévisualisation uniquement. Activer l’exécution pour pousser et créer la PR."
+        "Preview only. Enable execution to push and create the PR."
     } else if no_changes {
-        "Prévisualisation uniquement. Activer l’exécution pour pousser sans mise à jour ADO."
+        "Preview only. Enable execution to push without ADO update."
     } else {
-        "Prévisualisation uniquement. Activer l’exécution pour committer et pousser sans mise à jour ADO."
+        "Preview only. Enable execution to commit and push without ADO update."
     }
 }
 
@@ -1218,7 +1210,7 @@ pub fn doctor_report_lines(report: &DoctorReport, theme: &TerminalTheme) -> Vec<
     let mut lines = vec![
         theme.command("Diagnostic Dev Workflow"),
         format!(
-            "{} {passed_count}/{total_count} vérifications OK",
+            "{} {passed_count}/{total_count} checks OK",
             if failed_count == 0 {
                 theme.success("✓")
             } else {
@@ -1226,18 +1218,18 @@ pub fn doctor_report_lines(report: &DoctorReport, theme: &TerminalTheme) -> Vec<
             }
         ),
         format!(
-            "Statut    : {}",
+            "Status    : {}",
             if failed_count == 0 {
                 "OK"
             } else {
-                "à corriger"
+                "needs fixes"
             }
         ),
-        format!("Blocages  : {failed_count}"),
+        format!("Blockers  : {failed_count}"),
         String::new(),
     ];
     lines.extend(render_doctor_check_group(
-        "À corriger",
+        "Needs fixes",
         report.checks.iter().filter(|check| !check.passed).collect(),
         theme,
     ));
@@ -1257,7 +1249,7 @@ fn format_current_work_items(items: &[dw_workspace::WorkspaceWorkItem]) -> Strin
     items
         .iter()
         .map(|item| {
-            let title = item.title.clone().unwrap_or_else(|| "(sans titre)".into());
+            let title = item.title.clone().unwrap_or_else(|| "(untitled)".into());
             let metadata = [item.kind.as_deref(), item.state.as_deref()]
                 .into_iter()
                 .flatten()
@@ -1279,7 +1271,7 @@ fn format_child_tasks(item: &TaskCurrentItem) -> String {
             .child_tasks
             .iter()
             .map(|task| {
-                let title = task.title.clone().unwrap_or_else(|| "(sans titre)".into());
+                let title = task.title.clone().unwrap_or_else(|| "(untitled)".into());
                 format!("#{} {} ({})", task.id, title, task.repository)
             })
             .collect::<Vec<_>>()
@@ -1307,8 +1299,8 @@ fn finish_repository_status_lines(
     let mut lines = vec![
         String::new(),
         format!("Repository: {repository}"),
-        format!("Chemin    : {}", status.path),
-        format!("Statut    : {}", repository_status_label(status)),
+        format!("Path      : {}", status.path),
+        format!("Status    : {}", repository_status_label(status)),
     ];
     if !status.detail.trim().is_empty() {
         lines.push(status.detail.clone());
@@ -1320,13 +1312,13 @@ fn finish_handoff_summary_lines(summary: &dw_workspace::WorkspaceHandoffSummary)
     let mut lines = vec![
         String::new(),
         format!("Handoff {}", summary.repository),
-        format!("Statut    : {}", summary.status),
+        format!("Status    : {}", summary.status),
     ];
-    push_finish_summary_list(&mut lines, "Fait      ", &summary.done);
-    push_finish_summary_list(&mut lines, "Décisions ", &summary.decisions);
-    push_finish_summary_list(&mut lines, "Risques   ", &summary.risks);
-    push_finish_summary_list(&mut lines, "Blocages  ", &summary.blockers);
-    push_finish_summary_list(&mut lines, "Suite     ", &summary.follow_up);
+    push_finish_summary_list(&mut lines, "Done      ", &summary.done);
+    push_finish_summary_list(&mut lines, "Decisions ", &summary.decisions);
+    push_finish_summary_list(&mut lines, "Risks     ", &summary.risks);
+    push_finish_summary_list(&mut lines, "Blockers  ", &summary.blockers);
+    push_finish_summary_list(&mut lines, "Next      ", &summary.follow_up);
     lines
 }
 
@@ -1337,18 +1329,18 @@ fn push_finish_summary_list(lines: &mut Vec<String>, label: &str, items: &[Strin
 }
 
 fn finish_pull_request_line(result: &dw_task::finish::FinishPullRequestResult) -> String {
-    let url = result.url.as_deref().unwrap_or("(url non retournée)");
+    let url = result.url.as_deref().unwrap_or("(url not returned)");
     match result.action {
         dw_task::finish::FinishPullRequestAction::Created => {
-            format!("PR créée pour {}: {url}", result.repository)
+            format!("PR created for {}: {url}", result.repository)
         }
         dw_task::finish::FinishPullRequestAction::Existing => {
-            format!("PR déjà ouverte pour {}: {url}", result.repository)
+            format!("PR already open for {}: {url}", result.repository)
         }
         dw_task::finish::FinishPullRequestAction::Skipped => format!(
-            "PR ignorée pour {}: {}",
+            "PR skipped for {}: {}",
             result.repository,
-            result.message.as_deref().unwrap_or("raison inconnue")
+            result.message.as_deref().unwrap_or("unknown reason")
         ),
     }
 }
@@ -1363,7 +1355,7 @@ fn ado_assigned_group_lines(
         .map(|group| 1 + group.items.len())
         .sum::<usize>();
     let mut lines = vec![theme.success(&format!(
-        "Work items assignés: {} groupe(s), {} item(s)",
+        "Assigned work items: {} group(s), {} item(s)",
         report.groups.len(),
         total_items
     ))];
@@ -1385,7 +1377,7 @@ fn ado_assigned_group_lines(
         }
         for item in &group.items {
             lines.push(format!(
-                "  Enfant  : {}",
+                "  Child   : {}",
                 ado_work_item_summary(item, theme)
             ));
         }
@@ -1396,8 +1388,8 @@ fn ado_assigned_group_lines(
 
 fn ado_start_action_line(ids: &str, project: &str, theme: &TerminalTheme) -> String {
     format!(
-        "Démarrer  : {}",
-        theme.command(&format!("action start pour {ids} ({project})"))
+        "Start     : {}",
+        theme.command(&format!("start action for {ids} ({project})"))
     )
 }
 
@@ -1407,10 +1399,10 @@ fn ado_work_item_summary(item: &dw_ado::WorkItemSnapshot, theme: &TerminalTheme)
         theme.success(&format!("#{}", item.id)),
         theme.dim(&format!(
             "[{} / {}]",
-            item.kind.as_deref().unwrap_or("type inconnu"),
-            item.state.as_deref().unwrap_or("état inconnu")
+            item.kind.as_deref().unwrap_or("unknown type"),
+            item.state.as_deref().unwrap_or("unknown state")
         )),
-        item.title.as_deref().unwrap_or("(sans titre)")
+        item.title.as_deref().unwrap_or("(untitled)")
     )
 }
 
@@ -1429,15 +1421,15 @@ fn ado_context_header(item: &dw_contracts::AdoAiContextItem, theme: &TerminalThe
         ),
         format!(
             "Type      : {}",
-            item.work_item.kind.as_deref().unwrap_or("type inconnu")
+            item.work_item.kind.as_deref().unwrap_or("unknown type")
         ),
         format!(
-            "État      : {}",
-            item.work_item.state.as_deref().unwrap_or("état inconnu")
+            "State     : {}",
+            item.work_item.state.as_deref().unwrap_or("unknown state")
         ),
         format!(
-            "Titre     : {}",
-            item.work_item.title.as_deref().unwrap_or("(sans titre)")
+            "Title     : {}",
+            item.work_item.title.as_deref().unwrap_or("(untitled)")
         ),
     ]
 }
@@ -1525,7 +1517,7 @@ fn push_preflight_issue_group(
         return;
     }
 
-    lines.push(format!("Détails préflight - {title}"));
+    lines.push(format!("Preflight details - {title}"));
     for issue in issues {
         lines.push(format!(
             "{} {} #{} {} - {}",
@@ -1536,11 +1528,11 @@ fn push_preflight_issue_group(
             issue.message
         ));
         if let Some(details) = &issue.details {
-            lines.push(format!("  Détail : {details}"));
+            lines.push(format!("  Detail : {details}"));
         }
         if !issue.related_ids.is_empty() {
             lines.push(format!(
-                "  Liés   : {}",
+                "  Related: {}",
                 issue
                     .related_ids
                     .iter()
@@ -1568,7 +1560,7 @@ fn push_handoff_group(
         return;
     }
 
-    lines.push(format!("Détails handoff - {title}"));
+    lines.push(format!("Handoff details - {title}"));
     for item in items {
         lines.push(format!(
             "{} {} [{}]",
@@ -1578,11 +1570,11 @@ fn push_handoff_group(
         ));
         lines.push(format!("  Message : {}", item.message));
         if !item.path.trim().is_empty() {
-            lines.push(format!("  Fichier : {}", item.path));
+            lines.push(format!("  File    : {}", item.path));
         }
         if item.valid {
             lines.push(format!(
-                "  Synthèse: done={} decisions={} risks={} blockers={} follow_up={}",
+                "  Summary : done={} decisions={} risks={} blockers={} follow_up={}",
                 item.done_count,
                 item.decision_count,
                 item.risk_count,
@@ -1595,7 +1587,7 @@ fn push_handoff_group(
 }
 
 fn validation_status_label(valid: bool) -> &'static str {
-    if valid { "✓ OK" } else { "✕ À corriger" }
+    if valid { "✓ OK" } else { "✕ Needs fixes" }
 }
 
 fn severity_icon(severity: &str) -> &'static str {
@@ -1610,7 +1602,7 @@ fn severity_icon(severity: &str) -> &'static str {
 
 fn severity_label(severity: &str) -> &'static str {
     if is_blocking_severity(severity) {
-        "[blocage]"
+        "[blocker]"
     } else if is_warning_severity(severity) {
         "[warning]"
     } else {
@@ -1620,9 +1612,9 @@ fn severity_label(severity: &str) -> &'static str {
 
 fn handoff_status_label(status: &str) -> &str {
     match status {
-        "missing" => "manquant",
-        "invalid" => "invalide",
-        "blocked" => "bloqué",
+        "missing" => "missing",
+        "invalid" => "invalid",
+        "blocked" => "blocked",
         "todo" => "todo",
         "in_progress" => "in_progress",
         "done" => "done",
@@ -1651,20 +1643,20 @@ fn handoff_status_icon(status: &str, valid: bool) -> &'static str {
 
 fn prune_sync_status_label(status: &dw_task::prune::PruneSyncStatus) -> &'static str {
     match status {
-        dw_task::prune::PruneSyncStatus::Skipped => "ignoré",
-        dw_task::prune::PruneSyncStatus::Synced => "synchronisé",
+        dw_task::prune::PruneSyncStatus::Skipped => "skipped",
+        dw_task::prune::PruneSyncStatus::Synced => "synced",
     }
 }
 
 fn repository_status_label(status: &dw_git::RepositoryStatus) -> &'static str {
     if !status.is_git_repository {
-        "Pas un repo Git utilisable."
+        "Not a usable Git repo."
     } else if status.has_changes {
-        "Changements détectés:"
+        "Changes detected:"
     } else if status.has_unpushed {
-        "Commits non poussés."
+        "Unpushed commits."
     } else {
-        "Aucun changement."
+        "No change."
     }
 }
 
@@ -1672,26 +1664,26 @@ fn work_item_line(item: &dw_workspace::WorkspaceWorkItem) -> String {
     format!(
         "#{} [{} / {}] {}",
         item.id,
-        item.kind.as_deref().unwrap_or("type inconnu"),
-        item.state.as_deref().unwrap_or("état inconnu"),
-        item.title.as_deref().unwrap_or("(sans titre)")
+        item.kind.as_deref().unwrap_or("unknown type"),
+        item.state.as_deref().unwrap_or("unknown state"),
+        item.title.as_deref().unwrap_or("(untitled)")
     )
 }
 
 fn work_item_action_label(action: dw_task::work_item::WorkItemUpdateAction) -> &'static str {
     match action {
-        dw_task::work_item::WorkItemUpdateAction::Add => "ajout",
-        dw_task::work_item::WorkItemUpdateAction::Remove => "retrait",
+        dw_task::work_item::WorkItemUpdateAction::Add => "add",
+        dw_task::work_item::WorkItemUpdateAction::Remove => "remove",
     }
 }
 
 pub fn secret_set_lines(report: &SecretSetReport) -> Vec<String> {
     vec![
         "Secret".into(),
-        "Statut    : enregistré".into(),
-        format!("Clé       : {}", report.key),
+        "Status    : saved".into(),
+        format!("Key       : {}", report.key),
         format!("Stockage  : {}", report.storage),
-        "Valeur    : masquée".into(),
+        "Value     : masked".into(),
     ]
 }
 
@@ -1699,23 +1691,23 @@ pub fn secret_get_lines(report: &SecretGetReport) -> Vec<String> {
     vec![
         "Secret".into(),
         format!(
-            "Statut    : {}",
+            "Status    : {}",
             if report.exists {
-                "présent"
+                "present"
             } else {
-                "introuvable"
+                "not found"
             }
         ),
-        format!("Clé       : {}", report.key),
-        "Valeur    : masquée".into(),
+        format!("Key       : {}", report.key),
+        "Value     : masked".into(),
     ]
 }
 
 pub fn secret_delete_lines(report: &SecretDeleteReport) -> Vec<String> {
     vec![
         "Secret".into(),
-        "Statut    : supprimé si présent".into(),
-        format!("Clé       : {}", report.key),
+        "Status    : deleted if present".into(),
+        format!("Key       : {}", report.key),
     ]
 }
 
@@ -1741,7 +1733,7 @@ fn agent_check_lines(check: &AgentDoctorCheck, theme: &TerminalTheme) -> Vec<Str
     let status = if check.available {
         theme.success("✓ OK")
     } else {
-        theme.warning("! manquant")
+        theme.warning("! missing")
     };
     let mut lines = vec![format!(
         "{:<10} {} via {}",
@@ -1750,10 +1742,7 @@ fn agent_check_lines(check: &AgentDoctorCheck, theme: &TerminalTheme) -> Vec<Str
     if !check.available {
         lines.push(format!(
             "           {}",
-            theme.command(&format!(
-                "Installer `{}` ou vérifier le PATH",
-                check.command
-            ))
+            theme.command(&format!("Install `{}` or check PATH", check.command))
         ));
     }
     lines
@@ -1773,7 +1762,7 @@ fn render_doctor_check_group(
         let status = if check.passed {
             theme.success("✓ OK")
         } else {
-            theme.error("! À corriger")
+            theme.error("! Needs fixes")
         };
         lines.push(format!("{:<8} {}", status, check.name));
         if let Some(detail) = check
@@ -1805,9 +1794,9 @@ fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) -> Str
     let widths = db_column_widths(&columns, &rows);
     let mut lines = Vec::new();
 
-    lines.push(theme.bold(&theme.cyan("Requête DB")));
+    lines.push(theme.bold(&theme.cyan("DB query")));
     lines.push(format!(
-        "Résultat  : {}",
+        "Result    : {}",
         theme.bold(&db_row_count_label(result))
     ));
     lines.push(db_separator(&widths));
@@ -1830,7 +1819,7 @@ fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) -> Str
     lines.push(db_separator(&widths));
     if result.truncated {
         lines.push(theme.warning(&format!(
-            "Résultat tronqué après {} ligne(s). Augmenter la limite de lignes pour élargir.",
+            "Result truncated after {} row(s). Increase the row limit to expand.",
             result.rows.len()
         )));
     }
@@ -1838,28 +1827,28 @@ fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) -> Str
 }
 
 fn render_sql_guard(result: &SqlGuardResult, theme: &TerminalTheme) -> String {
-    let mut lines = vec![theme.bold(&theme.cyan("Garde SQL"))];
+    let mut lines = vec![theme.bold(&theme.cyan("SQL guard"))];
     lines.push(format!(
-        "Statut    : {}",
+        "Status    : {}",
         db_guard_status_label(result, theme)
     ));
     if result.is_allowed {
-        lines.push(format!("Décision  : {}", theme.success("✓")));
-        lines.push("Message   : Requête autorisée en lecture seule.".into());
+        lines.push(format!("Decision  : {}", theme.success("✓")));
+        lines.push("Message   : Read-only query allowed.".into());
         lines.push(format!(
-            "Détail    : {}",
-            theme.dim("Aucune exécution n'a été lancée par cette action.")
+            "Detail    : {}",
+            theme.dim("No execution was started by this action.")
         ));
     } else {
-        lines.push(format!("Décision  : {}", theme.error("!")));
-        lines.push("Message   : Requête bloquée avant exécution.".into());
+        lines.push(format!("Decision  : {}", theme.error("!")));
+        lines.push("Message   : Query blocked before execution.".into());
         lines.push(format!(
             "Raison    : {}",
-            result.reason.as_deref().unwrap_or("raison inconnue")
+            result.reason.as_deref().unwrap_or("unknown reason")
         ));
         lines.push(format!(
-            "À faire   : {}",
-            theme.warning("Utiliser uniquement SELECT/WITH ou les actions d'introspection.")
+            "Next      : {}",
+            theme.warning("Use only SELECT/WITH or introspection actions.")
         ));
     }
     lines.join("\n")
@@ -1869,19 +1858,19 @@ fn db_row_count_label(result: &QueryResult) -> String {
     let suffix = if result.rows.len() > 1 { "s" } else { "" };
     if result.truncated {
         format!(
-            "{} ligne{suffix} affichée{suffix}, résultat tronqué",
+            "{} row{suffix} displayed, result truncated",
             result.rows.len()
         )
     } else {
-        format!("{} ligne{suffix}", result.rows.len())
+        format!("{} row{suffix}", result.rows.len())
     }
 }
 
 fn db_guard_status_label(result: &SqlGuardResult, theme: &TerminalTheme) -> String {
     if result.is_allowed {
-        theme.success("autorisé")
+        theme.success("allowed")
     } else {
-        theme.error("bloqué")
+        theme.error("blocked")
     }
 }
 
@@ -2010,7 +1999,7 @@ mod tests {
 
         let lines = ado_prs_lines(&report);
 
-        assert_eq!(lines[0], "PR actives · ha");
+        assert_eq!(lines[0], "Active PRs · ha");
         assert!(lines.iter().any(|line| line.contains("#42")));
         assert!(lines.iter().any(|line| line.contains("#123")));
         assert!(
@@ -2041,10 +2030,10 @@ mod tests {
 
         let lines = ado_assigned_lines(&report, &TerminalTheme::plain());
 
-        assert!(lines.contains(&"ADO assignés".into()));
-        assert!(lines.contains(&"Éléments  : 1".into()));
+        assert!(lines.contains(&"ADO assigned".into()));
+        assert!(lines.contains(&"Items     : 1".into()));
         assert!(lines.contains(&"Item      : #42 [Bug / En developpement] Corriger".into()));
-        assert!(lines.contains(&"Démarrer  : action start pour 42 (ha)".into()));
+        assert!(lines.contains(&"Start     : start action for 42 (ha)".into()));
     }
 
     #[test]
@@ -2079,10 +2068,10 @@ mod tests {
 
         let lines = ado_assigned_lines(&report, &TerminalTheme::plain());
 
-        assert!(lines.contains(&"Work items assignés: 1 groupe(s), 2 item(s)".into()));
+        assert!(lines.contains(&"Assigned work items: 1 group(s), 2 item(s)".into()));
         assert!(lines.contains(&"Parent    : #42 [User Story / Actif] Parent".into()));
-        assert!(lines.contains(&"Démarrer  : action start pour 42,43 (ha)".into()));
-        assert!(lines.contains(&"  Enfant  : #43 [Task / Actif] Enfant".into()));
+        assert!(lines.contains(&"Start     : start action for 42,43 (ha)".into()));
+        assert!(lines.contains(&"  Child   : #43 [Task / Actif] Enfant".into()));
     }
 
     #[test]
@@ -2110,11 +2099,11 @@ mod tests {
 
         let lines = ado_set_state_execution_lines(&report);
 
-        assert_eq!(lines[0], "Mise à jour ADO");
-        assert!(lines.contains(&"Projet    : ha".into()));
-        assert!(lines.contains(&"État      : Actif".into()));
+        assert_eq!(lines[0], "ADO update");
+        assert!(lines.contains(&"Project   : ha".into()));
+        assert!(lines.contains(&"State     : Actif".into()));
         assert!(lines.contains(&"Work items: #42, #43".into()));
-        assert!(lines.contains(&"2 work items passés en `Actif`.".into()));
+        assert!(lines.contains(&"2 work items moved to `Actif`.".into()));
     }
 
     #[test]
@@ -2137,10 +2126,10 @@ mod tests {
 
         assert!(lines.contains(&"ADO work item".into()));
         assert!(lines.contains(&"Item      : #7".into()));
-        assert!(lines.contains(&"Type      : type inconnu".into()));
-        assert!(lines.contains(&"État      : état inconnu".into()));
-        assert!(lines.contains(&"Titre     : (sans titre)".into()));
-        assert!(lines.contains(&"Contexte  : action disponible pour #7 (ha)".into()));
+        assert!(lines.contains(&"Type      : unknown type".into()));
+        assert!(lines.contains(&"State     : unknown state".into()));
+        assert!(lines.contains(&"Title     : (untitled)".into()));
+        assert!(lines.contains(&"Context   : action available for #7 (ha)".into()));
     }
 
     #[test]
@@ -2217,22 +2206,21 @@ mod tests {
         assert!(output.contains("ADO context"));
         assert!(output.contains("Item      : #42"));
         assert!(output.contains("Type      : Bug"));
-        assert!(output.contains("État      : Actif"));
-        assert!(output.contains("Titre     : Corriger"));
-        assert!(output.contains("Assigné   : Sacha"));
+        assert!(output.contains("State     : Actif"));
+        assert!(output.contains("Title     : Corriger"));
+        assert!(output.contains("Assigned  : Sacha"));
         assert!(
-            output
-                .contains("Métadonnées: area=Produit\\Backlog | iteration=Sprint 1 | tags=urgent")
+            output.contains("Metadata : area=Produit\\Backlog | iteration=Sprint 1 | tags=urgent")
         );
         assert!(output.contains("Description courte"));
-        assert!(output.contains("Critères d'acceptation"));
+        assert!(output.contains("Acceptance criteria"));
         assert!(output.contains("Critère A"));
-        assert!(output.contains("Pièces jointes (1)"));
-        assert!(output.contains("Dossier   : attachments/ado/42"));
+        assert!(output.contains("Attachments (1)"));
+        assert!(output.contains("Folder    : attachments/ado/42"));
         assert!(output.contains("capture.png"));
         assert!(output.contains("- Parent #1"));
         assert!(output.contains("- Bob: OK"));
-        assert!(output.contains("Contexte IA: action disponible pour #42 (ha)"));
+        assert!(output.contains("AI context: action available for #42 (ha)"));
     }
 
     #[test]
@@ -2266,9 +2254,7 @@ mod tests {
         };
         assert_eq!(
             ado_changelog_lines(&source_empty, &TerminalTheme::plain()),
-            vec![
-                "Aucun work item détecté dans les messages de commit de la plage git.".to_string()
-            ]
+            vec!["No work item detected in commit messages from the git range.".to_string()]
         );
     }
 
@@ -2342,11 +2328,11 @@ mod tests {
 
         let lines = task_preflight_lines(&report);
 
-        assert_eq!(lines[0], "Préflight task");
-        assert!(lines.contains(&"Statut    : ✕ À corriger".into()));
-        assert!(lines.contains(&"Blocages  : 1".into()));
+        assert_eq!(lines[0], "Task preflight");
+        assert!(lines.contains(&"Status    : ✕ Needs fixes".into()));
+        assert!(lines.contains(&"Blockers  : 1".into()));
         assert!(
-            lines.contains(&"✕ [blocage] #42 missing_attachment - Piece jointe manquante".into())
+            lines.contains(&"✕ [blocker] #42 missing_attachment - Piece jointe manquante".into())
         );
     }
 
@@ -2374,11 +2360,11 @@ mod tests {
         let lines = task_handoff_validation_lines(&report);
 
         assert_eq!(lines[0], "Validation handoff");
-        assert!(lines.contains(&"Statut    : ✕ À corriger".into()));
-        assert!(lines.contains(&"Handoffs  : 1/1 valides".into()));
+        assert!(lines.contains(&"Status    : ✕ Needs fixes".into()));
+        assert!(lines.contains(&"Handoffs  : 1/1 valid".into()));
         assert!(lines.contains(&"✓ front [done]".into()));
         assert!(
-            lines.contains(&"  Synthèse: done=2 decisions=1 risks=0 blockers=0 follow_up=1".into())
+            lines.contains(&"  Summary : done=2 decisions=1 risks=0 blockers=0 follow_up=1".into())
         );
     }
 
@@ -2414,14 +2400,12 @@ mod tests {
 
         let lines = task_prune_plan_lines(&report);
 
-        assert_eq!(lines[0], "Nettoyage workspaces");
-        assert_eq!(lines[1], "Mode      : prévisualisation");
-        assert!(lines.contains(&"Candidats : 1".into()));
-        assert!(
-            lines.contains(&"Action    : activer l’exécution pour supprimer les candidats".into())
-        );
+        assert_eq!(lines[0], "Workspace cleanup");
+        assert_eq!(lines[1], "Mode      : preview");
+        assert!(lines.contains(&"Candidates: 1".into()));
+        assert!(lines.contains(&"Action    : enable execution to delete candidates".into()));
         assert!(lines.contains(&"Workspace : /tmp/dw/projects/ha/workspaces/feat-1-done".into()));
-        assert!(lines.contains(&"Éléments  : ha / #1 Done [Valide]".into()));
+        assert!(lines.contains(&"Items     : ha / #1 Done [Valide]".into()));
         assert!(lines.contains(&"Repositories: front, back".into()));
     }
 
@@ -2448,11 +2432,11 @@ mod tests {
 
         let lines = task_commit_plan_lines(&report, false);
 
-        assert_eq!(lines[0], "Commit des repositories");
+        assert_eq!(lines[0], "Repository commit");
         assert!(lines.contains(&"Repository: front".into()));
-        assert!(lines.contains(&"Statut    : Changements détectés:".into()));
+        assert!(lines.contains(&"Status    : Changes detected:".into()));
         assert!(lines.contains(&"Message   : feat(42): demo".into()));
-        assert!(lines.contains(&"Action    : activer l’exécution pour créer les commits".into()));
+        assert!(lines.contains(&"Action    : enable execution to create commits".into()));
     }
 
     #[test]
@@ -2518,18 +2502,16 @@ mod tests {
 
         let lines = task_finish_plan_lines(&report);
 
-        assert_eq!(lines[0], "Finalisation workspace");
-        assert!(lines.contains(&"Statut    : OK".into()));
+        assert_eq!(lines[0], "Workspace finish");
+        assert!(lines.contains(&"Status    : OK".into()));
         assert!(lines.contains(&"- [done] front - OK".into()));
-        assert!(lines.contains(&"Commit à créer".into()));
+        assert!(lines.contains(&"Commit to create".into()));
         assert!(lines.contains(&"Message   : feat(42): demo".into()));
         assert!(lines.contains(&"Handoff front".into()));
-        assert!(lines.contains(&"Fait      : UI ajustée".into()));
+        assert!(lines.contains(&"Done      : UI ajustée".into()));
         assert!(lines.contains(&"- front -> develop".into()));
-        assert!(
-            lines.contains(&"Action    : activer l’exécution pour finaliser le workspace".into())
-        );
-        assert!(lines.contains(&"Confirmation: gérée par le TUI avant exécution".into()));
+        assert!(lines.contains(&"Action    : enable execution to finish the workspace".into()));
+        assert!(lines.contains(&"Confirmation: handled by the TUI before execution".into()));
     }
 
     #[test]
@@ -2550,9 +2532,9 @@ mod tests {
 
         let lines = task_add_repo_plan_lines(&report);
 
-        assert_eq!(lines[0], "Ajout repository (prévisualisation)");
-        assert!(lines.contains(&"Ancrage   : /tmp/project/repositories/front-anchor".into()));
-        assert!(lines.contains(&"Action    : activer l’exécution pour ajouter front".into()));
+        assert_eq!(lines[0], "Add repository (preview)");
+        assert!(lines.contains(&"Anchor    : /tmp/project/repositories/front-anchor".into()));
+        assert!(lines.contains(&"Action    : enable execution to add front".into()));
     }
 
     #[test]
@@ -2570,21 +2552,16 @@ mod tests {
         let dry_run = task_teardown_plan_lines(&report, false);
         let execute = task_teardown_plan_lines(&report, true);
 
-        assert_eq!(dry_run[0], "Suppression workspace (prévisualisation)");
+        assert_eq!(dry_run[0], "Workspace removal (preview)");
         assert_eq!(dry_run[2], "Actions   : 1");
-        assert_eq!(dry_run[3], "Actions prévues");
-        assert_eq!(execute[0], "Suppression workspace exécutée");
+        assert_eq!(dry_run[3], "Planned actions");
+        assert_eq!(execute[0], "Workspace removal executed");
         assert_eq!(execute[2], "Actions   : 1");
-        assert_eq!(execute[3], "Actions appliquées");
+        assert_eq!(execute[3], "Applied actions");
         assert!(dry_run.contains(&"- [front] remove-worktree: /tmp/ws/front".into()));
-        assert!(
-            dry_run.contains(&"Action    : activer l’exécution pour supprimer le workspace".into())
-        );
-        assert!(dry_run.contains(&"Confirmation: gérée par le TUI avant exécution".into()));
-        assert!(
-            !execute
-                .contains(&"Action    : activer l’exécution pour supprimer le workspace".into())
-        );
+        assert!(dry_run.contains(&"Action    : enable execution to remove the workspace".into()));
+        assert!(dry_run.contains(&"Confirmation: handled by the TUI before execution".into()));
+        assert!(!execute.contains(&"Action    : enable execution to remove the workspace".into()));
     }
 
     #[test]
@@ -2603,11 +2580,11 @@ mod tests {
 
         let lines = task_sync_lines(&report);
 
-        assert_eq!(lines[0], "Synchronisation task");
+        assert_eq!(lines[0], "Task synchronization");
         assert_eq!(lines[1], "Workspace : /tmp/ws");
         assert_eq!(lines[2], "Items     : 1");
         assert_eq!(lines[4], "Work items ADO");
-        assert_eq!(lines[5], "#42 [type inconnu / état inconnu] (sans titre)");
+        assert_eq!(lines[5], "#42 [unknown type / unknown state] (untitled)");
     }
 
     #[test]
@@ -2625,13 +2602,11 @@ mod tests {
 
         let lines = task_rename_plan_lines(&report);
 
-        assert_eq!(lines[0], "Renommage workspace");
-        assert!(lines.contains(&"Mode      : prévisualisation".into()));
+        assert_eq!(lines[0], "Workspace rename");
+        assert!(lines.contains(&"Mode      : preview".into()));
         assert!(lines.contains(&"Slug      : old -> new".into()));
-        assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-new".into()));
-        assert!(
-            lines.contains(&"Action    : activer l’exécution pour renommer le workspace".into())
-        );
+        assert!(lines.contains(&"Branch    : feat/1-old -> feat/1-new".into()));
+        assert!(lines.contains(&"Action    : enable execution to rename the workspace".into()));
     }
 
     #[test]
@@ -2656,12 +2631,12 @@ mod tests {
 
         let lines = task_child_task_lines(&report);
 
-        assert_eq!(lines[0], "Sous-tâche ADO");
-        assert_eq!(lines[1], "Statut    : enregistrée dans le workspace");
+        assert_eq!(lines[0], "ADO child task");
+        assert_eq!(lines[1], "Status    : saved in workspace");
         assert_eq!(lines[2], "Workspace : /tmp/ws");
         assert_eq!(lines[3], "Repository: front");
         assert_eq!(lines[4], "Item      : #42");
-        assert_eq!(lines[5], "Titre     : [FRONT] Corriger");
+        assert_eq!(lines[5], "Title     : [FRONT] Corriger");
     }
 
     #[test]
@@ -2697,11 +2672,11 @@ mod tests {
         let lines = task_work_item_plan_lines(&report);
 
         assert_eq!(lines[0], "Work items workspace");
-        assert_eq!(lines[1], "Mode      : prévisualisation");
-        assert_eq!(lines[2], "Action    : ajout");
-        assert!(lines.contains(&"Branche   : feat/1-old -> feat/1-2-new".into()));
-        assert!(lines.contains(&"Éléments  : #1, #2".into()));
-        assert!(lines.contains(&"Action    : activer l’exécution pour ajout".into()));
+        assert_eq!(lines[1], "Mode      : preview");
+        assert_eq!(lines[2], "Action    : add");
+        assert!(lines.contains(&"Branch    : feat/1-old -> feat/1-2-new".into()));
+        assert!(lines.contains(&"Items     : #1, #2".into()));
+        assert!(lines.contains(&"Action    : enable execution for add".into()));
     }
 
     #[test]
@@ -2728,7 +2703,7 @@ mod tests {
         let lines = task_start_plan_lines(&report);
 
         assert_eq!(lines[0], "Plan task start");
-        assert!(lines.contains(&"Action    : activer l’exécution pour créer le workspace.".into()));
+        assert!(lines.contains(&"Action    : enable execution to create the workspace.".into()));
     }
 
     fn workspace_manifest_with_items(

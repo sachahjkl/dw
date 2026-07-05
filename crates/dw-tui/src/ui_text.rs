@@ -1,141 +1,104 @@
 use crate::actions::QuickOptionState;
 use crate::app::App;
-use crate::form::{FormMode, FormState};
+use crate::form::FormState;
 use crate::history::RunHistoryEntry;
-use crate::model::{ActionRisk, TuiAction, View};
+#[cfg(test)]
+use crate::model::View;
+use crate::model::{ActionRisk, TuiAction};
 
 pub(crate) fn help_lines() -> Vec<&'static str> {
     vec![
-        "Tab / Shift-Tab: changer de vue",
-        "1-7: vues principales    ?: aide",
-        "j/k ou flèches: sélectionner une opération",
-        "J/K: sélectionner un workspace dans la vue Workspaces",
-        "ADO: J/K ou [/]: projet, j/k: work item, n/x/e/c/w: préparer/créer/état/contexte/fiche",
-        "PRs: j/k: PR, n/x/N/f/c/d: préparer/créer/formulaire/finaliser/changements/diff",
-        "Assistant: les formulaires réutilisent le contexte chargé dans les onglets",
-        "Les chargements ADO/PR continuent en arrière-plan quand vous changez d'onglet",
-        "h: afficher les lancements; i: afficher état/messages",
-        "/: filtrer les opérations",
-        "n: ouvrir l’assistant d’opération",
-        "o: options rapides agent/config/couleur; O force options depuis Workspaces",
-        "Entrée: lancer l'opération sélectionnée",
-        "r: recharger les données",
-        "q / Esc: quitter",
+        "Navigation",
+        "next view [Tab]",
+        "previous view [Shift-Tab]",
+        "main views [1-6]",
+        "selection down [j]",
+        "selection up [k]",
+        "reload data [r]",
+        "",
+        "Actions",
+        "run selected operation [Enter]",
+        "open operation composer [n]",
+        "open menu [m]",
+        "help [?]",
+        "",
+        "Domain views show their own action buttons at the bottom of the active panel.",
+        "ADO work items and PRs preload in the background when the TUI starts.",
+        "",
+        "Quit",
+        "quit [q]",
+        "quit [Esc]",
     ]
 }
 
+#[cfg(test)]
 pub(crate) fn shortcut_bar_line(app: &App) -> String {
-    let selected = match app.view {
-        View::Dashboard => {
-            let items = app.cockpit_items();
-            items
-                .get(app.selected_cockpit.min(items.len().saturating_sub(1)))
-                .map(|item| item.primary_action.display_label())
-                .unwrap_or_else(|| "Aucun item cockpit".into())
-        }
-        View::Composer => match app.action_form.mode {
-            FormMode::Selecting => format!(
-                "Parcours: {}",
-                crate::form::FormTemplate::ALL[app.action_form.template_index].label()
-            ),
-            FormMode::Editing => app
-                .action_form
-                .build_action(&app.snapshot.root)
-                .map(|action| action.display_label())
-                .unwrap_or_else(|| "Action incomplète".into()),
-        },
-        View::Ado => app
-            .selected_ado_action_preview()
-            .unwrap_or_else(|| "Aucun work item ADO".into()),
-        View::PullRequests => app
-            .selected_pull_request_action_preview()
-            .unwrap_or_else(|| "Aucune PR".into()),
-        View::Db => app
-            .selected_database_action_preview()
-            .unwrap_or_else(|| "Aucune base DB".into()),
-        View::Workspaces => app
-            .selected_workspace_action_preview()
-            .unwrap_or_else(|| "Aucun workspace".into()),
-        _ => app
-            .selected_visible_action()
-            .map(|(_, action)| action.display_label())
-            .unwrap_or_else(|| "Aucune action".into()),
-    };
     let running = app
         .running_action_label()
-        .map(|label| format!(" | en cours: {label}"))
+        .map(|label| format!(" | running [{label}]"))
         .unwrap_or_default();
     format!(
-        "{} | {} | h lancements | i état | ? aide | q quitter{}",
+        "{} | menu [m] | help [?] | quit [q]{}",
         view_hint(app),
-        selected,
         running
     )
 }
 
 pub(crate) fn state_modal_lines(app: &App) -> Vec<String> {
-    let mut lines = vec![
-        "Contexte courant".into(),
-        shortcut_bar_line(app),
-        String::new(),
-        "Chargements".into(),
-    ];
+    let mut lines = vec!["Loads".into()];
     lines.extend(app.background_status_lines());
     let queued = app.action_queue_status_lines();
     if !queued.is_empty() {
         lines.push(String::new());
-        lines.push("File d'actions".into());
+        lines.push("Action queue".into());
         lines.extend(queued);
     }
     lines.push(String::new());
     lines.push("Messages".into());
     if app.messages.is_empty() {
-        lines.push("Aucun message.".into());
+        lines.push("No messages.".into());
     } else {
         lines.extend(app.messages.iter().rev().take(12).rev().cloned());
     }
-    lines.push(String::new());
-    lines.push("Esc/i: fermer    j/k: scroller    Home/End: début/fin".into());
     lines
 }
 
 pub(crate) fn guide_detail_lines() -> Vec<String> {
     vec![
-        "Guide de démarrage DevWorkflow".into(),
+        "DevWorkflow quick guide".into(),
         String::new(),
-        "1. Vérifier l'environnement".into(),
-        "   Ouvrir Config puis lancer les diagnostics configuration et agents.".into(),
-        "   Corriger les points bloquants avant de créer des workspaces.".into(),
+        "1. Check the environment".into(),
+        "   Open Config, then run configuration and agent diagnostics.".into(),
+        "   Fix blocking checks before creating workspaces.".into(),
         String::new(),
-        "2. Lire le cockpit".into(),
-        "   Le Dashboard priorise les PR sans workspace, workspaces actifs, work items assignés et alertes.".into(),
-        "   Entrée lance l'opération primaire de la ligne sélectionnée.".into(),
+        "2. Read the cockpit".into(),
+        "   Dashboard prioritizes PRs without workspace, active workspaces, assigned work items and alerts.".into(),
+        "   Enter runs the selected row's primary operation.".into(),
         String::new(),
-        "3. Traiter ADO et PRs".into(),
-        "   Onglet ADO: sélectionner un projet et un work item, puis préparer, contextualiser ou ouvrir la fiche.".into(),
-        "   Onglet PRs: charger les PR actives, créer un workspace, finir ou ouvrir la PR.".into(),
+        "3. Process ADO and PRs".into(),
+        "   ADO: select a project and work item, then prepare, add context or open the card.".into(),
+        "   PRs: load active PRs, create a workspace, finish or open the PR.".into(),
         String::new(),
-        "4. Travailler un workspace".into(),
-        "   Onglet Workspaces: ouvrir l'agent, vérifier, synchroniser, préparer handoff ou finaliser.".into(),
-        "   Les actions destructives passent par une confirmation TUI explicite.".into(),
+        "4. Work a workspace".into(),
+        "   Workspaces: open the agent, check, sync, prepare handoff or finish.".into(),
+        "   Destructive actions require explicit TUI confirmation.".into(),
         String::new(),
-        "5. Explorer les données".into(),
-        "   Onglet DB: explorer le schéma, décrire une table ou lancer une requête guidée en lecture seule.".into(),
-        "   Les résultats longs s'ouvrent dans la modale Lancements.".into(),
+        "5. Explore data".into(),
+        "   DB: explore schema, describe a table or run a guided read-only query.".into(),
+        "   Long results open in the Journal modal.".into(),
         String::new(),
-        "6. Construire une opération avancée".into(),
-        "   Onglet Composer: choisir un parcours, remplir les champs, appliquer les suggestions.".into(),
-        "   La preview affiche l’intention TUI et son niveau de risque, pas une commande à recopier.".into(),
+        "6. Build an advanced operation".into(),
+        "   Composer: choose a flow, fill fields, apply suggestions.".into(),
+        "   Preview shows the TUI intent and risk level, not a command to copy.".into(),
         String::new(),
-        "Dans le TUI".into(),
-        "   Les panneaux modaux affichent les résultats de lecture.".into(),
-        "   Les lancements en arrière-plan restent dans le panneau Lancements.".into(),
-        "   Esc: fermer    j/k: scroller    Home/End: début/fin".into(),
+        "Inside the TUI".into(),
+        "   Modals display read results.".into(),
+        "   Background operations stay in Journal.".into(),
     ]
 }
 
 pub(crate) fn history_marker(entry: &RunHistoryEntry) -> &'static str {
-    if entry.status == "en cours" {
+    if entry.status == "running" || entry.status == "en cours" {
         "..."
     } else if entry.success {
         "OK"
@@ -144,50 +107,39 @@ pub(crate) fn history_marker(entry: &RunHistoryEntry) -> &'static str {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn view_hint(app: &App) -> &'static str {
     match app.view {
-        View::Dashboard => "j/k: cockpit    Entrée: décision    r: recharger    h: lancements",
+        View::Dashboard => "cockpit down [j]    cockpit up [k]    decide [Enter]    reload [r]",
         View::Workspaces => {
-            "J/K: workspace    o: ouvrir    p: vérifier    s: sync    l: latest    v: handoff    c: commit    f/F: finir    t/x: supprimer"
+            "workspace down [J]    workspace up [K]    open [o]    check [p]    sync [s]    latest [l]    handoff [v]    commit [c]    finish preview [f]    finish execute [F]    remove preview [t]    remove execute [x]"
         }
         View::Ado if app.assigned_loading() => {
-            "Chargement ADO en arrière-plan; vous pouvez changer d'onglet."
+            "ADO is loading in the background; you can keep navigating."
         }
         View::Ado => {
-            "n: préparer workspace    x: créer workspace    e/E: état workflow    c: contexte    w: fiche    u: ouvrir ADO"
+            "prepare workspace [n]    create workspace [x]    move state [e]    state form [E]    context [c]    card [w]    open ADO [u]"
         }
         View::PullRequests if app.pull_requests_loading() => {
-            "Chargement PRs en arrière-plan; vous pouvez changer d'onglet."
+            "PRs are loading in the background; you can keep navigating."
         }
         View::PullRequests => {
-            "n: préparer workspace    x: créer workspace    N: formulaire PR    f/F: finaliser    c: changements    d: diff    u: ouvrir PR"
+            "prepare workspace [n]    create workspace [x]    PR form [N]    finish preview [f]    finish execute [F]    changes [c]    diff [d]    open PR [u]"
         }
-        View::Db => "Entrée/s: explorer schéma    d: décrire table    e: requête guidée",
-        View::Config => {
-            "s/d/f/g/a: config show/doctor/refresh/guide/agent doctor    o: options    r: reload"
+        View::Db => {
+            "explore schema [Enter]    explore schema [s]    describe table [d]    guided query [e]"
         }
         View::Composer => {
-            "Entrée: éditer/lancer    j/k/Tab: sélectionner    Ctrl+Espace: suggestion    Esc: parcours"
+            "edit or run [Enter]    select down [j]    select up [k]    next field [Tab]    suggestion [Ctrl+Space]    flows [Esc]"
         }
-        View::Help => "Tab: revenir aux vues    o: options    q: quitter",
     }
 }
 
 pub(crate) fn confirmation_lines(action: &TuiAction) -> Vec<String> {
-    let mut lines = vec![
-        format!("Risque      : {}", action.kind.risk_label()),
-        format!("Opération   : {}", action.display_label()),
-        format!("Description : {}", action.description),
-    ];
+    let mut lines = Vec::new();
     if matches!(action.kind, ActionRisk::Destructive) && action.bypasses_cli_confirmation() {
-        lines.push("Confirmation destructive déjà portée par la requête TUI.".into());
+        lines.push("Destructive confirmation is carried by the TUI request.".into());
     }
-    lines.extend([
-        String::new(),
-        action.display_label(),
-        String::new(),
-        action.kind.confirmation_hint().into(),
-    ]);
     lines
 }
 
@@ -195,7 +147,7 @@ pub(crate) fn options_summary_lines(app: &App) -> Vec<String> {
     vec![
         format!("Root: {}", app.snapshot.root),
         format!(
-            "Config: {} projets · {} repositories · {} DB · doctor {}",
+            "Config: {} projects · {} repositories · {} DB · doctor {}",
             app.snapshot.project_count(),
             app.snapshot.repository_count(),
             app.snapshot.database_count(),
@@ -206,7 +158,7 @@ pub(crate) fn options_summary_lines(app: &App) -> Vec<String> {
             }
         ),
         format!(
-            "Agent: {}    Couleur: {}",
+            "Agent: {}    Color: {}",
             app.snapshot.default_agent(),
             app.snapshot.color_mode
         ),
@@ -215,29 +167,31 @@ pub(crate) fn options_summary_lines(app: &App) -> Vec<String> {
 
 pub(crate) fn history_output_lines(app: &App) -> Vec<String> {
     let Some(entry) = app.history.selected_entry() else {
-        return vec!["Aucun lancement sélectionné.".into()];
+        return vec![
+            "No operation in Journal.".into(),
+            "Long-running or background actions will appear here with their logs.".into(),
+        ];
     };
     let marker = history_marker(entry);
     let mut lines = vec![
         format!(
-            "Lancement   : {}/{}",
+            "Run         : {}/{}",
             app.history.selected_entry + 1,
             app.history.entries.len()
         ),
         format!("{marker} {} ({})", entry.request_label, entry.status),
-        if entry.status == "en cours" {
-            "Sortie en cours de capture; vous pouvez fermer cette modale sans interrompre l’action."
-                .into()
+        if entry.status == "running" || entry.status == "en cours" {
+            "Output is being captured; closing this modal does not interrupt the action.".into()
         } else {
-            "Esc/h: fermer    [/]: lancement    j/k: scroller    Home/End: début/fin".into()
+            "Output captured.".into()
         },
         String::new(),
     ];
     if entry.output_lines.is_empty() {
-        if entry.status == "en cours" {
-            lines.push("En attente de la première ligne de sortie...".into());
+        if entry.status == "running" || entry.status == "en cours" {
+            lines.push("Waiting for the first output line...".into());
         } else {
-            lines.push("Aucune sortie capturée pour ce lancement.".into());
+            lines.push("No output captured for this run.".into());
         }
     } else {
         lines.extend(entry.output_lines.clone());
@@ -259,7 +213,7 @@ pub(crate) fn option_active(
 
 pub(crate) fn form_preview_lines(app: &App) -> Vec<String> {
     let Some(form) = &app.form else {
-        return vec!["Aucun formulaire ouvert.".into()];
+        return vec!["No form open.".into()];
     };
     form_preview_lines_for(form, app)
 }
@@ -273,33 +227,33 @@ fn form_preview_lines_for(form: &FormState, app: &App) -> Vec<String> {
     match form.build_action(&app.snapshot.root) {
         Some(action) => {
             lines.push(action.display_label());
-            lines.push(format!("Risque: {}", action.kind.risk_label()));
+            lines.push(format!("Risk: {}", action.kind.risk_label()));
             if matches!(action.kind, ActionRisk::Destructive) && action.bypasses_cli_confirmation()
             {
                 lines.push(
-                    "Confirmation destructive portée par la requête TUI; confirmation TUI requise."
+                    "Destructive confirmation is carried by the TUI request; TUI confirmation required."
                         .into(),
                 );
             }
         }
-        None => lines.push("Action incomplète".into()),
+        None => lines.push("Incomplete action".into()),
     }
     if let Some(field) = form.fields.get(form.selected_field) {
         let value = if field.value.trim().is_empty() {
-            "<vide>"
+            "<empty>"
         } else {
             field.value.as_str()
         };
-        lines.push(format!("Champ: {} = {}", field.label, value));
+        lines.push(format!("Field: {} = {}", field.label, value));
         if !field.help.trim().is_empty() {
-            lines.push(format!("Aide: {}", field.help));
+            lines.push(format!("Help: {}", field.help));
         }
     }
     if let Some(value) = form.selected_suggestion(&app.snapshot) {
         lines.push(format!("Suggestion: {value}"));
     }
     lines.push(
-        "Entrée: lancer    Tab/flèches: champ    Ctrl+Espace: suggestion    Espace: toggle    Esc: annuler"
+        "run [Enter]    next field [Tab]    field with arrows [arrows]    suggestion [Ctrl+Space]    toggle [Space]    cancel [Esc]"
             .into(),
     );
     lines
@@ -315,7 +269,7 @@ mod tests {
         let app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         assert!(view_hint(&app).contains("cockpit"));
-        assert!(view_hint(&app).contains("décision"));
+        assert!(view_hint(&app).contains("decide"));
     }
 
     #[test]
@@ -324,7 +278,7 @@ mod tests {
 
         assert!(app.snapshot_loading());
         assert!(view_hint(&app).contains("cockpit"));
-        assert!(view_hint(&app).contains("recharger"));
+        assert!(view_hint(&app).contains("reload"));
     }
 
     #[test]
@@ -332,8 +286,44 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.view = View::Composer;
 
-        assert!(view_hint(&app).contains("éditer/lancer"));
-        assert!(shortcut_bar_line(&app).contains("Parcours: Créer workspace"));
+        assert!(view_hint(&app).contains("edit or run"));
+        assert!(shortcut_bar_line(&app).contains("edit or run [Enter]"));
+        assert!(!shortcut_bar_line(&app).contains("target"));
+    }
+
+    #[test]
+    fn shortcut_bar_contains_only_shortcuts_not_selected_context() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+
+        let dashboard = shortcut_bar_line(&app);
+        assert!(!dashboard.contains("target"));
+        assert!(!dashboard.contains("Guide"));
+        assert!(!dashboard.contains("menu/config"));
+        assert_eq!(dashboard.matches("menu [m]").count(), 1);
+
+        app.view = View::PullRequests;
+        app.snapshot.pull_requests = vec![crate::model::TuiPullRequest {
+            workspace: None,
+            project: "ha".into(),
+            repository: "back".into(),
+            ado_repository: "back".into(),
+            branch: "feature/55265-demo".into(),
+            target_branch: "develop".into(),
+            pull_request_id: Some(55265),
+            title: Some("Corriger footer".into()),
+            is_draft: false,
+            work_item_ids: vec!["55265".into()],
+            url: None,
+            error: None,
+        }];
+
+        let prs = shortcut_bar_line(&app);
+        assert!(prs.contains("diff [d]"));
+        assert!(!prs.contains("target"));
+        assert!(!prs.contains("#55265"));
+        assert!(!prs.contains("Corriger footer"));
+        assert!(!prs.contains("Preview"));
+        assert!(!prs.contains("workspace PR"));
     }
 
     #[test]
@@ -343,11 +333,14 @@ mod tests {
 
         let hint = view_hint(&app);
 
-        assert!(hint.contains("préparer workspace"));
-        assert!(hint.contains("état workflow"));
-        assert!(hint.contains("e/E"));
-        assert!(hint.contains("contexte"));
-        assert!(hint.contains("ouvrir ADO"));
+        assert!(hint.contains("prepare workspace"));
+        assert!(hint.contains("move state"));
+        assert!(hint.contains("move state [e]"));
+        assert!(hint.contains("state form [E]"));
+        assert!(!hint.contains("n: "));
+        assert!(!hint.contains("e/E: "));
+        assert!(hint.contains("context"));
+        assert!(hint.contains("open ADO"));
     }
 
     #[test]
@@ -357,12 +350,12 @@ mod tests {
 
         let hint = view_hint(&app);
 
-        assert!(hint.contains("vérifier"));
+        assert!(hint.contains("check"));
         assert!(hint.contains("sync"));
         assert!(hint.contains("latest"));
         assert!(hint.contains("handoff"));
-        assert!(hint.contains("finir"));
-        assert!(hint.contains("supprimer"));
+        assert!(hint.contains("finish"));
+        assert!(hint.contains("remove"));
     }
 
     #[test]
@@ -372,40 +365,38 @@ mod tests {
 
         let hint = view_hint(&app);
 
-        assert!(hint.contains("préparer workspace"));
-        assert!(hint.contains("formulaire PR"));
-        assert!(hint.contains("finaliser"));
-        assert!(hint.contains("changements"));
+        assert!(hint.contains("prepare workspace"));
+        assert!(hint.contains("PR form"));
+        assert!(hint.contains("finish"));
+        assert!(hint.contains("changes"));
         assert!(hint.contains("diff"));
-        assert!(hint.contains("ouvrir PR"));
+        assert!(hint.contains("open PR"));
     }
 
     #[test]
-    fn config_hint_lists_native_accelerators() {
-        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
-        app.view = View::Config;
+    fn config_is_reached_through_menu_shortcut() {
+        let app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
-        let hint = view_hint(&app);
+        let hint = shortcut_bar_line(&app);
 
-        assert!(hint.contains("config show/doctor"));
-        assert!(!hint.contains("completion"));
-        assert!(hint.contains("agent doctor"));
+        assert!(hint.contains("menu [m]"));
+        assert!(!View::ALL.iter().any(|view| view.label() == "Config"));
     }
 
     #[test]
     fn help_mentions_start_pr_form_prefill() {
         let help = help_lines().join("\n");
 
-        assert!(help.contains("Assistant"));
-        assert!(help.contains("contexte chargé"));
+        assert!(help.contains("operation composer [n]"));
+        assert!(help.contains("preload in the background"));
     }
 
     #[test]
     fn help_mentions_direct_view_shortcuts_and_help_key() {
         let help = help_lines().join("\n");
 
-        assert!(help.contains("1-7: vues principales"));
-        assert!(help.contains("?: aide"));
+        assert!(help.contains("main views [1-6]"));
+        assert!(help.contains("help [?]"));
     }
 
     #[test]
@@ -435,15 +426,15 @@ mod tests {
         let lines = options_summary_lines(&app);
 
         assert!(lines[0].contains("/tmp/missing-dw-root"));
-        assert!(lines[1].contains("1 projets"));
+        assert!(lines[1].contains("1 projects"));
         assert!(lines[1].contains("2 repositories"));
         assert!(lines[1].contains("1 DB"));
         assert!(lines[1].contains("doctor OK"));
-        assert!(lines[2].contains("Couleur: always"));
+        assert!(lines[2].contains("Color: always"));
     }
 
     #[test]
-    fn confirmation_lines_include_risk_action_and_hint() {
+    fn confirmation_lines_do_not_duplicate_action_buttons() {
         let action = TuiAction {
             label: "Teardown execute".into(),
             request: crate::model::TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
@@ -456,16 +447,17 @@ mod tests {
                 mode: dw_core::ExecutionMode::Execute,
                 yes: true,
             }),
-            description: "Supprimer le workspace".into(),
+            description: "Remove workspace".into(),
             kind: ActionRisk::Destructive,
         };
 
         let lines = confirmation_lines(&action);
+        let joined = lines.join("\n");
 
-        assert!(lines.iter().any(|line| line.contains("Risque")));
-        assert!(lines.iter().any(|line| line.contains("Teardown execute")));
-        assert!(lines.iter().any(|line| line.contains("destructive")));
-        assert!(lines.iter().any(|line| line.contains("requête TUI")));
+        assert!(lines.iter().any(|line| line.contains("TUI request")));
+        assert!(!joined.contains("Enter/"));
+        assert!(!joined.contains("Esc/"));
+        assert!(!joined.contains("Teardown execute"));
     }
 
     #[test]
@@ -479,9 +471,9 @@ mod tests {
         form.begin_editing(&app.snapshot);
         for field in &mut form.fields {
             match field.label.as_str() {
-                "Work items" => field.value = "42".into(),
-                "Projet" => field.value = "ha".into(),
-                "State" => field.value = "En réalisation".into(),
+                "Work item IDs" => field.value = "42".into(),
+                "Project" => field.value = "ha".into(),
+                "Destination state" => field.value = "En réalisation".into(),
                 _ => {}
             }
         }
@@ -489,11 +481,15 @@ mod tests {
 
         let lines = form_preview_lines(&app);
 
-        assert!(lines[0].contains("Assistant · Changer état ADO"));
-        assert!(lines.iter().any(|line| line.contains("Risque:")));
-        assert!(lines.iter().any(|line| line.contains("requête TUI")));
-        assert!(lines.iter().any(|line| line.contains("Champ: Work items")));
-        assert!(lines.iter().any(|line| line.contains("Aide: IDs ADO")));
+        assert!(lines[0].contains("Composer · Move work item state"));
+        assert!(lines.iter().any(|line| line.contains("Risk:")));
+        assert!(lines.iter().any(|line| line.contains("TUI request")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Field: Work item IDs"))
+        );
+        assert!(lines.iter().any(|line| line.contains("Help: ADO IDs")));
     }
 
     #[test]
@@ -515,21 +511,21 @@ mod tests {
 
         let lines = form_preview_lines(&app);
 
-        assert_eq!(lines[0], "Action incomplète");
-        assert!(lines.iter().any(|line| line == "Champ: Projet = <vide>"));
+        assert_eq!(lines[0], "Incomplete action");
+        assert!(lines.iter().any(|line| line == "Field: Project = <empty>"));
         assert!(
             lines
                 .iter()
-                .any(|line| line == "Aide: Projet configuré optionnel")
+                .any(|line| line == "Help: Optional configured project")
         );
-        assert!(lines.last().is_some_and(|line| line.contains("Entrée")));
+        assert!(lines.last().is_some_and(|line| line.contains("Enter")));
     }
 
     #[test]
     fn history_marker_distinguishes_running_success_and_failure() {
         let running = RunHistoryEntry {
             request_label: "Task finish".into(),
-            status: "en cours".into(),
+            status: "running".into(),
             success: true,
             output_preview: Vec::new(),
             output_lines: Vec::new(),
@@ -556,13 +552,20 @@ mod tests {
 
         let lines = history_output_lines(&app);
 
-        assert!(lines[1].contains("en cours"));
-        assert!(lines[2].contains("Sortie en cours de capture"));
-        assert!(
-            lines
-                .iter()
-                .any(|line| line.contains("première ligne de sortie"))
-        );
+        assert!(lines[1].contains("running"));
+        assert!(lines[2].contains("Output is being captured"));
+        assert!(lines.iter().any(|line| line.contains("first output line")));
+    }
+
+    #[test]
+    fn history_output_lines_explain_empty_journal() {
+        let app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+
+        let lines = history_output_lines(&app);
+
+        assert!(lines[0].contains("No operation"));
+        assert!(lines[1].contains("background"));
+        assert!(!lines.iter().any(|line| line.contains("Esc/h")));
     }
 
     #[test]
@@ -578,12 +581,8 @@ mod tests {
 
         let lines = history_output_lines(&app);
 
-        assert!(lines[2].contains("Esc/h"));
-        assert!(
-            lines
-                .iter()
-                .any(|line| line.contains("Aucune sortie capturée"))
-        );
+        assert_eq!(lines[2], "Output captured.");
+        assert!(lines.iter().any(|line| line.contains("No output captured")));
     }
 
     #[test]

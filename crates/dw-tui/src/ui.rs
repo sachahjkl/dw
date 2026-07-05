@@ -6,8 +6,8 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Row, Table, Wrap},
 };
 
-use crate::actions::{PullRequestAction, QUICK_OPTIONS, quick_option_shortcut_hint};
-use crate::app::App;
+use crate::actions::{AdoItemAction, PullRequestAction};
+use crate::app::{App, MENU_SECTIONS, MenuSection, ModalKind};
 use crate::background::BackgroundKind;
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
 use crate::model::{
@@ -15,9 +15,52 @@ use crate::model::{
 };
 use crate::ui_text::{
     action_builder_preview_lines, confirmation_lines, form_preview_lines, help_lines,
-    history_output_lines, option_active, options_summary_lines, shortcut_bar_line,
-    state_modal_lines,
+    history_output_lines, option_active, options_summary_lines, state_modal_lines,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActionIntent {
+    Primary,
+    Review,
+    External,
+    Dangerous,
+    Disabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActionButton {
+    label: String,
+    key: &'static str,
+    intent: ActionIntent,
+    enabled: bool,
+}
+
+impl ActionButton {
+    fn new(label: impl Into<String>, key: &'static str, intent: ActionIntent) -> Self {
+        Self {
+            label: label.into(),
+            key,
+            intent,
+            enabled: true,
+        }
+    }
+
+    fn disabled(label: impl Into<String>, key: &'static str) -> Self {
+        Self {
+            label: label.into(),
+            key,
+            intent: ActionIntent::Disabled,
+            enabled: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StatusBadge {
+    label: String,
+    status: &'static str,
+    color: Color,
+}
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
@@ -27,12 +70,12 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Min(12),
-            Constraint::Length(3),
+            Constraint::Length(1),
         ])
         .split(area);
 
-    render_header(frame, root[0], app);
-    render_tabs(frame, root[1], app);
+    render_top_bar(frame, root[0], app);
+    render_top_separator(frame, root[1]);
     render_body(frame, root[2], app);
     render_footer(frame, root[3], app);
 
@@ -44,94 +87,128 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         render_form(frame, area, app);
     }
 
-    if app.options_open {
-        render_options(frame, area, app);
-    }
-
-    if app.detail.is_some() {
-        render_detail_panel(frame, area, app);
-    }
-
-    if app.history.output_open {
-        render_history_output(frame, area, app);
-    }
-
-    if app.state_open {
-        render_state_modal(frame, area, app);
+    if app.modal_stack.is_empty() {
+        if app.options_open {
+            render_options(frame, area, app);
+        }
+        if app.help_open {
+            render_help_modal(frame, area);
+        }
+        if app.detail.is_some() {
+            render_detail_panel(frame, area, app);
+        }
+        if app.history.output_open {
+            render_history_output(frame, area, app);
+        }
+        if app.state_open {
+            render_state_modal(frame, area, app);
+        }
+    } else {
+        for modal in &app.modal_stack {
+            match modal {
+                ModalKind::Menu => render_options(frame, area, app),
+                ModalKind::MenuSection => render_menu_section(frame, area, app),
+                ModalKind::Help => render_help_modal(frame, area),
+                ModalKind::Detail => render_detail_panel(frame, area, app),
+                ModalKind::History => render_history_output(frame, area, app),
+                ModalKind::State => render_state_modal(frame, area, app),
+            }
+        }
     }
 }
 
-fn render_header(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let mut title = vec![Span::styled(
-        &app.snapshot.root,
-        Style::default().fg(Color::Gray),
-    )];
+fn render_top_bar(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let mut spans = tab_spans(app);
+    let status = top_status_text(app);
+    let right = if status.is_empty() {
+        app.snapshot.root.clone()
+    } else {
+        format!("{status}  {}", app.snapshot.root)
+    };
+    let content_width = spans
+        .iter()
+        .map(|span| span.content.chars().count())
+        .sum::<usize>();
+    let right_width = right.chars().count();
+    let padding = (area.width as usize)
+        .saturating_sub(content_width + right_width)
+        .max(1);
+    spans.push(Span::raw(" ".repeat(padding)));
+    spans.push(Span::styled(right, Style::default().fg(Color::Gray)));
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(Color::Black)),
+        area,
+    );
+}
+
+fn tab_spans(app: &App) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for (index, view) in View::ALL.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+        }
+        let style = if *view == app.view {
+            Style::default().fg(Color::White)
+        } else {
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::DIM)
+        };
+        spans.push(Span::styled(
+            format!(" {} [{}] ", view.label(), index + 1),
+            style,
+        ));
+    }
+    spans
+}
+
+fn top_status_text(app: &App) -> String {
+    let mut labels = Vec::new();
     if app.assigned_loading() {
-        title.push(Span::raw("  "));
-        title.push(loading_span(
+        labels.push(loading_label(
             "ADO",
             app.loading_elapsed_label(BackgroundKind::Assigned),
         ));
     }
     if app.snapshot_loading() {
-        title.push(Span::raw("  "));
-        title.push(loading_span(
+        labels.push(loading_label(
             "Snapshot",
             app.loading_elapsed_label(BackgroundKind::Snapshot),
         ));
     }
     if app.pull_requests_loading() {
-        title.push(Span::raw("  "));
-        title.push(loading_span(
+        labels.push(loading_label(
             "PRs",
             app.loading_elapsed_label(BackgroundKind::PullRequests),
         ));
     }
     if app.action_loading() {
-        title.push(Span::raw("  "));
-        title.push(loading_span(
-            "Opération",
+        labels.push(loading_label(
+            "Operation",
             app.loading_elapsed_label(BackgroundKind::Action),
         ));
     }
     let queued = app.pending_action_count();
     if queued > 0 {
-        title.push(Span::raw("  "));
-        title.push(Span::styled(
-            format!("File {queued}"),
-            Style::default().fg(Color::LightMagenta),
-        ));
+        labels.push(format!("Queue {queued}"));
     }
+    labels.join("  ")
+}
+
+fn loading_label(label: &'static str, elapsed: Option<String>) -> String {
+    format!("{label} {}...", elapsed.unwrap_or_else(|| "<1s".into()))
+}
+
+fn render_top_separator(frame: &mut Frame<'_>, area: Rect) {
+    let width = area.width as usize;
     frame.render_widget(
-        Paragraph::new(Line::from(title)).style(Style::default().bg(Color::Black)),
+        Paragraph::new(Line::from(Span::styled(
+            "─".repeat(width),
+            Style::default().fg(Color::DarkGray),
+        )))
+        .style(Style::default().bg(Color::Black)),
         area,
     );
-}
-
-fn loading_span(label: &'static str, elapsed: Option<String>) -> Span<'static> {
-    Span::styled(
-        format!("{label} {}...", elapsed.unwrap_or_else(|| "<1s".into())),
-        Style::default().fg(Color::Yellow),
-    )
-}
-
-fn render_tabs(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let labels = View::ALL
-        .iter()
-        .enumerate()
-        .map(|(index, view)| {
-            let style = if *view == app.view {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Gray)
-            };
-            Span::styled(format!(" {} {} ", index + 1, view.label()), style)
-        })
-        .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(Line::from(labels)), area);
 }
 
 fn render_body(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -141,9 +218,7 @@ fn render_body(frame: &mut Frame<'_>, area: Rect, app: &App) {
         View::Ado => render_ado(frame, area, app),
         View::PullRequests => render_pull_requests(frame, area, app),
         View::Db => render_db(frame, area, app),
-        View::Config => render_config(frame, area, app),
         View::Composer => render_action_builder_view(frame, area, app),
-        View::Help => render_help(frame, area),
     }
 }
 
@@ -198,7 +273,7 @@ fn render_cockpit(frame: &mut Frame<'_>, area: Rect, app: &App) {
             ],
         )
         .header(
-            Row::new(["Section", "Sujet", "Statut", "Opération", "Contexte"]).style(
+            Row::new(["Section", "Subject", "Status", "Operation", "Context"]).style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -206,7 +281,7 @@ fn render_cockpit(frame: &mut Frame<'_>, area: Rect, app: &App) {
         )
         .block(
             Block::default()
-                .title("Cockpit · Entrée lance l'opération primaire")
+                .title("Cockpit · Enter runs the primary operation")
                 .borders(Borders::ALL),
         ),
         area,
@@ -222,7 +297,7 @@ fn cockpit_color(severity: CockpitSeverity) -> Color {
 }
 
 fn render_metrics(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let block = Block::default().title("Synthèse").borders(Borders::ALL);
+    let block = Block::default().title("Readiness").borders(Borders::ALL);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -241,48 +316,126 @@ fn render_metrics(frame: &mut Frame<'_>, area: Rect, app: &App) {
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
+            Constraint::Length(1),
             Constraint::Min(0),
         ])
         .split(inner);
 
     let workspace_total = app.snapshot.workspaces.len().max(1) as u16;
     let prune_ratio = ((app.snapshot.prune_candidates as u16) * 100 / workspace_total).min(100);
+    frame.render_widget(
+        Paragraph::new(status_badge_line(&readiness_badges(app))),
+        rows[0],
+    );
     let lines = [
-        format!("Projets       {}", app.snapshot.project_count()),
-        format!("Workspaces    {}", app.snapshot.workspaces.len()),
-        format!("Work items    {}", app.snapshot.assigned_count()),
-        format!(
-            "PR actives    {}",
+        metric_line(
+            "Projects",
+            app.snapshot.project_count().to_string(),
+            Color::LightBlue,
+        ),
+        metric_line(
+            "Workspaces",
+            app.snapshot.workspaces.len().to_string(),
+            Color::LightGreen,
+        ),
+        metric_line(
+            "Work items",
+            app.snapshot.assigned_count().to_string(),
+            Color::Yellow,
+        ),
+        metric_line(
+            "Active PRs",
             app.snapshot
                 .pull_requests
                 .iter()
                 .filter(|item| item.pull_request_id.is_some())
                 .count()
+                .to_string(),
+            Color::Cyan,
         ),
-        format!("Nettoyage     {}", app.snapshot.prune_candidates),
-        format!("DB            {}", app.snapshot.database_count()),
-        format!("Agent         {}", app.snapshot.default_agent()),
+        metric_line(
+            "Cleanup",
+            app.snapshot.prune_candidates.to_string(),
+            Color::LightRed,
+        ),
+        metric_line(
+            "DB",
+            app.snapshot.database_count().to_string(),
+            Color::Magenta,
+        ),
+        metric_line("Agent", app.snapshot.default_agent(), Color::White),
     ];
-    for (line, row) in lines.iter().zip(rows.iter()) {
-        frame.render_widget(Paragraph::new(line.as_str()), *row);
+    for (line, row) in lines.iter().zip(rows.iter().skip(1)) {
+        frame.render_widget(Paragraph::new(line.clone()), *row);
     }
     frame.render_widget(
         Gauge::default()
-            .label("workspaces prêts à nettoyer")
+            .label("workspaces ready to clean")
             .gauge_style(Style::default().fg(Color::Yellow))
             .percent(prune_ratio),
-        rows[7],
+        rows[8],
     );
     for (line, row) in app
         .background_status_lines()
         .iter()
-        .zip(rows.iter().skip(8))
+        .zip(rows.iter().skip(9))
     {
         frame.render_widget(
             Paragraph::new(line.as_str()).style(Style::default().fg(Color::Gray)),
             *row,
         );
     }
+}
+
+fn readiness_badges(app: &App) -> Vec<StatusBadge> {
+    vec![
+        readiness_badge(
+            "Config",
+            app.snapshot_loading(),
+            true,
+            app.snapshot.config_doctor.passed,
+        ),
+        readiness_badge(
+            "ADO",
+            app.assigned_loading(),
+            app.snapshot.assigned_loaded,
+            true,
+        ),
+        readiness_badge(
+            "PRs",
+            app.pull_requests_loading(),
+            app.snapshot.pull_requests_loaded,
+            true,
+        ),
+        readiness_badge("Action", app.action_loading(), !app.action_loading(), true),
+    ]
+}
+
+fn readiness_badge(label: &'static str, loading: bool, loaded: bool, healthy: bool) -> StatusBadge {
+    let (status, color) = if loading {
+        ("loading", Color::Yellow)
+    } else if !loaded {
+        ("waiting", Color::DarkGray)
+    } else if healthy {
+        ("ready", Color::LightGreen)
+    } else {
+        ("check", Color::LightRed)
+    };
+    StatusBadge {
+        label: label.into(),
+        status,
+        color,
+    }
+}
+
+fn metric_line(label: &'static str, value: String, color: Color) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{label:<12}"), Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            value,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ),
+    ])
 }
 
 fn render_pull_requests(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -292,32 +445,29 @@ fn render_pull_requests(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .split(area);
 
     if !app.snapshot.pull_requests_loaded {
-        let message = if app.pull_requests_loading() {
-            app.loading_elapsed_label(BackgroundKind::PullRequests)
-                .map(|elapsed| format!("Chargement des PRs en arrière-plan depuis {elapsed}.\nr: relancer le chargement    Tab: changer d'onglet"))
-                .unwrap_or_else(|| {
-                    "Chargement des PRs en arrière-plan.\nr: relancer le chargement    Tab: changer d'onglet".into()
-                })
+        if app.pull_requests_loading() {
+            render_loading_panel(
+                frame,
+                chunks[0],
+                "Pull requests",
+                "Loading active PRs",
+                app.loading_elapsed_label(BackgroundKind::PullRequests),
+            );
         } else {
-            "Entrer dans l'onglet PRs charge les PR actives.\nr: recharger les données.".into()
-        };
-        frame.render_widget(
-            Paragraph::new(message)
-                .block(
-                    Block::default()
-                        .title("Pull requests")
-                        .borders(Borders::ALL),
-                )
-                .wrap(Wrap { trim: true }),
-            chunks[0],
-        );
+            render_empty_state(
+                frame,
+                chunks[0],
+                "Pull requests",
+                "PRs are waiting for the background preload.",
+            );
+        }
         render_pull_request_actions(frame, chunks[1], app);
         return;
     }
 
     if app.snapshot.pull_requests.is_empty() {
         frame.render_widget(
-            Paragraph::new("Aucun workspace/repository local à relier à une PR.")
+            Paragraph::new("No local workspace/repository can be linked to a PR.")
                 .block(
                     Block::default()
                         .title("Pull requests")
@@ -356,15 +506,15 @@ fn render_pull_requests(frame: &mut Frame<'_>, area: Rect, app: &App) {
                     .map(|id| format!("#{id}"))
                     .unwrap_or_else(|| "-".into()),
                 if item.error.is_some() {
-                    "erreur".into()
+                    "error".into()
                 } else if item.pull_request_id.is_some() {
                     if item.is_draft {
                         "draft".into()
                     } else {
-                        "ouverte".into()
+                        "open".into()
                     }
                 } else {
-                    "absente".into()
+                    "missing".into()
                 },
                 if item.work_item_ids.is_empty() {
                     "-".into()
@@ -376,9 +526,9 @@ fn render_pull_requests(frame: &mut Frame<'_>, area: Rect, app: &App) {
                         .join(",")
                 },
                 if item.workspace.is_some() {
-                    "local".into()
+                    "yes".into()
                 } else {
-                    "-".into()
+                    "no".into()
                 },
                 item.branch.clone(),
                 item.title.clone().unwrap_or_default(),
@@ -394,21 +544,21 @@ fn render_pull_requests(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 Constraint::Length(9),
                 Constraint::Length(9),
                 Constraint::Length(14),
-                Constraint::Length(7),
+                Constraint::Length(9),
                 Constraint::Min(24),
                 Constraint::Min(24),
             ],
         )
         .header(
             Row::new([
-                "Projet",
+                "Project",
                 "Repository",
                 "PR",
-                "État",
+                "State",
                 "Work items",
-                "Local",
-                "Branche",
-                "Titre",
+                "Workspace",
+                "Branch",
+                "Title",
             ])
             .style(
                 Style::default()
@@ -427,80 +577,152 @@ fn render_pull_requests(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 fn render_pull_request_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let lines = pull_request_action_lines(app).join("\n");
+    let block = Block::default().title("PR selection").borders(Borders::ALL);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
     frame.render_widget(
-        Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .title("Opérations PR")
-                    .borders(Borders::ALL),
-            )
-            .wrap(Wrap { trim: true }),
-        area,
+        Paragraph::new(selected_pull_request_target_lines(app)),
+        inner,
     );
 }
 
-fn pull_request_action_lines(app: &App) -> Vec<String> {
+fn selected_pull_request_target_lines(app: &App) -> Vec<Line<'static>> {
     let Some(item) = app.snapshot.pull_requests.get(app.selected_pull_request) else {
-        return vec![
-            "Aucune PR sélectionnée.".into(),
-            "Entrer dans l'onglet PRs ou appuyer sur r charge les PRs actives.".into(),
-            "Entrée/n: préparer workspace    x: créer workspace    f/F: finaliser".into(),
-            "c: changements PR    d: diff local    j/k: sélectionner    r: rafraîchir".into(),
-        ];
+        return vec![target_line("Target", "No PR selected")];
     };
-
     let pr = item
         .pull_request_id
         .map(|id| format!("#{id}"))
-        .unwrap_or_else(|| "pas de PR active".into());
-    let title = item.title.as_deref().unwrap_or("-");
-    let suffix = item
-        .error
-        .as_ref()
-        .map(|error| format!(" · {error}"))
-        .unwrap_or_default();
-    let workspace = item
-        .workspace
-        .as_ref()
-        .map(|path| format!("Workspace local: {path}"))
-        .unwrap_or_else(|| "Workspace local: aucun - x crée un workspace depuis la PR".into());
-    let primary = if item.workspace.is_some() {
-        app.selected_pull_request_action_preview_for(PullRequestAction::FinishExecute)
-            .or_else(|| {
-                app.selected_pull_request_action_preview_for(PullRequestAction::FinishPreview)
-            })
-            .map(|command| format!("Finaliser: {command}"))
-            .unwrap_or_else(|| "Finaliser: indisponible pour cette ligne".into())
-    } else {
-        app.selected_pull_request_action_preview_for(PullRequestAction::StartExecute)
-            .or_else(|| {
-                app.selected_pull_request_action_preview_for(PullRequestAction::StartPreview)
-            })
-            .map(|command| format!("Créer workspace: {command}"))
-            .unwrap_or_else(|| "Créer workspace: PR inexploitable".into())
-    };
-    let secondary = if item.workspace.is_some() {
-        app.selected_pull_request_action_preview_for(PullRequestAction::DiffPreview)
-            .map(|command| format!("Diff local: {command}"))
-            .unwrap_or_else(|| "Diff local: indisponible".into())
-    } else {
-        app.selected_pull_request_action_preview_for(PullRequestAction::Changelog)
-            .map(|command| format!("Changements: {command}"))
-            .unwrap_or_else(|| "Changements: indisponible".into())
-    };
+        .unwrap_or_else(|| "missing PR".into());
+    let title = item.title.clone().unwrap_or_else(|| "-".into());
+    vec![
+        target_line(
+            "Target",
+            format!("{} / {} · {}", item.project, item.repository, pr),
+        ),
+        target_line("Title", title),
+    ]
+}
+
+fn pull_request_action_buttons(app: &App) -> Vec<ActionButton> {
+    if app
+        .snapshot
+        .pull_requests
+        .get(app.selected_pull_request)
+        .is_none()
+    {
+        return vec![
+            ActionButton::disabled("Prepare", "n"),
+            ActionButton::disabled("Create", "x"),
+            ActionButton::disabled("Changes", "c"),
+            ActionButton::disabled("Diff", "d"),
+        ];
+    }
 
     vec![
-        format!(
-            "{} / {} · {} · {}{}",
-            item.project, item.repository, pr, title, suffix
+        action_if_available(
+            app.selected_pull_request_action_preview_for(PullRequestAction::StartPreview),
+            "Prepare",
+            "n",
+            ActionIntent::Review,
         ),
-        workspace,
-        primary,
-        secondary,
-        "Entrée/n: préparer    x: créer workspace    f/F: finaliser    c: changements    d: diff"
-            .into(),
+        action_if_available(
+            app.selected_pull_request_action_preview_for(PullRequestAction::StartExecute),
+            "Create",
+            "x",
+            ActionIntent::Primary,
+        ),
+        action_if_available(
+            app.selected_pull_request_action_preview_for(PullRequestAction::OpenAgent),
+            "Open agent",
+            "o",
+            ActionIntent::External,
+        ),
+        ActionButton::new("PR form", "N", ActionIntent::Review),
+        action_if_available(
+            app.selected_pull_request_action_preview_for(PullRequestAction::FinishPreview),
+            "Finish preview",
+            "f",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            app.selected_pull_request_action_preview_for(PullRequestAction::FinishExecute),
+            "Finish",
+            "F",
+            ActionIntent::Dangerous,
+        ),
+        action_if_available(
+            app.selected_pull_request_action_preview_for(PullRequestAction::Changelog),
+            "Changes",
+            "c",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            app.selected_pull_request_action_preview_for(PullRequestAction::DiffPreview),
+            "Diff",
+            "d",
+            ActionIntent::Review,
+        ),
+        ActionButton::new("Open PR", "u", ActionIntent::External),
     ]
+}
+
+fn action_if_available(
+    preview: Option<String>,
+    label: &'static str,
+    key: &'static str,
+    intent: ActionIntent,
+) -> ActionButton {
+    if preview.is_some() {
+        ActionButton::new(label, key, intent)
+    } else {
+        ActionButton::disabled(label, key)
+    }
+}
+
+fn render_loading_panel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &'static str,
+    label: &'static str,
+    elapsed: Option<String>,
+) {
+    let block = Block::default().title(title).borders(Borders::ALL);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(3),
+            Constraint::Min(1),
+        ])
+        .split(inner);
+    let elapsed = elapsed.unwrap_or_else(|| "<1s".into());
+    frame.render_widget(
+        Gauge::default()
+            .label(format!("◆ {label} · {elapsed}"))
+            .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
+            .percent(72),
+        rows[1],
+    );
+}
+
+fn render_empty_state(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    title: &'static str,
+    message: &'static str,
+) {
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("◇ ", Style::default().fg(Color::DarkGray)),
+            Span::styled(message, Style::default().fg(Color::Gray)),
+        ]))
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
 fn render_workspace_summary(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -523,14 +745,14 @@ fn render_workspace_summary(frame: &mut Frame<'_>, area: Rect, app: &App) {
         })
         .collect::<Vec<_>>();
     let items = if items.is_empty() {
-        vec![ListItem::new("Aucun workspace task détecté.")]
+        vec![ListItem::new("No task workspace detected.")]
     } else {
         items
     };
     frame.render_widget(
         List::new(items).block(
             Block::default()
-                .title("Workspaces récents")
+                .title("Recent workspaces")
                 .borders(Borders::ALL),
         ),
         area,
@@ -582,7 +804,7 @@ fn render_workspaces(frame: &mut Frame<'_>, area: Rect, app: &App) {
             ],
         )
         .header(
-            Row::new(["Projet", "Work items", "Type", "Slug", "Repositories"]).style(
+            Row::new(["Project", "Work items", "Type", "Slug", "Repositories"]).style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -591,7 +813,7 @@ fn render_workspaces(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .block(
             Block::default()
                 .title(
-                    "Workspaces  Entrée/o: ouvrir  p vérifier  s sync  l latest  v handoff  c commit  f/F finir  t/x supprimer",
+                    "Workspaces  Enter/o open  p check  s sync  l latest  v handoff  c commit  f/F finish  t/x remove",
                 )
                 .borders(Borders::ALL),
         ),
@@ -602,55 +824,109 @@ fn render_workspaces(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 fn render_workspace_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let lines = workspace_action_lines(app).join("\n");
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .title("Opérations workspace")
-                    .borders(Borders::ALL),
-            )
-            .wrap(Wrap { trim: true }),
-        area,
-    );
+    let block = Block::default()
+        .title("Workspace selection")
+        .borders(Borders::ALL);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    frame.render_widget(Paragraph::new(selected_workspace_target_lines(app)), inner);
 }
 
-fn workspace_action_lines(app: &App) -> Vec<String> {
+fn selected_workspace_target_lines(app: &App) -> Vec<Line<'static>> {
     let Some(workspace) = app.snapshot.workspaces.get(app.selected_workspace) else {
-        return vec![
-            "Aucun workspace sélectionné.".into(),
-            "n: action guidée    r: recharger    o: options".into(),
-            "Les actions apparaissent dès qu'un workspace task existe.".into(),
-        ];
+        return vec![target_line("Target", "No workspace selected")];
     };
 
-    let selected = format!(
-        "{} · {} · {} · {}",
-        workspace.project,
-        workspace.display_work_items,
-        workspace.slug,
-        workspace.repositories.join(", ")
-    );
-    let preflight = app
-        .selected_workspace_action_preview_for(WorkspaceAction::Preflight)
-        .map(|command| format!("Vérifier: {command}"))
-        .unwrap_or_else(|| "Vérifier: indisponible".into());
-    let finish = app
-        .selected_workspace_action_preview_for(WorkspaceAction::FinishExecute)
-        .map(|command| format!("Finaliser: {command}"))
-        .unwrap_or_else(|| "Finaliser: indisponible".into());
-    let teardown = app
-        .selected_workspace_action_preview_for(WorkspaceAction::TeardownExecute)
-        .map(|command| format!("Supprimer: {command}"))
-        .unwrap_or_else(|| "Supprimer: indisponible".into());
+    vec![
+        target_line(
+            "Target",
+            format!(
+                "{} · {} · {}",
+                workspace.project, workspace.display_work_items, workspace.slug
+            ),
+        ),
+        target_line(
+            "Repos",
+            if workspace.repositories.is_empty() {
+                "-".into()
+            } else {
+                workspace.repositories.join(", ")
+            },
+        ),
+    ]
+}
+
+fn workspace_action_buttons(app: &App) -> Vec<ActionButton> {
+    if app
+        .snapshot
+        .workspaces
+        .get(app.selected_workspace)
+        .is_none()
+    {
+        return vec![
+            ActionButton::disabled("Open", "o"),
+            ActionButton::disabled("Check", "p"),
+            ActionButton::disabled("Finish", "F"),
+            ActionButton::disabled("Remove", "x"),
+        ];
+    }
 
     vec![
-        selected,
-        preflight,
-        finish,
-        teardown,
-        "Entrée/o: ouvrir    p: vérifier    s: sync    l: latest    v: handoff    c: commit    f/F: finir    t/x: supprimer"
-            .into(),
+        ActionButton::new("Open", "o", ActionIntent::External),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::Preflight),
+            "Check",
+            "p",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::Sync),
+            "Sync",
+            "s",
+            ActionIntent::Primary,
+        ),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::RepoLatest),
+            "Latest",
+            "l",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::HandoffValidate),
+            "Handoff",
+            "v",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::CommitPreview),
+            "Commit",
+            "c",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::FinishPreview),
+            "Finish preview",
+            "f",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::FinishExecute),
+            "Finish",
+            "F",
+            ActionIntent::Dangerous,
+        ),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::TeardownPreview),
+            "Remove preview",
+            "t",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            app.selected_workspace_action_preview_for(WorkspaceAction::TeardownExecute),
+            "Remove",
+            "x",
+            ActionIntent::Dangerous,
+        ),
     ]
 }
 
@@ -679,7 +955,7 @@ fn render_db(frame: &mut Frame<'_>, area: Rect, app: &App) {
         vec![Row::new([
             String::from("-"),
             String::from("-"),
-            String::from("Aucune base configurée"),
+            String::from("No database configured"),
         ])]
     } else {
         rows
@@ -694,7 +970,7 @@ fn render_db(frame: &mut Frame<'_>, area: Rect, app: &App) {
             ],
         )
         .header(
-            Row::new(["Scope", "Database", "Opération"]).style(
+            Row::new(["Scope", "Database", "Operation"]).style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -702,71 +978,12 @@ fn render_db(frame: &mut Frame<'_>, area: Rect, app: &App) {
         )
         .block(
             Block::default()
-                .title("Bases configurées  Entrée/s explorer  d décrire  e requête")
+                .title("Configured databases  Enter/s explore  d describe  e query")
                 .borders(Borders::ALL),
         ),
         chunks[0],
     );
     render_actions(frame, chunks[1], app);
-}
-
-fn render_config(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
-        .split(area);
-    let mut lines = vec![
-        format!("Root       : {}", app.snapshot.root),
-        format!("Couleur    : {}", app.snapshot.color_mode),
-        format!("Agent      : {}", app.snapshot.default_agent()),
-        format!("Projets    : {}", app.snapshot.project_count()),
-        format!("Databases  : {}", app.snapshot.database_count()),
-        format!("Workspaces : {}", app.snapshot.workspaces.len()),
-        format!(
-            "Doctor     : {}",
-            if app.snapshot.config_doctor.passed {
-                "valide"
-            } else {
-                "à corriger"
-            }
-        ),
-        String::new(),
-        "Vérifications".into(),
-    ];
-    lines.extend(config_doctor_lines(app).into_iter().take(7));
-    lines.extend([
-        String::new(),
-        "Accélérateurs : s voir config, d diagnostic config, f rafraîchir, g guide, a diagnostic agents".into(),
-        "Navigation : o options rapides, r recharger, Entrée lancer l'opération sélectionnée"
-            .into(),
-    ]);
-    frame.render_widget(
-        Paragraph::new(lines.join("\n"))
-            .block(
-                Block::default()
-                    .title("Configuration effective")
-                    .borders(Borders::ALL),
-            )
-            .wrap(Wrap { trim: true }),
-        chunks[0],
-    );
-    render_actions(frame, chunks[1], app);
-}
-
-fn config_doctor_lines(app: &App) -> Vec<String> {
-    app.snapshot
-        .config_doctor
-        .checks
-        .iter()
-        .flat_map(|check| {
-            let status = if check.passed { "OK" } else { "KO" };
-            let mut lines = vec![format!("{status} {}", check.path)];
-            if let Some(message) = check.message.as_deref() {
-                lines.push(format!("   Détail : {message}"));
-            }
-            lines
-        })
-        .collect()
 }
 
 fn render_detail_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -777,12 +994,24 @@ fn render_detail_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(Clear, popup);
     let lines = detail_panel_lines(&detail.content);
     let title = detail.title();
+    let block = Block::default().title(title.as_str()).borders(Borders::ALL);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(inner);
     frame.render_widget(
         Paragraph::new(lines.join("\n"))
-            .block(Block::default().title(title.as_str()).borders(Borders::ALL))
             .scroll((detail.scroll as u16, 0))
             .wrap(Wrap { trim: false }),
-        popup,
+        chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(styled_shortcut_line(
+            "close [Esc]    close [Enter]    scroll down [j]    scroll up [k]    top [Home]    bottom [End]",
+        )),
+        chunks[1],
     );
 }
 
@@ -799,61 +1028,58 @@ fn detail_panel_lines(content: &DetailPanelContent) -> Vec<String> {
 fn config_show_detail_lines(report: &dw_config::ConfigShow) -> Vec<String> {
     vec![
         format!("Root      : {}", report.root),
-        format!("Couleur   : {}", report.color),
-        format!("Réglages  : {}", report.settings_path),
+        format!("Color     : {}", report.color),
+        format!("Settings  : {}", report.settings_path),
         String::new(),
-        "Fichiers".into(),
+        "Files".into(),
         config_file_detail_line("projects", &report.projects_path, report.projects_exists),
         config_file_detail_line("workflow", &report.workflow_path, report.workflow_exists),
         config_file_detail_line("databases", &report.databases_path, report.databases_exists),
-        String::new(),
-        "Esc: fermer    j/k: scroller    Home/End: début/fin".into(),
     ]
 }
 
 fn config_doctor_detail_lines(report: &dw_config::ConfigDoctorReport) -> Vec<String> {
     let mut lines = vec![
         format!(
-            "Statut    : {}",
+            "Status    : {}",
             if report.passed {
-                "valide"
+                "valid"
             } else {
-                "à corriger"
+                "needs fixes"
             }
         ),
         format!("Root      : {}", report.root),
         String::new(),
-        "Vérifications".into(),
+        "Checks".into(),
     ];
     for check in &report.checks {
         lines.push(config_check_detail_line(check));
         if let Some(message) = check.message.as_deref() {
-            lines.push(format!("  Détail  : {message}"));
+            lines.push(format!("  Detail  : {message}"));
         }
     }
     lines.push(String::new());
     lines.push(if report.passed {
-        "Résultat  : Configuration valide.".into()
+        "Result    : Configuration is valid.".into()
     } else {
-        "Résultat  : Configuration incomplète. Corriger les points signalés puis relancer le diagnostic."
+        "Result    : Configuration is incomplete. Fix reported points, then run doctor again."
             .into()
     });
-    lines.push("Esc: fermer    j/k: scroller    Home/End: début/fin".into());
     lines
 }
 
 fn agent_doctor_detail_lines(report: &dw_agent::command::AgentDoctorReport) -> Vec<String> {
     let mut lines = vec![
         format!(
-            "Statut    : {}",
+            "Status    : {}",
             if report.passed() {
-                "agents disponibles"
+                "agents available"
             } else {
-                "à corriger"
+                "needs fixes"
             }
         ),
         format!(
-            "Disponibles: {}/{}",
+            "Available : {}/{}",
             report.available_count(),
             report.total_count()
         ),
@@ -869,13 +1095,11 @@ fn agent_doctor_detail_lines(report: &dw_agent::command::AgentDoctorReport) -> V
         ));
         if !check.available {
             lines.push(format!(
-                "  Action  : installer `{}` ou vérifier le PATH",
+                "  Action  : install `{}` or check PATH",
                 check.command
             ));
         }
     }
-    lines.push(String::new());
-    lines.push("Esc: fermer    j/k: scroller    Home/End: début/fin".into());
     lines
 }
 
@@ -904,19 +1128,22 @@ fn render_ado(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn render_ado_project_tabs(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if !app.snapshot.assigned_loaded {
-        let message = if app.assigned_loading() {
-            app.loading_elapsed_label(BackgroundKind::Assigned)
-                .map(|elapsed| format!("Chargement des work items assignés depuis {elapsed}."))
-                .unwrap_or_else(|| "Chargement des work items assignés en arrière-plan.".into())
+        if app.assigned_loading() {
+            render_loading_panel(
+                frame,
+                area,
+                "ADO projects",
+                "Loading assigned work items",
+                app.loading_elapsed_label(BackgroundKind::Assigned),
+            );
         } else {
-            "Entrer dans l'onglet ADO charge les work items assignés.".into()
-        };
-        frame.render_widget(
-            Paragraph::new(message)
-                .block(Block::default().title("Projets ADO").borders(Borders::ALL))
-                .wrap(Wrap { trim: true }),
-            area,
-        );
+            render_empty_state(
+                frame,
+                area,
+                "ADO projects",
+                "Work items are waiting for the background preload.",
+            );
+        }
         return;
     }
 
@@ -943,43 +1170,40 @@ fn render_ado_project_tabs(frame: &mut Frame<'_>, area: Rect, app: &App) {
         })
         .collect::<Vec<_>>();
     let line = if spans.is_empty() {
-        Line::from("Aucun projet configuré.")
+        Line::from("No configured project.")
     } else {
         Line::from(spans)
     };
     frame.render_widget(
-        Paragraph::new(line).block(
-            Block::default()
-                .title("Projets ADO  [ / ] ou J / K")
-                .borders(Borders::ALL),
-        ),
+        Paragraph::new(line).block(Block::default().title("ADO projects").borders(Borders::ALL)),
         area,
     );
 }
 
 fn render_ado_items(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if !app.snapshot.assigned_loaded {
-        let message = if app.assigned_loading() {
-            app.loading_elapsed_label(BackgroundKind::Assigned)
-                .map(|elapsed| format!("Chargement en cours depuis {elapsed}.\nVous pouvez changer d'onglet; r relance le chargement."))
-                .unwrap_or_else(|| {
-                    "Chargement en cours.\nVous pouvez changer d'onglet; r relance le chargement.".into()
-                })
+        if app.assigned_loading() {
+            render_loading_panel(
+                frame,
+                area,
+                "Assigned",
+                "Loading work item cards",
+                app.loading_elapsed_label(BackgroundKind::Assigned),
+            );
         } else {
-            "Chargement non lancé.\nr: recharger les données.".into()
-        };
-        frame.render_widget(
-            Paragraph::new(message)
-                .block(Block::default().title("Assigned").borders(Borders::ALL))
-                .wrap(Wrap { trim: true }),
-            area,
-        );
+            render_empty_state(
+                frame,
+                area,
+                "Assigned",
+                "Work item data is not available yet.",
+            );
+        }
         return;
     }
 
     let Some(project) = app.snapshot.assigned.get(app.selected_ado_project) else {
         frame.render_widget(
-            Paragraph::new("Configurer des projets Azure DevOps pour alimenter ce tableau.")
+            Paragraph::new("Configure Azure DevOps projects to populate this table.")
                 .block(Block::default().title("Assigned").borders(Borders::ALL))
                 .wrap(Wrap { trim: true }),
             area,
@@ -999,7 +1223,7 @@ fn render_ado_items(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     if project.items.is_empty() {
         frame.render_widget(
-            Paragraph::new("Aucun work item assigné hors états finaux.")
+            Paragraph::new("No assigned work item outside final states.")
                 .block(
                     Block::default()
                         .title(project.label.as_str())
@@ -1029,6 +1253,15 @@ fn render_ado_items(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 format!("#{}", item.id),
                 item.kind.clone(),
                 item.state.clone(),
+                if app
+                    .snapshot
+                    .workspace_for_work_item(&project.key, &item.id)
+                    .is_some()
+                {
+                    "yes".into()
+                } else {
+                    "no".into()
+                },
                 item.title.clone(),
             ])
             .style(style)
@@ -1040,11 +1273,12 @@ fn render_ado_items(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 Constraint::Length(10),
                 Constraint::Length(16),
                 Constraint::Length(16),
+                Constraint::Length(9),
                 Constraint::Min(30),
             ],
         )
         .header(
-            Row::new(["ID", "Type", "État", "Titre"]).style(
+            Row::new(["ID", "Type", "State", "Workspace", "Title"]).style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -1060,50 +1294,110 @@ fn render_ado_items(frame: &mut Frame<'_>, area: Rect, app: &App) {
 }
 
 fn render_ado_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let lines = ado_action_lines(app).join("\n");
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .title("Opérations ADO")
-                    .borders(Borders::ALL),
-            )
-            .wrap(Wrap { trim: true }),
-        area,
-    );
+    let block = Block::default()
+        .title("ADO selection")
+        .borders(Borders::ALL);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    frame.render_widget(Paragraph::new(selected_ado_target_lines(app)), inner);
 }
 
-fn ado_action_lines(app: &App) -> Vec<String> {
-    let selected = app
+fn selected_ado_target_lines(app: &App) -> Vec<Line<'static>> {
+    let Some((project, item)) = app
         .snapshot
         .assigned
         .get(app.selected_ado_project)
         .and_then(|project| {
-            project.items.get(app.selected_ado_item).map(|item| {
-                format!(
-                    "{} #{} · {}",
-                    project.key,
-                    item.id,
-                    if item.title.is_empty() {
-                        "-"
-                    } else {
-                        &item.title
-                    }
-                )
-            })
+            project
+                .items
+                .get(app.selected_ado_item)
+                .map(|item| (project, item))
         })
-        .unwrap_or_else(|| "Aucun work item sélectionné.".into());
-    let state_preview = app
-        .selected_ado_set_state_action_preview()
-        .map(|command| format!("État workflow: {command}"))
-        .unwrap_or_else(|| "État workflow: aucun état configuré pour ce type".into());
+    else {
+        return vec![target_line("Target", "No work item selected")];
+    };
     vec![
-        selected,
-        state_preview,
-        "Entrée/n: préparer workspace    x: créer workspace    e/E: état workflow    c: contexte    w: fiche"
-            .into(),
-        "j/k: work item    J/K ou [/]: projet    r: rafraîchir".into(),
+        target_line(
+            "Target",
+            format!("{} #{} · {}", project.key, item.id, item.kind),
+        ),
+        target_line(
+            "Title",
+            if item.title.is_empty() {
+                "-".into()
+            } else {
+                item.title.clone()
+            },
+        ),
     ]
+}
+
+fn ado_action_buttons(app: &App) -> Vec<ActionButton> {
+    if app
+        .snapshot
+        .assigned
+        .get(app.selected_ado_project)
+        .and_then(|project| project.items.get(app.selected_ado_item))
+        .is_none()
+    {
+        return vec![
+            ActionButton::disabled("Prepare", "n"),
+            ActionButton::disabled("Create", "x"),
+            ActionButton::disabled("Move state", "e"),
+            ActionButton::disabled("Context", "c"),
+        ];
+    }
+
+    vec![
+        action_if_available(
+            selected_ado_action_preview(app, AdoItemAction::StartPreview),
+            "Prepare",
+            "n",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            selected_ado_action_preview(app, AdoItemAction::StartExecute),
+            "Create",
+            "x",
+            ActionIntent::Primary,
+        ),
+        action_if_available(
+            selected_ado_action_preview(app, AdoItemAction::OpenAgent),
+            "Open agent",
+            "o",
+            ActionIntent::External,
+        ),
+        action_if_available(
+            app.selected_ado_set_state_action_preview(),
+            "Move state",
+            "e",
+            ActionIntent::Dangerous,
+        ),
+        ActionButton::new("State form", "E", ActionIntent::Review),
+        action_if_available(
+            selected_ado_action_preview(app, AdoItemAction::Context),
+            "Context",
+            "c",
+            ActionIntent::Review,
+        ),
+        action_if_available(
+            selected_ado_action_preview(app, AdoItemAction::WorkItem),
+            "Card",
+            "w",
+            ActionIntent::Review,
+        ),
+        ActionButton::new("Open ADO", "u", ActionIntent::External),
+    ]
+}
+
+fn selected_ado_action_preview(app: &App, action: AdoItemAction) -> Option<String> {
+    crate::actions::selected_ado_action(
+        &app.snapshot,
+        app.selected_ado_project,
+        app.selected_ado_item,
+        action,
+    )
+    .map(|action| action.display_label())
 }
 
 fn render_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -1112,11 +1406,11 @@ fn render_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .constraints([Constraint::Length(3), Constraint::Min(5)])
         .split(area);
     let filter = if app.filter_active {
-        format!("Recherche: {}_", app.filter)
+        format!("Search: {}_", app.filter)
     } else if app.filter.is_empty() {
-        "Recherche: /".into()
+        "Search: /".into()
     } else {
-        format!("Recherche: {}", app.filter)
+        format!("Search: {}", app.filter)
     };
     frame.render_widget(
         Paragraph::new(filter).block(Block::default().borders(Borders::ALL)),
@@ -1148,60 +1442,216 @@ fn render_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
         })
         .collect::<Vec<_>>();
     let items = if items.is_empty() {
-        vec![ListItem::new("Aucune action disponible pour ce filtre.")]
+        vec![ListItem::new("No action available for this filter.")]
     } else {
         items
     };
     frame.render_widget(
         List::new(items).block(
             Block::default()
-                .title("Opérations disponibles")
+                .title("Available operations")
                 .borders(Borders::ALL),
         ),
         chunks[1],
     );
 }
 
-fn render_help(frame: &mut Frame<'_>, area: Rect) {
+fn render_help_modal(frame: &mut Frame<'_>, area: Rect) {
+    let popup = centered_rect(72, 58, area);
+    frame.render_widget(Clear, popup);
+    let block = Block::default().title("Help").borders(Borders::ALL);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(inner);
     let help = help_lines().join("\n");
+    frame.render_widget(Paragraph::new(help).wrap(Wrap { trim: true }), chunks[0]);
     frame.render_widget(
-        Paragraph::new(help)
-            .block(Block::default().title("Aide").borders(Borders::ALL))
-            .wrap(Wrap { trim: true }),
-        area,
+        Paragraph::new(styled_shortcut_line("close [Esc]    close [?]    menu [m]")),
+        chunks[1],
     );
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(
-        Paragraph::new(styled_shortcut_line(&shortcut_bar_line(app)))
-            .block(Block::default().title("Raccourcis").borders(Borders::ALL))
+        Paragraph::new(action_bar_line(&footer_buttons(app)))
+            .style(Style::default().bg(Color::Black))
             .wrap(Wrap { trim: true }),
         area,
     );
 }
 
+fn footer_buttons(app: &App) -> Vec<ActionButton> {
+    let mut actions = match app.view {
+        View::Dashboard => vec![
+            ActionButton::new("Select", "j/k", ActionIntent::Review),
+            ActionButton::new("Decide", "Enter", ActionIntent::Primary),
+            ActionButton::new("Reload", "r", ActionIntent::Review),
+        ],
+        View::Workspaces => workspace_action_buttons(app),
+        View::Ado if app.assigned_loading() => {
+            vec![ActionButton::new("Reload", "r", ActionIntent::Review)]
+        }
+        View::Ado => ado_action_buttons(app),
+        View::PullRequests if app.pull_requests_loading() => {
+            vec![ActionButton::new("Reload", "r", ActionIntent::Review)]
+        }
+        View::PullRequests => pull_request_action_buttons(app),
+        View::Db => vec![
+            ActionButton::new("Explore schema", "Enter", ActionIntent::Primary),
+            ActionButton::new("Explore schema", "s", ActionIntent::Review),
+            ActionButton::new("Describe", "d", ActionIntent::Review),
+            ActionButton::new("Query", "e", ActionIntent::Review),
+        ],
+        View::Composer => vec![
+            ActionButton::new("Run", "Enter", ActionIntent::Primary),
+            ActionButton::new("Next field", "Tab", ActionIntent::Review),
+            ActionButton::new("Suggest", "Ctrl+Space", ActionIntent::Review),
+            ActionButton::new("Flows", "Esc", ActionIntent::Review),
+        ],
+    };
+    actions.extend([
+        ActionButton::new("Menu", "m", ActionIntent::Review),
+        ActionButton::new("Help", "?", ActionIntent::Review),
+        ActionButton::new("Quit", "q", ActionIntent::Review),
+    ]);
+    actions
+}
+
 fn styled_shortcut_line(text: &str) -> Line<'static> {
     let mut spans = Vec::new();
-    for (segment_index, segment) in text.split(" | ").enumerate() {
-        if segment_index > 0 {
-            spans.push(Span::styled(" | ", Style::default().fg(Color::DarkGray)));
+    let mut first = true;
+    for segment in shortcut_segments(text) {
+        let segment = segment.trim();
+        if segment.is_empty() {
+            continue;
         }
-        if let Some((shortcut, label)) = segment.split_once(':') {
-            let shortcut_style = Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
-            spans.push(Span::styled(shortcut.to_owned(), shortcut_style));
-            spans.push(Span::styled(
-                ":".to_owned(),
-                Style::default().fg(Color::DarkGray),
-            ));
-            spans.push(Span::raw(label.to_owned()));
+        if !first {
+            spans.push(Span::raw(" "));
+        }
+        first = false;
+        if let Some((label, shortcut)) = shortcut_label_key(segment) {
+            spans.extend(shortcut_chip(shortcut, label));
         } else {
-            spans.push(Span::raw(segment.to_owned()));
+            spans.push(Span::styled(
+                format!(" {segment} "),
+                Style::default().fg(Color::Gray).bg(Color::Black),
+            ));
         }
     }
     Line::from(spans)
+}
+
+fn action_bar_line(actions: &[ActionButton]) -> Line<'static> {
+    let mut spans = Vec::new();
+    for (index, action) in actions.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw(" "));
+        }
+        spans.extend(action_button_spans(action));
+    }
+    Line::from(spans)
+}
+
+fn action_button_spans(action: &ActionButton) -> Vec<Span<'static>> {
+    let style = action_intent_style(action.intent, action.enabled);
+    vec![Span::styled(
+        format!(" {} [{}] ", action.label, action.key),
+        style,
+    )]
+}
+
+fn action_intent_style(intent: ActionIntent, enabled: bool) -> Style {
+    if !enabled {
+        return Style::default().fg(Color::DarkGray).bg(Color::Black);
+    }
+    match intent {
+        ActionIntent::Primary => Style::default()
+            .fg(Color::Black)
+            .bg(Color::LightGreen)
+            .add_modifier(Modifier::BOLD),
+        ActionIntent::Review => Style::default().fg(Color::Black).bg(Color::LightBlue),
+        ActionIntent::External => Style::default().fg(Color::Black).bg(Color::Cyan),
+        ActionIntent::Dangerous => Style::default()
+            .fg(Color::White)
+            .bg(Color::LightRed)
+            .add_modifier(Modifier::BOLD),
+        ActionIntent::Disabled => Style::default().fg(Color::DarkGray).bg(Color::Black),
+    }
+}
+
+fn risk_badge_line(risk: ActionRisk) -> Line<'static> {
+    let (label, style) = match risk {
+        ActionRisk::Safe => (
+            " safe ",
+            Style::default().fg(Color::Black).bg(Color::LightGreen),
+        ),
+        ActionRisk::DryRun => (
+            " preview ",
+            Style::default().fg(Color::Black).bg(Color::Yellow),
+        ),
+        ActionRisk::OpensExternal => (
+            " external ",
+            Style::default().fg(Color::Black).bg(Color::Cyan),
+        ),
+        ActionRisk::Destructive => (
+            " updates data ",
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::LightRed)
+                .add_modifier(Modifier::BOLD),
+        ),
+    };
+    Line::from(vec![Span::styled(label, style)])
+}
+
+fn target_line(label: &'static str, value: impl Into<String>) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{label:<12}"), Style::default().fg(Color::DarkGray)),
+        Span::styled(value.into(), Style::default().fg(Color::White)),
+    ])
+}
+
+fn status_badge_line(badges: &[StatusBadge]) -> Line<'static> {
+    let mut spans = Vec::new();
+    for (index, badge) in badges.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(Span::styled(
+            format!(" {}: {} ", badge.label, badge.status),
+            Style::default().fg(Color::Black).bg(badge.color),
+        ));
+    }
+    Line::from(spans)
+}
+
+fn shortcut_label_key(segment: &str) -> Option<(&str, &str)> {
+    let (label, shortcut) = segment.rsplit_once('[')?;
+    let shortcut = shortcut.strip_suffix(']')?.trim();
+    let label = label.trim();
+    if label.is_empty() || shortcut.is_empty() {
+        return None;
+    }
+    Some((label, shortcut))
+}
+
+fn shortcut_segments(text: &str) -> Vec<&str> {
+    text.split(" | ")
+        .flat_map(|segment| segment.split("    "))
+        .collect()
+}
+
+fn shortcut_chip(shortcut: &str, label: &str) -> Vec<Span<'static>> {
+    let chip = Style::default().fg(Color::White).bg(Color::Blue);
+    vec![Span::styled(format!(" {} [{shortcut}] ", label), chip)]
+}
+
+#[cfg(test)]
+fn shortcut_chip_style() -> Style {
+    Style::default().fg(Color::White).bg(Color::Blue)
 }
 
 fn database_rows(app: &App) -> Vec<[String; 3]> {
@@ -1223,24 +1673,48 @@ fn database_rows(app: &App) -> Vec<[String; 3]> {
 fn render_confirmation(frame: &mut Frame<'_>, area: Rect, action: &TuiAction) {
     let popup = centered_rect(70, 28, area);
     frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .title(action.kind.confirmation_title())
+        .borders(Borders::ALL);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(3),
+            Constraint::Min(3),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+    frame.render_widget(Paragraph::new(risk_badge_line(action.kind)), chunks[0]);
     frame.render_widget(
-        Paragraph::new(confirmation_lines(action).join("\n"))
-            .block(
-                Block::default()
-                    .title(action.kind.confirmation_title())
-                    .borders(Borders::ALL),
-            )
-            .wrap(Wrap { trim: true }),
-        popup,
+        Paragraph::new(vec![
+            target_line("Operation", action.display_label()),
+            target_line("Effect", action.description.clone()),
+        ])
+        .wrap(Wrap { trim: true }),
+        chunks[1],
+    );
+    let mut lines = confirmation_lines(action);
+    lines.retain(|line| !line.trim().is_empty() && line != &action.display_label());
+    frame.render_widget(
+        Paragraph::new(lines.join("\n")).wrap(Wrap { trim: true }),
+        chunks[2],
+    );
+    frame.render_widget(
+        Paragraph::new(action_bar_line(&[
+            ActionButton::new("Confirm", "Enter", ActionIntent::Dangerous),
+            ActionButton::new("Cancel", "Esc", ActionIntent::Review),
+        ])),
+        chunks[3],
     );
 }
 
 fn render_options(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let popup = centered_rect(82, 70, area);
+    let popup = centered_rect(58, 46, area);
     frame.render_widget(Clear, popup);
-    let current_agent = app.snapshot.default_agent();
-    let current_color = app.snapshot.color_mode.as_str();
-    let block = Block::default().title("Options").borders(Borders::ALL);
+    let block = Block::default().title("Menu").borders(Borders::ALL);
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
     let chunks = Layout::default()
@@ -1248,7 +1722,7 @@ fn render_options(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(8),
-            Constraint::Length(5),
+            Constraint::Length(1),
         ])
         .split(inner);
     frame.render_widget(
@@ -1256,77 +1730,192 @@ fn render_options(frame: &mut Frame<'_>, area: Rect, app: &App) {
         chunks[0],
     );
 
-    let rows = QUICK_OPTIONS.iter().enumerate().map(|(index, item)| {
-        let selected = index == app.selected_option;
-        let active = option_active(item.state, &current_agent, current_color);
-        let style = if selected {
-            Style::default().fg(Color::Black).bg(Color::Cyan)
-        } else if active {
-            Style::default().fg(Color::LightGreen)
-        } else {
-            Style::default()
-        };
-        Row::new([
-            item.key.to_string(),
-            item.section.into(),
-            item.label.into(),
-            if active {
-                "actif".into()
+    let items = MENU_SECTIONS
+        .iter()
+        .enumerate()
+        .map(|section| {
+            let (index, section) = section;
+            let selected = index == app.selected_menu_section;
+            let style = if selected {
+                Style::default().fg(Color::Black).bg(Color::Cyan)
             } else {
-                String::new()
-            },
-            item.hint.into(),
+                Style::default()
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("{:<16}", section.label()),
+                    style.add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled(section.description(), Style::default().fg(Color::Gray)),
+            ]))
+            .style(style)
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        List::new(items).block(Block::default().title("Sections").borders(Borders::ALL)),
+        chunks[1],
+    );
+    frame.render_widget(
+        Paragraph::new(styled_shortcut_line(
+            "open [Enter]    select down [j]    select up [k]    close [Esc]    close [m]",
+        )),
+        chunks[2],
+    );
+}
+
+fn render_menu_section(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let popup = centered_rect(72, 58, area);
+    frame.render_widget(Clear, popup);
+    let section = app.selected_menu_section();
+    let block = Block::default()
+        .title(format!("Menu / {}", section.label()))
+        .borders(Borders::ALL);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(8),
+            Constraint::Length(3),
+            Constraint::Length(1),
         ])
-        .style(style)
-    });
+        .split(inner);
+    let current_agent = app.snapshot.default_agent();
+    let current_color = app.snapshot.color_mode.as_str();
+    let rows = match section {
+        MenuSection::Information => vec![
+            menu_row(
+                app.selected_option == 0,
+                false,
+                "h",
+                "Journal",
+                "",
+                "View operations and logs",
+            ),
+            menu_row(
+                app.selected_option == 1,
+                false,
+                "i",
+                "State/debug",
+                "",
+                "View loads, messages and queue",
+            ),
+            menu_row(
+                app.selected_option == 2,
+                false,
+                "?",
+                "Help",
+                "",
+                "Open help",
+            ),
+        ],
+        _ => app
+            .quick_options_for_menu_section(section)
+            .iter()
+            .enumerate()
+            .map(|(index, item)| {
+                let active = option_active(item.state, &current_agent, current_color);
+                menu_row(
+                    index == app.selected_option,
+                    active,
+                    item.key.to_string(),
+                    item.label,
+                    if active { "active" } else { "" },
+                    item.hint,
+                )
+            })
+            .collect(),
+    };
     frame.render_widget(
         Table::new(
             rows,
             [
                 Constraint::Length(5),
-                Constraint::Length(24),
                 Constraint::Length(18),
                 Constraint::Length(8),
-                Constraint::Min(28),
+                Constraint::Min(26),
             ],
         )
         .header(
-            Row::new(["Key", "Groupe", "Option", "État", "Opération"]).style(
+            Row::new(["Key", "Option", "State", "Operation"]).style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
-        ),
+        )
+        .block(Block::default().title("Options").borders(Borders::ALL)),
+        chunks[0],
+    );
+    let preview = match section {
+        MenuSection::Information => match app.selected_option {
+            0 => "Open operation journal and logs.".into(),
+            1 => "Open current state, loads and messages.".into(),
+            2 => "Open help.".into(),
+            _ => "No selected option.".into(),
+        },
+        _ => app
+            .quick_options_for_menu_section(section)
+            .get(app.selected_option)
+            .map(|option| {
+                crate::actions::option_action(&app.snapshot.root, option.action).display_label()
+            })
+            .unwrap_or_else(|| "No selected option.".into()),
+    };
+    frame.render_widget(
+        Paragraph::new(preview)
+            .block(Block::default().title("Preview").borders(Borders::ALL))
+            .wrap(Wrap { trim: true }),
         chunks[1],
     );
-
-    let selected = QUICK_OPTIONS
-        .get(app.selected_option)
-        .map(|option| {
-            crate::actions::option_action(&app.snapshot.root, option.action).display_label()
-        })
-        .unwrap_or_else(|| "Aucune option sélectionnée.".into());
-    let shortcuts = quick_option_shortcut_hint();
     frame.render_widget(
-        Paragraph::new(format!(
-            "{selected}\nEntrée: lancer    j/k: sélectionner    raccourcis: {shortcuts}    Esc/o: fermer"
-        ))
-        .block(Block::default().title("Preview").borders(Borders::ALL))
-        .wrap(Wrap { trim: true }),
+        Paragraph::new(styled_shortcut_line(
+            "run or open [Enter]    select down [j]    select up [k]    back [Esc]    close [m]",
+        )),
         chunks[2],
     );
+}
+
+fn menu_row(
+    selected: bool,
+    active: bool,
+    key: impl Into<String>,
+    option: impl Into<String>,
+    state: impl Into<String>,
+    operation: impl Into<String>,
+) -> Row<'static> {
+    let style = if selected {
+        Style::default().fg(Color::Black).bg(Color::Cyan)
+    } else if active {
+        Style::default().fg(Color::LightGreen)
+    } else {
+        Style::default()
+    };
+    Row::new([key.into(), option.into(), state.into(), operation.into()]).style(style)
 }
 
 fn render_history_output(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let popup = centered_rect(82, 72, area);
     frame.render_widget(Clear, popup);
     let lines = history_output_lines(app);
+    let block = Block::default().title("Journal").borders(Borders::ALL);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(inner);
     frame.render_widget(
         Paragraph::new(lines.join("\n"))
-            .block(Block::default().title("Lancements").borders(Borders::ALL))
             .scroll((app.history.output_scroll as u16, 0))
             .wrap(Wrap { trim: false }),
-        popup,
+        chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(styled_shortcut_line(
+            "close [Esc]    close [h]    scroll down [j]    scroll up [k]    previous run [←]    next run [→]    top [Home]    bottom [End]",
+        )),
+        chunks[1],
     );
 }
 
@@ -1339,16 +1928,26 @@ fn render_state_modal(frame: &mut Frame<'_>, area: Rect, app: &App) {
     } else {
         app.state_scroll
     };
+    let block = Block::default()
+        .title("State and messages")
+        .borders(Borders::ALL);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(1)])
+        .split(inner);
     frame.render_widget(
         Paragraph::new(lines.join("\n"))
-            .block(
-                Block::default()
-                    .title("État et messages")
-                    .borders(Borders::ALL),
-            )
             .scroll((scroll as u16, 0))
             .wrap(Wrap { trim: false }),
-        popup,
+        chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(styled_shortcut_line(
+            "close [Esc]    close [i]    scroll down [j]    scroll up [k]    top [Home]    bottom [End]",
+        )),
+        chunks[1],
     );
 }
 
@@ -1359,7 +1958,7 @@ fn render_form(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let popup = centered_rect(78, 72, area);
     frame.render_widget(Clear, popup);
     let block = Block::default()
-        .title("Constructeur d’action")
+        .title("Action composer")
         .borders(Borders::ALL);
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
@@ -1394,9 +1993,9 @@ fn render_form_state(frame: &mut Frame<'_>, area: Rect, form: &FormState, app: &
                 })
                 .collect::<Vec<_>>();
             let title = if modal {
-                "Choisir un template (Entrée)"
+                "Choose a template (Enter)"
             } else {
-                "Constructeur avancé · choisir un template"
+                "Advanced composer · choose a template"
             };
             frame.render_widget(
                 List::new(items).block(Block::default().title(title).borders(Borders::ALL)),
@@ -1408,6 +2007,11 @@ fn render_form_state(frame: &mut Frame<'_>, area: Rect, form: &FormState, app: &
 }
 
 fn render_form_fields(frame: &mut Frame<'_>, area: Rect, form: &FormState, app: &App, modal: bool) {
+    if form.template == FormTemplate::AdoSetState {
+        render_ado_state_form_fields(frame, area, form, app, modal);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(8), Constraint::Length(5)])
@@ -1424,9 +2028,9 @@ fn render_form_fields(frame: &mut Frame<'_>, area: Rect, form: &FormState, app: 
             FieldKind::Text => field.value.clone(),
             FieldKind::Toggle => {
                 if field.enabled() {
-                    "oui".into()
+                    "yes".into()
                 } else {
-                    "non".into()
+                    "no".into()
                 }
             }
         };
@@ -1442,7 +2046,7 @@ fn render_form_fields(frame: &mut Frame<'_>, area: Rect, form: &FormState, app: 
             ],
         )
         .header(
-            Row::new(["Champ", "Valeur", "Aide"]).style(
+            Row::new(["Field", "Value", "Help"]).style(
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -1466,6 +2070,131 @@ fn render_form_fields(frame: &mut Frame<'_>, area: Rect, form: &FormState, app: 
         .wrap(Wrap { trim: true }),
         chunks[1],
     );
+}
+
+fn render_ado_state_form_fields(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    form: &FormState,
+    app: &App,
+    _modal: bool,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(9),
+            Constraint::Min(5),
+            Constraint::Length(1),
+        ])
+        .split(area);
+    let work_items = form_field_value(form, "Work item IDs");
+    let project = form_field_value(form, "Project");
+    let destination = form_field_value(form, "Destination state");
+    let note = form_field_value(form, "ADO note");
+    let current_state = app
+        .snapshot
+        .assigned
+        .get(app.selected_ado_project)
+        .and_then(|project| project.items.get(app.selected_ado_item))
+        .map(|item| item.state.clone())
+        .unwrap_or_else(|| "current".into());
+    let title = app
+        .snapshot
+        .assigned
+        .get(app.selected_ado_project)
+        .and_then(|project| project.items.get(app.selected_ado_item))
+        .map(|item| item.title.clone())
+        .filter(|title| !title.trim().is_empty())
+        .unwrap_or_else(|| "Selected Azure DevOps work item".into());
+    let summary = vec![
+        risk_badge_line(ActionRisk::Destructive),
+        target_line("Work item", format!("{project} #{work_items}")),
+        target_line("Title", title),
+        Line::from(vec![
+            Span::styled(current_state, Style::default().fg(Color::Gray)),
+            Span::styled("  ->  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                destination.clone(),
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        target_line("ADO note", note.clone()),
+        Line::from(""),
+        Line::from(Span::styled(
+            "This writes the state transition to Azure DevOps.",
+            Style::default().fg(Color::LightRed),
+        )),
+    ];
+    frame.render_widget(
+        Paragraph::new(summary)
+            .block(
+                Block::default()
+                    .title("Move ADO work item state")
+                    .borders(Borders::ALL),
+            )
+            .wrap(Wrap { trim: true }),
+        chunks[0],
+    );
+
+    let rows = form.fields.iter().enumerate().map(|(index, field)| {
+        let selected = index == form.selected_field;
+        let style = if selected {
+            Style::default().fg(Color::Black).bg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        Row::new([
+            field.label.clone(),
+            field.value.clone(),
+            match field.label.as_str() {
+                "Work item IDs" => "Selected work item(s)".into(),
+                "Project" => "ADO project".into(),
+                "Destination state" => "Next state to apply".into(),
+                "ADO note" => "History entry written to ADO".into(),
+                _ => field.help.clone(),
+            },
+        ])
+        .style(style)
+    });
+    frame.render_widget(
+        Table::new(
+            rows,
+            [
+                Constraint::Length(20),
+                Constraint::Length(34),
+                Constraint::Min(24),
+            ],
+        )
+        .header(
+            Row::new(["Step", "Value", "Meaning"]).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .block(Block::default().title("Transition").borders(Borders::ALL)),
+        chunks[1],
+    );
+
+    frame.render_widget(
+        Paragraph::new(action_bar_line(&[
+            ActionButton::new("Apply", "Enter", ActionIntent::Dangerous),
+            ActionButton::new("Cancel", "Esc", ActionIntent::Review),
+            ActionButton::new("Next field", "Tab", ActionIntent::Review),
+            ActionButton::new("Suggestion", "Ctrl+Space", ActionIntent::Review),
+        ])),
+        chunks[2],
+    );
+}
+
+fn form_field_value(form: &FormState, label: &str) -> String {
+    form.fields
+        .iter()
+        .find(|field| field.label == label)
+        .map(|field| field.value.clone())
+        .unwrap_or_default()
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
@@ -1516,70 +2245,161 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ado_action_lines_preview_workflow_state_action() {
+    fn top_bar_tabs_match_gitui_label_key_shape() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.view = View::Workspaces;
+
+        let spans = tab_spans(&app);
+        let text = spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        let selected = spans
+            .iter()
+            .find(|span| span.content.contains("Workspaces [2]"))
+            .expect("selected tab");
+        let inactive = spans
+            .iter()
+            .find(|span| span.content.contains("Dashboard [1]"))
+            .expect("inactive tab");
+
+        assert!(text.contains("Dashboard [1]"));
+        assert!(text.contains("Workspaces [2]"));
+        assert!(text.contains(" | "));
+        assert_eq!(selected.style.fg, Some(Color::White));
+        assert!(!selected.style.add_modifier.contains(Modifier::DIM));
+        assert!(inactive.style.add_modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn shortcut_line_renders_gitui_like_action_key_chips() {
+        let line = styled_shortcut_line("cockpit down [j]    decision [Enter] | quit [q]");
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert!(text.contains(" cockpit down [j]"));
+        assert!(text.contains(" decision [Enter]"));
+        assert!(text.contains(" quit [q]"));
+        assert_eq!(line.spans[0].style, shortcut_chip_style());
+        assert!(!line.spans[0].style.add_modifier.contains(Modifier::BOLD));
+        assert!(
+            !line.spans[0]
+                .style
+                .add_modifier
+                .contains(Modifier::UNDERLINED)
+        );
+    }
+
+    #[test]
+    fn ado_action_buttons_preview_workflow_state_action() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.assigned_loaded = true;
         app.snapshot.assigned = vec![ado_project("ha", "User Story")];
 
-        let lines = ado_action_lines(&app);
+        let target = selected_ado_target_lines(&app);
+        let buttons = ado_action_buttons(&app);
 
-        assert!(lines[0].contains("ha #42"));
-        assert!(lines[1].contains("Passer à l’état"));
-        assert!(lines[2].contains("e/E: état workflow"));
+        let target_text = target
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert!(target_text.contains("ha #42"));
+        assert!(buttons.iter().any(|button| button.label == "Prepare"));
+        assert!(
+            buttons
+                .iter()
+                .any(|button| button.label == "Move state" && button.enabled)
+        );
+        assert!(
+            !buttons
+                .iter()
+                .any(|button| button.label.contains("workflow state"))
+        );
     }
 
     #[test]
-    fn ado_action_lines_explain_missing_workflow_state_mapping() {
+    fn ado_action_buttons_disable_missing_workflow_state_mapping() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.assigned_loaded = true;
         app.snapshot.assigned = vec![ado_project("ha", "Epic")];
 
-        let lines = ado_action_lines(&app);
+        let buttons = ado_action_buttons(&app);
+        let move_state = buttons
+            .iter()
+            .find(|button| button.label == "Move state")
+            .expect("move state button");
 
-        assert_eq!(lines[1], "État workflow: aucun état configuré pour ce type");
+        assert!(!move_state.enabled);
     }
 
     #[test]
-    fn workspace_action_lines_preview_primary_actions() {
+    fn workspace_action_buttons_preview_primary_actions() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.workspaces = vec![workspace("/tmp/ws-front", "demo")];
 
-        let lines = workspace_action_lines(&app);
+        let target = selected_workspace_target_lines(&app);
+        let buttons = workspace_action_buttons(&app);
+        let target_text = target
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
 
-        assert!(lines[0].contains("ha · #42 Demo · demo · front"));
-        assert!(lines[1].contains("Vérifier"));
-        assert!(lines[2].contains("Finaliser workspace"));
-        assert!(lines[3].contains("Supprimer workspace"));
+        assert!(target_text.contains("ha · #42 Demo · demo"));
+        assert!(buttons.iter().any(|button| button.label == "Check"));
+        assert!(buttons.iter().any(|button| button.label == "Finish"));
+        assert!(buttons.iter().any(|button| button.label == "Remove"));
     }
 
     #[test]
-    fn pull_request_action_lines_preview_local_finish_and_diff() {
+    fn pull_request_action_buttons_preview_local_finish_and_diff() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.pull_requests_loaded = true;
         app.snapshot.pull_requests = vec![pull_request(Some("/tmp/ws-front"))];
 
-        let lines = pull_request_action_lines(&app);
+        let target = selected_pull_request_target_lines(&app);
+        let buttons = pull_request_action_buttons(&app);
+        let target_text = target
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
 
-        assert!(lines[0].contains("ha / front · #42"));
-        assert_eq!(lines[1], "Workspace local: /tmp/ws-front");
-        assert!(lines[2].contains("Finaliser PR"));
-        assert!(lines[3].contains("Diff"));
+        assert!(target_text.contains("ha / front · #42"));
+        assert!(
+            buttons
+                .iter()
+                .any(|button| button.label == "Finish" && button.enabled)
+        );
+        assert!(
+            buttons
+                .iter()
+                .any(|button| button.label == "Diff" && button.enabled)
+        );
     }
 
     #[test]
-    fn pull_request_action_lines_preview_remote_workspace_creation() {
+    fn pull_request_action_buttons_preview_remote_workspace_creation() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.pull_requests_loaded = true;
         app.snapshot.pull_requests = vec![pull_request(None)];
 
-        let lines = pull_request_action_lines(&app);
+        let buttons = pull_request_action_buttons(&app);
 
-        assert_eq!(
-            lines[1],
-            "Workspace local: aucun - x crée un workspace depuis la PR"
+        assert!(
+            buttons
+                .iter()
+                .any(|button| button.label == "Create" && button.enabled)
         );
-        assert!(lines[2].contains("Créer workspace PR"));
-        assert!(lines[3].contains("Résumer changements"));
+        assert!(
+            buttons
+                .iter()
+                .any(|button| button.label == "Changes" && button.enabled)
+        );
     }
 
     #[test]
@@ -1606,7 +2426,7 @@ mod tests {
     }
 
     #[test]
-    fn config_doctor_lines_show_status_and_details() {
+    fn config_doctor_detail_lines_show_status_and_details() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.config_doctor = dw_config::ConfigDoctorReport {
             root: "/tmp/missing-dw-root".into(),
@@ -1625,11 +2445,15 @@ mod tests {
             ],
         };
 
-        let lines = config_doctor_lines(&app);
+        let lines = config_doctor_detail_lines(&app.snapshot.config_doctor);
 
-        assert!(lines[0].starts_with("OK "));
-        assert!(lines[1].starts_with("KO "));
-        assert!(lines[2].contains("Fichier introuvable"));
+        assert!(lines.iter().any(|line| line.contains("Status")));
+        assert!(lines.iter().any(|line| line.contains("Checks")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Fichier introuvable"))
+        );
     }
 
     fn ado_project(key: &str, kind: &str) -> crate::model::AdoAssignedProject {

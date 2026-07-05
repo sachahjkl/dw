@@ -1,8 +1,8 @@
 use crate::commands::project::{resolve_ado_options, resolve_cli_ado_options};
 use crate::commands::work_item::parse_work_item_ids_as_strings;
 use crate::load_auth_options;
-use anyhow::Result;
-use dw_ado::auth::require_token;
+use anyhow::{Context, Result};
+use dw_ado::auth::{AdoToken, require_token};
 use dw_ado::{get_ai_context, get_work_item_expanded};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_core::ActionEvent;
@@ -98,10 +98,13 @@ pub async fn context_report_with_events(
         context_fetch_line(ids.len(), mode == ContextMode::AiContext, comments),
     );
     if mode == ContextMode::Expanded {
-        let expanded = ids
-            .iter()
-            .map(|item_id| get_work_item_expanded(&options, item_id, &token))
-            .collect::<Result<Vec<_>, _>>()?;
+        let options = options.clone();
+        let expanded_ids = ids.clone();
+        let expanded = tokio::task::spawn_blocking(move || {
+            load_expanded_context_items(&options, &expanded_ids, &token)
+        })
+        .await
+        .context("loading expanded ADO context was interrupted")??;
         Ok(ContextReport {
             root,
             project: project_key,
@@ -113,10 +116,13 @@ pub async fn context_report_with_events(
             events,
         })
     } else {
-        let items = ids
-            .iter()
-            .map(|item_id| get_ai_context(&options, item_id, summary, comments, &token))
-            .collect::<Result<Vec<_>, _>>()?;
+        let options = options.clone();
+        let context_ids = ids.clone();
+        let items = tokio::task::spawn_blocking(move || {
+            load_ai_context_items(&options, &context_ids, summary, comments, &token)
+        })
+        .await
+        .context("loading ADO AI context was interrupted")??;
         Ok(ContextReport {
             root,
             project: project_key,
@@ -162,30 +168,26 @@ pub async fn ai_context_report_with_events(
         &mut emit,
         context_fetch_line(ids.len(), include_comments, comments),
     );
-    let items = ids
-        .iter()
-        .map(|item_id| {
-            get_ai_context(
-                &options,
-                item_id,
-                summary,
-                if include_comments { comments } else { 0 },
-                &token,
-            )
-        })
-        .map(|context| {
-            context.map(|context| {
-                if include_comments {
-                    context
-                } else {
-                    dw_contracts::AdoAiContextItem {
-                        comments: vec![],
-                        ..context
-                    }
-                }
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let context_ids = ids.clone();
+    let context_comments = if include_comments { comments } else { 0 };
+    let items = tokio::task::spawn_blocking(move || {
+        load_ai_context_items(&options, &context_ids, summary, context_comments, &token)
+    })
+    .await
+    .context("loading ADO AI context was interrupted")?
+    .map(|items| {
+        if include_comments {
+            items
+        } else {
+            items
+                .into_iter()
+                .map(|context| dw_contracts::AdoAiContextItem {
+                    comments: vec![],
+                    ..context
+                })
+                .collect()
+        }
+    })?;
     Ok(AiContextReport {
         root,
         requested_ids: ids,
@@ -195,6 +197,30 @@ pub async fn ai_context_report_with_events(
         items,
         events,
     })
+}
+
+fn load_expanded_context_items(
+    options: &dw_ado::AzureDevOpsOptions,
+    ids: &[String],
+    token: &AdoToken,
+) -> Result<Vec<Value>> {
+    Ok(ids
+        .iter()
+        .map(|item_id| get_work_item_expanded(options, item_id, token))
+        .collect::<Result<Vec<_>, _>>()?)
+}
+
+fn load_ai_context_items(
+    options: &dw_ado::AzureDevOpsOptions,
+    ids: &[String],
+    summary: bool,
+    comments: i32,
+    token: &AdoToken,
+) -> Result<Vec<dw_contracts::AdoAiContextItem>> {
+    Ok(ids
+        .iter()
+        .map(|item_id| get_ai_context(options, item_id, summary, comments, token))
+        .collect::<Result<Vec<_>, _>>()?)
 }
 
 fn push_event(events: &mut Vec<String>, emit: &mut impl FnMut(ActionEvent), message: String) {

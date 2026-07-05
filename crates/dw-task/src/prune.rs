@@ -1,7 +1,7 @@
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::auth::require_token;
-use dw_ado::get_work_item_snapshots_authenticated;
+use dw_ado::{get_work_item_snapshots_authenticated, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_git::{worktree_prune, worktree_remove};
 use dw_workspace::{
@@ -136,7 +136,12 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
                 .into_iter()
                 .map(|item| item.id)
                 .collect::<Vec<_>>();
-            let snapshots = get_work_item_snapshots_authenticated(&options, &ids, &token)?;
+            let options_for_fetch = options.clone();
+            let token_for_fetch = token.clone();
+            let snapshots = run_blocking_ado(move || {
+                get_work_item_snapshots_authenticated(&options_for_fetch, &ids, &token_for_fetch)
+            })
+            .await?;
             let updated = execute_task_sync(&workspace.path, &snapshots)?;
             Ok(display_work_items(&updated.parent_work_items(), true))
         }

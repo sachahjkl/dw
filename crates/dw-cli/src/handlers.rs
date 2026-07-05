@@ -132,6 +132,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             workspace,
             project,
             work_item,
+            pull_request,
             positional_work_item,
             r#continue,
             repo,
@@ -144,12 +145,13 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 project,
                 work_item,
                 positional_work_item,
+                pull_request,
                 r#continue,
                 repo,
                 agent,
                 root,
             })?;
-            let launch = dw_task::open::resolve_open_launch(args)?;
+            let launch = dw_task::open::resolve_open_launch_async(args).await?;
             if json {
                 print_json(&launch)?;
             } else {
@@ -1302,7 +1304,11 @@ fn select_work_item_ids(
 fn resolve_open_args_interactively(
     mut args: dw_task::open::OpenWorkspaceArgs,
 ) -> Result<dw_task::open::OpenWorkspaceArgs> {
-    if args.workspace.is_some() || args.r#continue || !std::io::stdin().is_terminal() {
+    if args.workspace.is_some()
+        || args.pull_request.is_some()
+        || args.r#continue
+        || !std::io::stdin().is_terminal()
+    {
         return Ok(args);
     }
 
@@ -1669,6 +1675,7 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
                     project,
                     work_item,
                     positional_work_item,
+                    pull_request: None,
                     r#continue,
                     repo,
                     agent,

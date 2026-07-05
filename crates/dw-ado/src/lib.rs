@@ -77,6 +77,16 @@ pub enum AdoError {
     Json(String),
 }
 
+pub async fn run_blocking_ado<T, F>(work: F) -> Result<T, AdoError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, AdoError> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|error| AdoError::Request(format!("blocking Azure DevOps task failed: {error}")))?
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkItemSnapshot {
     pub id: String,

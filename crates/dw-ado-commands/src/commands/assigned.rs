@@ -3,7 +3,7 @@ use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{
     WorkItemGroup, WorkItemSnapshot, group_work_items_by_parent, is_final_state,
-    query_assigned_work_items,
+    query_assigned_work_items, run_blocking_ado,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_core::{ActionEvent, PromptChoice, PromptSpec};
@@ -75,7 +75,11 @@ pub async fn report_with_events(
         .collect::<Vec<_>>();
     let groups = if group_by_parent && !items.is_empty() {
         push_event(&mut events, &mut emit, "Groupement par parent ADO...");
-        group_work_items_by_parent(&options, &items, &token)?
+        let options = options.clone();
+        let items_for_grouping = items.clone();
+        let token = token.clone();
+        run_blocking_ado(move || group_work_items_by_parent(&options, &items_for_grouping, &token))
+            .await?
     } else {
         Vec::new()
     };

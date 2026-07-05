@@ -2,7 +2,7 @@ use crate::{load_auth_options, resolve_ado_options, write_workspace_agent_config
 use anyhow::Result;
 use dw_ado::WorkItemSnapshot;
 use dw_ado::auth::require_token;
-use dw_ado::{get_work_item_snapshots_authenticated, query_assigned_work_items};
+use dw_ado::{get_work_item_snapshots_authenticated, query_assigned_work_items, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_workspace::{
     WorkspaceManifest, WorkspaceWorkItem, execute_work_item_update,
@@ -189,7 +189,13 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
             options.project = current_manifest.project.clone();
         }
         let token = require_token(load_auth_options(Some(&root))?).await?;
-        let snapshots = get_work_item_snapshots_authenticated(&options, &missing_ids, &token)?;
+        let options = options.clone();
+        let missing_ids_for_fetch = missing_ids.clone();
+        let token = token.clone();
+        let snapshots = run_blocking_ado(move || {
+            get_work_item_snapshots_authenticated(&options, &missing_ids_for_fetch, &token)
+        })
+        .await?;
         ensure_all_snapshots_resolved(&missing_ids, &snapshots)?;
         ensure_no_final_snapshots(&snapshots)?;
         let (_manifest, plan) = plan_add_work_item_snapshots(&root, &workspace, &snapshots)?;

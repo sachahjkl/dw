@@ -3,7 +3,7 @@ use anyhow::Result;
 use dw_ado::{
     WorkItemSnapshot, WorkspaceChildTaskCreateResult, auth::require_token,
     create_child_task_authenticated as ado_create_child_task,
-    get_work_item_snapshots_authenticated,
+    get_work_item_snapshots_authenticated, run_blocking_ado,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_workspace::{
@@ -106,7 +106,17 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
         .into_iter()
         .map(|item| item.id)
         .collect::<Vec<_>>();
-    let snapshots = get_work_item_snapshots_authenticated(&options, &requested_ids, &token)?;
+    let options_for_fetch = options.clone();
+    let requested_ids_for_fetch = requested_ids.clone();
+    let token_for_fetch = token.clone();
+    let snapshots = run_blocking_ado(move || {
+        get_work_item_snapshots_authenticated(
+            &options_for_fetch,
+            &requested_ids_for_fetch,
+            &token_for_fetch,
+        )
+    })
+    .await?;
     let updated = execute_task_sync(&workspace, &snapshots)?;
 
     Ok(SyncReport {
@@ -167,20 +177,28 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
     }
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let task_title = child_task_title(&args.repo, &args.title);
-    let created = ado_create_child_task(
-        &options,
-        &WorkItemSnapshot {
-            id: parent.id.clone(),
-            kind: parent.kind.clone(),
-            state: parent.state.clone(),
-            title: parent.title.clone(),
-            url: None,
-        },
-        &args.repo,
-        &task_title,
-        "task create-child-task",
-        &token,
-    )?;
+    let parent_snapshot = WorkItemSnapshot {
+        id: parent.id.clone(),
+        kind: parent.kind.clone(),
+        state: parent.state.clone(),
+        title: parent.title.clone(),
+        url: None,
+    };
+    let task_title_for_create = task_title.clone();
+    let options_for_create = options.clone();
+    let repo_for_create = args.repo.clone();
+    let token_for_create = token.clone();
+    let created = run_blocking_ado(move || {
+        ado_create_child_task(
+            &options_for_create,
+            &parent_snapshot,
+            &repo_for_create,
+            &task_title_for_create,
+            "task create-child-task",
+            &token_for_create,
+        )
+    })
+    .await?;
     let updated = execute_add_child_task(
         &workspace,
         &args.repo,

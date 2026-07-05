@@ -113,6 +113,55 @@ fn migrated_core_requests_use_execution_mode_not_execute_flags() {
 }
 
 #[test]
+fn async_domain_actions_isolate_blocking_ado_http_calls() {
+    let repo = repo_root();
+    let checked_roots = [
+        repo.join("crates/dw-ado-commands/src"),
+        repo.join("crates/dw-task/src"),
+    ];
+    let blocking_calls = [
+        "get_work_item_snapshot_authenticated(",
+        "get_work_item_snapshots_authenticated(",
+        "get_related_work_item_ids(",
+        "group_work_items_by_parent(",
+        "create_child_task_authenticated(",
+        "create_pull_request_authenticated(",
+        "link_work_item_to_pull_request_authenticated(",
+        "try_find_active_pull_request_authenticated(",
+        "update_work_item_state_authenticated(",
+        "list_active_pull_requests_authenticated(",
+        "get_work_item_ids_from_pull_requests(",
+        "load_changelog_items(",
+    ];
+
+    for root in checked_roots {
+        for file in rust_files(&root) {
+            if file.ends_with("crates/dw-task/src/start/ado.rs") {
+                continue;
+            }
+            let text = fs::read_to_string(&file).expect("read source file");
+            for call in blocking_calls {
+                for (line_index, line) in text.lines().enumerate() {
+                    if !line.contains(call) {
+                        continue;
+                    }
+                    let window = surrounding_lines(&text, line_index, 6);
+                    assert!(
+                        window.contains("run_blocking_ado")
+                            || window.contains("spawn_blocking")
+                            || window.contains("fn ") && !window.contains("async fn "),
+                        "{}:{} calls blocking ADO HTTP `{}` without isolation",
+                        file.display(),
+                        line_index + 1,
+                        call
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn tui_does_not_relaunch_current_dw_for_internal_actions() {
     let repo = repo_root();
     let tui_dir = repo.join("crates").join("dw-tui").join("src");
@@ -365,6 +414,16 @@ fn rust_files(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     collect_rust_files(root, &mut files);
     files
+}
+
+fn surrounding_lines(text: &str, line_index: usize, radius: usize) -> String {
+    let start = line_index.saturating_sub(radius);
+    let end = line_index.saturating_add(radius + 1);
+    text.lines()
+        .skip(start)
+        .take(end - start)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn collect_rust_files(root: &Path, files: &mut Vec<PathBuf>) {

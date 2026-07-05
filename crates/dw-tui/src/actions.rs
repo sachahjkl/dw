@@ -7,6 +7,7 @@ use crate::model::{
 pub enum AdoItemAction {
     StartPreview,
     StartExecute,
+    OpenAgent,
     Context,
     WorkItem,
     SetStartState,
@@ -16,6 +17,7 @@ pub enum AdoItemAction {
 pub enum PullRequestAction {
     StartPreview,
     StartExecute,
+    OpenAgent,
     FinishPreview,
     FinishExecute,
     Changelog,
@@ -58,118 +60,119 @@ pub struct QuickOptionItem {
 pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
     QuickOptionItem {
         key: '1',
-        section: "Agent par défaut",
+        section: "Default agent",
         label: "opencode",
-        hint: "Définir opencode comme agent par défaut",
+        hint: "Set opencode as the default agent",
         action: QuickOptionAction::Agent("opencode"),
         state: QuickOptionState::Agent("opencode"),
     },
     QuickOptionItem {
         key: '2',
-        section: "Agent par défaut",
+        section: "Default agent",
         label: "cursor",
-        hint: "Définir cursor comme agent par défaut",
+        hint: "Set cursor as the default agent",
         action: QuickOptionAction::Agent("cursor"),
         state: QuickOptionState::Agent("cursor"),
     },
     QuickOptionItem {
         key: '3',
-        section: "Agent par défaut",
+        section: "Default agent",
         label: "claude",
-        hint: "Définir claude comme agent par défaut",
+        hint: "Set claude as the default agent",
         action: QuickOptionAction::Agent("claude"),
         state: QuickOptionState::Agent("claude"),
     },
     QuickOptionItem {
         key: '4',
-        section: "Agent par défaut",
+        section: "Default agent",
         label: "codex",
-        hint: "Définir codex comme agent par défaut",
+        hint: "Set codex as the default agent",
         action: QuickOptionAction::Agent("codex"),
         state: QuickOptionState::Agent("codex"),
     },
     QuickOptionItem {
         key: '5',
-        section: "Agent par défaut",
+        section: "Default agent",
         label: "codex-cli",
-        hint: "Définir codex-cli comme agent par défaut",
+        hint: "Set codex-cli as the default agent",
         action: QuickOptionAction::Agent("codex-cli"),
         state: QuickOptionState::Agent("codex-cli"),
     },
     QuickOptionItem {
         key: '6',
-        section: "Agent par défaut",
+        section: "Default agent",
         label: "copilot",
-        hint: "Définir copilot comme agent par défaut",
+        hint: "Set copilot as the default agent",
         action: QuickOptionAction::Agent("copilot"),
         state: QuickOptionState::Agent("copilot"),
     },
     QuickOptionItem {
         key: '7',
-        section: "Mode couleur terminal",
+        section: "Terminal color mode",
         label: "auto",
-        hint: "Choisir selon le terminal",
+        hint: "Follow terminal capabilities",
         action: QuickOptionAction::Color("auto"),
         state: QuickOptionState::Color("auto"),
     },
     QuickOptionItem {
         key: '8',
-        section: "Mode couleur terminal",
+        section: "Terminal color mode",
         label: "always",
-        hint: "Forcer les couleurs",
+        hint: "Always enable colors",
         action: QuickOptionAction::Color("always"),
         state: QuickOptionState::Color("always"),
     },
     QuickOptionItem {
         key: '9',
-        section: "Mode couleur terminal",
+        section: "Terminal color mode",
         label: "never",
-        hint: "Désactiver les couleurs",
+        hint: "Disable colors",
         action: QuickOptionAction::Color("never"),
         state: QuickOptionState::Color("never"),
     },
     QuickOptionItem {
         key: 's',
-        section: "Diagnostic et onboarding",
-        label: "voir config",
-        hint: "Afficher chemins et réglages effectifs",
+        section: "Diagnostics and setup",
+        label: "show config",
+        hint: "Show effective paths and settings",
         action: QuickOptionAction::ConfigShow,
         state: QuickOptionState::None,
     },
     QuickOptionItem {
         key: 'd',
-        section: "Diagnostic et onboarding",
-        label: "diagnostic config",
-        hint: "Valider les fichiers de configuration",
+        section: "Diagnostics and setup",
+        label: "config doctor",
+        hint: "Validate configuration files",
         action: QuickOptionAction::ConfigDoctor,
         state: QuickOptionState::None,
     },
     QuickOptionItem {
         key: 'r',
-        section: "Diagnostic et onboarding",
-        label: "rafraîchir",
-        hint: "Régénérer schémas et contextes agents",
+        section: "Diagnostics and setup",
+        label: "refresh",
+        hint: "Regenerate schemas and agent contexts",
         action: QuickOptionAction::Refresh,
         state: QuickOptionState::None,
     },
     QuickOptionItem {
         key: 'g',
-        section: "Diagnostic et onboarding",
-        label: "guide",
-        hint: "Afficher le parcours de démarrage",
+        section: "Diagnostics and setup",
+        label: "quick start",
+        hint: "Show the startup path",
         action: QuickOptionAction::Guide,
         state: QuickOptionState::None,
     },
     QuickOptionItem {
         key: 'a',
-        section: "Diagnostic et onboarding",
-        label: "diagnostic agents",
-        hint: "Diagnostiquer les agents installés",
+        section: "Diagnostics and setup",
+        label: "agent doctor",
+        hint: "Check installed agents",
         action: QuickOptionAction::AgentDoctor,
         state: QuickOptionState::None,
     },
 ];
 
+#[cfg(test)]
 pub fn quick_option_by_key(key: char) -> Option<QuickOptionAction> {
     QUICK_OPTIONS
         .iter()
@@ -177,88 +180,58 @@ pub fn quick_option_by_key(key: char) -> Option<QuickOptionAction> {
         .map(|item| item.action)
 }
 
-pub fn quick_option_shortcut_hint() -> String {
-    let mut numeric = QUICK_OPTIONS
-        .iter()
-        .map(|item| item.key)
-        .filter(|key| key.is_ascii_digit())
-        .collect::<Vec<_>>();
-    numeric.sort_unstable();
-
-    let numeric_hint = match (numeric.first(), numeric.last()) {
-        (Some(first), Some(last)) if first == last => first.to_string(),
-        (Some(first), Some(last)) => format!("{first}-{last}"),
-        _ => String::new(),
-    };
-
-    let named = QUICK_OPTIONS
-        .iter()
-        .map(|item| item.key)
-        .filter(|key| !key.is_ascii_digit())
-        .map(|key| key.to_string())
-        .collect::<Vec<_>>()
-        .join("/");
-
-    match (numeric_hint.is_empty(), named.is_empty()) {
-        (false, false) => format!("{numeric_hint}/{named}"),
-        (false, true) => numeric_hint,
-        (true, false) => named,
-        (true, true) => String::new(),
-    }
-}
-
 pub fn option_action(root: &str, action: QuickOptionAction) -> TuiAction {
     match action {
         QuickOptionAction::Agent(agent) => TuiAction {
-            label: format!("Agent par défaut · {agent}"),
+            label: format!("Default agent · {agent}"),
             request: TuiActionRequest::AgentSetDefault {
                 root: Some(root.into()),
                 agent: agent.into(),
             },
-            description: "Modifier l'agent par défaut".into(),
+            description: "Change the default agent".into(),
             kind: ActionRisk::Safe,
         },
         QuickOptionAction::Color(mode) => TuiAction {
-            label: format!("Couleur · {mode}"),
+            label: format!("Color · {mode}"),
             request: TuiActionRequest::ConfigSetColor { mode: mode.into() },
-            description: "Modifier le mode couleur terminal".into(),
+            description: "Change terminal color mode".into(),
             kind: ActionRisk::Safe,
         },
         QuickOptionAction::ConfigShow => TuiAction {
-            label: "Voir configuration".into(),
+            label: "Show configuration".into(),
             request: TuiActionRequest::ConfigShow {
                 root: Some(root.into()),
             },
-            description: "Afficher les chemins et réglages effectifs".into(),
+            description: "Show effective paths and settings".into(),
             kind: ActionRisk::Safe,
         },
         QuickOptionAction::ConfigDoctor => TuiAction {
-            label: "Diagnostiquer configuration".into(),
+            label: "Configuration doctor".into(),
             request: TuiActionRequest::ConfigDoctor {
                 root: Some(root.into()),
             },
-            description: "Valider les fichiers de configuration".into(),
+            description: "Validate configuration files".into(),
             kind: ActionRisk::Safe,
         },
         QuickOptionAction::Refresh => TuiAction {
-            label: "Rafraîchir DevWorkflow".into(),
+            label: "Refresh DevWorkflow".into(),
             request: TuiActionRequest::Refresh(dw_config::command::RefreshCommandArgs {
                 root: Some(root.into()),
                 profile: "business".into(),
             }),
-            description: "Régénérer schémas et contextes agents".into(),
+            description: "Regenerate schemas and agent contexts".into(),
             kind: ActionRisk::Safe,
         },
         QuickOptionAction::Guide => TuiAction {
-            label: "Guide".into(),
+            label: "Quick start".into(),
             request: TuiActionRequest::Guide,
-            description: "Afficher le parcours de démarrage".into(),
+            description: "Show the startup path".into(),
             kind: ActionRisk::Safe,
         },
         QuickOptionAction::AgentDoctor => TuiAction {
-            label: "Diagnostiquer agents".into(),
+            label: "Agent doctor".into(),
             request: TuiActionRequest::AgentDoctor { agent: None },
-            description: "Diagnostiquer les agents installés".into(),
+            description: "Check installed agents".into(),
             kind: ActionRisk::Safe,
         },
     }
@@ -274,6 +247,12 @@ pub fn selected_ado_action(
     let item = project.items.get(selected_item)?;
     let request = match action {
         AdoItemAction::StartPreview | AdoItemAction::StartExecute => {
+            if snapshot
+                .selected_work_item_workspace(selected_project, selected_item)
+                .is_some()
+            {
+                return None;
+            }
             TuiActionRequest::TaskStart(dw_task::start::StartArgs {
                 work_item_id: Some(item.id.clone()),
                 root: Some(snapshot.root.clone()),
@@ -286,6 +265,21 @@ pub fn selected_ado_action(
                 with_active_children: false,
                 create_child_tasks: false,
                 mode: dw_core::ExecutionMode::from_execute(action == AdoItemAction::StartExecute),
+            })
+        }
+        AdoItemAction::OpenAgent => {
+            let workspace =
+                snapshot.selected_work_item_workspace(selected_project, selected_item)?;
+            TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
+                workspace: Some(workspace.path.clone()),
+                project: None,
+                work_item: None,
+                positional_work_item: None,
+                pull_request: None,
+                r#continue: false,
+                repo: None,
+                agent: None,
+                root: Some(snapshot.root.clone()),
             })
         }
         AdoItemAction::Context => {
@@ -320,13 +314,19 @@ pub fn selected_ado_action(
 
     Some(TuiAction {
         label: match action {
-            AdoItemAction::SetStartState => format!("Passer à l’état de démarrage · #{}", item.id),
-            _ => format!("Préparer work item · #{}", item.id),
+            AdoItemAction::OpenAgent => {
+                format!("Open agent · #{}", item.id)
+            }
+            AdoItemAction::SetStartState => {
+                format!("Move work item to ready state · #{}", item.id)
+            }
+            _ => format!("Prepare work item · #{}", item.id),
         },
         request,
         description: format!("{} · {}", project.key, item.title),
         kind: match action {
             AdoItemAction::StartExecute | AdoItemAction::SetStartState => ActionRisk::Destructive,
+            AdoItemAction::OpenAgent => ActionRisk::OpensExternal,
             _ => ActionRisk::Safe,
         },
     })
@@ -361,6 +361,9 @@ pub fn selected_pull_request_action(
     let pull_request_id = item.pull_request_id?;
     let request = match action {
         PullRequestAction::StartPreview | PullRequestAction::StartExecute => {
+            if item.workspace.is_some() {
+                return None;
+            }
             TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
                 pull_request_id: pull_request_id.to_string(),
                 root: Some(snapshot.root.clone()),
@@ -371,6 +374,19 @@ pub fn selected_pull_request_action(
                 mode: dw_core::ExecutionMode::from_execute(
                     action == PullRequestAction::StartExecute,
                 ),
+            })
+        }
+        PullRequestAction::OpenAgent => {
+            TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
+                workspace: Some(item.workspace.clone()?),
+                project: None,
+                work_item: None,
+                positional_work_item: None,
+                pull_request: None,
+                r#continue: false,
+                repo: Some(item.repository.clone()),
+                agent: None,
+                root: Some(snapshot.root.clone()),
             })
         }
         PullRequestAction::FinishPreview | PullRequestAction::FinishExecute => {
@@ -416,15 +432,14 @@ pub fn selected_pull_request_action(
     Some(TuiAction {
         label: match action {
             PullRequestAction::StartPreview => {
-                format!("Prévisualiser workspace PR · {}", item.repository)
+                format!("Preview PR workspace · {}", item.repository)
             }
-            PullRequestAction::StartExecute => format!("Créer workspace PR · {}", item.repository),
-            PullRequestAction::FinishPreview => {
-                format!("Prévisualiser finalisation PR · {}", item.repository)
-            }
-            PullRequestAction::FinishExecute => format!("Finaliser PR · {}", item.repository),
-            PullRequestAction::DiffPreview => format!("Inspecter diff local · {}", item.repository),
-            PullRequestAction::Changelog => format!("Résumer changements · {}", item.repository),
+            PullRequestAction::StartExecute => format!("Create PR workspace · {}", item.repository),
+            PullRequestAction::OpenAgent => format!("Open agent · {}", item.repository),
+            PullRequestAction::FinishPreview => format!("Preview PR finish · {}", item.repository),
+            PullRequestAction::FinishExecute => format!("Finish PR · {}", item.repository),
+            PullRequestAction::DiffPreview => format!("Inspect local diff · {}", item.repository),
+            PullRequestAction::Changelog => format!("Summarize changes · {}", item.repository),
         },
         request,
         description: format!("{} · {}", item.project, item.branch),
@@ -432,19 +447,10 @@ pub fn selected_pull_request_action(
             PullRequestAction::StartExecute | PullRequestAction::FinishExecute => {
                 ActionRisk::Destructive
             }
+            PullRequestAction::OpenAgent => ActionRisk::OpensExternal,
             _ => ActionRisk::Safe,
         },
     })
-}
-
-pub fn selected_database_schema_action(
-    snapshot: &TuiSnapshot,
-    selected_database: usize,
-) -> Option<TuiAction> {
-    snapshot
-        .database_entries
-        .get(selected_database)
-        .map(|database| database_action(database, DatabaseAction::Schema))
 }
 
 pub fn selected_database_action(
@@ -476,7 +482,7 @@ pub fn database_action(database: &TuiDatabase, action: DatabaseAction) -> TuiAct
             env: None,
         }),
         description: match action {
-            DatabaseAction::Schema => "Inspecter le schéma read-only".into(),
+            DatabaseAction::Schema => "Inspect the read-only schema".into(),
         },
         kind: ActionRisk::Safe,
     }
@@ -488,20 +494,63 @@ pub fn pull_request_action_error(
     action: PullRequestAction,
 ) -> String {
     let Some(item) = snapshot.pull_requests.get(selected_pull_request) else {
-        return "Aucune PR sélectionnée.".into();
+        return "No PR selected.".into();
     };
     if item.pull_request_id.is_none() {
-        return "Cette ligne ne correspond pas à une PR exploitable.".into();
+        return "This row is not an actionable PR.".into();
     }
     match action {
+        PullRequestAction::StartPreview | PullRequestAction::StartExecute
+            if item.workspace.is_some() =>
+        {
+            "Action unavailable: a workspace is already linked to this PR. Open the agent instead."
+                .into()
+        }
+        PullRequestAction::OpenAgent if item.workspace.is_none() => {
+            "Action unavailable: no local workspace is linked to this PR. Create the workspace first."
+                .into()
+        }
         PullRequestAction::FinishPreview
         | PullRequestAction::FinishExecute
         | PullRequestAction::DiffPreview
             if item.workspace.is_none() =>
         {
-            "Action indisponible: aucun workspace local lié à cette PR. Appuyer sur x pour créer le workspace depuis la PR.".into()
+            "Action unavailable: no local workspace is linked to this PR. Press x to create a workspace from the PR.".into()
         }
-        _ => "Action PR indisponible pour cette ligne.".into(),
+        _ => "PR action unavailable for this row.".into(),
+    }
+}
+
+pub fn ado_action_error(
+    snapshot: &TuiSnapshot,
+    selected_project: usize,
+    selected_item: usize,
+    action: AdoItemAction,
+) -> Option<String> {
+    let project = snapshot.assigned.get(selected_project)?;
+    let item = project.items.get(selected_item)?;
+    match action {
+        AdoItemAction::StartPreview | AdoItemAction::StartExecute
+            if snapshot
+                .selected_work_item_workspace(selected_project, selected_item)
+                .is_some() =>
+        {
+            Some(
+                "Action unavailable: a workspace is already linked to this work item. Open the agent instead."
+                    .into(),
+            )
+        }
+        AdoItemAction::OpenAgent
+            if snapshot
+                .selected_work_item_workspace(selected_project, selected_item)
+                .is_none() =>
+        {
+            Some(format!(
+                "Action unavailable: no local workspace is linked to work item #{}. Create the workspace first.",
+                item.id
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -542,6 +591,37 @@ mod tests {
         }
         assert!(matches!(action.kind, ActionRisk::Destructive));
         assert!(!action.runs_attached_in_tui());
+    }
+
+    #[test]
+    fn ado_existing_workspace_disables_create_and_opens_agent() {
+        let mut snapshot = snapshot();
+        snapshot.workspaces = vec![workspace("/tmp/ws-42", "demo")];
+        snapshot.assigned = vec![AdoAssignedProject {
+            key: "ha".into(),
+            label: "Hommage Agence".into(),
+            items: vec![AdoAssignedItem {
+                id: "42".into(),
+                kind: "User Story".into(),
+                state: "Active".into(),
+                title: "Demo".into(),
+                url: None,
+            }],
+            error: None,
+        }];
+
+        assert!(selected_ado_action(&snapshot, 0, 0, AdoItemAction::StartExecute).is_none());
+        let action =
+            selected_ado_action(&snapshot, 0, 0, AdoItemAction::OpenAgent).expect("open action");
+
+        match &action.request {
+            TuiActionRequest::AgentOpen(args) => {
+                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws-42"));
+                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+            }
+            _ => panic!("expected agent open request"),
+        }
+        assert!(matches!(action.kind, ActionRisk::OpensExternal));
     }
 
     #[test]
@@ -597,6 +677,28 @@ mod tests {
     }
 
     #[test]
+    fn pr_existing_workspace_disables_create_and_opens_agent() {
+        let mut snapshot = snapshot();
+        snapshot.pull_requests = vec![pull_request(Some("/tmp/ws-pr"))];
+
+        assert!(
+            selected_pull_request_action(&snapshot, 0, PullRequestAction::StartExecute).is_none()
+        );
+        let action = selected_pull_request_action(&snapshot, 0, PullRequestAction::OpenAgent)
+            .expect("open action");
+
+        match &action.request {
+            TuiActionRequest::AgentOpen(args) => {
+                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws-pr"));
+                assert_eq!(args.repo.as_deref(), Some("front"));
+                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+            }
+            _ => panic!("expected agent open request"),
+        }
+        assert!(matches!(action.kind, ActionRisk::OpensExternal));
+    }
+
+    #[test]
     fn pr_start_execute_runs_in_background_after_tui_confirmation() {
         let mut snapshot = snapshot();
         snapshot.pull_requests = vec![pull_request(None)];
@@ -644,7 +746,7 @@ mod tests {
 
         assert_eq!(
             pull_request_action_error(&snapshot, 0, PullRequestAction::FinishExecute),
-            "Action indisponible: aucun workspace local lié à cette PR. Appuyer sur x pour créer le workspace depuis la PR."
+            "Action unavailable: no local workspace is linked to this PR. Press x to create a workspace from the PR."
         );
     }
 
@@ -700,11 +802,6 @@ mod tests {
             Some(QuickOptionAction::ConfigDoctor)
         );
         assert!(quick_option_by_key('x').is_none());
-    }
-
-    #[test]
-    fn quick_option_shortcut_hint_tracks_catalog_keys() {
-        assert_eq!(quick_option_shortcut_hint(), "1-9/s/d/r/g/a");
     }
 
     #[test]

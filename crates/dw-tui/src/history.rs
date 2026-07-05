@@ -27,9 +27,9 @@ impl HistoryState {
     pub fn start_running(&mut self, request_label: String) {
         self.push(RunHistoryEntry {
             request_label,
-            status: "en cours".into(),
+            status: "running".into(),
             success: true,
-            output_preview: vec!["Action en cours...".into()],
+            output_preview: vec!["Action running...".into()],
             output_lines: Vec::new(),
         });
     }
@@ -39,7 +39,7 @@ impl HistoryState {
             .entries
             .iter_mut()
             .rev()
-            .find(|entry| entry.request_label == request_label && entry.status == "en cours")
+            .find(|entry| entry.request_label == request_label && entry.status == "running")
         else {
             return;
         };
@@ -59,7 +59,7 @@ impl HistoryState {
             .entries
             .iter_mut()
             .rev()
-            .find(|entry| entry.request_label == request_label && entry.status == "en cours")
+            .find(|entry| entry.request_label == request_label && entry.status == "running")
         else {
             return false;
         };
@@ -71,12 +71,9 @@ impl HistoryState {
     }
 
     pub fn open_output(&mut self) -> bool {
-        if self.entries.is_empty() {
-            return false;
-        }
         self.output_open = true;
         self.output_scroll = 0;
-        self.selected_entry = self.entries.len() - 1;
+        self.selected_entry = self.entries.len().saturating_sub(1);
         true
     }
 
@@ -153,7 +150,7 @@ fn cap_output_lines(lines: &mut Vec<String>) {
     }
     let omitted = lines.len() - MAX_OUTPUT_LINES;
     let mut kept = Vec::with_capacity(MAX_OUTPUT_LINES + 1);
-    kept.push(format!("... {omitted} lignes précédentes masquées ..."));
+    kept.push(format!("... {omitted} previous lines hidden ..."));
     kept.extend(lines.drain(omitted..));
     *lines = kept;
 }
@@ -192,13 +189,18 @@ mod tests {
         let lines = output_lines(&output);
 
         assert_eq!(lines.len(), 161);
-        assert!(lines[0].contains("lignes précédentes masquées"));
+        assert!(lines[0].contains("previous lines hidden"));
         assert_eq!(lines.last().map(String::as_str), Some("line 169"));
     }
 
     #[test]
     fn history_state_caps_entries_and_controls_output_modal() {
         let mut history = HistoryState::default();
+        assert!(history.open_output());
+        assert!(history.output_open);
+        assert_eq!(history.selected_entry, 0);
+        history.close_output();
+
         for index in 0..22 {
             history.push(RunHistoryEntry {
                 request_label: format!("Doctor {index}"),
@@ -236,25 +238,25 @@ mod tests {
         let mut history = HistoryState::default();
 
         history.start_running("Task finish".into());
-        history.append_running_line("Task finish", "Préparation...".into());
+        history.append_running_line("Task finish", "Preparing...".into());
         history.append_running_line("Task finish", "Push front...".into());
 
         let entry = history.selected_entry().expect("entry");
-        assert_eq!(entry.status, "en cours");
-        assert_eq!(entry.output_preview, ["Préparation...", "Push front..."]);
+        assert_eq!(entry.status, "running");
+        assert_eq!(entry.output_preview, ["Preparing...", "Push front..."]);
 
         assert!(history.finish_running(
             "Task finish",
             "exit 0".into(),
             true,
-            "Préparation...\nPush front...\nOK"
+            "Preparing...\nPush front...\nOK"
         ));
         let entry = history.selected_entry().expect("entry");
         assert_eq!(entry.status, "exit 0");
         assert!(entry.success);
         assert_eq!(
             entry.output_preview,
-            ["Préparation...", "Push front...", "OK"]
+            ["Preparing...", "Push front...", "OK"]
         );
     }
 }

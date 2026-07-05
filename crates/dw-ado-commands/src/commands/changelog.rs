@@ -1,5 +1,5 @@
 use crate::{load_auth_options, resolve_ado_options};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use dw_ado::auth::require_token;
 use dw_ado::{
     ChangelogFormat, extract_work_item_ids_from_commit_messages,
@@ -75,24 +75,24 @@ pub async fn report_with_events(
     } = args;
     if from_pr && from_git {
         return Err(anyhow::anyhow!(
-            "Choisir soit le mode PR, soit le mode git, pas les deux."
+            "Choose either PR mode or git mode, not both."
         ));
     }
     let output_format = parse_changelog_format(format.as_deref())?;
     if table && output_format != ChangelogFormat::Markdown {
         return Err(anyhow::anyhow!(
-            "La sortie tableau est uniquement disponible avec le format markdown."
+            "Table output is only available with markdown format."
         ));
     }
     if ids_only && table {
         return Err(anyhow::anyhow!(
-            "La sortie IDs seuls et la sortie tableau ne peuvent pas être combinées."
+            "IDs-only output and table output cannot be combined."
         ));
     }
 
     let root = resolve_root(root.as_deref());
     let project_key =
-        project.ok_or_else(|| anyhow::anyhow!("ado changelog requiert un projet configuré."))?;
+        project.ok_or_else(|| anyhow::anyhow!("ado changelog requires a configured project."))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
     let options = resolve_ado_options(&projects, &workflow, &project_key)?;
@@ -100,7 +100,7 @@ pub async fn report_with_events(
     push_event(
         &mut events,
         &mut emit,
-        format!("Connexion Azure DevOps pour le projet {project_key}..."),
+        format!("Connecting to Azure DevOps for project {project_key}..."),
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
 
@@ -119,7 +119,13 @@ pub async fn report_with_events(
             &mut emit,
             changelog_pr_fetch_line(&repositories),
         );
-        get_work_item_ids_from_pull_requests(&options, &repositories, &ids, &token)?
+        let options = options.clone();
+        let token = token.clone();
+        tokio::task::spawn_blocking(move || {
+            get_work_item_ids_from_pull_requests(&options, &repositories, &ids, &token)
+        })
+        .await
+        .context("resolving work items from pull requests was interrupted")??
     };
 
     if work_item_ids.is_empty() {
@@ -167,7 +173,14 @@ pub async fn report_with_events(
         &mut emit,
         changelog_items_fetch_line(work_item_ids.len()),
     );
-    let mut items = load_changelog_items(&options, &work_item_ids, &token)?;
+    let mut items = {
+        let options = options.clone();
+        let token = token.clone();
+        let work_item_ids = work_item_ids.clone();
+        tokio::task::spawn_blocking(move || load_changelog_items(&options, &work_item_ids, &token))
+            .await
+            .context("loading changelog work items was interrupted")??
+    };
     if items.is_empty() {
         return Ok(ChangelogReport {
             root,
@@ -189,12 +202,15 @@ pub async fn report_with_events(
     }
 
     let groups = if group_by_parent {
-        push_event(
-            &mut events,
-            &mut emit,
-            "Groupement par parent ADO...".into(),
-        );
-        group_work_items_by_parent(&options, &items, &token)?
+        push_event(&mut events, &mut emit, "Grouping by ADO parent...".into());
+        let options = options.clone();
+        let token = token.clone();
+        let items_for_grouping = items.clone();
+        tokio::task::spawn_blocking(move || {
+            group_work_items_by_parent(&options, &items_for_grouping, &token)
+        })
+        .await
+        .context("grouping changelog work items was interrupted")??
     } else {
         items.sort_by(|left, right| left.id.cmp(&right.id));
         Vec::new()
@@ -225,24 +241,24 @@ fn push_event(events: &mut Vec<String>, emit: &mut impl FnMut(ActionEvent), mess
 
 pub fn changelog_git_extract_line(git_to: Option<&str>) -> String {
     match git_to.filter(|value| !value.trim().is_empty()) {
-        Some(target) => format!("Extraction des work items depuis git jusqu'à {target}..."),
-        None => "Extraction des work items depuis git...".into(),
+        Some(target) => format!("Extracting work items from git up to {target}..."),
+        None => "Extracting work items from git...".into(),
     }
 }
 
 pub fn changelog_pr_fetch_line(repositories: &[String]) -> String {
     match repositories.len() {
-        0 => "Chargement PR ADO: aucun repository configuré.".into(),
-        1 => format!("Chargement PR ADO sur {}...", repositories[0]),
-        count => format!("Chargement PR ADO sur {count} repositories..."),
+        0 => "Loading ADO PRs: no repository configured.".into(),
+        1 => format!("Loading ADO PRs from {}...", repositories[0]),
+        count => format!("Loading ADO PRs from {count} repositories..."),
     }
 }
 
 pub fn changelog_items_fetch_line(count: usize) -> String {
     match count {
-        0 => "Chargement changelog ADO: aucun work item à résoudre.".into(),
-        1 => "Chargement changelog ADO: résolution de 1 work item...".into(),
-        count => format!("Chargement changelog ADO: résolution de {count} work items..."),
+        0 => "Loading ADO changelog: no work item to resolve.".into(),
+        1 => "Loading ADO changelog: resolving 1 work item...".into(),
+        count => format!("Loading ADO changelog: resolving {count} work items..."),
     }
 }
 
@@ -302,7 +318,7 @@ pub fn resolve_ado_repository(
 fn extract_work_item_ids_from_git_range(from: &str, to: Option<&str>) -> Result<Vec<String>> {
     let to = to
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("Le mode git attend 2 refs git: source et target."))?;
+        .ok_or_else(|| anyhow::anyhow!("Git mode expects 2 git refs: source and target."))?;
     let output = ProcessCommand::new("git")
         .args(["log", "--format=%B%x1e", &format!("{from}..{to}")])
         .output()?;
@@ -312,8 +328,8 @@ fn extract_work_item_ids_from_git_range(from: &str, to: Option<&str>) -> Result<
         let message = [stderr.trim(), stdout.trim()]
             .into_iter()
             .find(|value| !value.is_empty())
-            .unwrap_or("erreur inconnue");
-        return Err(anyhow::anyhow!("git log a échoué: {message}"));
+            .unwrap_or("unknown error");
+        return Err(anyhow::anyhow!("git log failed: {message}"));
     }
     Ok(extract_work_item_ids_from_commit_messages(
         &String::from_utf8_lossy(&output.stdout),
@@ -336,27 +352,27 @@ mod tests {
     fn changelog_progress_lines_handle_counts() {
         assert_eq!(
             changelog_pr_fetch_line(&[]),
-            "Chargement PR ADO: aucun repository configuré."
+            "Loading ADO PRs: no repository configured."
         );
         assert_eq!(
             changelog_pr_fetch_line(&["front".into()]),
-            "Chargement PR ADO sur front..."
+            "Loading ADO PRs from front..."
         );
         assert_eq!(
             changelog_pr_fetch_line(&["front".into(), "back".into()]),
-            "Chargement PR ADO sur 2 repositories..."
+            "Loading ADO PRs from 2 repositories..."
         );
         assert_eq!(
             changelog_items_fetch_line(0),
-            "Chargement changelog ADO: aucun work item à résoudre."
+            "Loading ADO changelog: no work item to resolve."
         );
         assert_eq!(
             changelog_items_fetch_line(1),
-            "Chargement changelog ADO: résolution de 1 work item..."
+            "Loading ADO changelog: resolving 1 work item..."
         );
         assert_eq!(
             changelog_items_fetch_line(3),
-            "Chargement changelog ADO: résolution de 3 work items..."
+            "Loading ADO changelog: resolving 3 work items..."
         );
     }
 
@@ -364,11 +380,11 @@ mod tests {
     fn changelog_git_extract_line_mentions_target_when_present() {
         assert_eq!(
             changelog_git_extract_line(None),
-            "Extraction des work items depuis git..."
+            "Extracting work items from git..."
         );
         assert_eq!(
             changelog_git_extract_line(Some("develop")),
-            "Extraction des work items depuis git jusqu'à develop..."
+            "Extracting work items from git up to develop..."
         );
     }
 }

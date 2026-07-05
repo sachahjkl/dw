@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -27,14 +28,15 @@ pub struct CapturedActionRunResult {
 }
 
 pub fn install_terminal() -> Result<()> {
-    enable_raw_mode().context("activation du mode terminal raw")?;
-    execute!(io::stdout(), EnterAlternateScreen).context("ouverture de l'écran TUI")?;
+    enable_raw_mode().context("enable raw terminal mode")?;
+    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).context("open TUI screen")?;
     Ok(())
 }
 
 pub fn restore_terminal() -> Result<()> {
     disable_raw_mode().ok();
-    execute!(io::stdout(), LeaveAlternateScreen).context("restauration du terminal")?;
+    execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)
+        .context("restore terminal")?;
     Ok(())
 }
 
@@ -96,15 +98,15 @@ async fn dispatch_internal_action(
         TuiActionRequest::ConfigSetColor { mode } => {
             let report = dw_config::command::set_color(mode)?;
             Ok([
-                "Configuration mise à jour".into(),
-                format!("Couleur   : {}", report.value),
+                "Configuration updated".into(),
+                format!("Color     : {}", report.value),
             ]
             .join("\n"))
         }
         TuiActionRequest::ConfigSetRoot { path } => {
             let report = dw_config::command::set_root(path)?;
             Ok([
-                "Configuration mise à jour".into(),
+                "Configuration updated".into(),
                 format!("Root      : {}", report.value),
             ]
             .join("\n"))
@@ -124,7 +126,7 @@ async fn dispatch_internal_action(
             Ok(render::agent_doctor_lines(&report, &theme).join("\n"))
         }
         TuiActionRequest::AgentOpen(_) => {
-            anyhow::bail!("Action externe exécutée par run_attached.")
+            anyhow::bail!("External action executed by run_attached.")
         }
         TuiActionRequest::DbGuard(args) => {
             Ok(render::db_guard_lines(&dw_db::commands::guard(args.clone()), &theme).join("\n"))
@@ -351,7 +353,7 @@ fn external_launch_plan(action: &TuiAction) -> Result<ExternalLaunchPlan> {
     match &action.request {
         TuiActionRequest::AgentOpen(args) => dw_task::open::resolve_open_launch(args.clone()),
         _ => anyhow::bail!(
-            "Action externe non portée vers ExternalLaunchPlan: {}",
+            "External action is not mapped to ExternalLaunchPlan: {}",
             action.display_label()
         ),
     }
@@ -368,7 +370,7 @@ fn run_external_launch_plan(launch: &ExternalLaunchPlan) -> Result<()> {
             .map(|(key, value)| (key.as_str(), value.as_str())),
     )?;
     if !status.success() {
-        anyhow::bail!("processus externe terminé avec le statut {status}");
+        anyhow::bail!("external process exited with status {status}");
     }
     Ok(())
 }
@@ -402,7 +404,7 @@ mod tests {
         assert!(
             output
                 .iter()
-                .any(|line| line == "Résolution des work items liés à la PR #42...")
+                .any(|line| line == "Resolving work items linked to PR #42...")
         );
     }
 }

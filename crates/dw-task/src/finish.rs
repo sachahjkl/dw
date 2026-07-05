@@ -4,7 +4,8 @@ use dw_ado::auth::require_token;
 use dw_ado::{
     CreatePullRequestInput, PullRequestCreateResult, create_pull_request_authenticated,
     get_work_item_snapshot_authenticated, link_work_item_to_pull_request_authenticated,
-    try_find_active_pull_request_authenticated, update_work_item_state_authenticated,
+    run_blocking_ado, try_find_active_pull_request_authenticated,
+    update_work_item_state_authenticated,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_git::{RepositoryStatus, commit_repository, push_repository, repository_status};
@@ -288,12 +289,20 @@ pub async fn execute_finish(
             "Repository {}: vérification PR active...",
             candidate.repository
         ));
-        if let Some(existing) = try_find_active_pull_request_authenticated(
-            &options,
-            ado_repository,
-            &source_ref,
-            &token,
-        )? {
+        let options_for_find = options.clone();
+        let repository_for_find = ado_repository.clone();
+        let source_ref_for_find = source_ref.clone();
+        let token_for_find = token.clone();
+        if let Some(existing) = run_blocking_ado(move || {
+            try_find_active_pull_request_authenticated(
+                &options_for_find,
+                &repository_for_find,
+                &source_ref_for_find,
+                &token_for_find,
+            )
+        })
+        .await?
+        {
             pull_requests.push(FinishPullRequestResult {
                 repository: candidate.repository.clone(),
                 action: FinishPullRequestAction::Existing,
@@ -324,16 +333,29 @@ pub async fn execute_finish(
             is_draft: !plan.ready,
             work_item_ids: plan.manifest.all_known_work_item_ids(),
         };
-        let created = create_pull_request_authenticated(&options, &input, &token)?;
+        let options_for_create = options.clone();
+        let token_for_create = token.clone();
+        let created = run_blocking_ado(move || {
+            create_pull_request_authenticated(&options_for_create, &input, &token_for_create)
+        })
+        .await?;
         if let Some(pull_request_id) = created.pull_request_id {
             for id in plan.manifest.all_known_work_item_ids() {
-                if let Err(error) = link_work_item_to_pull_request_authenticated(
-                    &options,
-                    ado_repository,
-                    pull_request_id,
-                    &id,
-                    &token,
-                ) {
+                let options_for_link = options.clone();
+                let token_for_link = token.clone();
+                let repository_for_link = ado_repository.clone();
+                let id_for_link = id.clone();
+                if let Err(error) = run_blocking_ado(move || {
+                    link_work_item_to_pull_request_authenticated(
+                        &options_for_link,
+                        &repository_for_link,
+                        pull_request_id,
+                        &id_for_link,
+                        &token_for_link,
+                    )
+                })
+                .await
+                {
                     events.push(format!(
                         "Lien PR/work item déjà demandé à la création, lien explicite ignoré pour #{}: {}",
                         id, error
@@ -348,7 +370,17 @@ pub async fn execute_finish(
         let ids = plan.manifest.all_known_work_item_ids();
         events.push(format!("Mise à jour ADO: {} work item(s)...", ids.len()));
         for id in ids {
-            let item = get_work_item_snapshot_authenticated(&options, &id, &token)?;
+            let options_for_fetch = options.clone();
+            let token_for_fetch = token.clone();
+            let id_for_fetch = id.clone();
+            let item = run_blocking_ado(move || {
+                get_work_item_snapshot_authenticated(
+                    &options_for_fetch,
+                    &id_for_fetch,
+                    &token_for_fetch,
+                )
+            })
+            .await?;
             let state = finish_state(
                 item.kind
                     .as_deref()
@@ -384,13 +416,20 @@ pub async fn execute_finish(
                 });
                 continue;
             }
-            update_work_item_state_authenticated(
-                &options,
-                &id,
-                &state,
-                "task finish: PR ouverte",
-                &token,
-            )?;
+            let options_for_update = options.clone();
+            let token_for_update = token.clone();
+            let id_for_update = id.clone();
+            let state_for_update = state.clone();
+            run_blocking_ado(move || {
+                update_work_item_state_authenticated(
+                    &options_for_update,
+                    &id_for_update,
+                    &state_for_update,
+                    "task finish: PR ouverte",
+                    &token_for_update,
+                )
+            })
+            .await?;
             work_item_updates.push(FinishWorkItemStateUpdate {
                 id: item.id,
                 label,

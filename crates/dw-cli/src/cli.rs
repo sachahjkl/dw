@@ -366,6 +366,12 @@ pub(crate) enum TaskCommand {
         )]
         work_item: Option<String>,
         #[arg(
+            long = "pr",
+            conflicts_with_all = ["workspace", "work_item", "continue"],
+            help = "Pull request Azure DevOps utilisée pour résoudre le workspace existant."
+        )]
+        pull_request: Option<String>,
+        #[arg(
             long = "continue",
             conflicts_with = "workspace",
             help = "Reprendre le workspace task le plus récent correspondant."

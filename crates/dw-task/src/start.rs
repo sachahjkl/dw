@@ -1,9 +1,9 @@
 use crate::write_workspace_agent_configs;
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::{Context, Result};
-use dw_ado::update_work_item_state_authenticated;
 use dw_ado::{
     AzureDevOpsOptions, auth::AdoToken, auth::require_token, get_work_item_ids_from_pull_requests,
+    run_blocking_ado, update_work_item_state_authenticated,
 };
 use dw_config::{
     load_projects_config, load_workflow_config, repository_config, resolve_project, resolve_root,
@@ -111,12 +111,20 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
         None
     };
     let ado_work_items = if let Some((ado_options, token)) = ado_context.as_ref() {
-        ado::load_start_work_items(
-            ado_options,
-            &selected_work_item_id,
-            args.with_active_children,
-            token,
-        )?
+        let ado_options = ado_options.clone();
+        let token = token.clone();
+        let selected_work_item_id = selected_work_item_id.clone();
+        let with_active_children = args.with_active_children;
+        run_blocking_ado(move || {
+            ado::load_start_work_items(
+                &ado_options,
+                &selected_work_item_id,
+                with_active_children,
+                &token,
+            )
+            .map_err(|error| dw_ado::AdoError::Request(error.to_string()))
+        })
+        .await?
     } else {
         Vec::new()
     };
@@ -183,19 +191,23 @@ pub async fn execute_start(
         let token = require_token(load_auth_options(Some(&report.root))?).await?;
         let start_options = task_start_options(&workflow);
         let child_tasks = if args.create_child_tasks || start_options.create_child_tasks {
-            ado::create_start_child_tasks(
-                &ado_options,
-                &token,
-                work_items.first(),
-                &report.plan.repositories,
-            )?
+            let ado_options = ado_options.clone();
+            let token = token.clone();
+            let parent = work_items.first().cloned();
+            let repositories = report.plan.repositories.clone();
+            run_blocking_ado(move || {
+                ado::create_start_child_tasks(&ado_options, &token, parent.as_ref(), &repositories)
+                    .map_err(|error| dw_ado::AdoError::Request(error.to_string()))
+            })
+            .await?
         } else {
             Vec::new()
         };
         if !child_tasks.is_empty() {
             report.plan = start_plan_with_child_tasks(report.plan, &child_tasks);
         }
-        let state_updates = update_start_states(&ado_options, &token, &work_items, &start_options)?;
+        let state_updates =
+            update_start_states(&ado_options, &token, &work_items, &start_options).await?;
         let manifest = execute_task_start_with_work_items_and_child_tasks(
             &report.plan,
             work_items.clone(),
@@ -228,7 +240,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
     let repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_deref());
     if repositories.is_empty() {
         return Err(anyhow::anyhow!(
-            "task start-pr requiert un repository explicite, ou un projet avec des azureDevOpsRepository configurés."
+            "task start-pr requires an explicit repository, or a project with configured azureDevOpsRepository entries."
         ));
     }
     let options = resolve_ado_options(&projects, &workflow, &args.project)?;
@@ -246,10 +258,10 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
         )
     })
     .await
-    .context("résolution des work items liés à la PR interrompue")??;
+    .context("resolving work items linked to the PR was interrupted")??;
     if work_item_ids.is_empty() {
         return Err(anyhow::anyhow!(
-            "Aucun work item lié à la PR #{} dans les repositories testés: {}.",
+            "No work item linked to PR #{} in tested repositories: {}.",
             args.pull_request_id,
             repositories.join(", ")
         ));
@@ -303,23 +315,23 @@ pub async fn execute_start_pr(
 
 pub fn start_pr_fetch_line(pull_request_id: &str, repositories: &[String]) -> String {
     match repositories.len() {
-        0 => format!("Résolution des work items liés à la PR #{pull_request_id}..."),
+        0 => format!("Resolving work items linked to PR #{pull_request_id}..."),
         1 => format!(
-            "Résolution des work items liés à la PR #{pull_request_id} dans {}...",
+            "Resolving work items linked to PR #{pull_request_id} in {}...",
             repositories[0]
         ),
         count => format!(
-            "Résolution des work items liés à la PR #{pull_request_id} dans {count} repositories..."
+            "Resolving work items linked to PR #{pull_request_id} in {count} repositories..."
         ),
     }
 }
 
 pub fn start_pr_resolved_line(work_item_ids: &[String]) -> String {
     match work_item_ids.len() {
-        0 => "Aucun work item lié à la PR.".into(),
-        1 => format!("PR liée au work item #{}.", work_item_ids[0]),
+        0 => "No work item linked to the PR.".into(),
+        1 => format!("PR linked to work item #{}.", work_item_ids[0]),
         count => format!(
-            "PR liée à {count} work items: {}.",
+            "PR linked to {count} work items: {}.",
             work_item_ids
                 .iter()
                 .map(|id| format!("#{id}"))
@@ -382,7 +394,7 @@ fn resolve_ado_repository(
         .unwrap_or_else(|| repository.to_string())
 }
 
-fn update_start_states(
+async fn update_start_states(
     options: &AzureDevOpsOptions,
     token: &AdoToken,
     work_items: &[WorkspaceWorkItem],
@@ -403,7 +415,20 @@ fn update_start_states(
             .as_deref()
             .is_some_and(|current| current.eq_ignore_ascii_case(&state));
         if changed {
-            update_work_item_state_authenticated(options, &item.id, &state, "task start", token)?;
+            let options_for_update = options.clone();
+            let token_for_update = token.clone();
+            let id_for_update = item.id.clone();
+            let state_for_update = state.clone();
+            run_blocking_ado(move || {
+                update_work_item_state_authenticated(
+                    &options_for_update,
+                    &id_for_update,
+                    &state_for_update,
+                    "task start",
+                    &token_for_update,
+                )
+            })
+            .await?;
         }
         updates.push(StartStateUpdate {
             id: item.id.clone(),
@@ -438,24 +463,27 @@ mod tests {
     fn start_pr_progress_lines_include_repository_and_work_items() {
         assert_eq!(
             start_pr_fetch_line("42", &[]),
-            "Résolution des work items liés à la PR #42..."
+            "Resolving work items linked to PR #42..."
         );
         assert_eq!(
             start_pr_fetch_line("42", &["front".into()]),
-            "Résolution des work items liés à la PR #42 dans front..."
+            "Resolving work items linked to PR #42 in front..."
         );
         assert_eq!(
             start_pr_fetch_line("42", &["front".into(), "back".into()]),
-            "Résolution des work items liés à la PR #42 dans 2 repositories..."
+            "Resolving work items linked to PR #42 in 2 repositories..."
         );
-        assert_eq!(start_pr_resolved_line(&[]), "Aucun work item lié à la PR.");
+        assert_eq!(
+            start_pr_resolved_line(&[]),
+            "No work item linked to the PR."
+        );
         assert_eq!(
             start_pr_resolved_line(&["123".into()]),
-            "PR liée au work item #123."
+            "PR linked to work item #123."
         );
         assert_eq!(
             start_pr_resolved_line(&["123".into(), "456".into()]),
-            "PR liée à 2 work items: #123, #456."
+            "PR linked to 2 work items: #123, #456."
         );
     }
 

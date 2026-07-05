@@ -283,7 +283,11 @@ impl BackgroundJobs {
             .await
             {
                 Ok(result) => result,
-                Err(error) => Err(format!("Action TUI interrompue: {error}")),
+                Err(error) if error.is_panic() => Err(
+                    "TUI action interrupted by an internal panic. The action was stopped cleanly."
+                        .into(),
+                ),
+                Err(error) => Err(format!("TUI action interrupted: {error}")),
             };
             let _ = sender.send(BackgroundResult::Action {
                 generation,

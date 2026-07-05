@@ -12,21 +12,17 @@ pub enum View {
     Ado,
     PullRequests,
     Db,
-    Config,
     Composer,
-    Help,
 }
 
 impl View {
-    pub const ALL: [View; 8] = [
+    pub const ALL: [View; 6] = [
         View::Dashboard,
         View::Workspaces,
         View::Ado,
         View::PullRequests,
         View::Db,
-        View::Config,
         View::Composer,
-        View::Help,
     ];
 
     pub fn label(self) -> &'static str {
@@ -36,9 +32,7 @@ impl View {
             View::Ado => "ADO",
             View::PullRequests => "PRs",
             View::Db => "DB",
-            View::Config => "Config",
             View::Composer => "Composer",
-            View::Help => "Aide",
         }
     }
 }
@@ -84,27 +78,18 @@ impl ActionRisk {
     pub fn confirmation_title(self) -> &'static str {
         match self {
             ActionRisk::Safe => "Confirmation",
-            ActionRisk::OpensExternal => "Ouvrir une processus externe",
-            ActionRisk::DryRun => "Confirmation preview",
-            ActionRisk::Destructive => "Confirmation destructive",
+            ActionRisk::OpensExternal => "Open external process",
+            ActionRisk::DryRun => "Preview confirmation",
+            ActionRisk::Destructive => "Destructive confirmation",
         }
     }
 
     pub fn risk_label(self) -> &'static str {
         match self {
-            ActionRisk::Safe => "Lecture/inspection",
-            ActionRisk::OpensExternal => "Ouvre un outil ou un flux interactif",
-            ActionRisk::DryRun => "Prévisualisation sans modification attendue",
-            ActionRisk::Destructive => "Modifie ou supprime des données/workspaces",
-        }
-    }
-
-    pub fn confirmation_hint(self) -> &'static str {
-        match self {
-            ActionRisk::Safe => "Entrée/y: lancer    Esc/n: annuler",
-            ActionRisk::OpensExternal => "Entrée/y: ouvrir    Esc/n: annuler",
-            ActionRisk::DryRun => "Entrée/y: prévisualiser    Esc/n: annuler",
-            ActionRisk::Destructive => "Entrée/y: confirmer l'action destructive    Esc/n: annuler",
+            ActionRisk::Safe => "Read/inspect",
+            ActionRisk::OpensExternal => "Opens a tool or interactive flow",
+            ActionRisk::DryRun => "Preview, no expected modification",
+            ActionRisk::Destructive => "Modifies or deletes data/workspaces",
         }
     }
 }
@@ -282,7 +267,7 @@ impl DetailPanel {
             .map(|line| line.to_owned())
             .collect::<Vec<_>>();
         if lines.is_empty() {
-            lines.push("Aucun détail retourné.".into());
+            lines.push("No detail returned.".into());
         }
         Self {
             content: DetailPanelContent::OperationResult {
@@ -295,10 +280,10 @@ impl DetailPanel {
 
     pub fn title(&self) -> String {
         match &self.content {
-            DetailPanelContent::Guide(_) => "Guide DevWorkflow".into(),
-            DetailPanelContent::ConfigShow(_) => "Configuration effective".into(),
-            DetailPanelContent::ConfigDoctor(_) => "Diagnostic configuration".into(),
-            DetailPanelContent::AgentDoctor(_) => "Diagnostic agents".into(),
+            DetailPanelContent::Guide(_) => "DevWorkflow guide".into(),
+            DetailPanelContent::ConfigShow(_) => "Effective configuration".into(),
+            DetailPanelContent::ConfigDoctor(_) => "Configuration doctor".into(),
+            DetailPanelContent::AgentDoctor(_) => "Agent doctor".into(),
             DetailPanelContent::OperationResult { title, .. } => title.clone(),
         }
     }
@@ -569,25 +554,6 @@ impl TuiAction {
         )
     }
 
-    pub fn is_config_action(&self) -> bool {
-        matches!(
-            self.request,
-            TuiActionRequest::Doctor
-                | TuiActionRequest::Guide
-                | TuiActionRequest::Refresh(_)
-                | TuiActionRequest::ConfigShow { .. }
-                | TuiActionRequest::ConfigDoctor { .. }
-                | TuiActionRequest::ConfigSetColor { .. }
-                | TuiActionRequest::ConfigSetRoot { .. }
-                | TuiActionRequest::AgentConfig { .. }
-                | TuiActionRequest::AgentSetDefault { .. }
-                | TuiActionRequest::AgentDoctor { .. }
-                | TuiActionRequest::SecretGet { .. }
-                | TuiActionRequest::SecretSetFromEnv { .. }
-                | TuiActionRequest::SecretDelete { .. }
-        )
-    }
-
     pub fn workspace_path(&self) -> Option<&str> {
         match &self.request {
             TuiActionRequest::AgentOpen(args) => args.workspace.as_deref(),
@@ -768,6 +734,29 @@ impl TuiSnapshot {
                 .sum::<usize>()
     }
 
+    pub fn workspace_for_work_item(
+        &self,
+        project: &str,
+        work_item_id: &str,
+    ) -> Option<&TaskListItem> {
+        self.workspaces.iter().find(|workspace| {
+            workspace.project == project
+                && dw_workspace::parse_work_item_ids(&workspace.work_item_id)
+                    .iter()
+                    .any(|id| id.eq_ignore_ascii_case(work_item_id))
+        })
+    }
+
+    pub fn selected_work_item_workspace(
+        &self,
+        selected_project: usize,
+        selected_item: usize,
+    ) -> Option<&TaskListItem> {
+        let project = self.assigned.get(selected_project)?;
+        let item = project.items.get(selected_item)?;
+        self.workspace_for_work_item(&project.key, &item.id)
+    }
+
     pub fn default_agent(&self) -> String {
         self.workflow
             .agent
@@ -809,7 +798,7 @@ impl TuiSnapshot {
                     format!("Work item Azure DevOps · {}", project.label),
                     choices,
                 )
-                .with_help("Choisir un work item assigné hors états finaux")
+                .with_help("Choose an assigned work item outside final states")
             })
             .collect()
     }
@@ -922,7 +911,7 @@ async fn load_assigned_projects(
                 usize::MAX,
                 AdoAssignedProject {
                     key: "-".into(),
-                    label: "Projet ADO".into(),
+                    label: "ADO project".into(),
                     items: Vec::new(),
                     error: Some(format!("Chargement ADO interrompu: {error}")),
                 },
@@ -1184,31 +1173,31 @@ pub fn build_actions(
 ) -> Vec<TuiAction> {
     let mut actions = vec![
         TuiAction {
-            label: "Guide".into(),
+            label: "Quick start".into(),
             request: TuiActionRequest::Guide,
-            description: "Afficher le parcours de démarrage".into(),
+            description: "Show the startup path".into(),
             kind: ActionRisk::Safe,
         },
         TuiAction {
             label: "Doctor".into(),
             request: TuiActionRequest::Doctor,
-            description: "Diagnostiquer machine et configuration".into(),
+            description: "Check the machine and configuration".into(),
             kind: ActionRisk::Safe,
         },
         TuiAction {
-            label: "Voir configuration".into(),
+            label: "Show configuration".into(),
             request: TuiActionRequest::ConfigShow {
                 root: Some(root.into()),
             },
-            description: "Afficher les chemins de configuration".into(),
+            description: "Show configuration paths".into(),
             kind: ActionRisk::Safe,
         },
         TuiAction {
-            label: "Diagnostiquer configuration".into(),
+            label: "Configuration doctor".into(),
             request: TuiActionRequest::ConfigDoctor {
                 root: Some(root.into()),
             },
-            description: "Valider les fichiers de configuration".into(),
+            description: "Validate configuration files".into(),
             kind: ActionRisk::Safe,
         },
         TuiAction {
@@ -1217,11 +1206,11 @@ pub fn build_actions(
                 root: Some(root.into()),
                 profile: "business".into(),
             }),
-            description: "Régénérer schémas et contextes agents".into(),
+            description: "Regenerate schemas and agent contexts".into(),
             kind: ActionRisk::Safe,
         },
         TuiAction {
-            label: "Mes work items".into(),
+            label: "My work items".into(),
             request: TuiActionRequest::AdoAssigned(
                 dw_ado_commands::commands::assigned::AssignedArgs {
                     root: Some(root.into()),
@@ -1231,11 +1220,11 @@ pub fn build_actions(
                     group_by_parent: false,
                 },
             ),
-            description: "Lister les work items assignés".into(),
+            description: "List assigned work items".into(),
             kind: ActionRisk::Safe,
         },
         TuiAction {
-            label: "Mes work items groupés".into(),
+            label: "My grouped work items".into(),
             request: TuiActionRequest::AdoAssigned(
                 dw_ado_commands::commands::assigned::AssignedArgs {
                     root: Some(root.into()),
@@ -1245,15 +1234,15 @@ pub fn build_actions(
                     group_by_parent: true,
                 },
             ),
-            description: "Lister les work items assignés groupés".into(),
+            description: "List assigned work items grouped by parent".into(),
             kind: ActionRisk::Safe,
         },
         TuiAction {
-            label: "Tester SQL read-only".into(),
+            label: "Test read-only SQL".into(),
             request: TuiActionRequest::DbGuard(dw_db::commands::GuardArgs {
                 sql: "select 1".into(),
             }),
-            description: "Tester la garde SQL read-only".into(),
+            description: "Test the read-only SQL guard".into(),
             kind: ActionRisk::Safe,
         },
     ];
@@ -1299,22 +1288,23 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
     let label_context = format!("{} {}", workspace.project, workspace.display_work_items);
     match action {
         WorkspaceAction::Open => TuiAction {
-            label: format!("Ouvrir · {label_context}"),
+            label: format!("Open · {label_context}"),
             request: TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
                 workspace: Some(workspace_arg),
                 root: None,
                 project: None,
                 work_item: None,
                 positional_work_item: None,
+                pull_request: None,
                 r#continue: false,
                 repo: None,
                 agent: None,
             }),
-            description: "Ouvrir le workspace avec l'agent configuré".into(),
+            description: "Open the workspace with the configured agent".into(),
             kind: ActionRisk::OpensExternal,
         },
         WorkspaceAction::Preflight => TuiAction {
-            label: format!("Vérifier · {label_context}"),
+            label: format!("Check · {label_context}"),
             request: TuiActionRequest::TaskPreflight(dw_task::validate::PreflightArgs {
                 workspace: Some(workspace_arg),
                 root: None,
@@ -1328,7 +1318,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             kind: ActionRisk::Safe,
         },
         WorkspaceAction::Sync => TuiAction {
-            label: format!("Synchroniser · {label_context}"),
+            label: format!("Sync · {label_context}"),
             request: TuiActionRequest::TaskSync(dw_task::lifecycle::SyncArgs {
                 workspace: Some(workspace_arg),
                 root: None,
@@ -1337,22 +1327,22 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
                 r#continue: false,
                 positional_work_item: None,
             }),
-            description: "Rafraîchir task.json depuis Azure DevOps".into(),
+            description: "Refresh task.json from Azure DevOps".into(),
             kind: ActionRisk::Safe,
         },
         WorkspaceAction::RepoLatest => TuiAction {
-            label: format!("Mettre à jour les repos · {label_context}"),
+            label: format!("Update repos · {label_context}"),
             request: TuiActionRequest::TaskRepoLatest(dw_task::repo::RepoLatestArgs {
                 workspace: Some(workspace_arg),
                 r#continue: false,
                 only: None,
                 root: None,
             }),
-            description: "Mettre les repositories à jour depuis leur branche cible".into(),
+            description: "Update repositories from their target branch".into(),
             kind: ActionRisk::DryRun,
         },
         WorkspaceAction::HandoffValidate => TuiAction {
-            label: format!("Valider handoff · {label_context}"),
+            label: format!("Validate handoff · {label_context}"),
             request: TuiActionRequest::TaskHandoffValidate(
                 dw_task::validate::HandoffValidateArgs {
                     workspace: Some(workspace_arg),
@@ -1363,11 +1353,11 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
                     positional_work_item: None,
                 },
             ),
-            description: "Valider les handoffs".into(),
+            description: "Validate handoffs".into(),
             kind: ActionRisk::Safe,
         },
         WorkspaceAction::CommitPreview => TuiAction {
-            label: format!("Prévisualiser commit · {label_context}"),
+            label: format!("Preview commit · {label_context}"),
             request: TuiActionRequest::TaskCommit(dw_task::repo::CommitArgs {
                 workspace: Some(workspace_arg),
                 r#continue: false,
@@ -1375,11 +1365,11 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
                 mode: dw_core::ExecutionMode::Preview,
                 message: None,
             }),
-            description: "Prévisualiser les commits".into(),
+            description: "Preview commits".into(),
             kind: ActionRisk::DryRun,
         },
         WorkspaceAction::FinishPreview => TuiAction {
-            label: format!("Prévisualiser finalisation · {label_context}"),
+            label: format!("Preview finish · {label_context}"),
             request: TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
                 workspace: Some(workspace_arg),
                 r#continue: false,
@@ -1392,11 +1382,11 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
                 skip_verify: false,
                 skip_ado: false,
             }),
-            description: "Prévisualiser finish".into(),
+            description: "Preview finish".into(),
             kind: ActionRisk::DryRun,
         },
         WorkspaceAction::FinishExecute => TuiAction {
-            label: format!("Finaliser workspace · {label_context}"),
+            label: format!("Finish workspace · {label_context}"),
             request: TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
                 workspace: Some(workspace_arg.clone()),
                 r#continue: false,
@@ -1409,11 +1399,11 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
                 skip_verify: false,
                 skip_ado: false,
             }),
-            description: "Terminer le workspace: commit/push/PR/ADO selon options".into(),
+            description: "Finish the workspace: commit/push/PR/ADO according to options".into(),
             kind: ActionRisk::Destructive,
         },
         WorkspaceAction::TeardownPreview => TuiAction {
-            label: format!("Prévisualiser suppression · {label_context}"),
+            label: format!("Preview removal · {label_context}"),
             request: TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
                 workspace: Some(workspace_arg.clone()),
                 root: None,
@@ -1424,11 +1414,11 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
                 mode: dw_core::ExecutionMode::Preview,
                 yes: false,
             }),
-            description: "Prévisualiser suppression workspace".into(),
+            description: "Preview workspace removal".into(),
             kind: ActionRisk::DryRun,
         },
         WorkspaceAction::TeardownExecute => TuiAction {
-            label: format!("Supprimer workspace · {label_context}"),
+            label: format!("Remove workspace · {label_context}"),
             request: TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
                 workspace: Some(workspace_arg),
                 root: None,
@@ -1439,7 +1429,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
                 mode: dw_core::ExecutionMode::Execute,
                 yes: true,
             }),
-            description: "Supprimer les worktrees et le workspace".into(),
+            description: "Remove worktrees and the workspace".into(),
             kind: ActionRisk::Destructive,
         },
     }
@@ -1449,13 +1439,13 @@ fn database_actions(databases: &DatabasesConfig) -> Vec<TuiAction> {
     let mut actions = Vec::new();
     for key in databases.globals.keys() {
         actions.push(TuiAction {
-            label: format!("Explorer schéma · {key}"),
+            label: format!("Explore schema · {key}"),
             request: TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
                 project: None,
                 database: Some(key.clone()),
                 env: None,
             }),
-            description: "Base globale".into(),
+            description: "Global database".into(),
             kind: ActionRisk::Safe,
         });
     }
@@ -1468,13 +1458,13 @@ fn database_actions(databases: &DatabasesConfig) -> Vec<TuiAction> {
         };
         for key in items.keys() {
             actions.push(TuiAction {
-                label: format!("Explorer schéma · {project}/{key}"),
+                label: format!("Explore schema · {project}/{key}"),
                 request: TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
                     project: Some(project.clone()),
                     database: Some(key.clone()),
                     env: None,
                 }),
-                description: "Base projet".into(),
+                description: "Project database".into(),
                 kind: ActionRisk::Safe,
             });
         }
@@ -1500,20 +1490,20 @@ mod tests {
             .map(|action| action.label.as_str())
             .collect::<Vec<_>>();
 
-        assert!(labels.iter().any(|label| label.starts_with("Vérifier")));
+        assert!(labels.iter().any(|label| label.starts_with("Check")));
         assert!(
             labels
                 .iter()
-                .any(|label| label.starts_with("Mes work items"))
+                .any(|label| label.starts_with("My work items"))
         );
         assert!(
-            labels.iter().any(
-                |label| label.starts_with("Tester SQL") || label.starts_with("Explorer schéma")
-            )
+            labels
+                .iter()
+                .any(|label| label.starts_with("Test read-only SQL")
+                    || label.starts_with("Explore schema"))
         );
         assert!(labels.iter().any(|label| {
-            label.starts_with("Voir configuration")
-                || label.starts_with("Diagnostiquer configuration")
+            label.starts_with("Show configuration") || label.starts_with("Configuration doctor")
         }));
     }
 
@@ -1526,7 +1516,7 @@ mod tests {
         let actions = build_actions("/tmp/dw", &ProjectsConfig::default(), &databases, &[]);
         let db_schema = actions
             .iter()
-            .find(|action| action.label == "Explorer schéma · shared")
+            .find(|action| action.label == "Explore schema · shared")
             .expect("db schema action");
 
         assert!(matches!(
@@ -1567,7 +1557,7 @@ mod tests {
     #[test]
     fn typed_action_kind_is_separate_from_display_label() {
         let action = TuiAction {
-            label: "Créer workspace · ha #42".into(),
+            label: "Create workspace · ha #42".into(),
             request: TuiActionRequest::TaskStart(dw_task::start::StartArgs {
                 work_item_id: Some("42".into()),
                 root: Some("/tmp/dw".into()),
@@ -1581,12 +1571,12 @@ mod tests {
                 create_child_tasks: false,
                 mode: dw_core::ExecutionMode::Preview,
             }),
-            description: "Préparer le workspace local".into(),
+            description: "Prepare the local workspace".into(),
             kind: ActionRisk::DryRun,
         };
 
         assert_eq!(action.action_kind(), ActionKind::TaskStart);
-        assert_eq!(action.display_label(), "Créer workspace · ha #42");
+        assert_eq!(action.display_label(), "Create workspace · ha #42");
     }
 
     #[test]
@@ -1617,12 +1607,12 @@ mod tests {
         assert!(
             actions
                 .iter()
-                .any(|action| action.label.starts_with("Prévisualiser suppression"))
+                .any(|action| action.label.starts_with("Preview removal"))
         );
         assert!(
             actions
                 .iter()
-                .any(|action| action.label.starts_with("Supprimer workspace"))
+                .any(|action| action.label.starts_with("Remove workspace"))
         );
     }
 
@@ -1636,6 +1626,7 @@ mod tests {
                 project: None,
                 work_item: None,
                 positional_work_item: None,
+                pull_request: None,
                 r#continue: false,
                 repo: None,
                 agent: None,
@@ -1750,17 +1741,16 @@ mod tests {
     fn action_risk_confirmation_copy_is_explicit() {
         assert_eq!(
             ActionRisk::Destructive.confirmation_title(),
-            "Confirmation destructive"
+            "Destructive confirmation"
         );
         assert!(
             ActionRisk::Destructive
                 .risk_label()
-                .contains("Modifie ou supprime")
+                .contains("Modifies or deletes")
         );
-        assert!(
-            ActionRisk::OpensExternal
-                .confirmation_hint()
-                .contains("ouvrir")
+        assert_eq!(
+            ActionRisk::OpensExternal.confirmation_title(),
+            "Open external process"
         );
     }
 

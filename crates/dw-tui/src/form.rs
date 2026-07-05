@@ -45,45 +45,45 @@ impl FormTemplate {
 
     pub fn label(self) -> &'static str {
         match self {
-            FormTemplate::TaskStart => "Créer workspace",
-            FormTemplate::TaskStartPr => "Créer workspace depuis PR",
-            FormTemplate::TaskFinish => "Finaliser workspace",
-            FormTemplate::TaskTeardown => "Supprimer workspace",
-            FormTemplate::TaskPrune => "Nettoyer workspaces",
-            FormTemplate::TaskAddWorkItem => "Ajouter work item",
-            FormTemplate::TaskRemoveWorkItem => "Retirer work item",
-            FormTemplate::TaskAddRepo => "Ajouter repository",
-            FormTemplate::TaskRename => "Renommer workspace",
-            FormTemplate::AdoAssigned => "Mes work items",
-            FormTemplate::AdoSetState => "Changer état ADO",
-            FormTemplate::DbSchema => "Explorer schéma DB",
-            FormTemplate::DbDescribe => "Décrire table DB",
-            FormTemplate::DbQuery => "Requête DB guidée",
-            FormTemplate::AgentOpen => "Ouvrir agent",
+            FormTemplate::TaskStart => "Create workspace",
+            FormTemplate::TaskStartPr => "Create workspace from PR",
+            FormTemplate::TaskFinish => "Finish workspace",
+            FormTemplate::TaskTeardown => "Remove workspace",
+            FormTemplate::TaskPrune => "Clean workspaces",
+            FormTemplate::TaskAddWorkItem => "Add work item",
+            FormTemplate::TaskRemoveWorkItem => "Remove work item",
+            FormTemplate::TaskAddRepo => "Add repository",
+            FormTemplate::TaskRename => "Rename workspace",
+            FormTemplate::AdoAssigned => "My work items",
+            FormTemplate::AdoSetState => "Move work item state",
+            FormTemplate::DbSchema => "Explore database structure",
+            FormTemplate::DbDescribe => "Describe DB table",
+            FormTemplate::DbQuery => "Guided DB query",
+            FormTemplate::AgentOpen => "Open agent",
             FormTemplate::Secret => "Secret",
-            FormTemplate::ConfigSetRoot => "Changer root",
+            FormTemplate::ConfigSetRoot => "Change root",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
-            FormTemplate::TaskStart => "Créer ou prévisualiser un workspace task",
-            FormTemplate::TaskStartPr => "Créer ou prévisualiser un workspace depuis une PR",
-            FormTemplate::TaskFinish => "Prévisualiser ou exécuter la fin d'un workspace",
-            FormTemplate::TaskTeardown => "Prévisualiser ou supprimer un workspace",
-            FormTemplate::TaskPrune => "Nettoyer les workspaces terminés",
-            FormTemplate::TaskAddWorkItem => "Ajouter des work items au workspace",
-            FormTemplate::TaskRemoveWorkItem => "Retirer des work items du workspace",
-            FormTemplate::TaskAddRepo => "Ajouter un repository au workspace",
-            FormTemplate::TaskRename => "Renommer workspace et branche",
-            FormTemplate::AdoAssigned => "Lister les work items assignés avec filtres",
-            FormTemplate::AdoSetState => "Changer l'état ADO de work items",
-            FormTemplate::DbSchema => "Lister tables et vues d'une base",
-            FormTemplate::DbDescribe => "Décrire les colonnes d'une table",
-            FormTemplate::DbQuery => "Exécuter une requête SQL read-only",
-            FormTemplate::AgentOpen => "Ouvrir un workspace avec un agent IA",
-            FormTemplate::Secret => "Vérifier, supprimer ou alimenter un secret",
-            FormTemplate::ConfigSetRoot => "Modifier le root DevWorkflow utilisateur",
+            FormTemplate::TaskStart => "Create or preview a task workspace",
+            FormTemplate::TaskStartPr => "Create or preview a workspace from a PR",
+            FormTemplate::TaskFinish => "Preview or execute workspace finish",
+            FormTemplate::TaskTeardown => "Preview or remove a workspace",
+            FormTemplate::TaskPrune => "Clean finished workspaces",
+            FormTemplate::TaskAddWorkItem => "Add work items to the workspace",
+            FormTemplate::TaskRemoveWorkItem => "Remove work items from the workspace",
+            FormTemplate::TaskAddRepo => "Add a repository to the workspace",
+            FormTemplate::TaskRename => "Rename workspace and branch",
+            FormTemplate::AdoAssigned => "List assigned work items with filters",
+            FormTemplate::AdoSetState => "Move selected ADO work items to a destination state",
+            FormTemplate::DbSchema => "List tables and views from a database",
+            FormTemplate::DbDescribe => "Describe table columns",
+            FormTemplate::DbQuery => "Run a read-only SQL query",
+            FormTemplate::AgentOpen => "Open a workspace with an AI agent",
+            FormTemplate::Secret => "Check, remove or populate a secret",
+            FormTemplate::ConfigSetRoot => "Change the user DevWorkflow root",
         }
     }
 }
@@ -228,7 +228,7 @@ impl FormState {
             FormTemplate::TaskStart => TuiActionRequest::TaskStart(dw_task::start::StartArgs {
                 work_item_id: value("Work item"),
                 root: Some(root.into()),
-                project: value("Projet"),
+                project: value("Project"),
                 task: None,
                 type_name: value("Type"),
                 only: value("Repository"),
@@ -242,7 +242,7 @@ impl FormState {
                 TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
                     pull_request_id: value("Pull request")?,
                     root: Some(root.into()),
-                    project: value("Projet")?,
+                    project: value("Project")?,
                     repo: value("Repository"),
                     type_name: value("Type"),
                     slug: value("Slug"),
@@ -265,7 +265,7 @@ impl FormState {
                 TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
                     workspace: value("Workspace"),
                     root: Some(root.into()),
-                    project: value("Projet"),
+                    project: value("Project"),
                     work_item: value("Work item"),
                     r#continue: enabled("Continue"),
                     positional_work_item: None,
@@ -275,7 +275,7 @@ impl FormState {
             }
             FormTemplate::TaskPrune => TuiActionRequest::TaskPrune(dw_task::prune::PruneArgs {
                 root: Some(root.into()),
-                project: value("Projet"),
+                project: value("Project"),
                 work_item: value("Work item"),
                 mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 yes: enabled("Execute"),
@@ -286,7 +286,7 @@ impl FormState {
                     work_item_ids: value("Work items"),
                     workspace: value("Workspace"),
                     root: Some(root.into()),
-                    project: value("Projet"),
+                    project: value("Project"),
                     work_item: value("Workspace work item"),
                     r#continue: enabled("Continue"),
                     positional_work_item: None,
@@ -302,7 +302,7 @@ impl FormState {
                     work_item_ids: value("Work items"),
                     workspace: value("Workspace"),
                     root: Some(root.into()),
-                    project: value("Projet"),
+                    project: value("Project"),
                     work_item: value("Workspace work item"),
                     r#continue: enabled("Continue"),
                     positional_work_item: None,
@@ -322,7 +322,7 @@ impl FormState {
                     slug: value("Slug")?,
                     workspace: value("Workspace"),
                     root: Some(root.into()),
-                    project: value("Projet"),
+                    project: value("Project"),
                     work_item: value("Work item"),
                     r#continue: enabled("Continue"),
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
@@ -332,40 +332,40 @@ impl FormState {
             FormTemplate::AdoAssigned => {
                 TuiActionRequest::AdoAssigned(dw_ado_commands::commands::assigned::AssignedArgs {
                     root: Some(root.into()),
-                    project: value("Projet"),
+                    project: value("Project"),
                     top: value("Top")
                         .and_then(|value| value.parse().ok())
                         .unwrap_or(20),
-                    all: enabled("Inclure finalisés"),
-                    group_by_parent: enabled("Grouper par parent"),
+                    all: enabled("Include final states"),
+                    group_by_parent: enabled("Group by parent"),
                 })
             }
             FormTemplate::AdoSetState => {
                 TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
-                    id: value("Work items")?,
+                    id: value("Work item IDs")?,
                     root: Some(root.into()),
-                    project: value("Projet"),
-                    state: value("State")?,
-                    history: value("History"),
+                    project: value("Project"),
+                    state: value("Destination state")?,
+                    history: value("ADO note"),
                     yes: true,
                 })
             }
             FormTemplate::DbSchema => TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
-                project: value("Projet"),
+                project: value("Project"),
                 database: value("Database"),
                 env: None,
             }),
             FormTemplate::DbDescribe => {
                 TuiActionRequest::DbDescribe(dw_db::commands::DescribeArgs {
                     table: value("Table"),
-                    project: value("Projet"),
+                    project: value("Project"),
                     database: value("Database"),
                     env: None,
                 })
             }
             FormTemplate::DbQuery => TuiActionRequest::DbQuery(dw_db::commands::QueryArgs {
                 sql: value("SQL")?,
-                project: value("Projet"),
+                project: value("Project"),
                 database: value("Database"),
                 env: None,
                 max_rows: value("Max rows").and_then(|value| value.parse().ok()),
@@ -374,9 +374,10 @@ impl FormState {
                 TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
                     workspace: value("Workspace"),
                     root: Some(root.into()),
-                    project: value("Projet"),
+                    project: value("Project"),
                     work_item: value("Work item"),
                     positional_work_item: None,
+                    pull_request: None,
                     r#continue: enabled("Continue"),
                     repo: value("Repository"),
                     agent: value("Agent"),
@@ -401,7 +402,7 @@ impl FormState {
         };
 
         Some(TuiAction {
-            label: format!("Assistant · {}", self.template.label()),
+            label: format!("Composer · {}", self.template.label()),
             request,
             description: self.template.description().into(),
             kind: action_kind(self.template, enabled("Execute"), enabled("Delete")),
@@ -486,233 +487,233 @@ fn default_fields(template: FormTemplate, snapshot: &TuiSnapshot) -> Vec<FormFie
         FormTemplate::TaskStart => vec![
             FormField::text(
                 "Work item",
-                "ID ADO principal ou enfant",
+                "Main or child ADO ID",
                 first_assigned_work_item,
             ),
-            FormField::text("Projet", "Projet configuré", first_project.clone()),
-            FormField::text("Repository", "Repository unique à traiter", ""),
-            FormField::text("Type", "feature, bugfix, hotfix ou chore", "feature"),
-            FormField::text("Slug", "Slug explicite optionnel", ""),
-            FormField::toggle_field("Skip ADO", "Ne pas interroger Azure DevOps", false),
-            FormField::toggle_field("Execute", "Créer vraiment le workspace", false),
+            FormField::text("Project", "Configured project", first_project.clone()),
+            FormField::text("Repository", "Single repository to process", ""),
+            FormField::text("Type", "feature, bugfix, hotfix or chore", "feature"),
+            FormField::text("Slug", "Optional explicit slug", ""),
+            FormField::toggle_field("Skip ADO", "Do not query Azure DevOps", false),
+            FormField::toggle_field("Execute", "Actually create the workspace", false),
         ],
         FormTemplate::TaskStartPr => vec![
             FormField::text(
                 "Pull request",
-                "ID de PR Azure DevOps; Ctrl+Espace suggère les PRs chargées",
+                "Azure DevOps PR ID; Ctrl+Space suggests loaded PRs",
                 first_pull_request_id,
             ),
             FormField::text(
-                "Projet",
-                "Projet configuré de la PR",
+                "Project",
+                "Configured project for the PR",
                 first_pull_request_project,
             ),
             FormField::text(
                 "Repository",
-                "Repository local ou Azure DevOps de la PR",
+                "Local or Azure DevOps repository for the PR",
                 first_pull_request_repository,
             ),
-            FormField::text("Type", "feature, bugfix, hotfix ou chore", "feature"),
-            FormField::text("Slug", "Slug explicite optionnel", ""),
-            FormField::toggle_field("Execute", "Créer vraiment le workspace", false),
+            FormField::text("Type", "feature, bugfix, hotfix or chore", "feature"),
+            FormField::text("Slug", "Optional explicit slug", ""),
+            FormField::toggle_field("Execute", "Actually create the workspace", false),
         ],
         FormTemplate::TaskFinish => vec![
             FormField::text(
                 "Workspace",
-                "Chemin du workspace; vide si Continue = oui",
+                "Workspace path; empty when Continue is enabled",
                 first_workspace.clone(),
             ),
-            FormField::toggle_field("Continue", "Reprendre le workspace récent", false),
-            FormField::text("Message", "Message de commit optionnel", ""),
-            FormField::toggle_field("Create PR", "Créer ou vérifier les PR ADO", false),
-            FormField::toggle_field("Ready", "PR ready; requiert Create PR", false),
-            FormField::toggle_field(
-                "Skip verify",
-                "Ignorer les vérifications configurées",
-                false,
-            ),
-            FormField::toggle_field("Skip ADO", "Ne pas appeler Azure DevOps", false),
-            FormField::toggle_field("Execute", "Commit/push/PR réellement", false),
+            FormField::toggle_field("Continue", "Reuse the recent workspace", false),
+            FormField::text("Message", "Optional commit message", ""),
+            FormField::toggle_field("Create PR", "Create or check ADO PRs", false),
+            FormField::toggle_field("Ready", "Mark PR ready; requires Create PR", false),
+            FormField::toggle_field("Skip verify", "Skip configured checks", false),
+            FormField::toggle_field("Skip ADO", "Do not call Azure DevOps", false),
+            FormField::toggle_field("Execute", "Actually commit/push/PR", false),
         ],
         FormTemplate::TaskTeardown => vec![
             FormField::text(
                 "Workspace",
-                "Chemin du workspace; vide si Continue = oui",
+                "Workspace path; empty when Continue is enabled",
                 first_workspace,
             ),
-            FormField::toggle_field("Continue", "Reprendre le workspace récent", false),
+            FormField::toggle_field("Continue", "Reuse the recent workspace", false),
             FormField::text(
-                "Projet",
-                "Projet configuré si workspace vide",
+                "Project",
+                "Configured project when workspace is empty",
                 first_project.clone(),
             ),
-            FormField::text("Work item", "Work item si workspace vide", ""),
-            FormField::toggle_field("Execute", "Supprimer réellement", false),
+            FormField::text("Work item", "Work item when workspace is empty", ""),
+            FormField::toggle_field("Execute", "Actually remove", false),
         ],
         FormTemplate::TaskPrune => vec![
             FormField::text(
-                "Projet",
-                "Projet configuré optionnel",
+                "Project",
+                "Optional configured project",
                 first_project.clone(),
             ),
-            FormField::text("Work item", "Limiter à un work item", ""),
-            FormField::toggle_field("No sync", "Ne pas synchroniser ADO avant prune", true),
-            FormField::toggle_field("Execute", "Supprimer réellement", false),
+            FormField::text("Work item", "Limit to a work item", ""),
+            FormField::toggle_field("No sync", "Do not sync ADO before pruning", true),
+            FormField::toggle_field("Execute", "Actually remove", false),
         ],
         FormTemplate::TaskAddWorkItem => vec![
-            FormField::text("Work items", "IDs à ajouter, séparés par virgules", ""),
+            FormField::text("Work items", "IDs to add, comma-separated", ""),
             FormField::text(
                 "Workspace",
-                "Chemin du workspace; vide si Continue = oui",
+                "Workspace path; empty when Continue is enabled",
                 first_workspace.clone(),
             ),
-            FormField::toggle_field("Continue", "Reprendre le workspace récent", false),
+            FormField::toggle_field("Continue", "Reuse the recent workspace", false),
             FormField::text(
-                "Projet",
-                "Projet configuré si workspace vide",
+                "Project",
+                "Configured project when workspace is empty",
                 first_project.clone(),
             ),
             FormField::text(
                 "Workspace work item",
-                "Work item pour résoudre le workspace",
+                "Work item used to resolve the workspace",
                 "",
             ),
-            FormField::text("Type", "Type local si Skip ADO", ""),
-            FormField::text("Title", "Titre local si Skip ADO", ""),
-            FormField::text("State", "État local si Skip ADO", ""),
-            FormField::toggle_field("Skip ADO", "Ne pas enrichir depuis Azure DevOps", false),
-            FormField::toggle_field("Execute", "Modifier réellement task.json", false),
+            FormField::text("Type", "Local type when Skip ADO is enabled", ""),
+            FormField::text("Title", "Local title when Skip ADO is enabled", ""),
+            FormField::text("State", "Local state when Skip ADO is enabled", ""),
+            FormField::toggle_field("Skip ADO", "Do not enrich from Azure DevOps", false),
+            FormField::toggle_field("Execute", "Actually modify task.json", false),
         ],
         FormTemplate::TaskRemoveWorkItem => vec![
-            FormField::text("Work items", "IDs à retirer, séparés par virgules", ""),
+            FormField::text("Work items", "IDs to remove, comma-separated", ""),
             FormField::text(
                 "Workspace",
-                "Chemin du workspace; vide si Continue = oui",
+                "Workspace path; empty when Continue is enabled",
                 first_workspace.clone(),
             ),
-            FormField::toggle_field("Continue", "Reprendre le workspace récent", false),
+            FormField::toggle_field("Continue", "Reuse the recent workspace", false),
             FormField::text(
-                "Projet",
-                "Projet configuré si workspace vide",
+                "Project",
+                "Configured project when workspace is empty",
                 first_project.clone(),
             ),
             FormField::text(
                 "Workspace work item",
-                "Work item pour résoudre le workspace",
+                "Work item used to resolve the workspace",
                 "",
             ),
-            FormField::toggle_field("Execute", "Modifier réellement task.json", false),
+            FormField::toggle_field("Execute", "Actually modify task.json", false),
         ],
         FormTemplate::TaskAddRepo => vec![
-            FormField::text("Repository", "Repository configuré à ajouter", ""),
+            FormField::text("Repository", "Configured repository to add", ""),
             FormField::text(
                 "Workspace",
-                "Chemin du workspace à modifier",
+                "Workspace path to modify",
                 first_workspace.clone(),
             ),
-            FormField::toggle_field("Execute", "Créer le worktree réellement", false),
+            FormField::toggle_field("Execute", "Actually create the worktree", false),
         ],
         FormTemplate::TaskRename => vec![
-            FormField::text("Slug", "Nouveau slug du workspace", ""),
+            FormField::text("Slug", "New workspace slug", ""),
             FormField::text(
                 "Workspace",
-                "Chemin du workspace; vide si Continue = oui",
+                "Workspace path; empty when Continue is enabled",
                 first_workspace.clone(),
             ),
-            FormField::toggle_field("Continue", "Reprendre le workspace récent", false),
+            FormField::toggle_field("Continue", "Reuse the recent workspace", false),
             FormField::text(
-                "Projet",
-                "Projet configuré si workspace vide",
+                "Project",
+                "Configured project when workspace is empty",
                 first_project.clone(),
             ),
-            FormField::text("Work item", "Work item si workspace vide", ""),
-            FormField::toggle_field("Execute", "Renommer réellement", false),
+            FormField::text("Work item", "Work item when workspace is empty", ""),
+            FormField::toggle_field("Execute", "Actually rename", false),
         ],
         FormTemplate::AdoAssigned => vec![
             FormField::text(
-                "Projet",
-                "Projet configuré; vide = choix interactif TUI",
+                "Project",
+                "Configured project; empty = interactive TUI choice",
                 first_project.clone(),
             ),
-            FormField::text("Top", "Nombre maximum de work items", "20"),
-            FormField::toggle_field("Inclure finalisés", "Inclure les états finaux", false),
-            FormField::toggle_field("Grouper par parent", "Afficher par parent ADO", false),
+            FormField::text("Top", "Maximum number of work items", "20"),
+            FormField::toggle_field("Include final states", "Include final states", false),
+            FormField::toggle_field("Group by parent", "Display by ADO parent", false),
         ],
         FormTemplate::AdoSetState => vec![
             FormField::text(
-                "Work items",
-                "IDs ADO à modifier, séparés par virgules",
+                "Work item IDs",
+                "ADO IDs to update, comma-separated",
                 first_assigned_work_item_for_state,
             ),
-            FormField::text("Projet", "Projet configuré", first_project.clone()),
-            FormField::text("State", "État ADO exact", first_state),
-            FormField::text("History", "Message historique ADO", "tui"),
+            FormField::text("Project", "Configured project", first_project.clone()),
+            FormField::text("Destination state", "Exact ADO state", first_state),
+            FormField::text("ADO note", "History message added on the work item", "tui"),
         ],
         FormTemplate::DbSchema => vec![
             FormField::text(
-                "Projet",
-                "Projet configuré optionnel",
+                "Project",
+                "Optional configured project",
                 first_database_project.clone(),
             ),
-            FormField::text("Database", "Connexion base", first_database_key.clone()),
+            FormField::text(
+                "Database",
+                "Database connection",
+                first_database_key.clone(),
+            ),
         ],
         FormTemplate::DbDescribe => vec![
-            FormField::text("Table", "Table au format table ou schema.table", ""),
+            FormField::text("Table", "Table in table or schema.table format", ""),
             FormField::text(
-                "Projet",
-                "Projet configuré optionnel",
+                "Project",
+                "Optional configured project",
                 first_database_project.clone(),
             ),
-            FormField::text("Database", "Connexion base", first_database_key.clone()),
+            FormField::text(
+                "Database",
+                "Database connection",
+                first_database_key.clone(),
+            ),
         ],
         FormTemplate::DbQuery => vec![
             FormField::text(
-                "Projet",
-                "Projet configuré optionnel",
+                "Project",
+                "Optional configured project",
                 first_project.clone(),
             ),
-            FormField::text("Database", "Connexion base", first_database),
-            FormField::text("SQL", "Requête read-only", "select 1"),
-            FormField::text("Max rows", "Limite de lignes", "100"),
+            FormField::text("Database", "Database connection", first_database),
+            FormField::text("SQL", "Read-only query", "select 1"),
+            FormField::text("Max rows", "Row limit", "100"),
         ],
         FormTemplate::AgentOpen => vec![
             FormField::text(
                 "Workspace",
-                "Chemin du workspace; vide si Continue = oui",
+                "Workspace path; empty when Continue is enabled",
                 snapshot
                     .workspaces
                     .first()
                     .map(|workspace| workspace.path.clone())
                     .unwrap_or_default(),
             ),
-            FormField::toggle_field("Continue", "Reprendre le workspace récent", false),
+            FormField::toggle_field("Continue", "Reuse the recent workspace", false),
             FormField::text(
-                "Projet",
-                "Projet configuré si workspace vide",
+                "Project",
+                "Configured project when workspace is empty",
                 first_project,
             ),
-            FormField::text("Work item", "Work item si workspace vide", ""),
-            FormField::text("Repository", "Repository à ouvrir", first_repository),
+            FormField::text("Work item", "Work item when workspace is empty", ""),
+            FormField::text("Repository", "Repository to open", first_repository),
             FormField::text(
                 "Agent",
-                "opencode, cursor, claude, codex, codex-cli ou copilot",
+                "opencode, cursor, claude, codex, codex-cli or copilot",
                 "",
             ),
         ],
         FormTemplate::Secret => vec![
-            FormField::text("Key", "Clé logique du secret", ""),
-            FormField::toggle_field(
-                "Set from env",
-                "Enregistrer depuis une variable d'environnement",
-                false,
-            ),
-            FormField::text("From env", "Variable d'environnement pour secret set", ""),
-            FormField::toggle_field("Delete", "Supprimer la clé au lieu de get/set", false),
+            FormField::text("Key", "Logical secret key", ""),
+            FormField::toggle_field("Set from env", "Store from an environment variable", false),
+            FormField::text("From env", "Environment variable for secret set", ""),
+            FormField::toggle_field("Delete", "Delete the key instead of get/set", false),
         ],
         FormTemplate::ConfigSetRoot => {
             vec![FormField::text(
                 "Root",
-                "Nouveau root DevWorkflow",
+                "New DevWorkflow root",
                 &snapshot.root,
             )]
         }
@@ -721,7 +722,7 @@ fn default_fields(template: FormTemplate, snapshot: &TuiSnapshot) -> Vec<FormFie
 
 fn field_suggestions(label: &str, snapshot: &TuiSnapshot) -> Vec<String> {
     match label {
-        "Projet" => stable_unique(snapshot.projects.projects.keys().cloned()),
+        "Project" => stable_unique(snapshot.projects.projects.keys().cloned()),
         "Workspace" => stable_unique(
             snapshot
                 .workspaces
@@ -736,7 +737,9 @@ fn field_suggestions(label: &str, snapshot: &TuiSnapshot) -> Vec<String> {
                 .map(|database| database.key.clone()),
         ),
         "Pull request" => pull_request_suggestions(snapshot),
-        "Work item" | "Workspace work item" | "Work items" => work_item_suggestions(snapshot),
+        "Work item" | "Workspace work item" | "Work items" | "Work item IDs" => {
+            work_item_suggestions(snapshot)
+        }
         "Key" => secret_key_suggestions(snapshot),
         "From env" => environment_variable_suggestions(),
         "Agent" => dw_config::AGENT_DEFAULT_CHOICES
@@ -747,7 +750,7 @@ fn field_suggestions(label: &str, snapshot: &TuiSnapshot) -> Vec<String> {
             .into_iter()
             .map(str::to_string)
             .collect(),
-        "State" => state_suggestions(snapshot),
+        "State" | "Destination state" => state_suggestions(snapshot),
         _ => Vec::new(),
     }
 }
@@ -1232,7 +1235,7 @@ mod tests {
         form.selected_field = form
             .fields
             .iter()
-            .position(|field| field.label == "Projet")
+            .position(|field| field.label == "Project")
             .expect("project field");
         form.fields[form.selected_field].value.clear();
 
@@ -1252,7 +1255,7 @@ mod tests {
         form.selected_field = form
             .fields
             .iter()
-            .position(|field| field.label == "Projet")
+            .position(|field| field.label == "Project")
             .expect("project field");
         form.fields[form.selected_field].value.clear();
 
@@ -1434,7 +1437,7 @@ mod tests {
             field_value(&form.fields, "Pull request").as_deref(),
             Some("42")
         );
-        assert_eq!(field_value(&form.fields, "Projet").as_deref(), Some("ha"));
+        assert_eq!(field_value(&form.fields, "Project").as_deref(), Some("ha"));
         assert_eq!(
             field_value(&form.fields, "Repository").as_deref(),
             Some("front")
@@ -1474,7 +1477,7 @@ mod tests {
         form.selected_field = form
             .fields
             .iter()
-            .position(|field| field.label == "State")
+            .position(|field| field.label == "Destination state")
             .expect("state field");
         form.fields[form.selected_field].value.clear();
 

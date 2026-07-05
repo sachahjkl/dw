@@ -1,7 +1,7 @@
 use crate::commands::work_item::parse_work_item_ids_as_strings;
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
-use dw_ado::{auth::require_token, update_work_item_state_authenticated};
+use dw_ado::{auth::require_token, run_blocking_ado, update_work_item_state_authenticated};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_core::ActionEvent;
 use serde::Serialize;
@@ -90,7 +90,15 @@ pub async fn execute_with_events(
     );
     let mut updated = Vec::new();
     for id in &plan.ids {
-        update_work_item_state_authenticated(&options, id, &plan.state, &plan.history, &token)?;
+        let options = options.clone();
+        let state = plan.state.clone();
+        let history = plan.history.clone();
+        let token = token.clone();
+        let id_for_update = id.clone();
+        run_blocking_ado(move || {
+            update_work_item_state_authenticated(&options, &id_for_update, &state, &history, &token)
+        })
+        .await?;
         push_event(
             &mut events,
             &mut emit,

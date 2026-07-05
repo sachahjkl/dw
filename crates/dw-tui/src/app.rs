@@ -1,11 +1,12 @@
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::io;
 use std::time::Duration;
 
 use crate::actions::{
     self, AdoItemAction, DatabaseAction, PullRequestAction, QUICK_OPTIONS, QuickOptionAction,
+    QuickOptionItem,
 };
 use crate::background::{ActionStart, BackgroundJobs, BackgroundKind, BackgroundResult};
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
@@ -16,6 +17,13 @@ use crate::model::{
 };
 use crate::ui_text::guide_detail_lines;
 use crate::{runner, ui};
+
+pub const MENU_SECTIONS: &[MenuSection] = &[
+    MenuSection::Information,
+    MenuSection::Configuration,
+    MenuSection::DefaultAgent,
+    MenuSection::TerminalColor,
+];
 
 pub fn run_tui(root: Option<String>) -> Result<()> {
     runner::install_terminal()?;
@@ -32,14 +40,54 @@ fn run_tui_inner(root: Option<String>) -> Result<()> {
     while !app.should_quit {
         app.poll_background_loads();
         terminal.draw(|frame| ui::render(frame, &app))?;
-        if event::poll(Duration::from_millis(200))?
-            && let Event::Key(key) = event::read()?
-        {
-            app.handle_key(key, &mut terminal)?;
+        if event::poll(Duration::from_millis(200))? {
+            match event::read()? {
+                Event::Key(key) => app.handle_key(key, &mut terminal)?,
+                Event::Mouse(mouse) => app.handle_mouse(mouse.kind),
+                _ => {}
+            }
         }
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModalKind {
+    Menu,
+    MenuSection,
+    Help,
+    State,
+    History,
+    Detail,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuSection {
+    Information,
+    Configuration,
+    DefaultAgent,
+    TerminalColor,
+}
+
+impl MenuSection {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Information => "Information",
+            Self::Configuration => "Configuration",
+            Self::DefaultAgent => "Default agent",
+            Self::TerminalColor => "Terminal color",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Information => "Journal, state and help.",
+            Self::Configuration => "Config, diagnostics and setup.",
+            Self::DefaultAgent => "Choose the agent used by default.",
+            Self::TerminalColor => "Choose terminal color behavior.",
+        }
+    }
 }
 
 pub struct App {
@@ -53,6 +101,7 @@ pub struct App {
     pub selected_ado_item: usize,
     pub selected_pull_request: usize,
     pub selected_database: usize,
+    pub selected_menu_section: usize,
     pub selected_option: usize,
     pub filter: String,
     pub filter_active: bool,
@@ -60,9 +109,11 @@ pub struct App {
     pub form: Option<FormState>,
     pub action_form: FormState,
     pub options_open: bool,
+    pub help_open: bool,
     pub state_open: bool,
     pub state_scroll: usize,
     pub detail: Option<DetailPanel>,
+    pub modal_stack: Vec<ModalKind>,
     pub messages: Vec<String>,
     pub history: HistoryState,
     pub should_quit: bool,
@@ -77,15 +128,18 @@ impl App {
         let snapshot = TuiSnapshot::loading(root.as_deref());
         let mut background = BackgroundJobs::new();
         let _ = background.start_snapshot(root.clone());
-        Self::from_snapshot(
+        let mut app = Self::from_snapshot(
             root,
             snapshot,
             background,
             vec![
-                "TUI prêt. Entrée lance l'action sélectionnée.".into(),
-                "Chargement du snapshot en arrière-plan...".into(),
+                "TUI ready. Enter runs the selected operation.".into(),
+                "Loading snapshot, work items and PRs in the background...".into(),
             ],
-        )
+        );
+        app.reload_assigned_after_snapshot = true;
+        app.reload_pull_requests_after_snapshot = true;
+        app
     }
 
     #[cfg(test)]
@@ -95,7 +149,7 @@ impl App {
             root,
             snapshot,
             BackgroundJobs::new(),
-            vec!["TUI prêt. Entrée lance l'action sélectionnée.".into()],
+            vec!["TUI ready. Enter runs the selected operation.".into()],
         )
     }
 
@@ -116,6 +170,7 @@ impl App {
             selected_ado_item: 0,
             selected_pull_request: 0,
             selected_database: 0,
+            selected_menu_section: 0,
             selected_option: 0,
             filter: String::new(),
             filter_active: false,
@@ -123,9 +178,11 @@ impl App {
             form: None,
             action_form: FormState::selecting(),
             options_open: false,
+            help_open: false,
             state_open: false,
             state_scroll: 0,
             detail: None,
+            modal_stack: Vec::new(),
             messages,
             history: HistoryState::default(),
             should_quit: false,
@@ -216,6 +273,7 @@ impl App {
         self.background.is_loading(BackgroundKind::Snapshot)
     }
 
+    #[cfg(test)]
     pub fn running_action_label(&self) -> Option<&str> {
         self.background.action_label()
     }
@@ -237,15 +295,15 @@ impl App {
         lines.push(self.background_status_line(
             BackgroundKind::Snapshot,
             "Snapshot",
-            "prêt".into(),
+            "ready".into(),
         ));
         lines.push(self.background_status_line(
             BackgroundKind::Assigned,
-            "Mes work items",
+            "My work items",
             if self.snapshot.assigned_loaded {
                 format!("{} items", self.snapshot.assigned_count())
             } else {
-                "non chargé".into()
+                "not loaded".into()
             },
         ));
         lines.push(self.background_status_line(
@@ -253,7 +311,7 @@ impl App {
             "PRs",
             if self.snapshot.pull_requests_loaded {
                 format!(
-                    "{} actives",
+                    "{} active",
                     self.snapshot
                         .pull_requests
                         .iter()
@@ -261,7 +319,7 @@ impl App {
                         .count()
                 )
             } else {
-                "non chargées".into()
+                "not loaded".into()
             },
         ));
         lines.push(self.action_status_line());
@@ -274,9 +332,9 @@ impl App {
         let Some(first) = pending.first() else {
             return Vec::new();
         };
-        let mut lines = vec![format!("À suivre: {first}")];
+        let mut lines = vec![format!("Next: {first}")];
         if pending.len() > 1 {
-            lines.push(format!("Puis: {} autre(s) action(s)", pending.len() - 1));
+            lines.push(format!("Then: {} other action(s)", pending.len() - 1));
         }
         lines
     }
@@ -292,7 +350,7 @@ impl App {
                 .background
                 .elapsed_label(kind)
                 .unwrap_or_else(|| "<1s".into());
-            format!("{label}: chargement {elapsed}")
+            format!("{label}: loading {elapsed}")
         } else {
             format!("{label}: {idle}")
         }
@@ -306,16 +364,16 @@ impl App {
                 .unwrap_or_else(|| "<1s".into());
             let queued = self.background.pending_action_count();
             if queued > 0 {
-                format!("Action: {label} ({elapsed}, file {queued})")
+                format!("Action: {label} ({elapsed}, queue {queued})")
             } else {
                 format!("Action: {label} ({elapsed})")
             }
         } else {
             let queued = self.background.pending_action_count();
             if queued > 0 {
-                format!("Action: file {queued}")
+                format!("Action: queue {queued}")
             } else {
-                "Action: aucune".into()
+                "Action: none".into()
             }
         }
     }
@@ -363,7 +421,7 @@ impl App {
         if !self.snapshot.config_doctor.passed {
             items.push(CockpitItem {
                 section: "Attention",
-                title: "Configuration à corriger".into(),
+                title: "Configuration needs attention".into(),
                 subtitle: self.snapshot.config_doctor.root.clone(),
                 status: "doctor KO".into(),
                 severity: CockpitSeverity::Blocked,
@@ -377,9 +435,9 @@ impl App {
             if let Some(error) = project.error.as_ref() {
                 items.push(CockpitItem {
                     section: "Attention",
-                    title: format!("Mes work items indisponibles · {}", project.key),
+                    title: format!("My work items unavailable · {}", project.key),
                     subtitle: error.clone(),
-                    status: "erreur".into(),
+                    status: "error".into(),
                     severity: CockpitSeverity::Attention,
                     primary_action: actions::option_action(
                         &self.snapshot.root,
@@ -402,16 +460,16 @@ impl App {
             ) {
                 let pr_item = pr.1;
                 items.push(CockpitItem {
-                    section: "À traiter",
+                    section: "To do",
                     title: format!(
-                        "Créer workspace PR #{}",
+                        "Create PR workspace #{}",
                         pr_item.pull_request_id.unwrap_or_default()
                     ),
                     subtitle: format!(
                         "{} / {} · {}",
                         pr_item.project, pr_item.repository, pr_item.branch
                     ),
-                    status: "PR sans workspace".into(),
+                    status: "PR without workspace".into(),
                     severity: CockpitSeverity::Attention,
                     primary_action: action,
                 });
@@ -431,13 +489,10 @@ impl App {
             ) {
                 let pr_item = pr.1;
                 items.push(CockpitItem {
-                    section: "En cours",
-                    title: format!(
-                        "Finaliser PR #{}",
-                        pr_item.pull_request_id.unwrap_or_default()
-                    ),
+                    section: "In progress",
+                    title: format!("Finish PR #{}", pr_item.pull_request_id.unwrap_or_default()),
                     subtitle: pr_item.workspace.clone().unwrap_or_default(),
-                    status: "workspace lié".into(),
+                    status: "workspace linked".into(),
                     severity: CockpitSeverity::Normal,
                     primary_action: action,
                 });
@@ -450,8 +505,8 @@ impl App {
                 WorkspaceAction::Preflight,
             ) {
                 items.push(CockpitItem {
-                    section: "En cours",
-                    title: format!("Préflight {}", workspace.display_work_items),
+                    section: "In progress",
+                    title: format!("Preflight {}", workspace.display_work_items),
                     subtitle: workspace.path.clone(),
                     status: workspace.kind.clone(),
                     severity: CockpitSeverity::Normal,
@@ -468,8 +523,8 @@ impl App {
                     AdoItemAction::StartPreview,
                 ) {
                     items.push(CockpitItem {
-                        section: "À traiter",
-                        title: format!("Démarrer #{} · {}", item.id, item.title),
+                        section: "To do",
+                        title: format!("Start #{} · {}", item.id, item.title),
                         subtitle: format!("{} · {} · {}", project.key, item.kind, item.state),
                         status: "assigned".into(),
                         severity: CockpitSeverity::Normal,
@@ -482,7 +537,7 @@ impl App {
             items.push(CockpitItem {
                 section: "Attention",
                 title: format!(
-                    "{} workspace(s) éligibles prune",
+                    "{} workspace(s) eligible for pruning",
                     self.snapshot.prune_candidates
                 ),
                 subtitle: self.snapshot.root.clone(),
@@ -498,7 +553,7 @@ impl App {
                         yes: false,
                         no_sync: true,
                     }),
-                    description: "Prévisualiser les workspaces à nettoyer".into(),
+                    description: "Preview workspaces that can be cleaned".into(),
                     kind: ActionRisk::DryRun,
                 },
             });
@@ -506,8 +561,8 @@ impl App {
         if items.is_empty() {
             items.push(CockpitItem {
                 section: "OK",
-                title: "Aucune action urgente".into(),
-                subtitle: "Utiliser les onglets métier ou le constructeur avancé.".into(),
+                title: "No urgent decision".into(),
+                subtitle: "Use the domain tabs or the advanced composer.".into(),
                 status: "idle".into(),
                 severity: CockpitSeverity::Normal,
                 primary_action: actions::option_action(
@@ -528,20 +583,15 @@ impl App {
             return self.handle_form_key(key, terminal);
         }
 
-        if self.history.output_open {
-            return self.handle_history_output_key(key);
-        }
-
-        if self.state_open {
-            return self.handle_state_key(key);
-        }
-
-        if self.detail.is_some() {
-            return self.handle_detail_key(key);
-        }
-
-        if self.options_open {
-            return self.handle_options_key(key, terminal);
+        if let Some(modal) = self.modal_stack.last().copied() {
+            return match modal {
+                ModalKind::Menu => self.handle_options_key(key, terminal),
+                ModalKind::MenuSection => self.handle_menu_section_key(key, terminal),
+                ModalKind::Help => self.handle_help_key(key),
+                ModalKind::State => self.handle_state_key(key),
+                ModalKind::History => self.handle_history_output_key(key),
+                ModalKind::Detail => self.handle_detail_key(key),
+            };
         }
 
         if self.filter_active {
@@ -574,19 +624,15 @@ impl App {
             KeyCode::Char('n') if !matches!(self.view, View::Ado | View::PullRequests) => {
                 self.open_form()
             }
-            KeyCode::Char('o') if self.view != View::Workspaces => self.open_options(),
-            KeyCode::Char('O') => self.open_options(),
-            KeyCode::Char('h') => self.open_history_output(),
-            KeyCode::Char('i') => self.open_state_modal(),
+            KeyCode::Char('m') => self.open_options(),
             KeyCode::Char('r') => self.reload(),
             KeyCode::Char('1') => self.set_view(View::Dashboard),
             KeyCode::Char('2') => self.set_view(View::Workspaces),
             KeyCode::Char('3') => self.set_view(View::Ado),
             KeyCode::Char('4') => self.set_view(View::PullRequests),
             KeyCode::Char('5') => self.set_view(View::Db),
-            KeyCode::Char('6') => self.set_view(View::Config),
-            KeyCode::Char('7') => self.set_view(View::Composer),
-            KeyCode::Char('?') => self.set_view(View::Help),
+            KeyCode::Char('6') => self.set_view(View::Composer),
+            KeyCode::Char('?') => self.open_help_modal(),
             _ => {}
         }
         if self.handle_view_action_key(key, terminal)? {
@@ -645,6 +691,60 @@ impl App {
         true
     }
 
+    fn handle_mouse(&mut self, kind: MouseEventKind) {
+        match kind {
+            MouseEventKind::ScrollDown => self.scroll_current_context_down(),
+            MouseEventKind::ScrollUp => self.scroll_current_context_up(),
+            _ => {}
+        }
+    }
+
+    fn scroll_current_context_down(&mut self) {
+        if self.history.output_open {
+            self.history.scroll_output_down();
+        } else if let Some(detail) = self.detail.as_mut() {
+            detail.scroll_down();
+        } else if self.options_open {
+            self.move_option_down();
+        } else if self.help_open {
+            // Help content currently fits in its modal; keep mouse wheel local to the modal.
+        } else if self.state_open {
+            self.state_scroll = self.state_scroll.saturating_add(1);
+        } else {
+            match self.view {
+                View::Dashboard => self.move_cockpit_down(),
+                View::Ado => self.move_ado_item_down(),
+                View::PullRequests => self.move_pull_request_down(),
+                View::Db => self.move_database_down(),
+                View::Composer => self.move_action_form_down(),
+                View::Workspaces => self.move_workspace_down(),
+            }
+        }
+    }
+
+    fn scroll_current_context_up(&mut self) {
+        if self.history.output_open {
+            self.history.scroll_output_up();
+        } else if let Some(detail) = self.detail.as_mut() {
+            detail.scroll_up();
+        } else if self.options_open {
+            self.move_option_up();
+        } else if self.help_open {
+            // Help content currently fits in its modal; keep mouse wheel local to the modal.
+        } else if self.state_open {
+            self.state_scroll = self.state_scroll.saturating_sub(1);
+        } else {
+            match self.view {
+                View::Dashboard => self.move_cockpit_up(),
+                View::Ado => self.move_ado_item_up(),
+                View::PullRequests => self.move_pull_request_up(),
+                View::Db => self.move_database_up(),
+                View::Composer => self.move_action_form_up(),
+                View::Workspaces => self.move_workspace_up(),
+            }
+        }
+    }
+
     fn handle_view_action_key(
         &mut self,
         key: KeyEvent,
@@ -667,6 +767,9 @@ impl App {
                 self.request_or_run_ado_action(AdoItemAction::SetStartState, terminal)?
             }
             (View::Ado, KeyCode::Char('E')) => self.open_ado_set_state_form(),
+            (View::Ado, KeyCode::Char('o')) => {
+                self.request_or_run_ado_action(AdoItemAction::OpenAgent, terminal)?
+            }
             (View::Ado, KeyCode::Char('u')) => self.open_selected_ado_url(),
             (View::Workspaces, KeyCode::Enter | KeyCode::Char('o')) => {
                 self.request_or_run_workspace_action(WorkspaceAction::Open, terminal)?
@@ -716,6 +819,9 @@ impl App {
             (View::PullRequests, KeyCode::Char('d')) => {
                 self.request_or_run_pull_request_action(PullRequestAction::DiffPreview, terminal)?
             }
+            (View::PullRequests, KeyCode::Char('o')) => {
+                self.request_or_run_pull_request_action(PullRequestAction::OpenAgent, terminal)?
+            }
             (View::PullRequests, KeyCode::Char('N')) => self.open_start_pr_form(),
             (View::PullRequests, KeyCode::Char('u')) => self.open_selected_pull_request_url(),
             (View::Db, KeyCode::Enter | KeyCode::Char('s')) => {
@@ -723,21 +829,6 @@ impl App {
             }
             (View::Db, KeyCode::Char('d')) => self.open_db_describe_form(),
             (View::Db, KeyCode::Char('e')) => self.open_db_query_form(),
-            (View::Config, KeyCode::Char('s')) => {
-                self.request_or_run_quick_option(QuickOptionAction::ConfigShow, terminal)?
-            }
-            (View::Config, KeyCode::Char('d')) => {
-                self.request_or_run_quick_option(QuickOptionAction::ConfigDoctor, terminal)?
-            }
-            (View::Config, KeyCode::Char('f')) => {
-                self.request_or_run_quick_option(QuickOptionAction::Refresh, terminal)?
-            }
-            (View::Config, KeyCode::Char('g')) => {
-                self.request_or_run_quick_option(QuickOptionAction::Guide, terminal)?
-            }
-            (View::Config, KeyCode::Char('a')) => {
-                self.request_or_run_quick_option(QuickOptionAction::AgentDoctor, terminal)?
-            }
             _ => return Ok(false),
         }
         Ok(true)
@@ -757,7 +848,7 @@ impl App {
                 KeyCode::Char('q') => self.should_quit = true,
                 KeyCode::Esc => {
                     self.form = None;
-                    self.messages.push("Formulaire annulé.".into());
+                    self.messages.push("Form canceled.".into());
                 }
                 KeyCode::Up | KeyCode::Char('k') => form.move_template_up(),
                 KeyCode::Down | KeyCode::Char('j') => form.move_template_down(),
@@ -767,17 +858,17 @@ impl App {
             FormMode::Editing => match key.code {
                 KeyCode::Esc => {
                     self.form = None;
-                    self.messages.push("Formulaire annulé.".into());
+                    self.messages.push("Form canceled.".into());
                 }
                 KeyCode::Up | KeyCode::BackTab => form.move_field_up(),
                 KeyCode::Down | KeyCode::Tab => form.move_field_down(),
                 KeyCode::Backspace => form.backspace(),
                 KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     match form.apply_suggestion(&self.snapshot) {
-                        Some(value) => self.messages.push(format!("Suggestion appliquée: {value}")),
+                        Some(value) => self.messages.push(format!("Suggestion applied: {value}")),
                         None => self
                             .messages
-                            .push("Aucune suggestion disponible pour ce champ.".into()),
+                            .push("No suggestion available for this field.".into()),
                     }
                 }
                 KeyCode::Char(' ') => form.toggle_selected(),
@@ -788,7 +879,7 @@ impl App {
                         Some(action) => self.request_or_run_action(action, terminal)?,
                         None => self
                             .messages
-                            .push("Formulaire incomplet: action non générée.".into()),
+                            .push("Incomplete form: no action generated.".into()),
                     }
                 }
                 KeyCode::Char(value)
@@ -833,7 +924,7 @@ impl App {
     fn handle_history_output_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') => {
-                self.history.close_output();
+                self.close_top_modal();
             }
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Up | KeyCode::Char('k') => {
@@ -842,8 +933,8 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => {
                 self.history.scroll_output_down();
             }
-            KeyCode::Char('[') => self.history.select_previous_entry(),
-            KeyCode::Char(']') => self.history.select_next_entry(),
+            KeyCode::Left | KeyCode::Char('[') => self.history.select_previous_entry(),
+            KeyCode::Right | KeyCode::Char(']') => self.history.select_next_entry(),
             KeyCode::Home => self.history.scroll_output_home(),
             KeyCode::End => self.history.scroll_output_end(),
             _ => {}
@@ -854,8 +945,7 @@ impl App {
     fn handle_state_key(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Esc | KeyCode::Char('i') | KeyCode::Char('q') => {
-                self.state_open = false;
-                self.state_scroll = 0;
+                self.close_top_modal();
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.state_scroll = self.state_scroll.saturating_sub(1);
@@ -876,7 +966,7 @@ impl App {
         };
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => {
-                self.detail = None;
+                self.close_top_modal();
             }
             KeyCode::Up | KeyCode::Char('k') => detail.scroll_up(),
             KeyCode::Down | KeyCode::Char('j') => detail.scroll_down(),
@@ -887,22 +977,51 @@ impl App {
         Ok(())
     }
 
+    fn handle_help_key(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') | KeyCode::Enter => {
+                self.close_top_modal();
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn handle_options_key(
+        &mut self,
+        key: KeyEvent,
+        _terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> Result<()> {
+        match key.code {
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Esc | KeyCode::Char('m') => {
+                self.close_top_modal();
+                self.messages.push("Menu closed.".into());
+            }
+            KeyCode::Up | KeyCode::Char('k') => self.move_option_up(),
+            KeyCode::Down | KeyCode::Char('j') => self.move_option_down(),
+            KeyCode::Enter => self.open_selected_menu_section(),
+            KeyCode::Char('?') => self.open_help_modal(),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_menu_section_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Esc | KeyCode::Char('o') => {
-                self.options_open = false;
-                self.messages.push("Options fermées.".into());
-            }
+            KeyCode::Esc => self.close_top_modal(),
+            KeyCode::Char('m') => self.close_menu_modals(),
             KeyCode::Up | KeyCode::Char('k') => self.move_option_up(),
             KeyCode::Down | KeyCode::Char('j') => self.move_option_down(),
             KeyCode::Enter => self.run_selected_option_action(terminal)?,
+            KeyCode::Char('?') => self.open_help_modal(),
             KeyCode::Char(key) => {
-                if let Some(action) = actions::quick_option_by_key(key) {
+                if let Some(action) = self.current_menu_option_by_key(key) {
                     self.run_option_action(action, terminal)?;
                 }
             }
@@ -924,7 +1043,7 @@ impl App {
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                 self.confirmation = None;
-                self.messages.push("Action annulée.".into());
+                self.messages.push("Action canceled.".into());
             }
             _ => {}
         }
@@ -936,7 +1055,7 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         let Some((_, action)) = self.selected_visible_action() else {
-            self.messages.push("Aucune action sélectionnée.".into());
+            self.messages.push("No operation selected.".into());
             return Ok(());
         };
 
@@ -949,7 +1068,7 @@ impl App {
     ) -> Result<()> {
         let items = self.cockpit_items();
         let Some(item) = items.get(self.selected_cockpit.min(items.len().saturating_sub(1))) else {
-            self.messages.push("Aucun item cockpit sélectionné.".into());
+            self.messages.push("No cockpit item selected.".into());
             return Ok(());
         };
         self.request_or_run_action(item.primary_action.clone(), terminal)
@@ -979,10 +1098,10 @@ impl App {
                 }
                 KeyCode::Char(' ') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     match self.action_form.apply_suggestion(&self.snapshot) {
-                        Some(value) => self.messages.push(format!("Suggestion appliquée: {value}")),
+                        Some(value) => self.messages.push(format!("Suggestion applied: {value}")),
                         None => self
                             .messages
-                            .push("Aucune suggestion disponible pour ce champ.".into()),
+                            .push("No suggestion available for this field.".into()),
                     }
                     Ok(true)
                 }
@@ -996,7 +1115,7 @@ impl App {
                         Some(action) => self.request_or_run_action(action, terminal)?,
                         None => self
                             .messages
-                            .push("Constructeur incomplet: action non générée.".into()),
+                            .push("Incomplete composer: no action generated.".into()),
                     }
                     Ok(true)
                 }
@@ -1032,7 +1151,7 @@ impl App {
         if requires_confirmation {
             self.confirmation = Some(action);
             self.messages
-                .push(format!("Confirmation requise: {display_label}"));
+                .push(format!("Confirmation required: {display_label}"));
             return Ok(());
         }
 
@@ -1042,35 +1161,33 @@ impl App {
     fn run_inline_detail_action(&mut self, action: &TuiAction) -> bool {
         match &action.request {
             TuiActionRequest::Guide => {
-                self.detail = Some(DetailPanel::guide(guide_detail_lines()));
-                self.messages.push("Guide affiché.".into());
+                self.open_detail_panel(DetailPanel::guide(guide_detail_lines()));
+                self.messages.push("Quick start opened.".into());
                 true
             }
             TuiActionRequest::ConfigShow { root } => {
                 let report = dw_config::config_show(root.as_deref());
-                self.detail = Some(DetailPanel::config_show(&report));
-                self.messages
-                    .push("Configuration affichée depuis le core.".into());
+                self.open_detail_panel(DetailPanel::config_show(&report));
+                self.messages.push("Configuration loaded from core.".into());
                 true
             }
             TuiActionRequest::ConfigDoctor { root } => {
                 let report = dw_config::config_doctor(root.as_deref());
                 self.snapshot.config_doctor = report.clone();
-                self.detail = Some(DetailPanel::config_doctor(&report));
+                self.open_detail_panel(DetailPanel::config_doctor(&report));
                 self.messages
-                    .push("Diagnostic configuration exécuté depuis le core.".into());
+                    .push("Configuration doctor completed from core.".into());
                 true
             }
             TuiActionRequest::AgentDoctor { agent } => {
                 match dw_agent::command::agent_doctor(agent.as_deref()) {
                     Ok(report) => {
-                        self.detail = Some(DetailPanel::agent_doctor(&report));
+                        self.open_detail_panel(DetailPanel::agent_doctor(&report));
                         self.messages
-                            .push("Diagnostic agents exécuté depuis le core.".into());
+                            .push("Agent doctor completed from core.".into());
                     }
                     Err(error) => {
-                        self.messages
-                            .push(format!("Diagnostic agents impossible: {error}"));
+                        self.messages.push(format!("Agent doctor failed: {error}"));
                     }
                 }
                 true
@@ -1080,21 +1197,6 @@ impl App {
     }
 
     fn run_option_action(
-        &mut self,
-        option: QuickOptionAction,
-        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    ) -> Result<()> {
-        self.options_open = false;
-        if self.run_core_quick_option(option) {
-            return Ok(());
-        }
-        self.request_or_run_action(
-            actions::option_action(&self.snapshot.root, option),
-            terminal,
-        )
-    }
-
-    fn request_or_run_quick_option(
         &mut self,
         option: QuickOptionAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1116,11 +1218,87 @@ impl App {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
-        let Some(option) = QUICK_OPTIONS.get(self.selected_option) else {
-            self.messages.push("Aucune option sélectionnée.".into());
-            return Ok(());
+        match self.selected_menu_section() {
+            MenuSection::Information => match self.selected_option {
+                0 => {
+                    self.open_history_output();
+                    return Ok(());
+                }
+                1 => {
+                    self.open_state_modal();
+                    return Ok(());
+                }
+                2 => {
+                    self.open_help_modal();
+                    return Ok(());
+                }
+                _ => {}
+            },
+            _ => {
+                let Some(option) = self.current_menu_option(self.selected_option) else {
+                    self.messages.push("No menu option selected.".into());
+                    return Ok(());
+                };
+                self.run_option_action(option.action, terminal)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn open_selected_menu_section(&mut self) {
+        self.selected_option = self
+            .selected_option
+            .min(self.current_menu_item_count().saturating_sub(1));
+        self.push_modal(ModalKind::MenuSection);
+    }
+
+    pub(crate) fn selected_menu_section(&self) -> MenuSection {
+        MENU_SECTIONS
+            .get(self.selected_menu_section)
+            .copied()
+            .unwrap_or(MenuSection::Information)
+    }
+
+    pub(crate) fn current_menu_item_count(&self) -> usize {
+        match self.selected_menu_section() {
+            MenuSection::Information => 3,
+            section => self.quick_options_for_menu_section(section).len(),
+        }
+    }
+
+    pub(crate) fn quick_options_for_menu_section(
+        &self,
+        section: MenuSection,
+    ) -> Vec<&'static QuickOptionItem> {
+        let quick_section = match section {
+            MenuSection::Information => return Vec::new(),
+            MenuSection::Configuration => "Diagnostics and setup",
+            MenuSection::DefaultAgent => "Default agent",
+            MenuSection::TerminalColor => "Terminal color mode",
         };
-        self.run_option_action(option.action, terminal)
+        QUICK_OPTIONS
+            .iter()
+            .filter(|item| item.section == quick_section)
+            .collect()
+    }
+
+    fn current_menu_option(&self, index: usize) -> Option<&'static QuickOptionItem> {
+        self.quick_options_for_menu_section(self.selected_menu_section())
+            .get(index)
+            .copied()
+    }
+
+    fn current_menu_option_by_key(&self, key: char) -> Option<QuickOptionAction> {
+        self.quick_options_for_menu_section(self.selected_menu_section())
+            .into_iter()
+            .find(|item| item.key == key)
+            .map(|item| item.action)
+    }
+
+    fn close_menu_modals(&mut self) {
+        self.options_open = false;
+        self.sync_closed_modal(ModalKind::Menu);
+        self.sync_closed_modal(ModalKind::MenuSection);
     }
 
     fn request_or_run_ado_action(
@@ -1129,7 +1307,15 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         let Some(selected_action) = self.selected_ado_action(action) else {
-            self.messages.push(self.selected_ado_action_error());
+            self.messages.push(
+                actions::ado_action_error(
+                    &self.snapshot,
+                    self.selected_ado_project,
+                    self.selected_ado_item,
+                    action,
+                )
+                .unwrap_or_else(|| self.selected_ado_action_error()),
+            );
             return Ok(());
         };
 
@@ -1144,7 +1330,7 @@ impl App {
         let Some(selected_action) =
             actions::selected_workspace_action(&self.snapshot, self.selected_workspace, action)
         else {
-            self.messages.push("Aucun workspace sélectionné.".into());
+            self.messages.push("No workspace selected.".into());
             return Ok(());
         };
 
@@ -1167,7 +1353,7 @@ impl App {
 
     fn open_selected_ado_url(&mut self) {
         let Some(project) = self.snapshot.assigned.get(self.selected_ado_project) else {
-            self.messages.push("Aucun projet ADO sélectionné.".into());
+            self.messages.push("No ADO project selected.".into());
             return;
         };
         let Some(item) = project.items.get(self.selected_ado_item) else {
@@ -1181,7 +1367,7 @@ impl App {
             .map(str::to_string)
         else {
             self.messages.push(format!(
-                "Action indisponible: URL absente pour le work item #{}.",
+                "Action unavailable: missing URL for work item #{}.",
                 item.id
             ));
             return;
@@ -1191,7 +1377,7 @@ impl App {
 
     fn open_selected_pull_request_url(&mut self) {
         let Some(item) = self.snapshot.pull_requests.get(self.selected_pull_request) else {
-            self.messages.push("Aucune PR sélectionnée.".into());
+            self.messages.push("No PR selected.".into());
             return;
         };
         let Some(url) = item
@@ -1201,7 +1387,7 @@ impl App {
             .map(str::to_string)
         else {
             self.messages
-                .push("Action indisponible: URL PR absente dans la réponse Azure DevOps.".into());
+                .push("Action unavailable: missing PR URL in the Azure DevOps response.".into());
             return;
         };
         self.open_url("PR ADO", &url);
@@ -1209,21 +1395,11 @@ impl App {
 
     fn open_url(&mut self, label: &str, url: &str) {
         match webbrowser::open(url) {
-            Ok(_) => self.messages.push(format!("{label} ouverte: {url}")),
+            Ok(_) => self.messages.push(format!("{label} opened: {url}")),
             Err(error) => self
                 .messages
-                .push(format!("Impossible d'ouvrir {label}: {error}. URL: {url}")),
+                .push(format!("Could not open {label}: {error}. URL: {url}")),
         }
-    }
-
-    pub fn selected_ado_action_preview(&self) -> Option<String> {
-        actions::selected_ado_action(
-            &self.snapshot,
-            self.selected_ado_project,
-            self.selected_ado_item,
-            AdoItemAction::StartPreview,
-        )
-        .map(|action| action.display_label())
     }
 
     pub fn selected_ado_set_state_action_preview(&self) -> Option<String> {
@@ -1247,19 +1423,14 @@ impl App {
 
     fn selected_ado_action_error(&self) -> String {
         if self.assigned_loading() {
-            "Mes work items chargent en arrière-plan; vous pouvez rester dans le TUI.".into()
+            "My work items are loading in the background; you can keep using the TUI.".into()
         } else if !self.snapshot.assigned_loaded {
-            "Mes work items pas encore chargés: ouvrir l'onglet ADO ou appuyer sur r pour recharger."
-                .into()
+            "My work items are not loaded yet: wait for preload or reload.".into()
         } else if self.snapshot.assigned.is_empty() {
-            "Aucun projet ADO configuré ou exploitable pour vos work items.".into()
+            "No ADO project configured or usable for your work items.".into()
         } else {
-            "Aucun work item ADO sélectionné.".into()
+            "No ADO work item selected.".into()
         }
-    }
-
-    pub fn selected_pull_request_action_preview(&self) -> Option<String> {
-        self.selected_pull_request_action_preview_for(PullRequestAction::StartPreview)
     }
 
     pub fn selected_pull_request_action_preview_for(
@@ -1268,15 +1439,6 @@ impl App {
     ) -> Option<String> {
         actions::selected_pull_request_action(&self.snapshot, self.selected_pull_request, action)
             .map(|action| action.display_label())
-    }
-
-    pub fn selected_database_action_preview(&self) -> Option<String> {
-        actions::selected_database_schema_action(&self.snapshot, self.selected_database)
-            .map(|action| action.display_label())
-    }
-
-    pub fn selected_workspace_action_preview(&self) -> Option<String> {
-        self.selected_workspace_action_preview_for(WorkspaceAction::Open)
     }
 
     pub fn selected_workspace_action_preview_for(&self, action: WorkspaceAction) -> Option<String> {
@@ -1292,7 +1454,7 @@ impl App {
         let Some(selected_action) =
             actions::selected_database_action(&self.snapshot, self.selected_database, action)
         else {
-            self.messages.push("Aucune base DB sélectionnée.".into());
+            self.messages.push("No DB entry selected.".into());
             return Ok(());
         };
 
@@ -1305,11 +1467,10 @@ impl App {
 
     fn selected_pull_request_action_error(&self, action: PullRequestAction) -> String {
         if self.pull_requests_loading() {
-            return "PRs en cours de chargement; vous pouvez continuer à naviguer.".into();
+            return "PRs are loading; you can keep navigating.".into();
         }
         if !self.snapshot.pull_requests_loaded {
-            return "PRs pas encore chargées: ouvrir l'onglet PRs ou appuyer sur r pour recharger."
-                .into();
+            return "PRs are not loaded yet: wait for preload or reload.".into();
         }
         actions::pull_request_action_error(&self.snapshot, self.selected_pull_request, action)
     }
@@ -1323,12 +1484,11 @@ impl App {
             match self.background.start_action(action) {
                 ActionStart::Started { label } => {
                     self.history.start_running(label.clone());
-                    self.messages
-                        .push(format!("Lancement en arrière-plan: {label}"));
+                    self.messages.push(format!("Background launch: {label}"));
                 }
                 ActionStart::Queued { label, position } => {
                     self.messages
-                        .push(format!("Action mise en file #{position}: {label}"));
+                        .push(format!("Action queued #{position}: {label}"));
                 }
             }
             return Ok(());
@@ -1345,7 +1505,7 @@ impl App {
             output_lines: Vec::new(),
         });
         self.messages.push(format!(
-            "Dernier lancement: {} -> {}",
+            "Last launch: {} -> {}",
             result.display_label, result.status_label
         ));
         if result.success && action.should_refresh_after_success() {
@@ -1382,15 +1542,16 @@ impl App {
                     });
                 }
                 self.messages.push(format!(
-                    "Terminé: {} -> {}",
+                    "Done: {} -> {}",
                     result.display_label, result.status_label
                 ));
                 if open_after_success {
-                    self.detail = Some(DetailPanel::operation_result(
-                        format!("Résultat · {}", result.display_label),
+                    self.open_detail_panel(DetailPanel::operation_result(
+                        format!("Result · {}", result.display_label),
                         &result.output,
                     ));
-                    self.history.output_open = false;
+                    self.history.close_output();
+                    self.sync_closed_modal(ModalKind::History);
                 }
                 if result.success && refresh_after_success {
                     self.apply_successful_action_effect(effect);
@@ -1401,17 +1562,17 @@ impl App {
             Err(error) => {
                 if !self
                     .history
-                    .finish_running(&label, "erreur".into(), false, &error)
+                    .finish_running(&label, "error".into(), false, &error)
                 {
                     self.history.push(RunHistoryEntry {
                         request_label: label.clone(),
-                        status: "erreur".into(),
+                        status: "error".into(),
                         success: false,
                         output_preview: vec![error.clone()],
                         output_lines: vec![error.clone()],
                     });
                 }
-                self.messages.push(format!("Échec: {label} -> {error}"));
+                self.messages.push(format!("Failed: {label} -> {error}"));
                 self.open_latest_history_output();
                 self.continue_action_queue();
             }
@@ -1423,7 +1584,7 @@ impl App {
             Some(ActionEffect::ColorMode(mode)) => {
                 self.snapshot.color_mode = mode.clone();
                 self.messages
-                    .push(format!("Option appliquée dans le cockpit: couleur {mode}"));
+                    .push(format!("Cockpit option applied: color {mode}"));
             }
             Some(ActionEffect::DefaultAgent(agent)) => {
                 let agent = dw_config::normalize_default_agent(&agent)
@@ -1436,13 +1597,13 @@ impl App {
                     .get_or_insert_with(dw_config::AgentOptions::default);
                 agent_options.default = agent.clone();
                 self.messages
-                    .push(format!("Option appliquée dans le cockpit: agent {agent}"));
+                    .push(format!("Cockpit option applied: agent {agent}"));
             }
             Some(ActionEffect::Root(root)) => {
                 self.root_override = Some(root.clone());
                 self.snapshot.root = root.clone();
                 self.messages
-                    .push(format!("Option appliquée dans le cockpit: root {root}"));
+                    .push(format!("Cockpit option applied: root {root}"));
             }
             None => {}
         }
@@ -1452,7 +1613,7 @@ impl App {
         if let Some(label) = self.background.start_next_action() {
             self.history.start_running(label.clone());
             self.messages
-                .push(format!("Lancement suivant en arrière-plan: {label}"));
+                .push(format!("Next background launch: {label}"));
         } else if self.reload_after_action_queue {
             self.reload_after_action_queue = false;
             self.reload();
@@ -1460,18 +1621,13 @@ impl App {
     }
 
     fn reload(&mut self) {
-        let should_load_assigned =
-            self.view == View::Ado || self.snapshot.assigned_loaded || self.assigned_loading();
-        let should_load_pull_requests = self.view == View::PullRequests
-            || self.snapshot.pull_requests_loaded
-            || self.pull_requests_loading();
         if self.background.start_snapshot(self.root_override.clone()) {
-            self.reload_assigned_after_snapshot = should_load_assigned;
-            self.reload_pull_requests_after_snapshot = should_load_pull_requests;
+            self.reload_assigned_after_snapshot = true;
+            self.reload_pull_requests_after_snapshot = true;
             self.messages
-                .push("Rechargement du snapshot en arrière-plan...".into());
+                .push("Reloading snapshot, work items and PRs in the background...".into());
         } else {
-            self.messages.push("Rechargement déjà en cours.".into());
+            self.messages.push("Reload already running.".into());
         }
     }
 
@@ -1529,7 +1685,7 @@ impl App {
             .min(self.cockpit_items().len().saturating_sub(1));
         self.confirmation = None;
         self.form = None;
-        self.options_open = false;
+        self.close_menu_help_modals();
         if self.view == View::Ado && !self.snapshot.assigned_loaded {
             self.start_assigned_load();
         }
@@ -1542,16 +1698,16 @@ impl App {
         self.form = Some(FormState::selecting());
         self.filter_active = false;
         self.confirmation = None;
-        self.options_open = false;
-        self.messages.push("Constructeur d’action ouvert.".into());
+        self.close_menu_help_modals();
+        self.messages.push("Action composer opened.".into());
     }
 
     fn open_db_query_form(&mut self) {
-        self.open_database_form(FormTemplate::DbQuery, "Requête DB guidée ouverte.");
+        self.open_database_form(FormTemplate::DbQuery, "Guided DB query opened.");
     }
 
     fn open_db_describe_form(&mut self) {
-        self.open_database_form(FormTemplate::DbDescribe, "Describe DB guidé ouvert.");
+        self.open_database_form(FormTemplate::DbDescribe, "Guided DB describe opened.");
     }
 
     fn open_database_form(&mut self, template: FormTemplate, message: &str) {
@@ -1564,7 +1720,7 @@ impl App {
         if let Some(database) = self.snapshot.database_entries.get(self.selected_database) {
             for field in &mut form.fields {
                 match field.label.as_str() {
-                    "Projet" => field.value = database.project.clone().unwrap_or_default(),
+                    "Project" => field.value = database.project.clone().unwrap_or_default(),
                     "Database" => field.value = database.key.clone(),
                     _ => {}
                 }
@@ -1573,7 +1729,7 @@ impl App {
         self.form = Some(form);
         self.filter_active = false;
         self.confirmation = None;
-        self.options_open = false;
+        self.close_menu_help_modals();
         self.messages.push(message.into());
     }
 
@@ -1598,7 +1754,7 @@ impl App {
         for field in &mut form.fields {
             match field.label.as_str() {
                 "Pull request" => field.value = pull_request_id.to_string(),
-                "Projet" => field.value = item.project.clone(),
+                "Project" => field.value = item.project.clone(),
                 "Repository" => field.value = item.repository.clone(),
                 _ => {}
             }
@@ -1606,9 +1762,9 @@ impl App {
         self.form = Some(form);
         self.filter_active = false;
         self.confirmation = None;
-        self.options_open = false;
+        self.close_menu_help_modals();
         self.messages.push(format!(
-            "Workspace depuis PR guidé ouvert pour #{}.",
+            "Guided PR workspace form opened for #{}.",
             pull_request_id
         ));
     }
@@ -1622,6 +1778,7 @@ impl App {
             self.messages.push(self.selected_ado_action_error());
             return;
         };
+        let work_item_id = item.id.clone();
 
         let mut form = FormState::selecting();
         form.template_index = FormTemplate::ALL
@@ -1641,9 +1798,9 @@ impl App {
         });
         for field in &mut form.fields {
             match field.label.as_str() {
-                "Work items" => field.value = item.id.clone(),
-                "Projet" => field.value = project.key.clone(),
-                "State" => {
+                "Work item IDs" => field.value = item.id.clone(),
+                "Project" => field.value = project.key.clone(),
+                "Destination state" => {
                     if let Some(state) = workflow_state.clone() {
                         field.value = state;
                     }
@@ -1654,24 +1811,102 @@ impl App {
         self.form = Some(form);
         self.filter_active = false;
         self.confirmation = None;
-        self.options_open = false;
+        self.close_menu_help_modals();
         self.messages.push(format!(
-            "Changement d'état ADO guidé ouvert pour #{}.",
-            item.id
+            "Guided ADO state change opened for #{work_item_id}."
         ));
     }
 
-    fn open_options(&mut self) {
-        self.options_open = true;
-        self.selected_option = self
-            .selected_option
-            .min(QUICK_OPTIONS.len().saturating_sub(1));
+    fn push_modal(&mut self, modal: ModalKind) {
+        self.modal_stack.retain(|existing| *existing != modal);
+        self.modal_stack.push(modal);
+    }
+
+    fn close_top_modal(&mut self) {
+        let Some(modal) = self.modal_stack.pop() else {
+            if self.detail.is_some() {
+                self.detail = None;
+            } else if self.history.output_open {
+                self.history.close_output();
+            } else if self.state_open {
+                self.state_open = false;
+                self.state_scroll = 0;
+            } else if self.help_open {
+                self.help_open = false;
+            } else if self.options_open {
+                self.options_open = false;
+            }
+            return;
+        };
+        match modal {
+            ModalKind::Menu => self.options_open = false,
+            ModalKind::MenuSection => {}
+            ModalKind::Help => self.help_open = false,
+            ModalKind::State => {
+                self.state_open = false;
+                self.state_scroll = 0;
+            }
+            ModalKind::History => self.history.close_output(),
+            ModalKind::Detail => self.detail = None,
+        }
+    }
+
+    fn sync_closed_modal(&mut self, modal: ModalKind) {
+        self.modal_stack.retain(|existing| *existing != modal);
+    }
+
+    fn close_menu_help_modals(&mut self) {
+        self.options_open = false;
+        self.help_open = false;
+        self.sync_closed_modal(ModalKind::Menu);
+        self.sync_closed_modal(ModalKind::MenuSection);
+        self.sync_closed_modal(ModalKind::Help);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn modal_stack_labels(&self) -> Vec<&'static str> {
+        self.modal_stack
+            .iter()
+            .map(|modal| match modal {
+                ModalKind::Menu => "menu",
+                ModalKind::MenuSection => "menu-section",
+                ModalKind::Help => "help",
+                ModalKind::State => "state",
+                ModalKind::History => "history",
+                ModalKind::Detail => "detail",
+            })
+            .collect()
+    }
+
+    fn open_detail_panel(&mut self, detail: DetailPanel) {
+        self.detail = Some(detail);
         self.filter_active = false;
         self.confirmation = None;
         self.form = None;
-        self.state_open = false;
-        self.history.close_output();
-        self.messages.push("Options ouvertes.".into());
+        self.push_modal(ModalKind::Detail);
+    }
+
+    pub(crate) fn open_options(&mut self) {
+        self.options_open = true;
+        self.selected_menu_section = self
+            .selected_menu_section
+            .min(MENU_SECTIONS.len().saturating_sub(1));
+        self.selected_option = self
+            .selected_option
+            .min(self.current_menu_item_count().saturating_sub(1));
+        self.filter_active = false;
+        self.confirmation = None;
+        self.form = None;
+        self.push_modal(ModalKind::Menu);
+        self.messages.push("Menu opened.".into());
+    }
+
+    fn open_help_modal(&mut self) {
+        self.help_open = true;
+        self.filter_active = false;
+        self.confirmation = None;
+        self.form = None;
+        self.push_modal(ModalKind::Help);
     }
 
     fn open_state_modal(&mut self) {
@@ -1680,56 +1915,51 @@ impl App {
         self.filter_active = false;
         self.confirmation = None;
         self.form = None;
-        self.options_open = false;
-        self.history.close_output();
+        self.push_modal(ModalKind::State);
     }
 
     fn open_history_output(&mut self) {
-        if !self.history.open_output() {
-            self.messages.push("Aucun lancement à afficher.".into());
-            return;
-        }
+        self.history.open_output();
         self.close_overlays_for_history();
+        self.push_modal(ModalKind::History);
     }
 
     fn open_latest_history_output(&mut self) {
-        if self.history.open_output() {
-            self.close_overlays_for_history();
-        }
+        self.history.open_output();
+        self.close_overlays_for_history();
+        self.push_modal(ModalKind::History);
     }
 
     fn close_overlays_for_history(&mut self) {
         self.filter_active = false;
         self.confirmation = None;
         self.form = None;
-        self.options_open = false;
-        self.state_open = false;
     }
 
     fn start_assigned_load(&mut self) {
         if self.background.start_assigned(&mut self.snapshot) {
             self.messages
-                .push("Chargement de vos work items en arrière-plan...".into());
+                .push("Loading your work items in the background...".into());
         }
     }
 
     fn restart_assigned_load(&mut self) {
         self.background.restart_assigned(&mut self.snapshot);
         self.messages
-            .push("Rechargement de vos work items en arrière-plan...".into());
+            .push("Reloading your work items in the background...".into());
     }
 
     fn start_pull_requests_load(&mut self) {
         if self.background.start_pull_requests(&mut self.snapshot) {
             self.messages
-                .push("Chargement PRs en arrière-plan...".into());
+                .push("Loading PRs in the background...".into());
         }
     }
 
     fn restart_pull_requests_load(&mut self) {
         self.background.restart_pull_requests(&mut self.snapshot);
         self.messages
-            .push("Rechargement PRs en arrière-plan...".into());
+            .push("Reloading PRs in the background...".into());
     }
 
     fn move_action_up(&mut self) {
@@ -1808,12 +2038,28 @@ impl App {
     }
 
     fn move_option_up(&mut self) {
-        self.selected_option = self.selected_option.saturating_sub(1);
+        if matches!(self.modal_stack.last(), Some(ModalKind::Menu)) {
+            self.selected_menu_section = self.selected_menu_section.saturating_sub(1);
+            self.selected_option = self
+                .selected_option
+                .min(self.current_menu_item_count().saturating_sub(1));
+        } else {
+            self.selected_option = self.selected_option.saturating_sub(1);
+        }
     }
 
     fn move_option_down(&mut self) {
-        if !QUICK_OPTIONS.is_empty() {
-            self.selected_option = (self.selected_option + 1).min(QUICK_OPTIONS.len() - 1);
+        if matches!(self.modal_stack.last(), Some(ModalKind::Menu)) {
+            if !MENU_SECTIONS.is_empty() {
+                self.selected_menu_section =
+                    (self.selected_menu_section + 1).min(MENU_SECTIONS.len() - 1);
+                self.selected_option = self
+                    .selected_option
+                    .min(self.current_menu_item_count().saturating_sub(1));
+            }
+        } else if self.current_menu_item_count() > 0 {
+            self.selected_option =
+                (self.selected_option + 1).min(self.current_menu_item_count() - 1);
         }
     }
 
@@ -1877,12 +2123,11 @@ impl App {
 
 fn action_matches_view(action: &TuiAction, view: View) -> bool {
     match view {
-        View::Dashboard | View::Composer | View::Help => true,
+        View::Dashboard | View::Composer => true,
         View::Workspaces => action.is_workspace_action(),
         View::PullRequests => action.is_workspace_action() || action.is_ado_action(),
         View::Ado => action.is_ado_action(),
         View::Db => action.is_db_action(),
-        View::Config => action.is_config_action(),
     }
 }
 
@@ -1896,9 +2141,9 @@ fn assigned_load_summary(projects: &[AdoAssignedProject]) -> String {
         .filter(|project| project.error.is_some())
         .count();
     if errors == 0 {
-        format!("Mes work items chargés: {items} work item(s).")
+        format!("My work items loaded: {items} work item(s).")
     } else {
-        format!("Mes work items chargés: {items} work item(s), {errors} erreur(s) projet.")
+        format!("My work items loaded: {items} work item(s), {errors} project error(s).")
     }
 }
 
@@ -1909,15 +2154,15 @@ fn pull_request_load_summary(items: &[TuiPullRequest]) -> String {
         .count();
     let errors = items.iter().filter(|item| item.error.is_some()).count();
     if errors == 0 {
-        format!("contexte chargé: {active} PR active(s).")
+        format!("PR context loaded: {active} active PR(s).")
     } else {
-        format!("contexte chargé: {active} PR active(s), {errors} erreur(s) repository.")
+        format!("PR context loaded: {active} active PR(s), {errors} repository error(s).")
     }
 }
 
 fn snapshot_reload_summary(snapshot: &TuiSnapshot) -> String {
     format!(
-        "Snapshot rechargé: {} projet(s), {} workspace(s), {} database(s), {} prune.",
+        "Snapshot reloaded: {} project(s), {} workspace(s), {} database(s), {} prune.",
         snapshot.project_count(),
         snapshot.workspaces.len(),
         snapshot.database_count(),
@@ -1952,8 +2197,10 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|message| message.contains("Chargement du snapshot"))
+                .any(|message| message.contains("Loading snapshot, work items and PRs"))
         );
+        assert!(app.reload_assigned_after_snapshot);
+        assert!(app.reload_pull_requests_after_snapshot);
     }
 
     #[test]
@@ -1965,11 +2212,11 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|line| line.starts_with("Snapshot: chargement"))
+                .any(|line| line.starts_with("Snapshot: loading"))
         );
-        assert!(lines.contains(&"Mes work items: non chargé".into()));
-        assert!(lines.contains(&"PRs: non chargées".into()));
-        assert!(lines.contains(&"Action: aucune".into()));
+        assert!(lines.contains(&"My work items: not loaded".into()));
+        assert!(lines.contains(&"PRs: not loaded".into()));
+        assert!(lines.contains(&"Action: none".into()));
     }
 
     #[test]
@@ -1988,9 +2235,9 @@ mod tests {
             kind: ActionRisk::Safe,
         };
         let third = TuiAction {
-            label: "Guide".into(),
+            label: "Quick start".into(),
             request: TuiActionRequest::Guide,
-            description: "Guide".into(),
+            description: "Show the startup path".into(),
             kind: ActionRisk::Safe,
         };
 
@@ -2009,7 +2256,7 @@ mod tests {
 
         assert_eq!(
             app.action_queue_status_lines(),
-            ["À suivre: Doctor", "Puis: 1 autre(s) action(s)"]
+            ["Next: Doctor", "Then: 1 other action(s)"]
         );
     }
 
@@ -2047,9 +2294,9 @@ mod tests {
 
         let lines = app.background_status_lines();
 
-        assert!(lines.contains(&"Snapshot: prêt".into()));
-        assert!(lines.contains(&"Mes work items: 1 items".into()));
-        assert!(lines.contains(&"PRs: 1 actives".into()));
+        assert!(lines.contains(&"Snapshot: ready".into()));
+        assert!(lines.contains(&"My work items: 1 items".into()));
+        assert!(lines.contains(&"PRs: 1 active".into()));
     }
 
     #[test]
@@ -2098,7 +2345,7 @@ mod tests {
                 .iter()
                 .all(|(_, action)| action.action_kind() != crate::model::ActionKind::TaskPrune)
         );
-        assert!(labels.iter().any(|label| label.contains("Vérifier")));
+        assert!(labels.iter().any(|label| label.contains("Check")));
     }
 
     #[test]
@@ -2210,11 +2457,11 @@ mod tests {
 
         assert_eq!(
             assigned_load_summary(&assigned),
-            "Mes work items chargés: 1 work item(s), 1 erreur(s) projet."
+            "My work items loaded: 1 work item(s), 1 project error(s)."
         );
         assert_eq!(
             pull_request_load_summary(&prs),
-            "contexte chargé: 1 PR active(s), 1 erreur(s) repository."
+            "PR context loaded: 1 active PR(s), 1 repository error(s)."
         );
     }
 
@@ -2268,13 +2515,13 @@ mod tests {
 
         assert_eq!(
             app.selected_ado_action_error(),
-            "Mes work items pas encore chargés: ouvrir l'onglet ADO ou appuyer sur r pour recharger."
+            "My work items are not loaded yet: wait for preload or reload."
         );
 
         app.start_assigned_load();
         assert_eq!(
             app.selected_ado_action_error(),
-            "Mes work items chargent en arrière-plan; vous pouvez rester dans le TUI."
+            "My work items are loading in the background; you can keep using the TUI."
         );
     }
 
@@ -2285,13 +2532,13 @@ mod tests {
 
         assert_eq!(
             app.selected_pull_request_action_error(PullRequestAction::DiffPreview),
-            "PRs pas encore chargées: ouvrir l'onglet PRs ou appuyer sur r pour recharger."
+            "PRs are not loaded yet: wait for preload or reload."
         );
 
         app.start_pull_requests_load();
         assert_eq!(
             app.selected_pull_request_action_error(PullRequestAction::DiffPreview),
-            "PRs en cours de chargement; vous pouvez continuer à naviguer."
+            "PRs are loading; you can keep navigating."
         );
     }
 
@@ -2305,13 +2552,29 @@ mod tests {
 
         let item = items
             .iter()
-            .find(|item| item.title.contains("PR #42"))
+            .find(|item| item.title.contains("#42"))
             .expect("cockpit PR item");
-        assert_eq!(item.section, "À traiter");
+        assert_eq!(item.section, "To do");
         assert!(matches!(
             item.primary_action.request,
             TuiActionRequest::TaskStartPr(_)
         ));
+    }
+
+    #[test]
+    fn pull_request_footer_contains_shortcuts_not_selected_context() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.view = View::PullRequests;
+        app.snapshot.pull_requests_loaded = true;
+        app.snapshot.pull_requests = vec![pull_request("ha", "back", 55265)];
+
+        let preview = crate::ui_text::shortcut_bar_line(&app);
+
+        assert!(preview.contains("diff [d]"));
+        assert!(!preview.contains("target"));
+        assert!(!preview.contains("#55265"));
+        assert!(!preview.contains("back ·"));
+        assert!(!preview.contains("Preview PR workspace"));
     }
 
     #[test]
@@ -2335,7 +2598,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|message| message.contains("URL absente"))
+                .any(|message| message.contains("missing URL"))
         );
     }
 
@@ -2362,7 +2625,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|message| message.contains("URL PR absente"))
+                .any(|message| message.contains("missing PR URL"))
         );
     }
 
@@ -2381,7 +2644,7 @@ mod tests {
         assert!(
             form.fields
                 .iter()
-                .any(|field| field.label == "Projet" && field.value == "ha")
+                .any(|field| field.label == "Project" && field.value == "ha")
         );
         assert!(
             form.fields
@@ -2405,7 +2668,7 @@ mod tests {
         assert!(
             form.fields
                 .iter()
-                .any(|field| field.label == "Projet" && field.value == "ha")
+                .any(|field| field.label == "Project" && field.value == "ha")
         );
         assert!(
             form.fields
@@ -2429,9 +2692,12 @@ mod tests {
 
         let form = app.form.expect("form");
         assert_eq!(form.template, FormTemplate::AdoSetState);
-        assert_eq!(field_value(&form, "Work items"), Some("42"));
-        assert_eq!(field_value(&form, "Projet"), Some("ha"));
-        assert_eq!(field_value(&form, "State"), Some("En réalisation"));
+        assert_eq!(field_value(&form, "Work item IDs"), Some("42"));
+        assert_eq!(field_value(&form, "Project"), Some("ha"));
+        assert_eq!(
+            field_value(&form, "Destination state"),
+            Some("En réalisation")
+        );
     }
 
     #[test]
@@ -2449,30 +2715,35 @@ mod tests {
         let form = app.form.expect("form");
         assert_eq!(form.template, FormTemplate::TaskStartPr);
         assert_eq!(field_value(&form, "Pull request"), Some("77"));
-        assert_eq!(field_value(&form, "Projet"), Some("ops"));
+        assert_eq!(field_value(&form, "Project"), Some("ops"));
         assert_eq!(field_value(&form, "Repository"), Some("tools"));
         assert!(
             app.messages
                 .iter()
-                .any(|message| message.contains("Workspace depuis PR guidé"))
+                .any(|message| message.contains("Guided PR workspace form"))
         );
     }
 
     #[test]
     fn options_selection_moves_and_clamps() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
-        app.selected_option = usize::MAX;
+        app.selected_menu_section = usize::MAX;
 
         app.open_options();
-        assert_eq!(app.selected_option, QUICK_OPTIONS.len() - 1);
+        assert_eq!(app.selected_menu_section, MENU_SECTIONS.len() - 1);
 
         app.move_option_up();
-        assert_eq!(app.selected_option, QUICK_OPTIONS.len() - 2);
+        assert_eq!(app.selected_menu_section, MENU_SECTIONS.len() - 2);
 
+        app.selected_menu_section = 0;
+        app.move_option_up();
+        assert_eq!(app.selected_menu_section, 0);
+
+        app.move_option_down();
+        assert_eq!(app.selected_menu_section, 1);
+
+        app.open_selected_menu_section();
         app.selected_option = 0;
-        app.move_option_up();
-        assert_eq!(app.selected_option, 0);
-
         app.move_option_down();
         assert_eq!(app.selected_option, 1);
     }
@@ -2484,12 +2755,29 @@ mod tests {
         assert!(app.run_core_quick_option(QuickOptionAction::ConfigShow));
 
         let detail = app.detail.expect("detail panel");
-        assert_eq!(detail.title(), "Configuration effective");
+        assert_eq!(detail.title(), "Effective configuration");
         let crate::model::DetailPanelContent::ConfigShow(report) = detail.content else {
             panic!("expected config show panel");
         };
         assert_eq!(report.root, "/tmp/missing-dw-root");
         assert!(app.history.entries.is_empty());
+    }
+
+    #[test]
+    fn config_detail_opened_from_menu_returns_to_menu_when_closed() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.open_options();
+
+        assert!(app.options_open);
+        assert!(app.run_core_quick_option(QuickOptionAction::ConfigShow));
+        assert!(app.options_open);
+        assert!(app.detail.is_some());
+
+        app.handle_detail_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .expect("close detail");
+
+        assert!(app.options_open);
+        assert!(app.detail.is_none());
     }
 
     #[test]
@@ -2505,7 +2793,7 @@ mod tests {
 
         assert_eq!(app.snapshot.config_doctor.root, "/tmp/missing-dw-root");
         let detail = app.detail.expect("detail panel");
-        assert_eq!(detail.title(), "Diagnostic configuration");
+        assert_eq!(detail.title(), "Configuration doctor");
         let crate::model::DetailPanelContent::ConfigDoctor(report) = detail.content else {
             panic!("expected config doctor panel");
         };
@@ -2521,7 +2809,7 @@ mod tests {
         assert!(app.run_core_quick_option(QuickOptionAction::AgentDoctor));
 
         let detail = app.detail.expect("detail panel");
-        assert_eq!(detail.title(), "Diagnostic agents");
+        assert_eq!(detail.title(), "Agent doctor");
         let crate::model::DetailPanelContent::AgentDoctor(report) = detail.content else {
             panic!("expected agent doctor panel");
         };
@@ -2537,11 +2825,11 @@ mod tests {
         assert!(app.run_inline_detail_action(&action));
 
         let detail = app.detail.expect("detail panel");
-        assert_eq!(detail.title(), "Guide DevWorkflow");
+        assert_eq!(detail.title(), "DevWorkflow guide");
         let crate::model::DetailPanelContent::Guide(lines) = detail.content else {
             panic!("expected guide panel");
         };
-        assert!(lines.iter().any(|line| line.contains("Onglet Composer")));
+        assert!(lines.iter().any(|line| line.contains("Composer")));
         assert!(app.history.entries.is_empty());
     }
 
@@ -2575,6 +2863,14 @@ mod tests {
             .expect("previous");
         assert_eq!(app.history.selected_entry, 0);
 
+        app.handle_history_output_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE))
+            .expect("right");
+        assert_eq!(app.history.selected_entry, 1);
+
+        app.handle_history_output_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE))
+            .expect("left");
+        assert_eq!(app.history.selected_entry, 0);
+
         app.handle_history_output_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE))
             .expect("end");
         assert_eq!(app.history.output_scroll, 2);
@@ -2591,11 +2887,68 @@ mod tests {
     }
 
     #[test]
+    fn modal_stack_returns_to_menu_after_nested_history_closes() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.open_options();
+        app.open_selected_menu_section();
+        app.open_history_output();
+
+        assert_eq!(
+            app.modal_stack_labels(),
+            vec!["menu", "menu-section", "history"]
+        );
+        assert!(app.options_open);
+        assert!(app.history.output_open);
+
+        app.handle_history_output_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .expect("close history");
+
+        assert_eq!(app.modal_stack_labels(), vec!["menu", "menu-section"]);
+        assert!(app.options_open);
+        assert!(!app.history.output_open);
+
+        app.close_top_modal();
+
+        assert_eq!(app.modal_stack_labels(), vec!["menu"]);
+        assert!(app.options_open);
+
+        app.close_top_modal();
+
+        assert!(app.modal_stack.is_empty());
+        assert!(!app.options_open);
+    }
+
+    #[test]
+    fn history_shortcut_opens_empty_journal_modal() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        assert!(app.history.entries.is_empty());
+
+        app.open_history_output();
+
+        assert!(app.history.output_open);
+        assert!(app.history.entries.is_empty());
+    }
+
+    #[test]
+    fn help_opens_as_modal_without_changing_view() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.view = View::Ado;
+
+        app.open_help_modal();
+
+        assert!(app.help_open);
+        assert_eq!(app.view, View::Ado);
+        app.handle_help_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE))
+            .expect("close help");
+        assert!(!app.help_open);
+    }
+
+    #[test]
     fn action_result_finishes_streaming_history_entry() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.history.start_running("Version".into());
         app.history
-            .append_running_line("Version", "Chargement...".into());
+            .append_running_line("Version", "Loading...".into());
 
         app.accept_action_result(
             "Version".into(),
@@ -2606,7 +2959,7 @@ mod tests {
                 display_label: "Version".into(),
                 status_label: "exit 0".into(),
                 success: true,
-                output: "Chargement...\nDev Workflow 2026.07.04".into(),
+                output: "Loading...\nDev Workflow 2026.07.04".into(),
             }),
         );
 
@@ -2615,37 +2968,37 @@ mod tests {
         assert_eq!(entry.status, "exit 0");
         assert_eq!(
             entry.output_preview,
-            ["Chargement...", "Dev Workflow 2026.07.04"]
+            ["Loading...", "Dev Workflow 2026.07.04"]
         );
     }
 
     #[test]
     fn report_action_result_opens_detail_panel_and_keeps_run_log() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
-        app.history.start_running("Mes work items · ha".into());
+        app.history.start_running("My work items · ha".into());
 
         app.accept_action_result(
-            "Mes work items · ha".into(),
+            "My work items · ha".into(),
             false,
             true,
             None,
             Ok(runner::CapturedActionRunResult {
-                display_label: "Mes work items · ha".into(),
+                display_label: "My work items · ha".into(),
                 status_label: "ok".into(),
                 success: true,
-                output: "Work items assignés\n#55264 Transmission automatique".into(),
+                output: "Assigned work items\n#55264 Transmission automatique".into(),
             }),
         );
 
         assert!(!app.history.output_open);
         let detail = app.detail.expect("detail panel");
-        assert_eq!(detail.title(), "Résultat · Mes work items · ha");
+        assert_eq!(detail.title(), "Result · My work items · ha");
         let crate::model::DetailPanelContent::OperationResult { lines, .. } = detail.content else {
             panic!("expected operation result panel");
         };
         assert!(lines.iter().any(|line| line.contains("#55264")));
         let entry = app.history.selected_entry().expect("entry");
-        assert_eq!(entry.request_label, "Mes work items · ha");
+        assert_eq!(entry.request_label, "My work items · ha");
         assert!(
             entry
                 .output_lines
@@ -2659,15 +3012,15 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         app.accept_action_result(
-            "Couleur · always".into(),
+            "Color · always".into(),
             true,
             false,
             Some(ActionEffect::ColorMode("always".into())),
             Ok(runner::CapturedActionRunResult {
-                display_label: "Couleur · always".into(),
+                display_label: "Color · always".into(),
                 status_label: "exit 0".into(),
                 success: true,
-                output: "Couleur   : always".into(),
+                output: "Color     : always".into(),
             }),
         );
 
@@ -2675,7 +3028,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|message| message == "Option appliquée dans le cockpit: couleur always")
+                .any(|message| message == "Cockpit option applied: color always")
         );
     }
 
@@ -2684,15 +3037,15 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         app.accept_action_result(
-            "Agent par défaut · codex".into(),
+            "Default agent · codex".into(),
             true,
             false,
             Some(ActionEffect::DefaultAgent("codex".into())),
             Ok(runner::CapturedActionRunResult {
-                display_label: "Agent par défaut · codex".into(),
+                display_label: "Default agent · codex".into(),
                 status_label: "exit 0".into(),
                 success: true,
-                output: "Agent par défaut: codex".into(),
+                output: "Default agent: codex".into(),
             }),
         );
 
@@ -2700,7 +3053,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|message| message == "Option appliquée dans le cockpit: agent codex")
+                .any(|message| message == "Cockpit option applied: agent codex")
         );
     }
 
@@ -2709,15 +3062,15 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         app.accept_action_result(
-            "Agent par défaut · CODEX-CLI".into(),
+            "Default agent · CODEX-CLI".into(),
             true,
             false,
             Some(ActionEffect::DefaultAgent("CODEX-CLI".into())),
             Ok(runner::CapturedActionRunResult {
-                display_label: "Agent par défaut · CODEX-CLI".into(),
+                display_label: "Default agent · CODEX-CLI".into(),
                 status_label: "exit 0".into(),
                 success: true,
-                output: "Agent par défaut: codex-cli".into(),
+                output: "Default agent: codex-cli".into(),
             }),
         );
 
@@ -2725,7 +3078,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|message| message == "Option appliquée dans le cockpit: agent codex-cli")
+                .any(|message| message == "Cockpit option applied: agent codex-cli")
         );
     }
 
@@ -2751,7 +3104,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|message| message == "Option appliquée dans le cockpit: root /tmp/new-root")
+                .any(|message| message == "Cockpit option applied: root /tmp/new-root")
         );
     }
 
@@ -2768,15 +3121,13 @@ mod tests {
                 display_label: "Task sync · /tmp/ws".into(),
                 status_label: "exit 0".into(),
                 success: true,
-                output: "Workspace synchronisé.".into(),
+                output: "Workspace synchronized.".into(),
             }),
         );
 
-        assert!(
-            app.messages
-                .iter()
-                .any(|message| message == "Rechargement du snapshot en arrière-plan...")
-        );
+        assert!(app.messages.iter().any(
+            |message| message == "Reloading snapshot, work items and PRs in the background..."
+        ));
         assert!(!app.reload_after_action_queue);
     }
 
@@ -2805,7 +3156,7 @@ mod tests {
         assert!(
             app.messages
                 .iter()
-                .any(|message| message.starts_with("Snapshot rechargé:"))
+                .any(|message| message.starts_with("Snapshot reloaded:"))
         );
     }
 
