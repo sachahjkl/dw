@@ -3,26 +3,28 @@ use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::{auth::require_token, run_blocking_ado, update_work_item_state_authenticated};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{AdoActionEvent, ProjectKey, WorkItemId};
+use dw_core::{
+    AdoActionEvent, DevWorkflowRoot, ProjectKey, WorkItemHistoryComment, WorkItemId, WorkItemState,
+};
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
 pub struct SetStateArgs {
     pub ids: Vec<WorkItemId>,
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub project: Option<ProjectKey>,
-    pub state: String,
-    pub history: Option<String>,
+    pub state: WorkItemState,
+    pub history: Option<WorkItemHistoryComment>,
     pub yes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SetStatePlanReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub project: ProjectKey,
     pub ids: Vec<WorkItemId>,
-    pub state: String,
-    pub history: String,
+    pub state: WorkItemState,
+    pub history: WorkItemHistoryComment,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -35,7 +37,7 @@ pub struct SetStateExecutionReport {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SetStateUpdate {
     pub id: WorkItemId,
-    pub state: String,
+    pub state: WorkItemState,
 }
 
 pub fn plan(args: SetStateArgs) -> Result<SetStatePlanReport> {
@@ -47,13 +49,9 @@ pub fn plan(args: SetStateArgs) -> Result<SetStatePlanReport> {
         history,
         yes: _,
     } = args;
-    let root = resolve_root(root.as_deref());
+    let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
         project.ok_or_else(|| anyhow::anyhow!("ado set-state requiert un projet configuré."))?;
-    let state = state.trim().to_string();
-    if state.is_empty() {
-        return Err(anyhow::anyhow!("ado set-state requiert un état non vide."));
-    }
     if ids.is_empty() {
         return Err(anyhow::anyhow!("Au moins un work item est requis."));
     }
@@ -63,7 +61,7 @@ pub fn plan(args: SetStateArgs) -> Result<SetStatePlanReport> {
         project: project_key,
         ids,
         state,
-        history: history.unwrap_or_else(|| "ado set-state".into()),
+        history: history.unwrap_or_default(),
     })
 }
 
@@ -75,8 +73,8 @@ pub async fn execute_with_events(
     plan: SetStatePlanReport,
     mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<SetStateExecutionReport> {
-    let projects = load_projects_config(&plan.root);
-    let workflow = load_workflow_config(&plan.root);
+    let projects = load_projects_config(plan.root.as_str());
+    let workflow = load_workflow_config(plan.root.as_str());
     let options = resolve_ado_options(&projects, &workflow, plan.project.as_str())?;
     let mut events = Vec::new();
     push_event(
@@ -86,7 +84,7 @@ pub async fn execute_with_events(
             project: Some(plan.project.clone()),
         },
     );
-    let token = require_token(load_auth_options(Some(&plan.root))?).await?;
+    let token = require_token(load_auth_options(Some(plan.root.as_str()))?).await?;
     push_event(
         &mut events,
         &mut emit,
@@ -104,7 +102,13 @@ pub async fn execute_with_events(
         let token = token.clone();
         let id_for_update = ado_id.clone();
         run_blocking_ado(move || {
-            update_work_item_state_authenticated(&options, &id_for_update, &state, &history, &token)
+            update_work_item_state_authenticated(
+                &options,
+                &id_for_update,
+                state.as_str(),
+                history.as_str(),
+                &token,
+            )
         })
         .await?;
         push_event(

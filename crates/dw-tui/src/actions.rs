@@ -2,7 +2,7 @@ use crate::model::{
     ActionRisk, TuiAction, TuiActionRequest, TuiDatabase, TuiSnapshot, WorkspaceAction,
     workspace_action,
 };
-use dw_core::{Agent, ConfigColorMode};
+use dw_core::{Agent, ConfigColorMode, DevWorkflowRoot, WorkItemState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdoItemAction {
@@ -303,7 +303,7 @@ pub fn selected_ado_action(
             let state = ado_start_state(snapshot, item)?;
             TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
                 ids: vec![dw_core::WorkItemId::from(item.id.clone())],
-                root: Some(snapshot.root.clone()),
+                root: Some(DevWorkflowRoot::from(snapshot.root.clone())),
                 project: Some(dw_core::ProjectKey::from(project.key.clone())),
                 state,
                 history: None,
@@ -332,9 +332,13 @@ pub fn selected_ado_action(
     })
 }
 
-fn ado_start_state(snapshot: &TuiSnapshot, item: &crate::model::AdoAssignedItem) -> Option<String> {
+fn ado_start_state(
+    snapshot: &TuiSnapshot,
+    item: &crate::model::AdoAssignedItem,
+) -> Option<WorkItemState> {
     let options = dw_workspace::task_start_options(&snapshot.workflow);
     dw_workspace::start_state(Some(&item.kind), &options)
+        .and_then(|state| WorkItemState::parse(state).ok())
 }
 
 pub fn selected_workspace_action(
@@ -699,8 +703,11 @@ mod tests {
                     args.project.as_ref().map(|project| project.as_str()),
                     Some("ha")
                 );
-                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
-                assert_eq!(args.state, "En réalisation");
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/dw")
+                );
+                assert_eq!(args.state.as_str(), "En réalisation");
                 assert!(args.yes);
             }
             _ => panic!("expected ado set-state request"),

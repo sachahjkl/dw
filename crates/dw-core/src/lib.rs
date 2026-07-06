@@ -459,6 +459,14 @@ impl WorkItemState {
         Self(value.into())
     }
 
+    pub fn parse(value: impl Into<String>) -> Result<Self, WorkItemStateParseError> {
+        let value = value.into().trim().to_string();
+        if value.is_empty() {
+            return Err(WorkItemStateParseError);
+        }
+        Ok(Self(value))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -477,6 +485,55 @@ impl From<&str> for WorkItemState {
 }
 
 impl fmt::Display for WorkItemState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkItemStateParseError;
+
+impl fmt::Display for WorkItemStateParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("état work item vide")
+    }
+}
+
+impl std::error::Error for WorkItemStateParseError {}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct WorkItemHistoryComment(String);
+
+impl WorkItemHistoryComment {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Default for WorkItemHistoryComment {
+    fn default() -> Self {
+        Self("ado set-state".into())
+    }
+}
+
+impl From<String> for WorkItemHistoryComment {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for WorkItemHistoryComment {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for WorkItemHistoryComment {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
     }
@@ -1209,11 +1266,11 @@ pub enum AdoActionEvent {
     },
     UpdatingWorkItemState {
         ids: Vec<WorkItemId>,
-        state: String,
+        state: WorkItemState,
     },
     UpdatedWorkItemState {
         id: WorkItemId,
-        state: String,
+        state: WorkItemState,
     },
 }
 

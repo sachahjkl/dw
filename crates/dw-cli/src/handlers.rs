@@ -1009,10 +1009,10 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             let plan = dw_ado_commands::commands::set_state::plan(
                 dw_ado_commands::commands::set_state::SetStateArgs {
                     ids: WorkItemId::parse_many(&id),
-                    root,
+                    root: root.map(DevWorkflowRoot::from),
                     project: project.map(ProjectKey::from),
-                    state,
-                    history,
+                    state: dw_core::WorkItemState::parse(state)?,
+                    history: history.map(dw_core::WorkItemHistoryComment::from),
                     yes: false,
                 },
             )?;

@@ -354,8 +354,11 @@ fn action_events_use_domain_id_types_not_primitive_id_strings() {
         "ids: Vec<String>",
         "project: String",
         "project: Option<String>",
+        "state: String",
         "LoadingWorkItem {\n        id: String",
         "LoadingWorkItemContext {\n        id: String",
+        "UpdatingWorkItemState {\n        ids: Vec<WorkItemId>,\n        state: String",
+        "UpdatedWorkItemState {\n        id: WorkItemId,\n        state: String",
     ] {
         assert!(
             !text.contains(forbidden),
@@ -366,6 +369,7 @@ fn action_events_use_domain_id_types_not_primitive_id_strings() {
     }
     for required in [
         "WorkItemId",
+        "WorkItemState",
         "PullRequestId",
         "AdoRepositoryName",
         "ProjectKey",
@@ -599,6 +603,11 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             &[
                 "pub id: String",
                 "pub ids: Vec<String>",
+                "pub root: Option<String>",
+                "pub root: String",
+                "pub state: String",
+                "pub history: Option<String>",
+                "pub history: String",
                 "set_state_confirmation_prompt",
             ],
         ),
@@ -623,6 +632,43 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn ado_set_state_contract_uses_typed_root_state_and_history() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-ado-commands/src/commands/set_state.rs");
+    let text = fs::read_to_string(&path).expect("read set-state source");
+    for required in [
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "WorkItemHistoryComment",
+        "WorkItemId",
+        "WorkItemState",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub root: DevWorkflowRoot",
+        "pub project: Option<ProjectKey>",
+        "pub project: ProjectKey",
+        "pub ids: Vec<WorkItemId>",
+        "pub state: WorkItemState",
+        "pub history: Option<WorkItemHistoryComment>",
+        "pub history: WorkItemHistoryComment",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed ADO set-state contract token `{}`",
+            path.display(),
+            required
+        );
+    }
+
+    let core = fs::read_to_string(repo.join("crates/dw-core/src/lib.rs")).expect("read core lib");
+    for required in ["pub struct WorkItemHistoryComment", "state: WorkItemState"] {
+        assert!(
+            core.contains(required),
+            "dw-core should expose typed set-state event/value token `{required}`"
+        );
     }
 }
 

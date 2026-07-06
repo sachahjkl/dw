@@ -363,10 +363,10 @@ impl FormState {
             FormTemplate::AdoSetState => {
                 TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
                     ids: dw_core::WorkItemId::parse_many(&value("Work item IDs")?),
-                    root: Some(root.into()),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: value("Project").map(dw_core::ProjectKey::from),
-                    state: value("Destination state")?,
-                    history: value("ADO note"),
+                    state: dw_core::WorkItemState::parse(value("Destination state")?).ok()?,
+                    history: value("ADO note").map(dw_core::WorkItemHistoryComment::from),
                     yes: true,
                 })
             }
@@ -1214,13 +1214,21 @@ mod tests {
                         dw_core::WorkItemId::from("43")
                     ]
                 );
-                assert_eq!(args.state, "En réalisation");
+                assert_eq!(args.state.as_str(), "En réalisation");
                 assert_eq!(
                     args.project.as_ref().map(|project| project.as_str()),
                     Some("ha")
                 );
-                assert_eq!(args.history.as_deref(), Some("tui"));
-                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+                assert_eq!(
+                    args.history
+                        .as_ref()
+                        .map(dw_core::WorkItemHistoryComment::as_str),
+                    Some("tui")
+                );
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/dw")
+                );
                 assert!(args.yes);
             }
             _ => panic!("expected ado set-state request"),

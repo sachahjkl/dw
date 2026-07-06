@@ -1861,7 +1861,7 @@ impl App {
             AdoItemAction::SetStartState,
         )
         .and_then(|action| match action.request {
-            TuiActionRequest::AdoSetState(args) => Some(args.state),
+            TuiActionRequest::AdoSetState(args) => Some(args.state.to_string()),
             _ => None,
         });
         for field in &mut form.fields {
