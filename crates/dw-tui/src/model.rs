@@ -11,6 +11,8 @@ use dw_core::{
 };
 use dw_workspace::{TaskListItem, plan_task_prune, task_list};
 
+const GUIDE_DETAIL_LINE_COUNT: usize = 29;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Dashboard,
@@ -256,7 +258,7 @@ pub struct DetailPanel {
 
 #[derive(Debug, Clone)]
 pub enum DetailPanelContent {
-    Guide(Vec<String>),
+    Guide,
     ConfigShow(ConfigShow),
     ConfigDoctor(ConfigDoctorReport),
     AgentDoctor(dw_agent::command::AgentDoctorReport),
@@ -268,9 +270,9 @@ pub enum DetailPanelContent {
 }
 
 impl DetailPanel {
-    pub fn guide(lines: Vec<String>) -> Self {
+    pub fn guide() -> Self {
         Self {
-            content: DetailPanelContent::Guide(lines),
+            content: DetailPanelContent::Guide,
             scroll: 0,
         }
     }
@@ -313,7 +315,7 @@ impl DetailPanel {
 
     pub fn title(&self) -> String {
         match &self.content {
-            DetailPanelContent::Guide(_) => "DevWorkflow guide".into(),
+            DetailPanelContent::Guide => "DevWorkflow guide".into(),
             DetailPanelContent::ConfigShow(_) => "Effective configuration".into(),
             DetailPanelContent::ConfigDoctor(_) => "Configuration doctor".into(),
             DetailPanelContent::AgentDoctor(_) => "Agent doctor".into(),
@@ -341,7 +343,7 @@ impl DetailPanel {
 impl DetailPanelContent {
     fn line_count(&self) -> usize {
         match self {
-            DetailPanelContent::Guide(lines) => lines.len(),
+            DetailPanelContent::Guide => GUIDE_DETAIL_LINE_COUNT,
             DetailPanelContent::ConfigShow(_) => 10,
             DetailPanelContent::ConfigDoctor(report) => {
                 let header = 4;

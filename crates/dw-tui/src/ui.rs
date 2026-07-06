@@ -14,8 +14,8 @@ use crate::model::{
     ActionRisk, CockpitSeverity, DetailPanelContent, TuiAction, View, WorkspaceAction,
 };
 use crate::ui_text::{
-    action_builder_preview_lines, confirmation_lines, form_preview_lines, help_lines,
-    history_journal_lines, option_active, options_summary_lines, state_modal_lines,
+    action_builder_preview_lines, confirmation_lines, form_preview_lines, guide_detail_lines,
+    help_lines, history_journal_lines, option_active, options_summary_lines, state_modal_lines,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1073,7 +1073,7 @@ fn render_detail_panel(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
 fn detail_panel_lines(content: &DetailPanelContent) -> Vec<String> {
     match content {
-        DetailPanelContent::Guide(lines) => lines.clone(),
+        DetailPanelContent::Guide => guide_detail_lines(),
         DetailPanelContent::ConfigShow(report) => config_show_detail_lines(report),
         DetailPanelContent::ConfigDoctor(report) => config_doctor_detail_lines(report),
         DetailPanelContent::AgentDoctor(report) => agent_doctor_detail_lines(report),

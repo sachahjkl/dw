@@ -17,7 +17,7 @@ use crate::model::{
     ActionEffect, ActionRisk, AdoAssignedProject, CockpitItem, CockpitSeverity, DetailPanel,
     TuiAction, TuiActionRequest, TuiPullRequest, TuiSnapshot, View, WorkspaceAction,
 };
-use crate::ui_text::{guide_detail_lines, history_journal_lines};
+use crate::ui_text::history_journal_lines;
 use crate::{runner, ui};
 
 pub const MENU_SECTIONS: &[MenuSection] = &[
@@ -1275,7 +1275,7 @@ impl App {
     async fn run_inline_detail_action(&mut self, action: &TuiAction) -> Result<bool> {
         match &action.request {
             TuiActionRequest::Guide => {
-                self.open_detail_panel(DetailPanel::guide(guide_detail_lines()));
+                self.open_detail_panel(DetailPanel::guide());
                 self.messages.push("Quick start opened.".into());
                 Ok(true)
             }
@@ -3126,10 +3126,9 @@ mod tests {
 
         let detail = app.detail.expect("detail panel");
         assert_eq!(detail.title(), "DevWorkflow guide");
-        let crate::model::DetailPanelContent::Guide(lines) = detail.content else {
+        let crate::model::DetailPanelContent::Guide = detail.content else {
             panic!("expected guide panel");
         };
-        assert!(lines.iter().any(|line| line.contains("Composer")));
         assert!(app.history.entries.is_empty());
     }
 
