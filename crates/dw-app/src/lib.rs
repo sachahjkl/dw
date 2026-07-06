@@ -368,9 +368,12 @@ pub async fn run_action(
         DwActionRequest::TaskFinish(args) => {
             let plan = dw_task::finish::finish_plan(args.clone())?;
             if args.mode.executes() {
-                Ok(task_result(TaskActionResult::FinishExecution(
-                    dw_task::finish::execute_finish(plan, &args).await?,
-                )))
+                let execution =
+                    dw_task::finish::execute_finish_with_events(plan, &args, &mut |event| {
+                        emit(DwActionEvent::Task(event))
+                    })
+                    .await?;
+                Ok(task_result(TaskActionResult::FinishExecution(execution)))
             } else {
                 Ok(task_result(TaskActionResult::FinishPlan(plan)))
             }

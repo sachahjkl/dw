@@ -522,6 +522,54 @@ fn migrated_task_modules_do_not_depend_on_cli_or_terminal_rendering() {
 }
 
 #[test]
+fn domain_progress_contracts_are_structured_not_line_helpers() {
+    let repo = repo_root();
+    let checked_files = [
+        repo.join("crates/dw-task/src/finish.rs"),
+        repo.join("crates/dw-task/src/lifecycle.rs"),
+        repo.join("crates/dw-task/src/prune.rs"),
+        repo.join("crates/dw-task/src/start.rs"),
+        repo.join("crates/dw-task/src/work_item.rs"),
+        repo.join("crates/dw-ado-commands/src/commands/changelog.rs"),
+        repo.join("crates/dw-ado-commands/src/commands/work_item.rs"),
+    ];
+
+    for file in checked_files {
+        let text = fs::read_to_string(&file).expect("read source file");
+        for forbidden in [
+            "events: Vec<String>",
+            "pub events: Vec<String>",
+            "finish_verification_start_line",
+            "finish_git_start_line",
+            "start_pr_fetch_line",
+            "start_pr_resolved_line",
+            "work_item_fetch_line",
+            "sync_fetch_line",
+            "teardown_git_progress_line",
+            "changelog_git_extract_line",
+            "changelog_pr_fetch_line",
+            "changelog_items_fetch_line",
+            "pub message: String",
+            "pub action: String",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "{} contains forbidden string progress contract `{}`",
+                file.display(),
+                forbidden
+            );
+        }
+    }
+
+    let repo_text =
+        fs::read_to_string(repo.join("crates/dw-task/src/repo.rs")).expect("read repo source file");
+    assert!(
+        !repo_text.contains("teardown_git_progress_line"),
+        "dw-task repo contains forbidden string progress helper `teardown_git_progress_line`"
+    );
+}
+
+#[test]
 fn migrated_ado_command_modules_do_not_render_or_prompt() {
     let repo = repo_root();
     for relative in [

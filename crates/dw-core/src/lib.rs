@@ -408,11 +408,86 @@ impl fmt::Display for AdoRepositoryName {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct WorkspaceRepositoryName(String);
+
+impl WorkspaceRepositoryName {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for WorkspaceRepositoryName {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for WorkspaceRepositoryName {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for WorkspaceRepositoryName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GitOperation {
+    CommitAndPush,
+    Push,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TaskActionEvent {
-    ResolvingPullRequestWorkItems { pull_request_id: PullRequestId },
-    ResolvedPullRequestWorkItems { work_item_ids: Vec<WorkItemId> },
+    ResolvingPullRequestWorkItems {
+        pull_request_id: PullRequestId,
+    },
+    ResolvedPullRequestWorkItems {
+        work_item_ids: Vec<WorkItemId>,
+    },
+    VerifyingFinish {
+        pull_request_candidate_count: usize,
+    },
+    FinishVerificationCompleted,
+    RunningGitOperation {
+        operation: GitOperation,
+        repository_count: usize,
+    },
+    RunningRepositoryGitOperation {
+        repository: WorkspaceRepositoryName,
+        operation: GitOperation,
+    },
+    GitOperationCompleted {
+        operation: GitOperation,
+    },
+    SkippingPullRequestCreation,
+    AuthenticatingAdoForPullRequests {
+        pull_request_candidate_count: usize,
+    },
+    CheckingActivePullRequest {
+        repository: WorkspaceRepositoryName,
+    },
+    CreatingPullRequest {
+        repository: WorkspaceRepositoryName,
+    },
+    PullRequestWorkItemLinkSkipped {
+        work_item_id: WorkItemId,
+        error: String,
+    },
+    UpdatingFinishWorkItemStates {
+        work_item_ids: Vec<WorkItemId>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

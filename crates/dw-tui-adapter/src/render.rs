@@ -10,7 +10,7 @@ use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, R
 use dw_contracts::{TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightReport};
 use dw_core::{
     AdoActionEvent, AgentActionEvent, ConfigActionEvent, DbActionEvent, DwActionEvent,
-    SecretActionEvent, TaskActionEvent, UpgradeActionEvent,
+    GitOperation, SecretActionEvent, TaskActionEvent, UpgradeActionEvent,
 };
 use dw_db::{QueryResult, SqlGuardResult};
 use dw_doctor::{DoctorCheck, DoctorReport};
@@ -646,6 +646,57 @@ fn task_action_event_line(event: &TaskActionEvent) -> String {
             };
             format!("Task [resolved-work-items] {ids}")
         }
+        TaskActionEvent::VerifyingFinish {
+            pull_request_candidate_count,
+        } => format!("Task [finish-verify] candidates={pull_request_candidate_count}"),
+        TaskActionEvent::FinishVerificationCompleted => "Task [finish-verify-completed]".into(),
+        TaskActionEvent::RunningGitOperation {
+            operation,
+            repository_count,
+        } => format!(
+            "Task [finish-git] operation={} repositories={repository_count}",
+            git_operation_key(*operation)
+        ),
+        TaskActionEvent::RunningRepositoryGitOperation {
+            repository,
+            operation,
+        } => format!(
+            "Task [finish-git-repository] repository={repository} operation={}",
+            git_operation_key(*operation)
+        ),
+        TaskActionEvent::GitOperationCompleted { operation } => {
+            format!(
+                "Task [finish-git-completed] operation={}",
+                git_operation_key(*operation)
+            )
+        }
+        TaskActionEvent::SkippingPullRequestCreation => "Task [finish-skip-pr]".into(),
+        TaskActionEvent::AuthenticatingAdoForPullRequests {
+            pull_request_candidate_count,
+        } => format!("Task [finish-ado-auth] candidates={pull_request_candidate_count}"),
+        TaskActionEvent::CheckingActivePullRequest { repository } => {
+            format!("Task [finish-check-pr] repository={repository}")
+        }
+        TaskActionEvent::CreatingPullRequest { repository } => {
+            format!("Task [finish-create-pr] repository={repository}")
+        }
+        TaskActionEvent::PullRequestWorkItemLinkSkipped {
+            work_item_id,
+            error,
+        } => format!("Task [finish-link-skipped] work_item=#{work_item_id} error={error}"),
+        TaskActionEvent::UpdatingFinishWorkItemStates { work_item_ids } => {
+            format!(
+                "Task [finish-update-work-items] {}",
+                join_display(work_item_ids)
+            )
+        }
+    }
+}
+
+fn git_operation_key(operation: GitOperation) -> &'static str {
+    match operation {
+        GitOperation::CommitAndPush => "commit-and-push",
+        GitOperation::Push => "push",
     }
 }
 
@@ -1009,7 +1060,7 @@ pub fn task_prune_plan_lines(report: &dw_task::prune::PrunePlanReport) -> Vec<St
                 "- {} [{}] {}",
                 item.workspace,
                 prune_sync_status_label(&item.status),
-                item.message
+                prune_sync_detail_label(&item.detail)
             ));
         }
     }
@@ -1388,7 +1439,7 @@ pub fn task_start_pr_plan_lines(report: &dw_task::start::StartPrPlanReport) -> V
                 report.repositories.join(", ")
             }
         ),
-        dw_task::start::start_pr_resolved_line(&report.work_item_ids),
+        task_start_pr_resolved_line(&report.work_item_ids),
         String::new(),
     ];
     lines.extend(task_start_plan_lines(&report.start));
@@ -1462,7 +1513,12 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
     if !report.events.is_empty() {
         lines.push(String::new());
         lines.push("Events".into());
-        lines.extend(report.events.iter().map(|event| format!("- {event}")));
+        lines.extend(
+            report
+                .events
+                .iter()
+                .map(|event| format!("- {}", task_action_event_line(event))),
+        );
     }
     if !report.verification_results.is_empty() {
         lines.push(String::new());
@@ -1480,7 +1536,9 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
         for action in &report.git_actions {
             lines.push(format!(
                 "- {}: {} ({})",
-                action.repository, action.action, action.path
+                action.repository,
+                git_operation_key(action.operation),
+                action.path
             ));
         }
     }
@@ -1495,7 +1553,7 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
         lines.push(String::new());
         lines.push("Work items ADO".into());
         for update in &report.work_item_updates {
-            lines.push(format!("ADO item {}: {}", update.label, update.message));
+            lines.push(finish_work_item_update_line(update));
         }
     }
     if report.git_actions.is_empty()
@@ -1506,6 +1564,39 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
         lines.push("Nothing to finish.".into());
     }
     lines
+}
+
+fn task_start_pr_resolved_line(work_item_ids: &[String]) -> String {
+    match work_item_ids.len() {
+        0 => "No work item linked to the PR.".into(),
+        1 => format!("PR linked to work item #{}.", work_item_ids[0]),
+        count => format!(
+            "PR linked to {count} work items: {}.",
+            work_item_ids
+                .iter()
+                .map(|id| format!("#{id}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn finish_work_item_update_line(update: &dw_task::finish::FinishWorkItemStateUpdate) -> String {
+    match update.outcome {
+        dw_task::finish::FinishWorkItemStateOutcome::UnsupportedWorkItemType => {
+            format!("ADO item {}: state unchanged for this type", update.label)
+        }
+        dw_task::finish::FinishWorkItemStateOutcome::AlreadyInTargetState => format!(
+            "ADO item {}: already in state {}",
+            update.label,
+            update.target_state.as_deref().unwrap_or("target")
+        ),
+        dw_task::finish::FinishWorkItemStateOutcome::Updated => format!(
+            "ADO item {}: state -> {}",
+            update.label,
+            update.target_state.as_deref().unwrap_or("target")
+        ),
+    }
 }
 
 pub fn task_finish_dry_run_hint(no_changes: bool, create_pr: bool) -> &'static str {
@@ -1655,8 +1746,19 @@ fn finish_pull_request_line(result: &dw_task::finish::FinishPullRequestResult) -
         dw_task::finish::FinishPullRequestAction::Skipped => format!(
             "PR skipped for {}: {}",
             result.repository,
-            result.message.as_deref().unwrap_or("unknown reason")
+            finish_pull_request_skip_reason_label(result.skip_reason)
         ),
+    }
+}
+
+fn finish_pull_request_skip_reason_label(
+    reason: Option<dw_task::finish::FinishPullRequestSkipReason>,
+) -> &'static str {
+    match reason {
+        Some(dw_task::finish::FinishPullRequestSkipReason::MissingAdoRepository) => {
+            "missing azureDevOpsRepository"
+        }
+        None => "unknown reason",
     }
 }
 
@@ -1960,6 +2062,18 @@ fn prune_sync_status_label(status: &dw_task::prune::PruneSyncStatus) -> &'static
     match status {
         dw_task::prune::PruneSyncStatus::Skipped => "skipped",
         dw_task::prune::PruneSyncStatus::Synced => "synced",
+    }
+}
+
+fn prune_sync_detail_label(detail: &dw_task::prune::PruneSyncDetail) -> String {
+    match detail {
+        dw_task::prune::PruneSyncDetail::AuthUnavailable { error } => {
+            format!("auth unavailable: {error}")
+        }
+        dw_task::prune::PruneSyncDetail::SyncFailed { error } => error.clone(),
+        dw_task::prune::PruneSyncDetail::Synced { work_items } => {
+            format_current_work_items(work_items)
+        }
     }
 }
 

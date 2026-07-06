@@ -4,7 +4,7 @@ use dw_ado_commands::auth::{
 use dw_agent::command::{AgentDoctorCheck, AgentDoctorReport};
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
 use dw_contracts::{TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightReport};
-use dw_core::AdoActionEvent;
+use dw_core::{AdoActionEvent, GitOperation, TaskActionEvent};
 use dw_db::{QueryResult, SqlGuardResult};
 use dw_doctor::{DoctorCheck, DoctorReport};
 use dw_secret::command::{SecretDeleteReport, SecretGetReport, SecretSetReport};
@@ -368,6 +368,83 @@ pub fn ado_action_event_line(event: &AdoActionEvent) -> String {
         AdoActionEvent::UpdatedWorkItemState { id, state } => {
             format!("ADO état changé: #{id} -> {state}")
         }
+    }
+}
+
+pub fn task_action_event_line(event: &TaskActionEvent) -> String {
+    match event {
+        TaskActionEvent::ResolvingPullRequestWorkItems { pull_request_id } => {
+            format!("Task PR: résolution des work items liés à #{pull_request_id}")
+        }
+        TaskActionEvent::ResolvedPullRequestWorkItems { work_item_ids } => {
+            format!("Task PR: work items résolus {}", format_ids(work_item_ids))
+        }
+        TaskActionEvent::VerifyingFinish {
+            pull_request_candidate_count,
+        } => format!(
+            "Task finish: vérification avant finish pour {pull_request_candidate_count} PR candidate(s)"
+        ),
+        TaskActionEvent::FinishVerificationCompleted => "Task finish: vérification terminée".into(),
+        TaskActionEvent::RunningGitOperation {
+            operation,
+            repository_count,
+        } => format!(
+            "Task finish: git {} sur {repository_count} repository(s)",
+            git_operation_label(*operation)
+        ),
+        TaskActionEvent::RunningRepositoryGitOperation {
+            repository,
+            operation,
+        } => format!(
+            "Task finish: {} {}",
+            repository,
+            git_operation_label(*operation)
+        ),
+        TaskActionEvent::GitOperationCompleted { operation } => {
+            format!(
+                "Task finish: git {} terminé",
+                git_operation_label(*operation)
+            )
+        }
+        TaskActionEvent::SkippingPullRequestCreation => {
+            "Task finish: création de PR ignorée".into()
+        }
+        TaskActionEvent::AuthenticatingAdoForPullRequests {
+            pull_request_candidate_count,
+        } => format!(
+            "Task finish: connexion ADO pour {pull_request_candidate_count} PR candidate(s)"
+        ),
+        TaskActionEvent::CheckingActivePullRequest { repository } => {
+            format!("Task finish: vérification PR active pour {repository}")
+        }
+        TaskActionEvent::CreatingPullRequest { repository } => {
+            format!("Task finish: création PR ADO pour {repository}")
+        }
+        TaskActionEvent::PullRequestWorkItemLinkSkipped {
+            work_item_id,
+            error,
+        } => format!("Task finish: lien PR/work item #{work_item_id} ignoré ({error})"),
+        TaskActionEvent::UpdatingFinishWorkItemStates { work_item_ids } => {
+            format!("Task finish: mise à jour ADO {}", format_ids(work_item_ids))
+        }
+    }
+}
+
+fn format_ids<T: ToString>(ids: &[T]) -> String {
+    if ids.is_empty() {
+        "aucun".into()
+    } else {
+        ids.iter()
+            .map(|id| format!("#{}", id.to_string()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+fn git_operation_label(operation: GitOperation) -> &'static str {
+    match operation {
+        GitOperation::CommitAndPush => "commit + push",
+        GitOperation::Push => "push",
     }
 }
 
@@ -789,7 +866,7 @@ pub fn task_prune_plan_lines(report: &dw_task::prune::PrunePlanReport) -> Vec<St
                 "- {} [{}] {}",
                 item.workspace,
                 prune_sync_status_label(&item.status),
-                item.message
+                prune_sync_detail_label(&item.detail)
             ));
         }
     }
@@ -1168,7 +1245,7 @@ pub fn task_start_pr_plan_lines(report: &dw_task::start::StartPrPlanReport) -> V
                 report.repositories.join(", ")
             }
         ),
-        dw_task::start::start_pr_resolved_line(&report.work_item_ids),
+        task_start_pr_resolved_line(&report.work_item_ids),
         String::new(),
     ];
     lines.extend(task_start_plan_lines(&report.start));
@@ -1242,7 +1319,12 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
     if !report.events.is_empty() {
         lines.push(String::new());
         lines.push("Événements".into());
-        lines.extend(report.events.iter().map(|event| format!("- {event}")));
+        lines.extend(
+            report
+                .events
+                .iter()
+                .map(|event| format!("- {}", task_action_event_line(event))),
+        );
     }
     if !report.verification_results.is_empty() {
         lines.push(String::new());
@@ -1260,7 +1342,9 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
         for action in &report.git_actions {
             lines.push(format!(
                 "- {}: {} ({})",
-                action.repository, action.action, action.path
+                action.repository,
+                git_operation_label(action.operation),
+                action.path
             ));
         }
     }
@@ -1275,7 +1359,7 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
         lines.push(String::new());
         lines.push("Work items ADO".into());
         for update in &report.work_item_updates {
-            lines.push(format!("ADO item {}: {}", update.label, update.message));
+            lines.push(finish_work_item_update_line(update));
         }
     }
     if report.git_actions.is_empty()
@@ -1286,6 +1370,39 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
         lines.push("Rien à terminer.".into());
     }
     lines
+}
+
+fn task_start_pr_resolved_line(work_item_ids: &[String]) -> String {
+    match work_item_ids.len() {
+        0 => "Aucun work item lié à la PR.".into(),
+        1 => format!("PR liée au work item #{}.", work_item_ids[0]),
+        count => format!(
+            "PR liée à {count} work items: {}.",
+            work_item_ids
+                .iter()
+                .map(|id| format!("#{id}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn finish_work_item_update_line(update: &dw_task::finish::FinishWorkItemStateUpdate) -> String {
+    match update.outcome {
+        dw_task::finish::FinishWorkItemStateOutcome::UnsupportedWorkItemType => {
+            format!("ADO item {}: état inchangé pour ce type", update.label)
+        }
+        dw_task::finish::FinishWorkItemStateOutcome::AlreadyInTargetState => format!(
+            "ADO item {}: déjà en état {}",
+            update.label,
+            update.target_state.as_deref().unwrap_or("cible")
+        ),
+        dw_task::finish::FinishWorkItemStateOutcome::Updated => format!(
+            "ADO item {}: état -> {}",
+            update.label,
+            update.target_state.as_deref().unwrap_or("cible")
+        ),
+    }
 }
 
 pub fn task_finish_dry_run_hint(no_changes: bool, create_pr: bool) -> &'static str {
@@ -1435,8 +1552,19 @@ fn finish_pull_request_line(result: &dw_task::finish::FinishPullRequestResult) -
         dw_task::finish::FinishPullRequestAction::Skipped => format!(
             "PR ignorée pour {}: {}",
             result.repository,
-            result.message.as_deref().unwrap_or("raison inconnue")
+            finish_pull_request_skip_reason_label(result.skip_reason)
         ),
+    }
+}
+
+fn finish_pull_request_skip_reason_label(
+    reason: Option<dw_task::finish::FinishPullRequestSkipReason>,
+) -> &'static str {
+    match reason {
+        Some(dw_task::finish::FinishPullRequestSkipReason::MissingAdoRepository) => {
+            "azureDevOpsRepository manquant"
+        }
+        None => "raison inconnue",
     }
 }
 
@@ -1740,6 +1868,18 @@ fn prune_sync_status_label(status: &dw_task::prune::PruneSyncStatus) -> &'static
     match status {
         dw_task::prune::PruneSyncStatus::Skipped => "ignoré",
         dw_task::prune::PruneSyncStatus::Synced => "synchronisé",
+    }
+}
+
+fn prune_sync_detail_label(detail: &dw_task::prune::PruneSyncDetail) -> String {
+    match detail {
+        dw_task::prune::PruneSyncDetail::AuthUnavailable { error } => {
+            format!("auth indisponible: {error}")
+        }
+        dw_task::prune::PruneSyncDetail::SyncFailed { error } => error.clone(),
+        dw_task::prune::PruneSyncDetail::Synced { work_items } => {
+            format_current_work_items(work_items)
+        }
     }
 }
 

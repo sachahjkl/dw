@@ -8,6 +8,7 @@ use dw_ado::{
     update_work_item_state_authenticated,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
+use dw_core::{GitOperation, TaskActionEvent, WorkItemId};
 use dw_git::{RepositoryStatus, commit_repository, push_repository, repository_status};
 use dw_workspace::{
     WorkspaceHandoffSummary, WorkspaceManifest, build_commit_message, ensure_verification_passed,
@@ -67,7 +68,7 @@ pub struct FinishTargetStatus {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FinishExecutionReport {
     pub plan: FinishPlanReport,
-    pub events: Vec<String>,
+    pub events: Vec<TaskActionEvent>,
     #[serde(rename = "verificationResults")]
     pub verification_results: Vec<dw_workspace::VerificationResult>,
     #[serde(rename = "gitActions")]
@@ -81,7 +82,7 @@ pub struct FinishExecutionReport {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FinishGitAction {
     pub repository: String,
-    pub action: String,
+    pub operation: GitOperation,
     pub path: String,
 }
 
@@ -92,7 +93,8 @@ pub struct FinishPullRequestResult {
     pub url: Option<String>,
     #[serde(rename = "pullRequestId")]
     pub pull_request_id: Option<i64>,
-    pub message: Option<String>,
+    #[serde(rename = "skipReason")]
+    pub skip_reason: Option<FinishPullRequestSkipReason>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -101,6 +103,12 @@ pub enum FinishPullRequestAction {
     Created,
     Existing,
     Skipped,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FinishPullRequestSkipReason {
+    MissingAdoRepository,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -113,7 +121,15 @@ pub struct FinishWorkItemStateUpdate {
     #[serde(rename = "targetState")]
     pub target_state: Option<String>,
     pub changed: bool,
-    pub message: String,
+    pub outcome: FinishWorkItemStateOutcome,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FinishWorkItemStateOutcome {
+    UnsupportedWorkItemType,
+    AlreadyInTargetState,
+    Updated,
 }
 
 pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
@@ -191,6 +207,14 @@ pub async fn execute_finish(
     plan: FinishPlanReport,
     args: &FinishArgs,
 ) -> Result<FinishExecutionReport> {
+    execute_finish_with_events(plan, args, |_| {}).await
+}
+
+pub async fn execute_finish_with_events(
+    plan: FinishPlanReport,
+    args: &FinishArgs,
+    mut emit: impl FnMut(TaskActionEvent),
+) -> Result<FinishExecutionReport> {
     if plan.create_pr && plan.skip_ado {
         anyhow::bail!("La création de PR ne peut pas être combinée avec le mode sans ADO.");
     }
@@ -210,48 +234,97 @@ pub async fn execute_finish(
     let mut work_item_updates = Vec::new();
 
     if !args.skip_verify && finish_options.run_verification {
-        events.push(finish_verification_start_line(
-            plan.pull_request_candidates.len(),
-        ));
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::VerifyingFinish {
+                pull_request_candidate_count: plan.pull_request_candidates.len(),
+            },
+        );
         verification_results = run_verification(&finish_options, &plan.pull_request_candidates);
         ensure_verification_passed(&verification_results)?;
-        events.push("Vérification terminée.".into());
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::FinishVerificationCompleted,
+        );
     }
 
     let changed = changed_targets(&plan);
     let unpushed = unpushed_targets(&plan);
     if !changed.is_empty() {
-        events.push(finish_git_start_line(changed.len(), "commit + push"));
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::RunningGitOperation {
+                operation: GitOperation::CommitAndPush,
+                repository_count: changed.len(),
+            },
+        );
         for target in changed {
-            events.push(format!(
-                "Repository {}: commit + push...",
-                target.target.repository
-            ));
+            push_event(
+                &mut events,
+                &mut emit,
+                TaskActionEvent::RunningRepositoryGitOperation {
+                    repository: target.target.repository.clone().into(),
+                    operation: GitOperation::CommitAndPush,
+                },
+            );
             commit_repository(&target.target.path, &plan.commit_message)?;
             push_repository(&target.target.path, &plan.manifest.branch_name)?;
             git_actions.push(FinishGitAction {
                 repository: target.target.repository.clone(),
-                action: "commit + push".into(),
+                operation: GitOperation::CommitAndPush,
                 path: target.target.path.clone(),
             });
         }
-        events.push("Commits/push terminés.".into());
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::GitOperationCompleted {
+                operation: GitOperation::CommitAndPush,
+            },
+        );
     } else if !unpushed.is_empty() {
-        events.push(finish_git_start_line(unpushed.len(), "push"));
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::RunningGitOperation {
+                operation: GitOperation::Push,
+                repository_count: unpushed.len(),
+            },
+        );
         for target in unpushed {
-            events.push(format!("Repository {}: push...", target.target.repository));
+            push_event(
+                &mut events,
+                &mut emit,
+                TaskActionEvent::RunningRepositoryGitOperation {
+                    repository: target.target.repository.clone().into(),
+                    operation: GitOperation::Push,
+                },
+            );
             push_repository(&target.target.path, &plan.manifest.branch_name)?;
             git_actions.push(FinishGitAction {
                 repository: target.target.repository.clone(),
-                action: "push".into(),
+                operation: GitOperation::Push,
                 path: target.target.path.clone(),
             });
         }
-        events.push("Push terminé.".into());
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::GitOperationCompleted {
+                operation: GitOperation::Push,
+            },
+        );
     }
 
     if !plan.create_pr {
-        events.push("PR non créée. Relancer en mode création de PR pour ouvrir les PR ADO.".into());
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::SkippingPullRequestCreation,
+        );
         return Ok(FinishExecutionReport {
             plan,
             events,
@@ -262,10 +335,13 @@ pub async fn execute_finish(
         });
     }
 
-    events.push(format!(
-        "Connexion Azure DevOps pour {} PR candidate(s)...",
-        plan.pull_request_candidates.len()
-    ));
+    push_event(
+        &mut events,
+        &mut emit,
+        TaskActionEvent::AuthenticatingAdoForPullRequests {
+            pull_request_candidate_count: plan.pull_request_candidates.len(),
+        },
+    );
     let mut options = resolve_ado_options(&projects, &workflow, &plan.manifest.project)?;
     if options.project.trim().is_empty() {
         options.project = plan.manifest.project.clone();
@@ -281,14 +357,17 @@ pub async fn execute_finish(
                 action: FinishPullRequestAction::Skipped,
                 url: None,
                 pull_request_id: None,
-                message: Some("azureDevOpsRepository manquant.".into()),
+                skip_reason: Some(FinishPullRequestSkipReason::MissingAdoRepository),
             });
             continue;
         };
-        events.push(format!(
-            "Repository {}: vérification PR active...",
-            candidate.repository
-        ));
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::CheckingActivePullRequest {
+                repository: candidate.repository.clone().into(),
+            },
+        );
         let options_for_find = options.clone();
         let repository_for_find = ado_repository.clone();
         let source_ref_for_find = source_ref.clone();
@@ -308,14 +387,17 @@ pub async fn execute_finish(
                 action: FinishPullRequestAction::Existing,
                 url: existing.url,
                 pull_request_id: Some(existing.pull_request_id),
-                message: None,
+                skip_reason: None,
             });
             continue;
         }
-        events.push(format!(
-            "Repository {}: création PR ADO...",
-            candidate.repository
-        ));
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::CreatingPullRequest {
+                repository: candidate.repository.clone().into(),
+            },
+        );
         let handoff_summary =
             read_handoff_summary(Path::new(&plan.workspace), &candidate.repository)?;
         let input = CreatePullRequestInput {
@@ -356,10 +438,14 @@ pub async fn execute_finish(
                 })
                 .await
                 {
-                    events.push(format!(
-                        "Lien PR/work item déjà demandé à la création, lien explicite ignoré pour #{}: {}",
-                        id, error
-                    ));
+                    push_event(
+                        &mut events,
+                        &mut emit,
+                        TaskActionEvent::PullRequestWorkItemLinkSkipped {
+                            work_item_id: WorkItemId::from(id),
+                            error: error.to_string(),
+                        },
+                    );
                 }
             }
         }
@@ -368,7 +454,13 @@ pub async fn execute_finish(
 
     if finish_options.update_work_item_state {
         let ids = plan.manifest.all_known_work_item_ids();
-        events.push(format!("Mise à jour ADO: {} work item(s)...", ids.len()));
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::UpdatingFinishWorkItemStates {
+                work_item_ids: ids.iter().cloned().map(WorkItemId::from).collect(),
+            },
+        );
         for id in ids {
             let options_for_fetch = options.clone();
             let token_for_fetch = token.clone();
@@ -396,7 +488,7 @@ pub async fn execute_finish(
                     current_state: item.state,
                     target_state: None,
                     changed: false,
-                    message: "état inchangé pour ce type.".into(),
+                    outcome: FinishWorkItemStateOutcome::UnsupportedWorkItemType,
                 });
                 continue;
             };
@@ -412,7 +504,7 @@ pub async fn execute_finish(
                     current_state: item.state,
                     target_state: Some(state.clone()),
                     changed: false,
-                    message: format!("déjà en état {state}."),
+                    outcome: FinishWorkItemStateOutcome::AlreadyInTargetState,
                 });
                 continue;
             }
@@ -437,7 +529,7 @@ pub async fn execute_finish(
                 current_state: item.state,
                 target_state: Some(state.clone()),
                 changed: true,
-                message: format!("état -> {state}"),
+                outcome: FinishWorkItemStateOutcome::Updated,
             });
         }
     }
@@ -450,22 +542,6 @@ pub async fn execute_finish(
         pull_requests,
         work_item_updates,
     })
-}
-
-pub fn finish_verification_start_line(candidate_count: usize) -> String {
-    match candidate_count {
-        0 => "Vérification avant finish: aucun repository candidat.".into(),
-        1 => "Vérification avant finish: 1 repository candidat.".into(),
-        count => format!("Vérification avant finish: {count} repositories candidats."),
-    }
-}
-
-pub fn finish_git_start_line(repository_count: usize, action: &str) -> String {
-    match repository_count {
-        0 => format!("Git {action}: aucun repository à traiter."),
-        1 => format!("Git {action}: 1 repository à traiter."),
-        count => format!("Git {action}: {count} repositories à traiter."),
-    }
 }
 
 pub fn changed_targets(plan: &FinishPlanReport) -> Vec<&FinishTargetStatus> {
@@ -497,8 +573,17 @@ fn created_pr_result(
         action: FinishPullRequestAction::Created,
         url: created.url,
         pull_request_id: created.pull_request_id,
-        message: None,
+        skip_reason: None,
     }
+}
+
+fn push_event(
+    events: &mut Vec<TaskActionEvent>,
+    emit: &mut impl FnMut(TaskActionEvent),
+    event: TaskActionEvent,
+) {
+    emit(event.clone());
+    events.push(event);
 }
 
 fn work_item_label(item: &dw_ado::WorkItemSnapshot) -> String {
@@ -514,29 +599,4 @@ fn work_item_label(item: &dw_ado::WorkItemSnapshot) -> String {
             .map(|title| format!(" {title}"))
             .unwrap_or_default()
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{finish_git_start_line, finish_verification_start_line};
-
-    #[test]
-    fn finish_progress_lines_handle_counts() {
-        assert_eq!(
-            finish_verification_start_line(0),
-            "Vérification avant finish: aucun repository candidat."
-        );
-        assert_eq!(
-            finish_verification_start_line(1),
-            "Vérification avant finish: 1 repository candidat."
-        );
-        assert_eq!(
-            finish_verification_start_line(3),
-            "Vérification avant finish: 3 repositories candidats."
-        );
-        assert_eq!(
-            finish_git_start_line(2, "commit + push"),
-            "Git commit + push: 2 repositories à traiter."
-        );
-    }
 }

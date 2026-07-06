@@ -288,14 +288,6 @@ pub fn work_item_id_from_choice(label: &str) -> String {
         .to_string()
 }
 
-pub fn work_item_fetch_line(item_count: usize) -> String {
-    match item_count {
-        0 => "Chargement ADO: aucun work item à résoudre.".into(),
-        1 => "Chargement ADO: résolution de 1 work item...".into(),
-        count => format!("Chargement ADO: résolution de {count} work items..."),
-    }
-}
-
 fn resolve_workspace_from_args(root: &str, args: &WorkItemChoicesArgs) -> Result<String> {
     Ok(resolve_workspace(
         root,
@@ -397,22 +389,6 @@ mod tests {
         assert_eq!(
             work_item_id_from_choice(&work_item_choice_label(&choices[1])),
             "2"
-        );
-    }
-
-    #[test]
-    fn work_item_fetch_line_handles_counts() {
-        assert_eq!(
-            work_item_fetch_line(0),
-            "Chargement ADO: aucun work item à résoudre."
-        );
-        assert_eq!(
-            work_item_fetch_line(1),
-            "Chargement ADO: résolution de 1 work item..."
-        );
-        assert_eq!(
-            work_item_fetch_line(3),
-            "Chargement ADO: résolution de 3 work items..."
         );
     }
 

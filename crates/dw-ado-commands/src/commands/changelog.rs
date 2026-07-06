@@ -265,29 +265,6 @@ fn push_event(
     events.push(event);
 }
 
-pub fn changelog_git_extract_line(git_to: Option<&str>) -> String {
-    match git_to.filter(|value| !value.trim().is_empty()) {
-        Some(target) => format!("Extracting work items from git up to {target}..."),
-        None => "Extracting work items from git...".into(),
-    }
-}
-
-pub fn changelog_pr_fetch_line(repositories: &[String]) -> String {
-    match repositories.len() {
-        0 => "Loading ADO PRs: no repository configured.".into(),
-        1 => format!("Loading ADO PRs from {}...", repositories[0]),
-        count => format!("Loading ADO PRs from {count} repositories..."),
-    }
-}
-
-pub fn changelog_items_fetch_line(count: usize) -> String {
-    match count {
-        0 => "Loading ADO changelog: no work item to resolve.".into(),
-        1 => "Loading ADO changelog: resolving 1 work item...".into(),
-        count => format!("Loading ADO changelog: resolving {count} work items..."),
-    }
-}
-
 pub fn resolve_ado_repositories(
     project_config: Option<&dw_config::ProjectConfig>,
     repository: Option<&str>,
@@ -367,50 +344,5 @@ pub fn changelog_format_name(format: ChangelogFormat) -> &'static str {
         ChangelogFormat::Raw => "raw",
         ChangelogFormat::Markdown => "markdown",
         ChangelogFormat::Html => "html",
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn changelog_progress_lines_handle_counts() {
-        assert_eq!(
-            changelog_pr_fetch_line(&[]),
-            "Loading ADO PRs: no repository configured."
-        );
-        assert_eq!(
-            changelog_pr_fetch_line(&["front".into()]),
-            "Loading ADO PRs from front..."
-        );
-        assert_eq!(
-            changelog_pr_fetch_line(&["front".into(), "back".into()]),
-            "Loading ADO PRs from 2 repositories..."
-        );
-        assert_eq!(
-            changelog_items_fetch_line(0),
-            "Loading ADO changelog: no work item to resolve."
-        );
-        assert_eq!(
-            changelog_items_fetch_line(1),
-            "Loading ADO changelog: resolving 1 work item..."
-        );
-        assert_eq!(
-            changelog_items_fetch_line(3),
-            "Loading ADO changelog: resolving 3 work items..."
-        );
-    }
-
-    #[test]
-    fn changelog_git_extract_line_mentions_target_when_present() {
-        assert_eq!(
-            changelog_git_extract_line(None),
-            "Extracting work items from git..."
-        );
-        assert_eq!(
-            changelog_git_extract_line(Some("develop")),
-            "Extracting work items from git up to develop..."
-        );
     }
 }

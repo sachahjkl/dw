@@ -103,32 +103,3 @@ pub(crate) fn parse_work_item_ids_as_strings(raw: &str) -> Result<Vec<String>> {
         .map(|id| id.to_string())
         .collect())
 }
-
-pub fn work_item_fetch_line(count: usize) -> String {
-    match count {
-        0 => "Chargement ADO: aucun work item à résoudre.".into(),
-        1 => "Chargement ADO: résolution de 1 work item...".into(),
-        count => format!("Chargement ADO: résolution de {count} work items..."),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn work_item_fetch_line_handles_counts() {
-        assert_eq!(
-            work_item_fetch_line(0),
-            "Chargement ADO: aucun work item à résoudre."
-        );
-        assert_eq!(
-            work_item_fetch_line(1),
-            "Chargement ADO: résolution de 1 work item..."
-        );
-        assert_eq!(
-            work_item_fetch_line(3),
-            "Chargement ADO: résolution de 3 work items..."
-        );
-    }
-}

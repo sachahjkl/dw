@@ -5,8 +5,8 @@ use dw_ado::{get_work_item_snapshots_authenticated, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_git::{worktree_prune, worktree_remove};
 use dw_workspace::{
-    WorkspaceSummary, display_work_items, execute_task_sync, execute_task_teardown,
-    filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
+    WorkspaceSummary, WorkspaceWorkItem, display_work_items, execute_task_sync,
+    execute_task_teardown, filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
 };
 use serde::Serialize;
 
@@ -33,7 +33,7 @@ pub struct PrunePlanReport {
 pub struct PruneSyncReport {
     pub workspace: String,
     pub status: PruneSyncStatus,
-    pub message: String,
+    pub detail: PruneSyncDetail,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -41,6 +41,14 @@ pub struct PruneSyncReport {
 pub enum PruneSyncStatus {
     Skipped,
     Synced,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum PruneSyncDetail {
+    AuthUnavailable { error: String },
+    SyncFailed { error: String },
+    Synced { work_items: Vec<WorkspaceWorkItem> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -115,7 +123,9 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
                 .map(|workspace| PruneSyncReport {
                     workspace: workspace.path.clone(),
                     status: PruneSyncStatus::Skipped,
-                    message: format!("auth indisponible: {error}"),
+                    detail: PruneSyncDetail::AuthUnavailable {
+                        error: error.to_string(),
+                    },
                 })
                 .collect();
         }
@@ -123,7 +133,7 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
 
     let mut reports = Vec::new();
     for workspace in workspaces {
-        let result: Result<String> = async {
+        let result: Result<Vec<WorkspaceWorkItem>> = async {
             let mut options =
                 resolve_ado_options(&projects, &workflow, &workspace.manifest.project)?;
             if options.project.trim().is_empty() {
@@ -143,20 +153,22 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
             })
             .await?;
             let updated = execute_task_sync(&workspace.path, &snapshots)?;
-            Ok(display_work_items(&updated.parent_work_items(), true))
+            Ok(updated.parent_work_items())
         }
         .await;
 
         match result {
-            Ok(items) => reports.push(PruneSyncReport {
+            Ok(work_items) => reports.push(PruneSyncReport {
                 workspace: workspace.path.clone(),
                 status: PruneSyncStatus::Synced,
-                message: items,
+                detail: PruneSyncDetail::Synced { work_items },
             }),
             Err(error) => reports.push(PruneSyncReport {
                 workspace: workspace.path.clone(),
                 status: PruneSyncStatus::Skipped,
-                message: error.to_string(),
+                detail: PruneSyncDetail::SyncFailed {
+                    error: error.to_string(),
+                },
             }),
         }
     }

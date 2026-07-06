@@ -216,14 +216,6 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
     })
 }
 
-pub fn sync_fetch_line(item_count: usize) -> String {
-    match item_count {
-        0 => "Synchronisation ADO: aucun work item parent à charger.".into(),
-        1 => "Synchronisation ADO: chargement de 1 work item parent...".into(),
-        count => format!("Synchronisation ADO: chargement de {count} work items parents..."),
-    }
-}
-
 pub fn child_task_title(repository: &str, title: &str) -> String {
     let normalized = repository.to_ascii_lowercase();
     let prefix = match normalized.as_str() {
@@ -238,22 +230,6 @@ pub fn child_task_title(repository: &str, title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sync_fetch_line_handles_counts() {
-        assert_eq!(
-            sync_fetch_line(0),
-            "Synchronisation ADO: aucun work item parent à charger."
-        );
-        assert_eq!(
-            sync_fetch_line(1),
-            "Synchronisation ADO: chargement de 1 work item parent..."
-        );
-        assert_eq!(
-            sync_fetch_line(3),
-            "Synchronisation ADO: chargement de 3 work items parents..."
-        );
-    }
 
     #[test]
     fn child_task_title_uses_domain_prefix() {

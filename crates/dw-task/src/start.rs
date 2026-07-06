@@ -315,34 +315,6 @@ pub async fn execute_start_pr(
     .await
 }
 
-pub fn start_pr_fetch_line(pull_request_id: &str, repositories: &[String]) -> String {
-    match repositories.len() {
-        0 => format!("Resolving work items linked to PR #{pull_request_id}..."),
-        1 => format!(
-            "Resolving work items linked to PR #{pull_request_id} in {}...",
-            repositories[0]
-        ),
-        count => format!(
-            "Resolving work items linked to PR #{pull_request_id} in {count} repositories..."
-        ),
-    }
-}
-
-pub fn start_pr_resolved_line(work_item_ids: &[String]) -> String {
-    match work_item_ids.len() {
-        0 => "No work item linked to the PR.".into(),
-        1 => format!("PR linked to work item #{}.", work_item_ids[0]),
-        count => format!(
-            "PR linked to {count} work items: {}.",
-            work_item_ids
-                .iter()
-                .map(|id| format!("#{id}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
-
 pub fn resolve_ado_repositories(
     project_config: Option<&dw_config::ProjectConfig>,
     repository: Option<&str>,
@@ -509,34 +481,6 @@ pub fn display_workspace_work_item(item: &WorkspaceWorkItem) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn start_pr_progress_lines_include_repository_and_work_items() {
-        assert_eq!(
-            start_pr_fetch_line("42", &[]),
-            "Resolving work items linked to PR #42..."
-        );
-        assert_eq!(
-            start_pr_fetch_line("42", &["front".into()]),
-            "Resolving work items linked to PR #42 in front..."
-        );
-        assert_eq!(
-            start_pr_fetch_line("42", &["front".into(), "back".into()]),
-            "Resolving work items linked to PR #42 in 2 repositories..."
-        );
-        assert_eq!(
-            start_pr_resolved_line(&[]),
-            "No work item linked to the PR."
-        );
-        assert_eq!(
-            start_pr_resolved_line(&["123".into()]),
-            "PR linked to work item #123."
-        );
-        assert_eq!(
-            start_pr_resolved_line(&["123".into(), "456".into()]),
-            "PR linked to 2 work items: #123, #456."
-        );
-    }
 
     #[test]
     fn pr_repository_resolution_keeps_ado_and_workspace_names_separate() {

@@ -342,21 +342,9 @@ pub fn add_repo_choices_for_manifest(
         .unwrap_or_default()
 }
 
-pub fn teardown_git_progress_line(git_dir: &str, args: &[&str]) -> Option<String> {
-    match args {
-        ["worktree", "remove", "--force", target] => Some(format!(
-            "Teardown: suppression worktree {target} ({git_dir})..."
-        )),
-        ["worktree", "prune"] => Some(format!("Teardown: prune worktrees ({git_dir})...")),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        add_repo_choices_for_manifest, changed_commit_targets, teardown_git_progress_line,
-    };
+    use super::{add_repo_choices_for_manifest, changed_commit_targets};
 
     #[test]
     fn add_repo_choices_hide_repositories_already_in_workspace() {
@@ -414,20 +402,6 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(changed, vec!["front"]);
-    }
-
-    #[test]
-    fn teardown_progress_lines_name_git_action_and_target() {
-        assert_eq!(
-            teardown_git_progress_line("/repo/.git", &["worktree", "remove", "--force", "/tmp/ws"])
-                .as_deref(),
-            Some("Teardown: suppression worktree /tmp/ws (/repo/.git)...")
-        );
-        assert_eq!(
-            teardown_git_progress_line("/repo/.git", &["worktree", "prune"]).as_deref(),
-            Some("Teardown: prune worktrees (/repo/.git)...")
-        );
-        assert!(teardown_git_progress_line("/repo/.git", &["status"]).is_none());
     }
 
     fn dw_task_report_with_statuses(items: Vec<(&str, bool, bool)>) -> super::CommitPlanReport {
