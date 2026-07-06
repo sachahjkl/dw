@@ -1095,7 +1095,6 @@ dependencies = [
 name = "dw-core"
 version = "0.1.1"
 dependencies = [
- "async-trait",
  "serde",
  "thiserror 2.0.18",
 ]

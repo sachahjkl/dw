@@ -300,6 +300,28 @@ fn action_stream_protocol_does_not_use_generic_progress_strings() {
 }
 
 #[test]
+fn core_does_not_expose_legacy_string_action_event_contracts() {
+    let repo = repo_root();
+    let core = repo.join("crates/dw-core/src/lib.rs");
+    let text = fs::read_to_string(&core).expect("read core lib");
+    for forbidden in [
+        "pub enum ActionSeverity",
+        "pub struct ActionEvent",
+        "impl ActionEvent",
+        "pub trait CoreAction",
+        "FnMut(ActionEvent)",
+        "message: String",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains forbidden legacy action event contract `{}`",
+            core.display(),
+            forbidden
+        );
+    }
+}
+
+#[test]
 fn ado_usecase_streams_structured_domain_events_not_actionevent_text() {
     let repo = repo_root();
     let ado_commands = repo.join("crates/dw-ado-commands/src");

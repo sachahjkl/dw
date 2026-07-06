@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -18,15 +17,6 @@ impl CoreContext {
             environment: BTreeMap::new(),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ActionSeverity {
-    Trace,
-    Info,
-    Warning,
-    Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -259,21 +249,6 @@ impl PromptChoice {
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActionEvent {
-    pub severity: ActionSeverity,
-    pub message: String,
-}
-
-impl ActionEvent {
-    pub fn info(message: impl Into<String>) -> Self {
-        Self {
-            severity: ActionSeverity::Info,
-            message: message.into(),
-        }
     }
 }
 
@@ -555,18 +530,4 @@ impl ExternalLaunchPlan {
             .collect::<Vec<_>>()
             .join(" ")
     }
-}
-
-#[async_trait]
-pub trait CoreAction {
-    type Request: Send + Sync;
-    type Response: Send + Sync;
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    async fn run(
-        &self,
-        context: &CoreContext,
-        request: Self::Request,
-        events: &mut dyn FnMut(ActionEvent),
-    ) -> Result<Self::Response, Self::Error>;
 }
