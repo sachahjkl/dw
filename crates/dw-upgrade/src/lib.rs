@@ -536,7 +536,6 @@ fn replace_windows_executable(
     )
     .replace('\n', "\r\n");
     fs::write(&script, script_content)?;
-    let script = script.canonicalize().unwrap_or(script);
     if !script.is_file() {
         return Err(anyhow!(
             "Script de remplacement Windows introuvable après création: {}",
