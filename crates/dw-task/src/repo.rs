@@ -197,7 +197,7 @@ pub fn commit_plan(args: CommitArgs) -> Result<CommitPlanReport> {
     let statuses = targets
         .into_iter()
         .map(|target| {
-            let status = repository_status(target.path.as_str());
+            let status = repository_status(&target.path);
             CommitTargetStatus { target, status }
         })
         .collect::<Vec<_>>();
@@ -442,11 +442,11 @@ mod tests {
                             path: dw_core::RepositoryPath::from(format!("/tmp/ws/{repository}")),
                         },
                         status: dw_git::RepositoryStatus {
-                            path: format!("/tmp/ws/{repository}"),
+                            path: dw_core::RepositoryPath::from(format!("/tmp/ws/{repository}")),
                             is_git_repository,
                             has_changes,
                             has_unpushed: false,
-                            detail: String::new(),
+                            detail: dw_git::RepositoryStatusDetail::Clean,
                         },
                     },
                 )

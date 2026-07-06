@@ -1373,9 +1373,7 @@ pub fn task_commit_plan_lines(
             "Status    : {}",
             repository_status_label(&item.status)
         ));
-        if !item.status.detail.trim().is_empty() {
-            lines.push(item.status.detail.clone());
-        }
+        lines.extend(repository_status_detail_lines_en(&item.status.detail));
     }
 
     lines.push(String::new());
@@ -1978,9 +1976,7 @@ fn finish_repository_status_lines(
         format!("Path      : {}", status.path),
         format!("Status    : {}", repository_status_label(status)),
     ];
-    if !status.detail.trim().is_empty() {
-        lines.push(status.detail.clone());
-    }
+    lines.extend(repository_status_detail_lines_en(&status.detail));
     lines
 }
 
@@ -2406,6 +2402,21 @@ fn repository_status_label(status: &dw_git::RepositoryStatus) -> &'static str {
         "Unpushed commits."
     } else {
         "No change."
+    }
+}
+
+fn repository_status_detail_lines_en(detail: &dw_git::RepositoryStatusDetail) -> Vec<String> {
+    match detail {
+        dw_git::RepositoryStatusDetail::MissingDirectory => vec!["Missing directory.".into()],
+        dw_git::RepositoryStatusDetail::OpenFailed { detail }
+        | dw_git::RepositoryStatusDetail::StatusFailed { detail } => vec![detail.to_string()],
+        dw_git::RepositoryStatusDetail::Changed { paths } => {
+            paths.iter().map(ToString::to_string).collect()
+        }
+        dw_git::RepositoryStatusDetail::Unpushed { ahead } => {
+            vec![format!("{ahead} unpushed commit(s).")]
+        }
+        dw_git::RepositoryStatusDetail::Clean => Vec::new(),
     }
 }
 
@@ -3247,11 +3258,13 @@ mod tests {
                     path: dw_core::RepositoryPath::from("/tmp/ws/front"),
                 },
                 status: dw_git::RepositoryStatus {
-                    path: "/tmp/ws/front".into(),
+                    path: dw_core::RepositoryPath::from("/tmp/ws/front"),
                     is_git_repository: true,
                     has_changes: true,
                     has_unpushed: false,
-                    detail: " M src/lib.rs".into(),
+                    detail: dw_git::RepositoryStatusDetail::Changed {
+                        paths: vec![dw_git::RepositoryStatusPath::from("src/lib.rs")],
+                    },
                 },
             }],
         };
@@ -3274,14 +3287,16 @@ mod tests {
             targets: vec![dw_task::finish::FinishTargetStatus {
                 target: dw_workspace::TaskCommitTarget {
                     repository: "front".into(),
-                    path: "/tmp/ws/front".into(),
+                    path: dw_core::RepositoryPath::from("/tmp/ws/front"),
                 },
                 status: dw_git::RepositoryStatus {
-                    path: "/tmp/ws/front".into(),
+                    path: dw_core::RepositoryPath::from("/tmp/ws/front"),
                     is_git_repository: true,
                     has_changes: true,
                     has_unpushed: false,
-                    detail: " M src/lib.rs".into(),
+                    detail: dw_git::RepositoryStatusDetail::Changed {
+                        paths: vec![dw_git::RepositoryStatusPath::from("src/lib.rs")],
+                    },
                 },
             }],
             handoff: TaskHandoffValidationReport {

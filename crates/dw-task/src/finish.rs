@@ -149,7 +149,7 @@ pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
     let targets = targets
         .into_iter()
         .map(|target| {
-            let status = repository_status(target.path.as_str());
+            let status = repository_status(&target.path);
             FinishTargetStatus { target, status }
         })
         .collect::<Vec<_>>();

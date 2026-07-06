@@ -24,14 +24,83 @@ pub struct GitRewriteNote {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RepositoryStatus {
-    pub path: String,
+    pub path: RepositoryPath,
     #[serde(rename = "isGitRepository")]
     pub is_git_repository: bool,
     #[serde(rename = "hasChanges")]
     pub has_changes: bool,
     #[serde(rename = "hasUnpushed")]
     pub has_unpushed: bool,
-    pub detail: String,
+    pub detail: RepositoryStatusDetail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum RepositoryStatusDetail {
+    MissingDirectory,
+    OpenFailed { detail: GitErrorDetail },
+    StatusFailed { detail: GitErrorDetail },
+    Changed { paths: Vec<RepositoryStatusPath> },
+    Unpushed { ahead: GitCommitCount },
+    Clean,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(transparent)]
+pub struct RepositoryStatusPath(String);
+
+impl RepositoryStatusPath {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for RepositoryStatusPath {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for RepositoryStatusPath {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for RepositoryStatusPath {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(transparent)]
+pub struct GitCommitCount(usize);
+
+impl GitCommitCount {
+    pub fn new(value: usize) -> Self {
+        Self(value)
+    }
+
+    pub fn as_usize(self) -> usize {
+        self.0
+    }
+}
+
+impl From<usize> for GitCommitCount {
+    fn from(value: usize) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for GitCommitCount {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -154,7 +223,8 @@ pub struct GitOperationInvocation {
     pub repository_path: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
 pub struct GitErrorDetail(String);
 
 impl GitErrorDetail {
@@ -355,26 +425,28 @@ pub fn update_repository(
     Ok(())
 }
 
-pub fn repository_status(repository_path: &str) -> RepositoryStatus {
-    if !Path::new(repository_path).is_dir() {
+pub fn repository_status(repository_path: &RepositoryPath) -> RepositoryStatus {
+    if !Path::new(repository_path.as_str()).is_dir() {
         return RepositoryStatus {
-            path: repository_path.into(),
+            path: repository_path.clone(),
             is_git_repository: false,
             has_changes: false,
             has_unpushed: false,
-            detail: "Dossier absent.".into(),
+            detail: RepositoryStatusDetail::MissingDirectory,
         };
     }
 
-    let repository = match Repository::open(repository_path) {
+    let repository = match Repository::open(repository_path.as_str()) {
         Ok(repository) => repository,
         Err(error) => {
             return RepositoryStatus {
-                path: repository_path.into(),
+                path: repository_path.clone(),
                 is_git_repository: false,
                 has_changes: false,
                 has_unpushed: false,
-                detail: error.to_string(),
+                detail: RepositoryStatusDetail::OpenFailed {
+                    detail: GitErrorDetail::new(error.message()),
+                },
             };
         }
     };
@@ -384,27 +456,30 @@ pub fn repository_status(repository_path: &str) -> RepositoryStatus {
         Ok(statuses) => statuses,
         Err(error) => {
             return RepositoryStatus {
-                path: repository_path.into(),
+                path: repository_path.clone(),
                 is_git_repository: false,
                 has_changes: false,
                 has_unpushed: false,
-                detail: error.message().into(),
+                detail: RepositoryStatusDetail::StatusFailed {
+                    detail: GitErrorDetail::new(error.message()),
+                },
             };
         }
     };
-    let status = statuses
+    let changed_paths = statuses
         .iter()
-        .filter_map(|entry| entry.path().ok().map(ToOwned::to_owned))
-        .collect::<Vec<_>>()
-        .join("\n");
+        .filter_map(|entry| entry.path().ok().map(RepositoryStatusPath::from))
+        .collect::<Vec<_>>();
 
-    if !status.is_empty() {
+    if !changed_paths.is_empty() {
         return RepositoryStatus {
-            path: repository_path.into(),
+            path: repository_path.clone(),
             is_git_repository: true,
             has_changes: true,
             has_unpushed: false,
-            detail: status,
+            detail: RepositoryStatusDetail::Changed {
+                paths: changed_paths,
+            },
         };
     }
 
@@ -421,14 +496,16 @@ pub fn repository_status(repository_path: &str) -> RepositoryStatus {
         .unwrap_or(0);
 
     RepositoryStatus {
-        path: repository_path.into(),
+        path: repository_path.clone(),
         is_git_repository: true,
         has_changes: false,
         has_unpushed: ahead > 0,
         detail: if ahead > 0 {
-            format!("{ahead} commit(s) non pousse(s).")
+            RepositoryStatusDetail::Unpushed {
+                ahead: GitCommitCount::from(ahead),
+            }
         } else {
-            String::new()
+            RepositoryStatusDetail::Clean
         },
     }
 }
