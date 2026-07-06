@@ -364,6 +364,17 @@ pub fn ado_set_state_execution_lines(
     lines
 }
 
+pub fn ado_set_state_plan_lines(
+    report: &dw_ado_commands::commands::set_state::SetStatePlanReport,
+) -> Vec<String> {
+    vec![
+        "ADO update plan".into(),
+        format!("Project   : {}", report.project),
+        format!("State     : {}", report.state),
+        format!("Work items: {}", join_display(&report.ids)),
+    ]
+}
+
 pub fn ado_work_item_lines(
     report: &dw_ado_commands::commands::work_item::WorkItemReport,
     theme: &TerminalTheme,
@@ -586,6 +597,7 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
                 .map(|json| json.lines().map(str::to_owned).collect())
                 .unwrap_or_else(|error| vec![format!("JSON render error: {error}")]),
             AdoActionResult::WorkItem(report) => ado_work_item_lines(report, theme),
+            AdoActionResult::SetStatePlan(report) => ado_set_state_plan_lines(report),
             AdoActionResult::SetState(report) => ado_set_state_execution_lines(report),
         },
         DwActionResult::Task(result) => match result.as_ref() {

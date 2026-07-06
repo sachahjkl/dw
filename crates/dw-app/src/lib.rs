@@ -45,6 +45,8 @@ pub enum DwActionRequest {
     AdoContext(dw_ado_commands::commands::context::ContextArgs),
     AdoAiContext(dw_ado_commands::commands::context::AiContextArgs),
     AdoWorkItem(dw_ado_commands::commands::work_item::WorkItemArgs),
+    AdoSetStatePlan(dw_ado_commands::commands::set_state::SetStateArgs),
+    AdoSetStateExecute(dw_ado_commands::commands::set_state::SetStatePlanReport),
     AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs),
     TaskStart(dw_task::start::StartArgs),
     TaskStartPr(dw_task::start::StartPrArgs),
@@ -134,6 +136,7 @@ pub enum AdoActionResult {
     Context(dw_ado_commands::commands::context::ContextReport),
     AiContext(dw_ado_commands::commands::context::AiContextReport),
     WorkItem(dw_ado_commands::commands::work_item::WorkItemReport),
+    SetStatePlan(dw_ado_commands::commands::set_state::SetStatePlanReport),
     SetState(dw_ado_commands::commands::set_state::SetStateExecutionReport),
 }
 
@@ -341,6 +344,17 @@ pub async fn run_action(
                 })
                 .await?;
             Ok(DwActionResult::Ado(AdoActionResult::WorkItem(report)))
+        }
+        DwActionRequest::AdoSetStatePlan(args) => Ok(DwActionResult::Ado(
+            AdoActionResult::SetStatePlan(dw_ado_commands::commands::set_state::plan(args)?),
+        )),
+        DwActionRequest::AdoSetStateExecute(plan) => {
+            let execution =
+                dw_ado_commands::commands::set_state::execute_with_events(plan, &mut |event| {
+                    emit(DwActionEvent::Ado(event))
+                })
+                .await?;
+            Ok(DwActionResult::Ado(AdoActionResult::SetState(execution)))
         }
         DwActionRequest::AdoSetState(args) => {
             let plan = dw_ado_commands::commands::set_state::plan(args)?;

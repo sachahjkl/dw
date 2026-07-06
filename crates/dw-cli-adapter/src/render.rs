@@ -81,6 +81,7 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
                 .map(|json| json.lines().map(str::to_owned).collect())
                 .unwrap_or_else(|error| vec![format!("Erreur rendu JSON: {error}")]),
             AdoActionResult::WorkItem(report) => ado_work_item_lines(report, theme),
+            AdoActionResult::SetStatePlan(report) => ado_set_state_plan_lines(report),
             AdoActionResult::SetState(report) => ado_set_state_execution_lines(report),
         },
         DwActionResult::Task(result) => match result.as_ref() {
@@ -536,6 +537,89 @@ pub fn ado_prs_lines(report: &dw_ado_commands::commands::prs::PrsReport) -> Vec<
     lines
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdoActionJsonProjection {
+    Assigned,
+    PullRequests,
+    SetState,
+    WorkItems,
+    ContextExpanded,
+    AiContextItems,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdoActionRenderedOutput {
+    Lines(Vec<String>),
+    Json(String),
+}
+
+pub fn ado_action_output(
+    result: &AdoActionResult,
+    json_projection: Option<AdoActionJsonProjection>,
+    theme: &TerminalTheme,
+) -> serde_json::Result<AdoActionRenderedOutput> {
+    if let Some(projection) = json_projection {
+        return match (result, projection) {
+            (AdoActionResult::Assigned(report), AdoActionJsonProjection::Assigned) => {
+                if report.group_by_parent {
+                    serde_json::to_string_pretty(&report.groups).map(AdoActionRenderedOutput::Json)
+                } else {
+                    serde_json::to_string_pretty(&report.items).map(AdoActionRenderedOutput::Json)
+                }
+            }
+            (AdoActionResult::Prs(report), AdoActionJsonProjection::PullRequests) => {
+                serde_json::to_string_pretty(&report.items).map(AdoActionRenderedOutput::Json)
+            }
+            (AdoActionResult::SetState(report), AdoActionJsonProjection::SetState) => {
+                serde_json::to_string_pretty(report).map(AdoActionRenderedOutput::Json)
+            }
+            (AdoActionResult::WorkItem(report), AdoActionJsonProjection::WorkItems) => {
+                serde_json::to_string_pretty(&report.items).map(AdoActionRenderedOutput::Json)
+            }
+            (AdoActionResult::Context(report), AdoActionJsonProjection::ContextExpanded) => {
+                serde_json::to_string_pretty(&report.expanded).map(AdoActionRenderedOutput::Json)
+            }
+            (AdoActionResult::AiContext(report), AdoActionJsonProjection::AiContextItems) => {
+                serde_json::to_string_pretty(&report.items).map(AdoActionRenderedOutput::Json)
+            }
+            _ => unreachable!("projection JSON ADO incompatible avec le résultat d'action"),
+        };
+    }
+
+    Ok(AdoActionRenderedOutput::Lines(match result {
+        AdoActionResult::Assigned(report) => {
+            let mut report = report.clone();
+            report.events.clear();
+            ado_assigned_lines(&report, theme)
+        }
+        AdoActionResult::Prs(report) => ado_prs_lines(report),
+        AdoActionResult::Changelog(report) => {
+            let mut report = report.clone();
+            report.events.clear();
+            ado_changelog_lines(&report, theme)
+        }
+        AdoActionResult::Context(report) => {
+            let mut report = report.clone();
+            report.events.clear();
+            ado_context_lines(&report, theme)
+        }
+        AdoActionResult::AiContext(report) => serde_json::to_string_pretty(&report.items)
+            .map(|json| json.lines().map(str::to_owned).collect())
+            .unwrap_or_else(|error| vec![format!("Erreur rendu JSON: {error}")]),
+        AdoActionResult::WorkItem(report) => {
+            let mut report = report.clone();
+            report.events.clear();
+            ado_work_item_lines(&report, theme)
+        }
+        AdoActionResult::SetStatePlan(report) => ado_set_state_plan_lines(report),
+        AdoActionResult::SetState(report) => {
+            let mut report = report.clone();
+            report.events.clear();
+            ado_set_state_execution_lines(&report)
+        }
+    }))
+}
+
 pub fn ado_assigned_lines(
     report: &dw_ado_commands::commands::assigned::AssignedReport,
     theme: &TerminalTheme,
@@ -604,6 +688,17 @@ pub fn ado_set_state_execution_lines(
         );
     }
     lines
+}
+
+pub fn ado_set_state_plan_lines(
+    report: &dw_ado_commands::commands::set_state::SetStatePlanReport,
+) -> Vec<String> {
+    vec![
+        "Plan mise à jour ADO".into(),
+        format!("Projet    : {}", report.project),
+        format!("État      : {}", report.state),
+        format!("Work items: {}", format_ids(&report.ids)),
+    ]
 }
 
 pub fn ado_action_event_line(event: &AdoActionEvent) -> String {

@@ -2,8 +2,8 @@ use crate::cli::*;
 use crate::version::informational_version;
 use anyhow::Result;
 use dw_cli_adapter::{
-    PromptUi, confirm_risk_prompt_spec, print_db_action_output, print_json, print_lines,
-    project_prompt_spec, repositories_prompt_spec,
+    PromptUi, confirm_risk_prompt_spec, print_ado_action_output, print_db_action_output,
+    print_json, print_lines, project_prompt_spec, repositories_prompt_spec,
 };
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
@@ -951,7 +951,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
 }
 
 async fn handle_ado(command: AdoCommand) -> Result<()> {
-    match command {
+    let (request, json_projection, print_events) = match command {
         AdoCommand::Assigned {
             root,
             project,
@@ -961,54 +961,34 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             json,
         } => {
             let project = resolve_ado_project_interactively(root.clone(), project, "ado assigned")?;
-            let mut report = dw_ado_commands::commands::assigned::report_with_events(
-                dw_ado_commands::commands::assigned::AssignedArgs {
-                    root: root.map(DevWorkflowRoot::from),
-                    project: Some(project),
-                    top,
-                    all,
-                    group_by_parent,
-                },
-                |event| {
-                    if !json {
-                        print_ado_action_event(event);
-                    }
-                },
+            (
+                dw_app::DwActionRequest::AdoAssigned(
+                    dw_ado_commands::commands::assigned::AssignedArgs {
+                        root: root.map(DevWorkflowRoot::from),
+                        project: Some(project),
+                        top,
+                        all,
+                        group_by_parent,
+                    },
+                ),
+                json.then_some(dw_cli_adapter::render::AdoActionJsonProjection::Assigned),
+                !json,
             )
-            .await?;
-            if json {
-                if report.group_by_parent {
-                    print_json(&report.groups)?;
-                } else {
-                    print_json(&report.items)?;
-                }
-            } else {
-                report.events.clear();
-                print_lines(&dw_cli_adapter::render::ado_assigned_lines(
-                    &report,
-                    &TerminalTheme::stdout_auto(),
-                ));
-            }
         }
         AdoCommand::Prs {
             root,
             project,
             repo,
             json,
-        } => {
-            let report =
-                dw_ado_commands::commands::prs::report(dw_ado_commands::commands::prs::PrsArgs {
-                    root: root.map(DevWorkflowRoot::from),
-                    project: ProjectKey::from(project),
-                    repo: repo.map(AdoRepositoryName::from),
-                })
-                .await?;
-            if json {
-                print_json(&report.items)?;
-            } else {
-                print_lines(&dw_cli_adapter::render::ado_prs_lines(&report));
-            }
-        }
+        } => (
+            dw_app::DwActionRequest::AdoPrs(dw_ado_commands::commands::prs::PrsArgs {
+                root: root.map(DevWorkflowRoot::from),
+                project: ProjectKey::from(project),
+                repo: repo.map(AdoRepositoryName::from),
+            }),
+            json.then_some(dw_cli_adapter::render::AdoActionJsonProjection::PullRequests),
+            !json,
+        ),
         AdoCommand::Changelog {
             ids,
             root,
@@ -1036,29 +1016,26 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                     WorkItemId::parse_many(&ids),
                 )
             };
-            let mut report = dw_ado_commands::commands::changelog::report_with_events(
-                dw_ado_commands::commands::changelog::ChangelogArgs {
-                    source,
-                    root: root.map(DevWorkflowRoot::from),
-                    project: project.map(ProjectKey::from),
-                    repo: repo.map(AdoRepositoryName::from),
-                    group_by_parent,
-                    format: format
-                        .as_deref()
-                        .map(str::parse)
-                        .transpose()?
-                        .unwrap_or_default(),
-                    table,
-                    ids_only,
-                },
-                print_ado_action_event,
+            (
+                dw_app::DwActionRequest::AdoChangelog(
+                    dw_ado_commands::commands::changelog::ChangelogArgs {
+                        source,
+                        root: root.map(DevWorkflowRoot::from),
+                        project: project.map(ProjectKey::from),
+                        repo: repo.map(AdoRepositoryName::from),
+                        group_by_parent,
+                        format: format
+                            .as_deref()
+                            .map(str::parse)
+                            .transpose()?
+                            .unwrap_or_default(),
+                        table,
+                        ids_only,
+                    },
+                ),
+                None,
+                true,
             )
-            .await?;
-            report.events.clear();
-            print_lines(&dw_cli_adapter::render::ado_changelog_lines(
-                &report,
-                &TerminalTheme::stdout_auto(),
-            ));
         }
         AdoCommand::SetState {
             id,
@@ -1072,62 +1049,38 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             if json && !yes {
                 anyhow::bail!("ado set-state --json requiert --yes pour rester déterministe.");
             }
-            let plan = dw_ado_commands::commands::set_state::plan(
-                dw_ado_commands::commands::set_state::SetStateArgs {
-                    ids: WorkItemId::parse_many(&id),
-                    root: root.map(DevWorkflowRoot::from),
-                    project: project.map(ProjectKey::from),
-                    state: dw_core::WorkItemState::parse(state)?,
-                    history: history.map(dw_core::WorkItemHistoryComment::from),
-                    yes: false,
-                },
-            )?;
+            let args = dw_ado_commands::commands::set_state::SetStateArgs {
+                ids: WorkItemId::parse_many(&id),
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                state: dw_core::WorkItemState::parse(state)?,
+                history: history.map(dw_core::WorkItemHistoryComment::from),
+                yes,
+            };
+            let plan = execute_ado_set_state_plan(args).await?;
             confirm_ado_set_state(yes, &plan)?;
-            let mut execution =
-                dw_ado_commands::commands::set_state::execute_with_events(plan, |event| {
-                    if !json {
-                        print_ado_action_event(event);
-                    }
-                })
-                .await?;
-            if json {
-                print_json(&execution)?;
-            } else {
-                execution.events.clear();
-                print_lines(&dw_cli_adapter::render::ado_set_state_execution_lines(
-                    &execution,
-                ));
-            }
+            (
+                dw_app::DwActionRequest::AdoSetStateExecute(plan),
+                json.then_some(dw_cli_adapter::render::AdoActionJsonProjection::SetState),
+                !json,
+            )
         }
         AdoCommand::WorkItem {
             id,
             root,
             project,
             json,
-        } => {
-            let mut report = dw_ado_commands::commands::work_item::report_with_events(
+        } => (
+            dw_app::DwActionRequest::AdoWorkItem(
                 dw_ado_commands::commands::work_item::WorkItemArgs {
                     ids: WorkItemId::parse_many(&id),
                     root: root.map(DevWorkflowRoot::from),
                     project: project.map(ProjectKey::from),
                 },
-                |event| {
-                    if !json {
-                        print_ado_action_event(event);
-                    }
-                },
-            )
-            .await?;
-            if json {
-                print_json(&report.items)?;
-            } else {
-                report.events.clear();
-                print_lines(&dw_cli_adapter::render::ado_work_item_lines(
-                    &report,
-                    &TerminalTheme::stdout_auto(),
-                ));
-            }
-        }
+            ),
+            json.then_some(dw_cli_adapter::render::AdoActionJsonProjection::WorkItems),
+            !json,
+        ),
         AdoCommand::Context {
             id,
             root,
@@ -1135,37 +1088,22 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             summary,
             comments,
             json,
-        } => {
-            let mut report = dw_ado_commands::commands::context::context_report_with_events(
-                dw_ado_commands::commands::context::ContextArgs {
-                    ids: WorkItemId::parse_many(&id),
-                    root: root.map(DevWorkflowRoot::from),
-                    project: project.map(ProjectKey::from),
-                    summary,
-                    comments,
-                    mode: if json {
-                        dw_ado_commands::commands::context::ContextMode::Expanded
-                    } else {
-                        dw_ado_commands::commands::context::ContextMode::AiContext
-                    },
+        } => (
+            dw_app::DwActionRequest::AdoContext(dw_ado_commands::commands::context::ContextArgs {
+                ids: WorkItemId::parse_many(&id),
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                summary,
+                comments,
+                mode: if json {
+                    dw_ado_commands::commands::context::ContextMode::Expanded
+                } else {
+                    dw_ado_commands::commands::context::ContextMode::AiContext
                 },
-                |event| {
-                    if !json {
-                        print_ado_action_event(event);
-                    }
-                },
-            )
-            .await?;
-            if json {
-                print_json(&report.expanded)?;
-            } else {
-                report.events.clear();
-                print_lines(&dw_cli_adapter::render::ado_context_lines(
-                    &report,
-                    &TerminalTheme::stdout_auto(),
-                ));
-            }
-        }
+            }),
+            json.then_some(dw_cli_adapter::render::AdoActionJsonProjection::ContextExpanded),
+            !json,
+        ),
         AdoCommand::AiContext {
             root,
             organization,
@@ -1174,8 +1112,8 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             summary,
             comments,
             include_comments,
-        } => {
-            let report = dw_ado_commands::commands::context::ai_context_report_with_events(
+        } => (
+            dw_app::DwActionRequest::AdoAiContext(
                 dw_ado_commands::commands::context::AiContextArgs {
                     root: root.map(DevWorkflowRoot::from),
                     organization,
@@ -1185,13 +1123,53 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                     comments,
                     include_comments,
                 },
-                |_| {},
-            )
-            .await?;
-            print_json(&report.items)?;
+            ),
+            Some(dw_cli_adapter::render::AdoActionJsonProjection::AiContextItems),
+            false,
+        ),
+    };
+
+    let result = execute_ado_cli_action(request, print_events).await?;
+    let dw_app::DwActionResult::Ado(result) = result else {
+        anyhow::bail!("Résultat ADO inattendu: {result:?}");
+    };
+    let output = dw_cli_adapter::render::ado_action_output(
+        &result,
+        json_projection,
+        &TerminalTheme::stdout_auto(),
+    )?;
+    print_ado_action_output(&output);
+    Ok(())
+}
+
+async fn execute_ado_set_state_plan(
+    args: dw_ado_commands::commands::set_state::SetStateArgs,
+) -> Result<dw_ado_commands::commands::set_state::SetStatePlanReport> {
+    let result =
+        execute_ado_cli_action(dw_app::DwActionRequest::AdoSetStatePlan(args), false).await?;
+    match result {
+        dw_app::DwActionResult::Ado(dw_app::AdoActionResult::SetStatePlan(plan)) => Ok(plan),
+        result => anyhow::bail!("Plan ADO set-state inattendu: {result:?}"),
+    }
+}
+
+async fn execute_ado_cli_action(
+    request: dw_app::DwActionRequest,
+    print_events: bool,
+) -> Result<dw_app::DwActionResult> {
+    let action = dw_app::spawn_action(request);
+    let result = action.result;
+    let mut events = action.events;
+    while let Some(event) = events.recv().await {
+        if print_events {
+            if let DwActionEvent::Ado(event) = event {
+                print_ado_action_event(event);
+            } else {
+                print_cli_action_event(&event);
+            }
         }
     }
-    Ok(())
+    result.await?
 }
 
 fn print_ado_action_event(event: AdoActionEvent) {
