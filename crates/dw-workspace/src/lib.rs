@@ -10,7 +10,7 @@ use dw_contracts::{
     TaskPreflightStaleReason,
 };
 use dw_core::{
-    AiContextFilePath, BranchName, CommitMessage, GitAnchorName, HandoffFilePath,
+    AiContextFilePath, BranchName, CommitMessage, GitAnchorName, GitRemoteUrl, HandoffFilePath,
     HandoffParseError, ProjectKey, ProjectRootPath, RepositoryPath, SecretKey, TaskId, TaskSlug,
     WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName, WorkspaceOperationError,
     WorkspacePath, WorkspaceRepositoryName,
@@ -205,7 +205,7 @@ pub struct TaskStartRepositoryPlan {
     pub project_root: ProjectRootPath,
     #[serde(rename = "worktreePath")]
     pub worktree_path: RepositoryPath,
-    pub url: String,
+    pub url: GitRemoteUrl,
     #[serde(rename = "defaultBranch")]
     pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
@@ -268,11 +268,11 @@ pub struct TaskAddRepoPlan {
     pub project_root: ProjectRootPath,
     #[serde(rename = "worktreePath")]
     pub worktree_path: RepositoryPath,
-    pub url: String,
+    pub url: GitRemoteUrl,
     #[serde(rename = "defaultBranch")]
     pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
-    pub anchor_name: String,
+    pub anchor_name: GitAnchorName,
     #[serde(rename = "gitCredentialSecret")]
     pub git_credential_secret: Option<SecretKey>,
     #[serde(rename = "branchName")]
@@ -1197,9 +1197,9 @@ pub fn plan_task_add_repo(
                         .display()
                         .to_string(),
                 ),
-                url: String::new(),
+                url: GitRemoteUrl::from(""),
                 default_branch: BranchName::from("main"),
-                anchor_name: format!("{repository}.git"),
+                anchor_name: GitAnchorName::from(format!("{repository}.git")),
                 git_credential_secret: None,
                 branch_name: manifest.branch_name.clone(),
                 repositories: manifest.repositories.clone(),
@@ -1243,9 +1243,9 @@ pub fn plan_task_add_repo(
                     .display()
                     .to_string(),
             ),
-            url: repository_config.url,
+            url: GitRemoteUrl::from(repository_config.url),
             default_branch: BranchName::from(repository_config.default_branch),
-            anchor_name,
+            anchor_name: GitAnchorName::from(anchor_name),
             git_credential_secret: repository_config.git_credential_secret,
             branch_name: manifest.branch_name.clone(),
             repositories,
@@ -1460,13 +1460,13 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
                         message,
                     })?;
             prepare_worktree(&WorktreePrepareRequest {
-                project_root: target.project_root.to_string(),
-                repository: target.repository.to_string(),
+                project_root: target.project_root.clone(),
+                repository: target.repository.clone(),
                 url: target.url.clone(),
-                default_branch: target.default_branch.to_string(),
-                anchor_name: target.anchor_name.to_string(),
-                branch_name: target.branch_name.to_string(),
-                worktree_path: target.worktree_path.to_string(),
+                default_branch: target.default_branch.clone(),
+                anchor_name: target.anchor_name.clone(),
+                branch_name: target.branch_name.clone(),
+                worktree_path: target.worktree_path.clone(),
                 credential,
             })
             .map_err(|error| WorkspaceError::WorktreePrepareFailed {
@@ -1715,7 +1715,7 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
                         .display()
                         .to_string(),
                 ),
-                url: repository.url,
+                url: GitRemoteUrl::from(repository.url),
                 default_branch: BranchName::from(repository.default_branch),
                 anchor_name: GitAnchorName::from(anchor_name),
                 git_credential_secret: repository.git_credential_secret,
@@ -2623,27 +2623,47 @@ fn build_attachment_issues(ai_context: &AdoAiContextItem) -> Vec<TaskPreflightIs
 #[cfg(test)]
 mod tests {
     use super::*;
+    use git2::{IndexAddOption, Repository, Signature};
     use std::fs;
-    use std::process::Command;
     use tempfile::tempdir;
 
     fn typed_workspace_path(path: &Path) -> WorkspacePath {
         WorkspacePath::from(path.display().to_string())
     }
 
-    fn run_git(cwd: &Path, args: &[&str]) {
-        let output = Command::new("git")
-            .current_dir(cwd)
-            .args(args)
-            .output()
-            .expect("git should run");
-        assert!(
-            output.status.success(),
-            "git {:?} failed\nstdout:\n{}\nstderr:\n{}",
-            args,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
+    fn init_develop_repository(path: &Path) {
+        fs::create_dir_all(path).expect("source should exist");
+        let repository = Repository::init(path).expect("repository should init");
+        fs::write(path.join("README.md"), "front\n").expect("file should be written");
+
+        let mut index = repository.index().expect("index should open");
+        index
+            .add_all(["README.md"].iter(), IndexAddOption::DEFAULT, None)
+            .expect("readme should be added");
+        index.write().expect("index should be written");
+        let tree_id = index.write_tree().expect("tree should be written");
+        let tree = repository.find_tree(tree_id).expect("tree should exist");
+        let signature =
+            Signature::now("dw test", "dw@example.invalid").expect("signature should be valid");
+        let commit_id = repository
+            .commit(
+                Some("refs/heads/develop"),
+                &signature,
+                &signature,
+                "init",
+                &tree,
+                &[],
+            )
+            .expect("initial commit should be created");
+        repository
+            .set_head("refs/heads/develop")
+            .expect("develop should be checked out");
+        repository
+            .checkout_head(None)
+            .expect("develop worktree should be checked out");
+        repository
+            .find_commit(commit_id)
+            .expect("initial commit should be readable");
     }
 
     #[test]
@@ -3221,7 +3241,9 @@ artifacts:
                 repository: WorkspaceRepositoryName::from("front"),
                 project_root: ProjectRootPath::from(project_root.display().to_string()),
                 worktree_path: RepositoryPath::from(workspace.join("front").display().to_string()),
-                url: temp.path().join("missing-remote.git").display().to_string(),
+                url: GitRemoteUrl::from(
+                    temp.path().join("missing-remote.git").display().to_string(),
+                ),
                 default_branch: BranchName::from("develop"),
                 anchor_name: GitAnchorName::from("front.git"),
                 git_credential_secret: None,
@@ -3244,22 +3266,7 @@ artifacts:
     fn execute_task_start_prepares_bare_repository_and_worktree() {
         let temp = tempdir().expect("tempdir should be created");
         let source = temp.path().join("source-front");
-        fs::create_dir_all(&source).expect("source should exist");
-        run_git(&source, &["init", "-b", "develop"]);
-        fs::write(source.join("README.md"), "front\n").expect("file should be written");
-        run_git(&source, &["add", "README.md"]);
-        run_git(
-            &source,
-            &[
-                "-c",
-                "user.name=dw test",
-                "-c",
-                "user.email=dw@example.invalid",
-                "commit",
-                "-m",
-                "init",
-            ],
-        );
+        init_develop_repository(&source);
 
         let root = temp.path().join("dw-root");
         let projects: ProjectsConfig = serde_json::from_str(&format!(
@@ -3888,7 +3895,7 @@ artifacts:
 
         assert_eq!(plan.repository.as_str(), "db");
         assert_eq!(plan.default_branch.as_str(), "develop");
-        assert_eq!(plan.anchor_name, "database.git");
+        assert_eq!(plan.anchor_name, GitAnchorName::from("database.git"));
         assert_eq!(plan.branch_name.as_str(), "feat/123-demo");
         assert!(plan.worktree_path.as_str().ends_with("database"));
         assert_eq!(

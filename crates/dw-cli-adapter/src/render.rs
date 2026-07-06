@@ -1752,8 +1752,26 @@ pub fn task_add_repo_execution_lines(
         format!("Workspace : {}", report.plan.workspace),
         format!("Repository: {}", report.worktree.repository),
         format!("Statut    : {}", report.worktree.status),
-        format!("Détail    : {}", report.worktree.message),
+        format!(
+            "Détail    : {}",
+            worktree_prepare_detail_fr(&report.worktree.detail)
+        ),
     ]
+}
+
+fn worktree_prepare_detail_fr(detail: &dw_git::WorktreePrepareDetail) -> String {
+    match detail {
+        dw_git::WorktreePrepareDetail::MissingRemoteUrl => {
+            "URL distante absente dans projects.json.".into()
+        }
+        dw_git::WorktreePrepareDetail::AlreadyPresent => "Worktree déjà présent.".into(),
+        dw_git::WorktreePrepareDetail::CreatedFromExistingBranch { branch } => {
+            format!("Worktree créé depuis la branche existante {branch}.")
+        }
+        dw_git::WorktreePrepareDetail::CreatedFromBaseReference { reference } => {
+            format!("Worktree créé depuis {reference}.")
+        }
+    }
 }
 
 pub fn task_teardown_plan_lines(
@@ -3693,9 +3711,9 @@ mod tests {
                 repository: dw_core::WorkspaceRepositoryName::from("front"),
                 project_root: dw_core::ProjectRootPath::from("/tmp/project"),
                 worktree_path: dw_core::RepositoryPath::from("/tmp/ws/front"),
-                url: "https://example.invalid/front.git".into(),
+                url: dw_core::GitRemoteUrl::from("https://example.invalid/front.git"),
                 default_branch: dw_core::BranchName::from("main"),
-                anchor_name: "front-anchor".into(),
+                anchor_name: dw_core::GitAnchorName::from("front-anchor"),
                 git_credential_secret: None,
                 branch_name: dw_core::BranchName::from("feat/42-demo"),
                 repositories: vec![dw_core::WorkspaceRepositoryName::from("front")],

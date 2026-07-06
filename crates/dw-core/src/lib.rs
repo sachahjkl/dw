@@ -1255,6 +1255,8 @@ impl fmt::Display for EnvironmentVariableName {
 }
 
 string_newtype!(EnvironmentVariableValue);
+string_newtype!(GitRemoteUrl);
+string_newtype!(GitReferenceName);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]

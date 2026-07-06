@@ -262,13 +262,13 @@ pub fn execute_add_repo(plan: &AddRepoPlanReport) -> Result<AddRepoExecutionRepo
     let credential = resolve_git_credential_from_keyring(plan.plan.git_credential_secret.as_ref())
         .map_err(|message| anyhow!(message.to_string()))?;
     let worktree = prepare_worktree(&WorktreePrepareRequest {
-        project_root: plan.plan.project_root.to_string(),
-        repository: plan.plan.repository.to_string(),
+        project_root: plan.plan.project_root.clone(),
+        repository: plan.plan.repository.clone(),
         url: plan.plan.url.clone(),
-        default_branch: plan.plan.default_branch.to_string(),
+        default_branch: plan.plan.default_branch.clone(),
         anchor_name: plan.plan.anchor_name.clone(),
-        branch_name: plan.plan.branch_name.to_string(),
-        worktree_path: plan.plan.worktree_path.to_string(),
+        branch_name: plan.plan.branch_name.clone(),
+        worktree_path: plan.plan.worktree_path.clone(),
         credential,
     })?;
     let updated = execute_task_add_repo(&manifest, &plan.plan)?;

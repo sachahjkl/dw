@@ -1,5 +1,8 @@
 use anyhow::{Result, anyhow};
-use dw_core::{GitRevision, RepositoryPath, SecretValue};
+use dw_core::{
+    BranchName, GitAnchorName, GitReferenceName, GitRemoteUrl, GitRevision, ProjectRootPath,
+    RepositoryPath, SecretValue, WorkspaceRepositoryName,
+};
 use git2::{
     Cred, FetchOptions, IndexAddOption, ObjectType, PushOptions, RebaseOptions, RemoteCallbacks,
     Repository, Sort, StashFlags, StatusOptions, WorktreeAddOptions, build::RepoBuilder,
@@ -59,26 +62,51 @@ impl GitCommitMessages {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorktreePrepareRequest {
     #[serde(rename = "projectRoot")]
-    pub project_root: String,
-    pub repository: String,
-    pub url: String,
+    pub project_root: ProjectRootPath,
+    pub repository: WorkspaceRepositoryName,
+    pub url: GitRemoteUrl,
     #[serde(rename = "defaultBranch")]
-    pub default_branch: String,
+    pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
-    pub anchor_name: String,
+    pub anchor_name: GitAnchorName,
     #[serde(rename = "branchName")]
-    pub branch_name: String,
+    pub branch_name: BranchName,
     #[serde(rename = "worktreePath")]
-    pub worktree_path: String,
+    pub worktree_path: RepositoryPath,
     #[serde(skip)]
     pub credential: Option<GitCredential>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorktreePrepareResult {
-    pub repository: String,
-    pub status: String,
-    pub message: String,
+    pub repository: WorkspaceRepositoryName,
+    pub status: WorktreePrepareStatus,
+    pub detail: WorktreePrepareDetail,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorktreePrepareStatus {
+    Placeholder,
+    Prepared,
+}
+
+impl fmt::Display for WorktreePrepareStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Placeholder => formatter.write_str("placeholder"),
+            Self::Prepared => formatter.write_str("prepared"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum WorktreePrepareDetail {
+    MissingRemoteUrl,
+    AlreadyPresent,
+    CreatedFromExistingBranch { branch: BranchName },
+    CreatedFromBaseReference { reference: GitReferenceName },
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -478,20 +506,20 @@ pub fn push_repository(repository_path: &str, branch_name: &str) -> Result<()> {
 }
 
 pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrepareResult> {
-    if request.url.trim().is_empty() {
-        std::fs::create_dir_all(&request.worktree_path)?;
+    if request.url.as_str().trim().is_empty() {
+        std::fs::create_dir_all(request.worktree_path.as_str())?;
         return Ok(WorktreePrepareResult {
             repository: request.repository.clone(),
-            status: "placeholder".into(),
-            message: "URL distante absente dans projects.json.".into(),
+            status: WorktreePrepareStatus::Placeholder,
+            detail: WorktreePrepareDetail::MissingRemoteUrl,
         });
     }
 
-    let repositories_root = Path::new(&request.project_root).join("repositories");
-    let anchor_path = repositories_root.join(&request.anchor_name);
+    let repositories_root = Path::new(request.project_root.as_str()).join("repositories");
+    let anchor_path = repositories_root.join(request.anchor_name.as_str());
     std::fs::create_dir_all(&repositories_root)?;
     let environment_credential =
-        if request.credential.is_none() && is_azure_devops_url(&request.url) {
+        if request.credential.is_none() && is_azure_devops_url(request.url.as_str()) {
             git_credential_from_environment()
         } else {
             None
@@ -509,11 +537,11 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
     configure_anchor_fetch_refspec(&anchor_repository)?;
     fetch_anchor_repository(&anchor_repository, credential)?;
 
-    if Path::new(&request.worktree_path).is_dir() {
+    if Path::new(request.worktree_path.as_str()).is_dir() {
         return Ok(WorktreePrepareResult {
             repository: request.repository.clone(),
-            status: "prepared".into(),
-            message: "Worktree déjà présent.".into(),
+            status: WorktreePrepareStatus::Prepared,
+            detail: WorktreePrepareDetail::AlreadyPresent,
         });
     }
 
@@ -546,7 +574,7 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
             })
             .map_err(git2_command_error)?;
         anchor_repository
-            .branch(&request.branch_name, &base_commit, false)
+            .branch(request.branch_name.as_str(), &base_commit, false)
             .map_err(git2_command_error)?;
     }
     let reference = anchor_repository
@@ -557,27 +585,28 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
     anchor_repository
         .worktree(
             &worktree_name(request),
-            Path::new(&request.worktree_path),
+            Path::new(request.worktree_path.as_str()),
             Some(&options),
         )
         .map_err(git2_command_error)?;
 
     Ok(WorktreePrepareResult {
         repository: request.repository.clone(),
-        status: "prepared".into(),
-        message: if branch_exists {
-            format!(
-                "Worktree créé depuis la branche existante {}.",
-                request.branch_name
-            )
+        status: WorktreePrepareStatus::Prepared,
+        detail: if branch_exists {
+            WorktreePrepareDetail::CreatedFromExistingBranch {
+                branch: request.branch_name.clone(),
+            }
         } else {
-            format!("Worktree créé depuis {base_ref}.")
+            WorktreePrepareDetail::CreatedFromBaseReference {
+                reference: GitReferenceName::from(base_ref),
+            }
         },
     })
 }
 
 fn clone_bare_repository(
-    url: &str,
+    url: &GitRemoteUrl,
     anchor_path: &Path,
     credential: Option<&GitCredential>,
 ) -> std::result::Result<Repository, GitError> {
@@ -585,7 +614,7 @@ fn clone_bare_repository(
     let mut builder = RepoBuilder::new();
     builder.bare(true).fetch_options(fetch_options);
     builder
-        .clone(url, anchor_path)
+        .clone(url.as_str(), anchor_path)
         .map_err(|error| git2_auth_error(error, credential.is_some()))
 }
 

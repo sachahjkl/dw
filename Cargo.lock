@@ -1267,6 +1267,7 @@ dependencies = [
  "dw-git",
  "dw-process",
  "dw-secret",
+ "git2",
  "serde",
  "serde_json",
  "tempfile",
