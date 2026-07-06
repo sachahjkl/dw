@@ -1638,9 +1638,16 @@ fn finish_handoff_summary_lines(summary: &dw_workspace::WorkspaceHandoffSummary)
     lines
 }
 
-fn push_finish_summary_list(lines: &mut Vec<String>, label: &str, items: &[String]) {
+fn push_finish_summary_list(
+    lines: &mut Vec<String>,
+    label: &str,
+    items: &[dw_workspace::HandoffSummaryEntry],
+) {
     if !items.is_empty() {
-        lines.push(format!("{label}: {}", items.join(" | ")));
+        lines.push(format!(
+            "{label}: {}",
+            join_display_with_separator(items, " | ")
+        ));
     }
 }
 
@@ -2887,13 +2894,17 @@ mod tests {
                 }],
             },
             handoff_summaries: vec![dw_workspace::WorkspaceHandoffSummary {
-                repository: "front".into(),
-                status: "done".into(),
-                done: vec!["UI ajustée".into()],
-                decisions: vec!["Conserver le contrat JSON".into()],
+                repository: dw_core::WorkspaceRepositoryName::from("front"),
+                status: dw_workspace::WorkspaceHandoffStatus::Done,
+                done: vec![dw_workspace::HandoffSummaryEntry::from("UI ajustée")],
+                decisions: vec![dw_workspace::HandoffSummaryEntry::from(
+                    "Conserver le contrat JSON",
+                )],
                 risks: Vec::new(),
                 blockers: Vec::new(),
-                follow_up: vec!["Valider en recette".into()],
+                follow_up: vec![dw_workspace::HandoffSummaryEntry::from(
+                    "Valider en recette",
+                )],
             }],
             commit_message: "feat(42): demo".into(),
             create_pr: true,

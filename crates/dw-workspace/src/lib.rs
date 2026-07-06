@@ -317,13 +317,109 @@ pub struct TaskStartRequest<'a> {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceHandoffSummary {
-    pub repository: String,
-    pub status: String,
-    pub done: Vec<String>,
-    pub decisions: Vec<String>,
-    pub risks: Vec<String>,
-    pub blockers: Vec<String>,
-    pub follow_up: Vec<String>,
+    pub repository: WorkspaceRepositoryName,
+    pub status: WorkspaceHandoffStatus,
+    pub done: Vec<HandoffSummaryEntry>,
+    pub decisions: Vec<HandoffSummaryEntry>,
+    pub risks: Vec<HandoffSummaryEntry>,
+    pub blockers: Vec<HandoffSummaryEntry>,
+    pub follow_up: Vec<HandoffSummaryEntry>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceHandoffStatus {
+    Todo,
+    InProgress,
+    Done,
+    Blocked,
+}
+
+impl WorkspaceHandoffStatus {
+    pub const ALL: [Self; 4] = [Self::Todo, Self::InProgress, Self::Done, Self::Blocked];
+
+    pub fn parse(value: &str) -> Result<Self, String> {
+        let normalized = value.trim().to_ascii_lowercase().replace('-', "_");
+        match normalized.as_str() {
+            "todo" => Ok(Self::Todo),
+            "in_progress" => Ok(Self::InProgress),
+            "done" => Ok(Self::Done),
+            "blocked" => Ok(Self::Blocked),
+            _ => Err(format!(
+                "status handoff invalide: {}. Attendus: {}.",
+                value,
+                Self::allowed_values()
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Todo => "todo",
+            Self::InProgress => "in_progress",
+            Self::Done => "done",
+            Self::Blocked => "blocked",
+        }
+    }
+
+    pub fn validation_status(self) -> TaskHandoffValidationStatus {
+        match self {
+            Self::Done => TaskHandoffValidationStatus::Valid,
+            Self::Blocked => TaskHandoffValidationStatus::Blocked,
+            Self::InProgress => TaskHandoffValidationStatus::InProgress,
+            Self::Todo => TaskHandoffValidationStatus::Todo,
+        }
+    }
+
+    pub fn is_finish_ready(self) -> bool {
+        self == Self::Done
+    }
+
+    pub fn allowed_values() -> String {
+        Self::ALL
+            .iter()
+            .map(|status| status.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+impl fmt::Display for WorkspaceHandoffStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct HandoffSummaryEntry(String);
+
+impl HandoffSummaryEntry {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for HandoffSummaryEntry {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for HandoffSummaryEntry {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for HandoffSummaryEntry {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -393,40 +489,8 @@ pub fn build_handoff_validation_report(
         let text = fs::read_to_string(&path).unwrap_or_default();
         match try_parse_summary(&text, repository.as_str()) {
             Ok(summary) => {
-                let allowed = ["todo", "in_progress", "done", "blocked"];
-                if !allowed
-                    .iter()
-                    .any(|status| status.eq_ignore_ascii_case(&summary.status))
-                {
-                    items.push(TaskHandoffValidationItem {
-                        repository: repository.clone(),
-                        path: path.display().to_string(),
-                        status: TaskHandoffValidationStatus::Invalid,
-                        valid: false,
-                        message: format!(
-                            "Status handoff invalide: {}. Attendus: {}.",
-                            summary.status,
-                            allowed.join(", ")
-                        ),
-                        done_count: 0,
-                        decision_count: 0,
-                        risk_count: 0,
-                        blocker_count: 0,
-                        follow_up_count: 0,
-                    });
-                    continue;
-                }
-
-                let valid = summary.status.eq_ignore_ascii_case("done");
-                let status = if valid {
-                    TaskHandoffValidationStatus::Valid
-                } else if summary.status.eq_ignore_ascii_case("blocked") {
-                    TaskHandoffValidationStatus::Blocked
-                } else if summary.status.eq_ignore_ascii_case("in_progress") {
-                    TaskHandoffValidationStatus::InProgress
-                } else {
-                    TaskHandoffValidationStatus::Todo
-                };
+                let valid = summary.status.is_finish_ready();
+                let status = summary.status.validation_status();
                 items.push(TaskHandoffValidationItem {
                     repository: repository.clone(),
                     path: path.display().to_string(),
@@ -1970,13 +2034,13 @@ pub fn try_parse_summary(
     }
 
     Ok(WorkspaceHandoffSummary {
-        repository,
-        status,
-        done: sections["summary"]["done"].clone(),
-        decisions: sections["summary"]["decisions"].clone(),
-        risks: sections["summary"]["risks"].clone(),
-        blockers: sections["summary"]["blockers"].clone(),
-        follow_up: sections["summary"]["follow_up"].clone(),
+        repository: WorkspaceRepositoryName::from(repository),
+        status: WorkspaceHandoffStatus::parse(&status)?,
+        done: handoff_entries(&sections["summary"]["done"]),
+        decisions: handoff_entries(&sections["summary"]["decisions"]),
+        risks: handoff_entries(&sections["summary"]["risks"]),
+        blockers: handoff_entries(&sections["summary"]["blockers"]),
+        follow_up: handoff_entries(&sections["summary"]["follow_up"]),
     })
 }
 
@@ -2008,6 +2072,14 @@ fn build_sections() -> BTreeMap<String, BTreeMap<String, Vec<String>>> {
             ]),
         ),
     ])
+}
+
+fn handoff_entries(values: &[String]) -> Vec<HandoffSummaryEntry> {
+    values
+        .iter()
+        .cloned()
+        .map(HandoffSummaryEntry::from)
+        .collect()
 }
 
 fn split_key_value(value: &str) -> Option<(String, String)> {
@@ -2553,8 +2625,8 @@ artifacts:
 "#;
 
         let summary = try_parse_summary(text, "front").expect("summary should parse");
-        assert_eq!(summary.status, "done");
-        assert_eq!(summary.repository, "front");
+        assert_eq!(summary.status, WorkspaceHandoffStatus::Done);
+        assert_eq!(summary.repository, WorkspaceRepositoryName::from("front"));
         assert_eq!(summary.done.len(), 1);
         assert_eq!(summary.decisions.len(), 1);
         assert_eq!(summary.follow_up.len(), 1);

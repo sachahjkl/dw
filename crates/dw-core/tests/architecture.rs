@@ -2182,6 +2182,51 @@ fn workspace_teardown_contract_is_typed_not_string_protocol() {
 }
 
 #[test]
+fn workspace_handoff_summary_contract_is_typed_not_string_protocol() {
+    let repo = repo_root();
+    let text = fs::read_to_string(repo.join("crates/dw-workspace/src/lib.rs"))
+        .expect("read workspace source file");
+
+    for forbidden in [
+        "pub struct WorkspaceHandoffSummary {\n    pub repository: String",
+        "pub status: String,\n    pub done: Vec<String>",
+        "pub done: Vec<String>",
+        "pub decisions: Vec<String>",
+        "pub risks: Vec<String>",
+        "pub blockers: Vec<String>",
+        "pub follow_up: Vec<String>",
+        "status.eq_ignore_ascii_case(\"done\")",
+        "status.eq_ignore_ascii_case(\"blocked\")",
+        "status.eq_ignore_ascii_case(\"in_progress\")",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "workspace handoff summary contains forbidden string protocol token `{}`",
+            forbidden
+        );
+    }
+
+    for required in [
+        "pub repository: WorkspaceRepositoryName",
+        "pub status: WorkspaceHandoffStatus",
+        "pub done: Vec<HandoffSummaryEntry>",
+        "pub decisions: Vec<HandoffSummaryEntry>",
+        "pub risks: Vec<HandoffSummaryEntry>",
+        "pub blockers: Vec<HandoffSummaryEntry>",
+        "pub follow_up: Vec<HandoffSummaryEntry>",
+        "pub enum WorkspaceHandoffStatus",
+        "pub struct HandoffSummaryEntry(String)",
+        "WorkspaceHandoffStatus::parse(&status)?",
+    ] {
+        assert!(
+            text.contains(required),
+            "workspace handoff summary should contain typed contract token `{}`",
+            required
+        );
+    }
+}
+
+#[test]
 fn migrated_ado_command_modules_do_not_render_or_prompt() {
     let repo = repo_root();
     for relative in [

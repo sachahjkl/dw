@@ -9,7 +9,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use thiserror::Error;
 
-use crate::{TaskCommitTarget, WorkspaceHandoffSummary, WorkspaceManifest, try_parse_summary};
+use crate::{
+    HandoffSummaryEntry, TaskCommitTarget, WorkspaceHandoffSummary, WorkspaceManifest,
+    try_parse_summary,
+};
 
 #[derive(Debug, Error)]
 pub enum TaskFinishError {
@@ -311,7 +314,7 @@ fn render_verification(repository: &str, results: &[VerificationResult]) -> Stri
     }
 }
 
-fn render_list(items: &[String]) -> String {
+fn render_list(items: &[HandoffSummaryEntry]) -> String {
     if items.is_empty() {
         "- (aucun)".into()
     } else {
@@ -411,7 +414,9 @@ fn normalize_work_item_type(value: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{WorkspaceHandoffSummary, WorkspaceManifest};
+    use crate::{
+        HandoffSummaryEntry, WorkspaceHandoffStatus, WorkspaceHandoffSummary, WorkspaceManifest,
+    };
 
     #[test]
     fn finish_state_never_moves_parent_story_types() {
@@ -464,13 +469,13 @@ mod tests {
     #[test]
     fn structured_handoff_section_renders_summary_lists() {
         let handoff = WorkspaceHandoffSummary {
-            repository: "front".into(),
-            status: "done".into(),
-            done: vec!["Implémenter le composant".into()],
-            decisions: vec!["Conserver le libellé métier".into()],
-            risks: vec!["Régression responsive".into()],
+            repository: WorkspaceRepositoryName::from("front"),
+            status: WorkspaceHandoffStatus::Done,
+            done: vec![HandoffSummaryEntry::from("Implémenter le composant")],
+            decisions: vec![HandoffSummaryEntry::from("Conserver le libellé métier")],
+            risks: vec![HandoffSummaryEntry::from("Régression responsive")],
             blockers: vec![],
-            follow_up: vec!["Valider avec le user".into()],
+            follow_up: vec![HandoffSummaryEntry::from("Valider avec le user")],
         };
 
         let rendered = structured_handoff_section(&handoff);
@@ -510,9 +515,9 @@ mod tests {
             target_branch: "main".into(),
         };
         let handoff = WorkspaceHandoffSummary {
-            repository: "front".into(),
-            status: "done".into(),
-            done: vec!["Changer la page".into()],
+            repository: WorkspaceRepositoryName::from("front"),
+            status: WorkspaceHandoffStatus::Done,
+            done: vec![HandoffSummaryEntry::from("Changer la page")],
             decisions: vec![],
             risks: vec![],
             blockers: vec![],
