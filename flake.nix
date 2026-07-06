@@ -29,6 +29,7 @@
         packageVersion = "${versionPrefix}+${sourceRevision}";
 
         nativeBuildInputs = [
+          pkgs.git
           pkgs.pkg-config
         ];
 

@@ -2582,13 +2582,6 @@ mod tests {
         WorkspacePath::from(path.display().to_string())
     }
 
-    fn git_is_available() -> bool {
-        Command::new("git")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    }
-
     fn run_git(cwd: &Path, args: &[&str]) {
         let output = Command::new("git")
             .current_dir(cwd)
@@ -3195,10 +3188,6 @@ artifacts:
 
     #[test]
     fn execute_task_start_prepares_bare_repository_and_worktree() {
-        if !git_is_available() {
-            return;
-        }
-
         let temp = tempdir().expect("tempdir should be created");
         let source = temp.path().join("source-front");
         fs::create_dir_all(&source).expect("source should exist");
