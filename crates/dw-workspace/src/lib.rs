@@ -10,9 +10,10 @@ use dw_contracts::{
     TaskPreflightStaleReason,
 };
 use dw_core::{
-    AiContextFilePath, BranchName, GitAnchorName, HandoffFilePath, HandoffParseError, ProjectKey,
-    ProjectRootPath, RepositoryPath, TaskId, TaskSlug, WorkItemId, WorkItemState, WorkItemTitle,
-    WorkItemTypeName, WorkspaceOperationError, WorkspacePath, WorkspaceRepositoryName,
+    AiContextFilePath, BranchName, CommitMessage, GitAnchorName, HandoffFilePath,
+    HandoffParseError, ProjectKey, ProjectRootPath, RepositoryPath, TaskId, TaskSlug, WorkItemId,
+    WorkItemState, WorkItemTitle, WorkItemTypeName, WorkspaceOperationError, WorkspacePath,
+    WorkspaceRepositoryName,
 };
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
@@ -921,28 +922,28 @@ pub fn plan_task_finish(
 
 pub fn build_commit_message(
     manifest: &WorkspaceManifest,
-    override_message: Option<&str>,
-) -> String {
-    if let Some(message) = override_message.filter(|message| !message.trim().is_empty()) {
-        return ensure_work_item_reference(message, manifest);
+    override_message: Option<&CommitMessage>,
+) -> CommitMessage {
+    if let Some(message) = override_message.filter(|message| !message.as_str().trim().is_empty()) {
+        return ensure_work_item_reference(message.as_str(), manifest);
     }
 
-    format!(
+    CommitMessage::from(format!(
         "{}({}): {}",
         commit_prefix(manifest.kind.as_str()),
         commit_ids(manifest).join(" "),
         manifest.slug
-    )
+    ))
 }
 
-pub fn ensure_work_item_reference(message: &str, manifest: &WorkspaceManifest) -> String {
+pub fn ensure_work_item_reference(message: &str, manifest: &WorkspaceManifest) -> CommitMessage {
     let ids = commit_ids_for_reference(manifest);
     if ids.iter().any(|id| message.contains(&format!("#{id}"))) {
-        message.into()
+        CommitMessage::from(message)
     } else if let Some(id) = ids.first() {
-        format!("{message} #{id}")
+        CommitMessage::from(format!("{message} #{id}"))
     } else {
-        message.into()
+        CommitMessage::from(message)
     }
 }
 
@@ -3592,7 +3593,7 @@ artifacts:
         .expect("manifest should parse");
 
         assert_eq!(
-            build_commit_message(&manifest, None),
+            build_commit_message(&manifest, None).as_str(),
             "bug(#53020 #53312 #55201): corriger-ouverture-dossier"
         );
     }
@@ -3620,7 +3621,7 @@ artifacts:
         .expect("manifest should parse");
 
         assert_eq!(
-            build_commit_message(&manifest, None),
+            build_commit_message(&manifest, None).as_str(),
             "bug(#53020 #53098): corriger-ouverture-dossier"
         );
     }
@@ -3633,11 +3634,16 @@ artifacts:
         .expect("manifest should parse");
 
         assert_eq!(
-            build_commit_message(&manifest, Some("feat: descriptif")),
+            build_commit_message(&manifest, Some(&CommitMessage::from("feat: descriptif")))
+                .as_str(),
             "feat: descriptif #55201"
         );
         assert_eq!(
-            build_commit_message(&manifest, Some("feat: descriptif #27485")),
+            build_commit_message(
+                &manifest,
+                Some(&CommitMessage::from("feat: descriptif #27485"))
+            )
+            .as_str(),
             "feat: descriptif #27485"
         );
     }

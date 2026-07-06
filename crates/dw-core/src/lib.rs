@@ -841,6 +841,7 @@ impl fmt::Display for DatabaseTableName {
 }
 
 string_newtype!(DatabaseConnectionString);
+string_newtype!(CommitMessage);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]

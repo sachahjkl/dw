@@ -258,7 +258,7 @@ impl FormState {
                 root: Some(dw_core::DevWorkflowRoot::from(root)),
                 mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 yes: enabled("Execute"),
-                message: value("Message"),
+                message: value("Message").map(dw_core::CommitMessage::from),
                 create_pr: enabled("Create PR"),
                 ready: enabled("Ready"),
                 skip_verify: enabled("Skip verify"),

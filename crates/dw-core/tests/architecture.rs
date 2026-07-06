@@ -1041,6 +1041,8 @@ fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
     for forbidden in [
         "pub current_state: Option<String>",
         "pub target_state: Option<String>",
+        "pub message: Option<String>",
+        "pub commit_message: String",
         "state_for_update,",
         "current.eq_ignore_ascii_case(&state)",
     ] {
@@ -1058,8 +1060,11 @@ fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
         "WorkspaceRepositoryName",
         "RepositoryPath",
         "WorkItemState",
+        "CommitMessage",
         "pub workspace: Option<WorkspacePath>",
         "pub root: Option<DevWorkflowRoot>",
+        "pub message: Option<CommitMessage>",
+        "pub commit_message: CommitMessage",
         "pub root: DevWorkflowRoot",
         "pub workspace: WorkspacePath",
         "pub repository: WorkspaceRepositoryName",
@@ -1739,6 +1744,14 @@ fn task_repo_contract_uses_typed_paths_repositories_and_branches() {
     let repo = repo_root();
     let path = repo.join("crates/dw-task/src/repo.rs");
     let text = fs::read_to_string(&path).expect("read repo source");
+    for forbidden in ["pub message: String", "pub message: Option<String>"] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains primitive commit message contract token `{}`",
+            path.display(),
+            forbidden
+        );
+    }
     for required in [
         "DevWorkflowRoot",
         "WorkspacePath",
@@ -1747,8 +1760,11 @@ fn task_repo_contract_uses_typed_paths_repositories_and_branches() {
         "WorkItemId",
         "RepositoryPath",
         "BranchName",
+        "CommitMessage",
         "pub workspace: Option<WorkspacePath>",
         "pub root: Option<DevWorkflowRoot>",
+        "pub message: Option<CommitMessage>",
+        "pub message: CommitMessage",
         "pub project: Option<ProjectKey>",
         "pub work_item_ids: Vec<WorkItemId>",
         "pub repo: WorkspaceRepositoryName",

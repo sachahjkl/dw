@@ -1,8 +1,8 @@
 use anyhow::Result;
 use dw_config::{load_projects_config, resolve_project, resolve_root};
 use dw_core::{
-    BranchName, DevWorkflowRoot, ProjectKey, RepositoryPath, WorkItemId, WorkspacePath,
-    WorkspaceRepositoryName,
+    BranchName, CommitMessage, DevWorkflowRoot, ProjectKey, RepositoryPath, WorkItemId,
+    WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
     RepositoryStatus, WorktreePrepareRequest, WorktreePrepareResult, commit_repository,
@@ -32,7 +32,7 @@ pub struct CommitArgs {
     pub r#continue: bool,
     pub root: Option<DevWorkflowRoot>,
     pub mode: dw_core::ExecutionMode,
-    pub message: Option<String>,
+    pub message: Option<CommitMessage>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +89,7 @@ pub struct CommitPlanReport {
     pub workspace: WorkspacePath,
     #[serde(rename = "branchName")]
     pub branch_name: BranchName,
-    pub message: String,
+    pub message: CommitMessage,
     pub targets: Vec<CommitTargetStatus>,
 }
 
@@ -104,7 +104,7 @@ pub struct CommitExecutionReport {
     pub workspace: WorkspacePath,
     #[serde(rename = "branchName")]
     pub branch_name: BranchName,
-    pub message: String,
+    pub message: CommitMessage,
     pub committed: Vec<WorkspaceRepositoryName>,
 }
 
@@ -200,7 +200,7 @@ pub fn commit_plan(args: CommitArgs) -> Result<CommitPlanReport> {
     Ok(CommitPlanReport {
         workspace,
         branch_name: manifest.branch_name.clone(),
-        message: build_commit_message(&manifest, args.message.as_deref()),
+        message: build_commit_message(&manifest, args.message.as_ref()),
         targets: statuses,
     })
 }
@@ -208,7 +208,7 @@ pub fn commit_plan(args: CommitArgs) -> Result<CommitPlanReport> {
 pub fn execute_commit(plan: &CommitPlanReport) -> Result<CommitExecutionReport> {
     let changed = changed_commit_targets(plan);
     for item in &changed {
-        commit_repository(item.target.path.as_str(), &plan.message)?;
+        commit_repository(item.target.path.as_str(), plan.message.as_str())?;
     }
 
     Ok(CommitExecutionReport {
@@ -417,7 +417,7 @@ mod tests {
         super::CommitPlanReport {
             workspace: dw_core::WorkspacePath::from("/tmp/ws"),
             branch_name: dw_core::BranchName::from("feat/42-demo"),
-            message: "feat(42): demo".into(),
+            message: dw_core::CommitMessage::from("feat(42): demo"),
             targets: items
                 .into_iter()
                 .map(

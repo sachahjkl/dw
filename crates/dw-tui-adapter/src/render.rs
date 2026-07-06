@@ -3086,7 +3086,7 @@ mod tests {
         let report = dw_task::repo::CommitPlanReport {
             workspace: dw_core::WorkspacePath::from("/tmp/ws"),
             branch_name: dw_core::BranchName::from("feat/42-demo"),
-            message: "feat(42): demo".into(),
+            message: dw_core::CommitMessage::from("feat(42): demo"),
             targets: vec![dw_task::repo::CommitTargetStatus {
                 target: dw_workspace::TaskCommitTarget {
                     repository: dw_core::WorkspaceRepositoryName::from("front"),
@@ -3161,7 +3161,7 @@ mod tests {
                     "Valider en recette",
                 )],
             }],
-            commit_message: "feat(42): demo".into(),
+            commit_message: dw_core::CommitMessage::from("feat(42): demo"),
             create_pr: true,
             ready: false,
             skip_ado: false,

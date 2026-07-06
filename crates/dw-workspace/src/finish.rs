@@ -207,7 +207,7 @@ pub fn ensure_verification_passed(results: &[VerificationResult]) -> Result<(), 
 }
 
 pub fn pull_request_title(manifest: &WorkspaceManifest) -> String {
-    crate::build_commit_message(manifest, None)
+    crate::build_commit_message(manifest, None).to_string()
 }
 
 pub fn pull_request_description(

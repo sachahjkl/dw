@@ -9,8 +9,8 @@ use dw_ado::{
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_core::{
-    DevWorkflowRoot, GitOperation, RepositoryPath, TaskActionEvent, WorkItemId, WorkItemState,
-    WorkspacePath, WorkspaceRepositoryName,
+    CommitMessage, DevWorkflowRoot, GitOperation, RepositoryPath, TaskActionEvent, WorkItemId,
+    WorkItemState, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{RepositoryStatus, commit_repository, push_repository, repository_status};
 use dw_workspace::{
@@ -29,7 +29,7 @@ pub struct FinishArgs {
     pub root: Option<DevWorkflowRoot>,
     pub mode: dw_core::ExecutionMode,
     pub yes: bool,
-    pub message: Option<String>,
+    pub message: Option<CommitMessage>,
     pub create_pr: bool,
     pub ready: bool,
     pub skip_verify: bool,
@@ -46,7 +46,7 @@ pub struct FinishPlanReport {
     #[serde(rename = "handoffSummaries")]
     pub handoff_summaries: Vec<WorkspaceHandoffSummary>,
     #[serde(rename = "commitMessage")]
-    pub commit_message: String,
+    pub commit_message: CommitMessage,
     #[serde(rename = "createPr")]
     pub create_pr: bool,
     pub ready: bool,
@@ -191,7 +191,7 @@ pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
     Ok(FinishPlanReport {
         root: DevWorkflowRoot::from(root),
         workspace,
-        commit_message: build_commit_message(&manifest, args.message.as_deref()),
+        commit_message: build_commit_message(&manifest, args.message.as_ref()),
         manifest,
         targets,
         handoff,
@@ -273,7 +273,7 @@ pub async fn execute_finish_with_events(
                     operation: GitOperation::CommitAndPush,
                 },
             );
-            commit_repository(target.target.path.as_str(), &plan.commit_message)?;
+            commit_repository(target.target.path.as_str(), plan.commit_message.as_str())?;
             push_repository(
                 target.target.path.as_str(),
                 plan.manifest.branch_name.as_str(),

@@ -470,7 +470,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 r#continue,
                 root: root.map(DevWorkflowRoot::from),
                 mode: dw_core::ExecutionMode::Preview,
-                message,
+                message: message.map(dw_core::CommitMessage::from),
             })?;
             if execute {
                 let execution = dw_task::repo::execute_commit(&report)?;
@@ -829,7 +829,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 root: root.map(DevWorkflowRoot::from),
                 mode: dw_core::ExecutionMode::Preview,
                 yes: false,
-                message,
+                message: message.map(dw_core::CommitMessage::from),
                 create_pr,
                 ready,
                 skip_verify,
