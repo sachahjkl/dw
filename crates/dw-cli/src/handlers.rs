@@ -819,9 +819,9 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 apply_finish_mode(mode, &mut create_pr, &mut ready, &mut skip_ado);
             }
             let args = dw_task::finish::FinishArgs {
-                workspace,
+                workspace: workspace.map(WorkspacePath::from),
                 r#continue,
-                root,
+                root: root.map(DevWorkflowRoot::from),
                 mode: dw_core::ExecutionMode::Preview,
                 yes: false,
                 message,
@@ -858,7 +858,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             confirm_finish(
                 yes,
                 &finish_confirmation_prompt(
-                    &plan.workspace,
+                    plan.workspace.as_str(),
                     !plan.changed_repositories.is_empty(),
                     !plan.unpushed_repositories.is_empty(),
                     plan.create_pr,

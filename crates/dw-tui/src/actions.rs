@@ -391,9 +391,9 @@ pub fn selected_pull_request_action(
         }
         PullRequestAction::FinishPreview | PullRequestAction::FinishExecute => {
             TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
-                workspace: Some(item.workspace.clone()?),
+                workspace: Some(dw_core::WorkspacePath::from(item.workspace.clone()?)),
                 r#continue: false,
-                root: Some(snapshot.root.clone()),
+                root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
                 mode: dw_core::ExecutionMode::from_execute(
                     action == PullRequestAction::FinishExecute,
                 ),
@@ -784,7 +784,10 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::TaskFinish(args) => {
-                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws"));
+                assert_eq!(
+                    args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
+                    Some("/tmp/ws")
+                );
                 assert!(args.create_pr);
                 assert!(args.mode.executes());
                 assert!(args.yes);

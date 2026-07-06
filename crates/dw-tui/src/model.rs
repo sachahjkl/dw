@@ -367,7 +367,9 @@ impl TuiAction {
             TuiActionRequest::TaskAddRepo(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
-            TuiActionRequest::TaskFinish(args) => args.root = Some(root),
+            TuiActionRequest::TaskFinish(args) => {
+                args.root = Some(dw_core::DevWorkflowRoot::from(root))
+            }
             TuiActionRequest::TaskTeardown(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
@@ -616,7 +618,9 @@ impl TuiAction {
             TuiActionRequest::TaskTeardown(args) => {
                 args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
             }
-            TuiActionRequest::TaskFinish(args) => args.workspace.as_deref(),
+            TuiActionRequest::TaskFinish(args) => {
+                args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
+            }
             TuiActionRequest::TaskAddWorkItem(args) => {
                 args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
             }
@@ -1434,7 +1438,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::FinishPreview => TuiAction {
             label: "Preview finish".into(),
             request: TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
-                workspace: Some(workspace_arg),
+                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
                 r#continue: false,
                 root: None,
                 mode: dw_core::ExecutionMode::Preview,
@@ -1451,7 +1455,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::FinishExecute => TuiAction {
             label: "Finish workspace".into(),
             request: TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
-                workspace: Some(workspace_arg.clone()),
+                workspace: Some(dw_core::WorkspacePath::from(workspace_arg.clone())),
                 r#continue: false,
                 root: None,
                 mode: dw_core::ExecutionMode::Execute,

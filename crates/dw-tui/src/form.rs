@@ -253,9 +253,9 @@ impl FormState {
                 })
             }
             FormTemplate::TaskFinish => TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
-                workspace: value("Workspace"),
+                workspace: value("Workspace").map(dw_core::WorkspacePath::from),
                 r#continue: enabled("Continue"),
-                root: Some(root.into()),
+                root: Some(dw_core::DevWorkflowRoot::from(root)),
                 mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 yes: enabled("Execute"),
                 message: value("Message"),

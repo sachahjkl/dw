@@ -536,6 +536,17 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             ],
         ),
         (
+            "crates/dw-task/src/finish.rs",
+            &[
+                "pub workspace: Option<String>",
+                "pub root: Option<String>",
+                "pub root: String",
+                "pub workspace: String",
+                "pub repository: String",
+                "pub id: String",
+            ],
+        ),
+        (
             "crates/dw-task/src/validate.rs",
             &[
                 "pub workspace: Option<String>",
@@ -605,6 +616,34 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-task/src/finish.rs");
+    let text = fs::read_to_string(&path).expect("read finish source");
+    for required in [
+        "DevWorkflowRoot",
+        "WorkItemId",
+        "WorkspacePath",
+        "WorkspaceRepositoryName",
+        "RepositoryPath",
+        "pub workspace: Option<WorkspacePath>",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub root: DevWorkflowRoot",
+        "pub workspace: WorkspacePath",
+        "pub repository: WorkspaceRepositoryName",
+        "pub id: WorkItemId",
+        "pub changed_repositories: Vec<WorkspaceRepositoryName>",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed finish contract token `{}`",
+            path.display(),
+            required
+        );
     }
 }
 

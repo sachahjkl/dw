@@ -2545,8 +2545,14 @@ mod tests {
         assert!(matches!(action.kind, ActionRisk::Destructive));
         match action.request {
             TuiActionRequest::TaskFinish(args) => {
-                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws-one"));
-                assert_eq!(args.root.as_deref(), Some("/tmp/missing-dw-root"));
+                assert_eq!(
+                    args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
+                    Some("/tmp/ws-one")
+                );
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/missing-dw-root")
+                );
                 assert!(args.mode.executes());
                 assert!(args.yes);
             }

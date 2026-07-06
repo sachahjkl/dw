@@ -8,7 +8,10 @@ use dw_ado::{
     update_work_item_state_authenticated,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::{GitOperation, RepositoryPath, TaskActionEvent, WorkItemId, WorkspaceRepositoryName};
+use dw_core::{
+    DevWorkflowRoot, GitOperation, RepositoryPath, TaskActionEvent, WorkItemId, WorkspacePath,
+    WorkspaceRepositoryName,
+};
 use dw_git::{RepositoryStatus, commit_repository, push_repository, repository_status};
 use dw_workspace::{
     WorkspaceHandoffSummary, WorkspaceManifest, build_commit_message, ensure_verification_passed,
@@ -21,9 +24,9 @@ use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct FinishArgs {
-    pub workspace: Option<String>,
+    pub workspace: Option<WorkspacePath>,
     pub r#continue: bool,
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub mode: dw_core::ExecutionMode,
     pub yes: bool,
     pub message: Option<String>,
@@ -35,8 +38,8 @@ pub struct FinishArgs {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FinishPlanReport {
-    pub root: String,
-    pub workspace: String,
+    pub root: DevWorkflowRoot,
+    pub workspace: WorkspacePath,
     pub manifest: WorkspaceManifest,
     pub targets: Vec<FinishTargetStatus>,
     pub handoff: dw_contracts::TaskHandoffValidationReport,
@@ -88,7 +91,7 @@ pub struct FinishGitAction {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FinishPullRequestResult {
-    pub repository: String,
+    pub repository: WorkspaceRepositoryName,
     pub action: FinishPullRequestAction,
     pub url: Option<String>,
     #[serde(rename = "pullRequestId")]
@@ -113,7 +116,7 @@ pub enum FinishPullRequestSkipReason {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FinishWorkItemStateUpdate {
-    pub id: String,
+    pub id: WorkItemId,
     pub label: String,
     pub kind: Option<String>,
     #[serde(rename = "currentState")]
@@ -133,10 +136,10 @@ pub enum FinishWorkItemStateOutcome {
 }
 
 pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
-    let root = resolve_root(args.root.as_deref());
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
     let workspace = resolve_workspace_for_workspace_command(
         &root,
-        args.workspace.as_deref(),
+        args.workspace.as_ref().map(WorkspacePath::as_str),
         args.r#continue,
         &std::env::current_dir()?.display().to_string(),
     )?;
@@ -186,8 +189,8 @@ pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
     };
 
     Ok(FinishPlanReport {
-        root,
-        workspace,
+        root: DevWorkflowRoot::from(root),
+        workspace: WorkspacePath::from(workspace),
         commit_message: build_commit_message(&manifest, args.message.as_deref()),
         manifest,
         targets,
@@ -224,8 +227,8 @@ pub async fn execute_finish_with_events(
         );
     }
 
-    let projects = load_projects_config(&plan.root);
-    let workflow = load_workflow_config(&plan.root);
+    let projects = load_projects_config(plan.root.as_str());
+    let workflow = load_workflow_config(plan.root.as_str());
     let finish_options = task_finish_options(&workflow);
     let mut events = Vec::new();
     let mut verification_results = Vec::new();
@@ -346,14 +349,14 @@ pub async fn execute_finish_with_events(
     if options.project.trim().is_empty() {
         options.project = plan.manifest.project.clone();
     }
-    let token = require_token(load_auth_options(Some(&plan.root))?).await?;
+    let token = require_token(load_auth_options(Some(plan.root.as_str()))?).await?;
     let source_ref = format!("refs/heads/{}", plan.manifest.branch_name);
-    let task_plan = read_plan(Path::new(&plan.workspace));
+    let task_plan = read_plan(Path::new(plan.workspace.as_str()));
 
     for candidate in &plan.pull_request_candidates {
         let Some(ado_repository) = candidate.ado_repository.as_ref() else {
             pull_requests.push(FinishPullRequestResult {
-                repository: candidate.repository.clone(),
+                repository: WorkspaceRepositoryName::from(candidate.repository.clone()),
                 action: FinishPullRequestAction::Skipped,
                 url: None,
                 pull_request_id: None,
@@ -383,7 +386,7 @@ pub async fn execute_finish_with_events(
         .await?
         {
             pull_requests.push(FinishPullRequestResult {
-                repository: candidate.repository.clone(),
+                repository: WorkspaceRepositoryName::from(candidate.repository.clone()),
                 action: FinishPullRequestAction::Existing,
                 url: existing.url,
                 pull_request_id: Some(existing.pull_request_id),
@@ -399,7 +402,7 @@ pub async fn execute_finish_with_events(
             },
         );
         let handoff_summary =
-            read_handoff_summary(Path::new(&plan.workspace), &candidate.repository)?;
+            read_handoff_summary(Path::new(plan.workspace.as_str()), &candidate.repository)?;
         let input = CreatePullRequestInput {
             repository: ado_repository.clone(),
             source_ref_name: source_ref.clone(),
@@ -482,7 +485,7 @@ pub async fn execute_finish_with_events(
             let label = work_item_label(&item);
             let Some(state) = state else {
                 work_item_updates.push(FinishWorkItemStateUpdate {
-                    id: item.id,
+                    id: WorkItemId::from(item.id),
                     label,
                     kind: item.kind.clone(),
                     current_state: item.state,
@@ -498,7 +501,7 @@ pub async fn execute_finish_with_events(
                 .is_some_and(|current| current.eq_ignore_ascii_case(&state))
             {
                 work_item_updates.push(FinishWorkItemStateUpdate {
-                    id: item.id,
+                    id: WorkItemId::from(item.id),
                     label,
                     kind: item.kind.clone(),
                     current_state: item.state,
@@ -523,7 +526,7 @@ pub async fn execute_finish_with_events(
             })
             .await?;
             work_item_updates.push(FinishWorkItemStateUpdate {
-                id: item.id,
+                id: WorkItemId::from(item.id),
                 label,
                 kind: item.kind.clone(),
                 current_state: item.state,
