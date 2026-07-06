@@ -150,7 +150,8 @@ pub enum TaskActionResult {
     Sync(dw_task::lifecycle::SyncReport),
     RenamePlan(dw_task::lifecycle::RenamePlanReport),
     RenameExecution(dw_task::lifecycle::RenameExecutionReport),
-    RepoLatest {
+    RepoLatestPlan(dw_task::repo::RepoLatestPlanReport),
+    RepoLatestExecution {
         plan: dw_task::repo::RepoLatestPlanReport,
         execution: dw_task::repo::RepoLatestExecutionReport,
     },
@@ -415,12 +416,16 @@ pub async fn run_action(
             }
         }
         DwActionRequest::TaskRepoLatest(args) => {
-            let plan = dw_task::repo::repo_latest_plan(args)?;
-            let execution = dw_task::repo::execute_repo_latest(&plan)?;
-            Ok(task_result(TaskActionResult::RepoLatest {
-                plan,
-                execution,
-            }))
+            let plan = dw_task::repo::repo_latest_plan(args.clone())?;
+            if args.mode.executes() {
+                let execution = dw_task::repo::execute_repo_latest(&plan)?;
+                Ok(task_result(TaskActionResult::RepoLatestExecution {
+                    plan,
+                    execution,
+                }))
+            } else {
+                Ok(task_result(TaskActionResult::RepoLatestPlan(plan)))
+            }
         }
         DwActionRequest::TaskCommit(args) => {
             let plan = dw_task::repo::commit_plan(args.clone())?;
@@ -475,8 +480,19 @@ pub async fn run_action(
         DwActionRequest::TaskPrune(args) => {
             let plan = dw_task::prune::plan(args.clone()).await?;
             if args.mode.executes() {
+                let candidates = args
+                    .selected_workspaces
+                    .as_ref()
+                    .map(|selected_workspaces| {
+                        plan.candidates
+                            .iter()
+                            .filter(|candidate| selected_workspaces.contains(&candidate.path))
+                            .cloned()
+                            .collect()
+                    })
+                    .unwrap_or_else(|| plan.candidates.clone());
                 Ok(task_result(TaskActionResult::PruneExecution(
-                    dw_task::prune::execute(&plan.root, plan.candidates.clone())?,
+                    dw_task::prune::execute(&plan.root, candidates)?,
                 )))
             } else {
                 Ok(task_result(TaskActionResult::PrunePlan(plan)))

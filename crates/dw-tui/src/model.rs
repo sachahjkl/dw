@@ -506,11 +506,11 @@ impl TuiAction {
             | TuiActionRequest::AgentSetDefault { .. }
             | TuiActionRequest::AdoSetState(_)
             | TuiActionRequest::TaskSync(_)
-            | TuiActionRequest::TaskRepoLatest(_)
             | TuiActionRequest::TaskCreateChildTask(_) => true,
             TuiActionRequest::TaskStart(args) => args.mode.executes(),
             TuiActionRequest::TaskStartPr(args) => args.mode.executes(),
             TuiActionRequest::TaskRename(args) => args.mode.executes(),
+            TuiActionRequest::TaskRepoLatest(args) => args.mode.executes(),
             TuiActionRequest::TaskCommit(args) => args.mode.executes(),
             TuiActionRequest::TaskAddWorkItem(args) => args.mode.executes(),
             TuiActionRequest::TaskRemoveWorkItem(args) => args.mode.executes(),
@@ -1434,6 +1434,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
                 r#continue: false,
                 repositories: Vec::new(),
                 root: None,
+                mode: dw_core::ExecutionMode::Execute,
             }),
             description: "Update repositories from their target branch".into(),
             kind: ActionRisk::DryRun,
@@ -1740,6 +1741,7 @@ mod tests {
                 root: None,
                 project: None,
                 work_item_ids: Vec::new(),
+                selected_workspaces: None,
                 mode: dw_core::ExecutionMode::Execute,
                 yes: true,
                 no_sync: false,

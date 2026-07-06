@@ -575,6 +575,7 @@ impl App {
                         root: Some(dw_core::DevWorkflowRoot::from(self.snapshot.root.clone())),
                         project: None,
                         work_item_ids: Vec::new(),
+                        selected_workspaces: None,
                         mode: dw_core::ExecutionMode::Preview,
                         yes: false,
                         no_sync: true,

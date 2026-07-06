@@ -285,6 +285,7 @@ impl FormState {
                     .as_deref()
                     .map(dw_core::WorkItemId::parse_many)
                     .unwrap_or_default(),
+                selected_workspaces: None,
                 mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 yes: enabled("Execute"),
                 no_sync: enabled("No sync"),

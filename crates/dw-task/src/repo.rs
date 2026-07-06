@@ -24,6 +24,7 @@ pub struct RepoLatestArgs {
     pub r#continue: bool,
     pub repositories: Vec<WorkspaceRepositoryName>,
     pub root: Option<DevWorkflowRoot>,
+    pub mode: dw_core::ExecutionMode,
 }
 
 #[derive(Debug, Clone)]

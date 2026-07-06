@@ -609,7 +609,8 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             TaskActionResult::Sync(report) => task_sync_lines(report),
             TaskActionResult::RenamePlan(report) => task_rename_plan_lines(report),
             TaskActionResult::RenameExecution(report) => task_rename_execution_lines(report),
-            TaskActionResult::RepoLatest { plan, execution } => {
+            TaskActionResult::RepoLatestPlan(report) => task_repo_latest_plan_lines(report),
+            TaskActionResult::RepoLatestExecution { plan, execution } => {
                 let mut lines = task_repo_latest_plan_lines(plan);
                 lines.extend(task_repo_latest_execution_lines(execution));
                 lines

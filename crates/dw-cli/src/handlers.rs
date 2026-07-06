@@ -96,11 +96,20 @@ async fn run_cli_action(request: dw_app::DwActionRequest) -> Result<dw_app::DwAc
 }
 
 async fn execute_cli_action(request: dw_app::DwActionRequest) -> Result<dw_app::DwActionResult> {
+    execute_cli_action_with_event_output(request, true).await
+}
+
+async fn execute_cli_action_with_event_output(
+    request: dw_app::DwActionRequest,
+    print_events: bool,
+) -> Result<dw_app::DwActionResult> {
     let action = dw_app::spawn_action(request);
     let result = action.result;
     let mut events = action.events;
     while let Some(event) = events.recv().await {
-        print_cli_action_event(&event);
+        if print_events {
+            print_cli_action_event(&event);
+        }
     }
     result.await?
 }
@@ -335,20 +344,29 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 mode: ExecutionMode::from_execute(execute),
             })
             .await?;
-            let report = dw_task::start::start_plan(args.clone()).await?;
-            if execute {
-                let execution = dw_task::start::execute_start(report.clone(), &args).await?;
-                if json {
-                    print_json(&execution)?;
-                } else {
-                    print_lines(&dw_cli_adapter::render::task_start_execution_lines(
-                        &execution,
-                    ));
+            match *execute_task_cli_action_with_event_output(
+                dw_app::DwActionRequest::TaskStart(args),
+                !json,
+            )
+            .await?
+            {
+                dw_app::TaskActionResult::StartExecution(execution) => {
+                    if json {
+                        print_json(&execution)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_start_execution_lines(
+                            &execution,
+                        ));
+                    }
                 }
-            } else if json {
-                print_json(&report)?;
-            } else {
-                print_lines(&dw_cli_adapter::render::task_start_plan_lines(&report));
+                dw_app::TaskActionResult::StartPlan(report) => {
+                    if json {
+                        print_json(&report)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_start_plan_lines(&report));
+                    }
+                }
+                result => anyhow::bail!("Résultat task start inattendu: {result:?}"),
             }
         }
         TaskCommand::StartPr {
@@ -370,20 +388,29 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 slug: slug.map(TaskSlug::from),
                 mode: ExecutionMode::from_execute(execute),
             };
-            let report = dw_task::start::start_pr_plan(args.clone()).await?;
-            if execute {
-                let execution = dw_task::start::execute_start_pr(report.clone(), &args).await?;
-                if json {
-                    print_json(&execution)?;
-                } else {
-                    print_lines(&dw_cli_adapter::render::task_start_execution_lines(
-                        &execution,
-                    ));
+            match *execute_task_cli_action_with_event_output(
+                dw_app::DwActionRequest::TaskStartPr(args),
+                !json,
+            )
+            .await?
+            {
+                dw_app::TaskActionResult::StartExecution(execution) => {
+                    if json {
+                        print_json(&execution)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_start_execution_lines(
+                            &execution,
+                        ));
+                    }
                 }
-            } else if json {
-                print_json(&report)?;
-            } else {
-                print_lines(&dw_cli_adapter::render::task_start_pr_plan_lines(&report));
+                dw_app::TaskActionResult::StartPrPlan(report) => {
+                    if json {
+                        print_json(&report)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_start_pr_plan_lines(&report));
+                    }
+                }
+                result => anyhow::bail!("Résultat task start-pr inattendu: {result:?}"),
             }
         }
         TaskCommand::Preflight {
@@ -467,21 +494,28 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             no_sync,
             json,
         } => {
-            let report = dw_task::prune::plan(dw_task::prune::PruneArgs {
+            let args = dw_task::prune::PruneArgs {
                 root: root.map(DevWorkflowRoot::from),
                 project: project.map(ProjectKey::from),
                 work_item_ids: work_item
                     .as_deref()
                     .map(WorkItemId::parse_many)
                     .unwrap_or_default(),
-                mode: ExecutionMode::from_execute(execute),
+                selected_workspaces: None,
+                mode: ExecutionMode::Preview,
                 yes,
                 no_sync,
-            })
-            .await?;
-            if json {
+            };
+            let report =
+                match *execute_task_cli_action(dw_app::DwActionRequest::TaskPrune(args.clone()))
+                    .await?
+                {
+                    dw_app::TaskActionResult::PrunePlan(plan) => plan,
+                    result => anyhow::bail!("Résultat task prune preview inattendu: {result:?}"),
+                };
+            if json && !execute {
                 print_json(&report)?;
-            } else {
+            } else if !json {
                 print_lines(&dw_cli_adapter::render::task_prune_plan_lines(&report));
             }
 
@@ -495,7 +529,22 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 }
                 return Ok(());
             }
-            let execution = dw_task::prune::execute(&report.root, selected)?;
+            let selected_workspaces = selected
+                .into_iter()
+                .map(|candidate| candidate.path)
+                .collect();
+            let execution = match *execute_task_cli_action(dw_app::DwActionRequest::TaskPrune(
+                dw_task::prune::PruneArgs {
+                    selected_workspaces: Some(selected_workspaces),
+                    mode: ExecutionMode::from_execute(execute),
+                    ..args
+                },
+            ))
+            .await?
+            {
+                dw_app::TaskActionResult::PruneExecution(execution) => execution,
+                result => anyhow::bail!("Résultat task prune execute inattendu: {result:?}"),
+            };
             if json {
                 print_json(&execution)?;
             } else {
@@ -511,22 +560,42 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             root,
             json,
         } => {
-            let report = dw_task::repo::repo_latest_plan(dw_task::repo::RepoLatestArgs {
-                workspace: workspace.map(WorkspacePath::from),
-                r#continue,
-                repositories: parse_workspace_repository_names(only.as_deref()),
-                root: root.map(DevWorkflowRoot::from),
-            })?;
-            if json {
-                print_json(&report)?;
+            let mode = if json {
+                ExecutionMode::Preview
             } else {
-                print_lines(&dw_cli_adapter::render::task_repo_latest_plan_lines(
-                    &report,
-                ));
-                let execution = dw_task::repo::execute_repo_latest(&report)?;
-                print_lines(&dw_cli_adapter::render::task_repo_latest_execution_lines(
-                    &execution,
-                ));
+                ExecutionMode::Execute
+            };
+            match *execute_task_cli_action(dw_app::DwActionRequest::TaskRepoLatest(
+                dw_task::repo::RepoLatestArgs {
+                    workspace: workspace.map(WorkspacePath::from),
+                    r#continue,
+                    repositories: parse_workspace_repository_names(only.as_deref()),
+                    root: root.map(DevWorkflowRoot::from),
+                    mode,
+                },
+            ))
+            .await?
+            {
+                dw_app::TaskActionResult::RepoLatestPlan(report) => {
+                    if json {
+                        print_json(&report)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_repo_latest_plan_lines(
+                            &report,
+                        ));
+                    }
+                }
+                dw_app::TaskActionResult::RepoLatestExecution { plan, execution } => {
+                    if json {
+                        print_json(&execution)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_repo_latest_plan_lines(&plan));
+                        print_lines(&dw_cli_adapter::render::task_repo_latest_execution_lines(
+                            &execution,
+                        ));
+                    }
+                }
+                result => anyhow::bail!("Résultat task repo-latest inattendu: {result:?}"),
             }
         }
         TaskCommand::Commit {
@@ -619,7 +688,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             yes,
             json,
         } => {
-            let report = dw_task::repo::teardown_plan(dw_task::repo::TeardownArgs {
+            let args = dw_task::repo::TeardownArgs {
                 workspace: workspace.map(WorkspacePath::from),
                 root: root.map(DevWorkflowRoot::from),
                 project: project.map(ProjectKey::from),
@@ -628,9 +697,16 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                     positional_work_item.as_deref(),
                 )?,
                 r#continue,
-                mode: dw_core::ExecutionMode::Preview,
+                mode: ExecutionMode::Preview,
                 yes: false,
-            })?;
+            };
+            let report =
+                match *execute_task_cli_action(dw_app::DwActionRequest::TaskTeardown(args.clone()))
+                    .await?
+                {
+                    dw_app::TaskActionResult::TeardownPlan { plan, .. } => plan,
+                    result => anyhow::bail!("Résultat task teardown preview inattendu: {result:?}"),
+                };
             if !execute {
                 if json {
                     print_json(&report)?;
@@ -664,7 +740,18 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 }
                 return Ok(());
             }
-            let execution = dw_task::repo::execute_teardown(&report)?;
+            let execution = match *execute_task_cli_action(dw_app::DwActionRequest::TaskTeardown(
+                dw_task::repo::TeardownArgs {
+                    mode: ExecutionMode::from_execute(execute),
+                    yes,
+                    ..args
+                },
+            ))
+            .await?
+            {
+                dw_app::TaskActionResult::TeardownExecution(execution) => execution,
+                result => anyhow::bail!("Résultat task teardown execute inattendu: {result:?}"),
+            };
             if json {
                 print_json(&execution)?;
             } else {
@@ -820,39 +907,46 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             let Some(work_item_ids) = work_item_ids else {
                 return Ok(());
             };
-            let report = dw_task::work_item::add_plan(dw_task::work_item::AddWorkItemArgs {
-                work_item_ids,
-                workspace: workspace.map(WorkspacePath::from),
-                root: root.map(DevWorkflowRoot::from),
-                project: project.map(ProjectKey::from),
-                workspace_work_item_ids: parse_workspace_filter_work_item_ids(
-                    work_item.as_deref(),
-                    positional_work_item.as_deref(),
-                )?,
-                r#continue,
-                skip_ado,
-                type_name: type_name.map(dw_core::WorkItemTypeName::from),
-                title: title.map(dw_core::WorkItemTitle::from),
-                state: state.map(dw_core::WorkItemState::from),
-                mode: dw_core::ExecutionMode::Preview,
-            })
-            .await?;
-            if execute {
-                let execution = dw_task::work_item::execute_update(&report)?;
-                if json {
-                    print_json(&execution)?;
-                } else {
-                    print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
-                    if let Some(execution) = execution {
-                        print_lines(&dw_cli_adapter::render::task_work_item_execution_lines(
-                            &execution,
-                        ));
+            match *execute_task_cli_action(dw_app::DwActionRequest::TaskAddWorkItem(
+                dw_task::work_item::AddWorkItemArgs {
+                    work_item_ids,
+                    workspace: workspace.map(WorkspacePath::from),
+                    root: root.map(DevWorkflowRoot::from),
+                    project: project.map(ProjectKey::from),
+                    workspace_work_item_ids: parse_workspace_filter_work_item_ids(
+                        work_item.as_deref(),
+                        positional_work_item.as_deref(),
+                    )?,
+                    r#continue,
+                    skip_ado,
+                    type_name: type_name.map(WorkItemTypeName::from),
+                    title: title.map(dw_core::WorkItemTitle::from),
+                    state: state.map(dw_core::WorkItemState::from),
+                    mode: ExecutionMode::from_execute(execute),
+                },
+            ))
+            .await?
+            {
+                dw_app::TaskActionResult::WorkItemExecution { plan, execution } => {
+                    if json {
+                        print_json(&execution)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&plan));
+                        if let Some(execution) = execution {
+                            print_lines(&dw_cli_adapter::render::task_work_item_execution_lines(
+                                &execution,
+                            ));
+                        }
                     }
                 }
-            } else if json {
-                print_json(&report)?;
-            } else {
-                print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
+                dw_app::TaskActionResult::WorkItemPlan(report) => {
+                    if json {
+                        print_json(&report)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
+                    }
+                }
+                result => anyhow::bail!("Résultat task add-work-item inattendu: {result:?}"),
             }
         }
         TaskCommand::RemoveWorkItem {
@@ -881,34 +975,42 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             let Some(work_item_ids) = work_item_ids else {
                 return Ok(());
             };
-            let report = dw_task::work_item::remove_plan(dw_task::work_item::RemoveWorkItemArgs {
-                work_item_ids,
-                workspace: workspace.map(WorkspacePath::from),
-                root: root.map(DevWorkflowRoot::from),
-                project: project.map(ProjectKey::from),
-                workspace_work_item_ids: parse_workspace_filter_work_item_ids(
-                    work_item.as_deref(),
-                    positional_work_item.as_deref(),
-                )?,
-                r#continue,
-                mode: dw_core::ExecutionMode::Preview,
-            })?;
-            if execute {
-                let execution = dw_task::work_item::execute_update(&report)?;
-                if json {
-                    print_json(&execution)?;
-                } else {
-                    print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
-                    if let Some(execution) = execution {
-                        print_lines(&dw_cli_adapter::render::task_work_item_execution_lines(
-                            &execution,
-                        ));
+            match *execute_task_cli_action(dw_app::DwActionRequest::TaskRemoveWorkItem(
+                dw_task::work_item::RemoveWorkItemArgs {
+                    work_item_ids,
+                    workspace: workspace.map(WorkspacePath::from),
+                    root: root.map(DevWorkflowRoot::from),
+                    project: project.map(ProjectKey::from),
+                    workspace_work_item_ids: parse_workspace_filter_work_item_ids(
+                        work_item.as_deref(),
+                        positional_work_item.as_deref(),
+                    )?,
+                    r#continue,
+                    mode: ExecutionMode::from_execute(execute),
+                },
+            ))
+            .await?
+            {
+                dw_app::TaskActionResult::WorkItemExecution { plan, execution } => {
+                    if json {
+                        print_json(&execution)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&plan));
+                        if let Some(execution) = execution {
+                            print_lines(&dw_cli_adapter::render::task_work_item_execution_lines(
+                                &execution,
+                            ));
+                        }
                     }
                 }
-            } else if json {
-                print_json(&report)?;
-            } else {
-                print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
+                dw_app::TaskActionResult::WorkItemPlan(report) => {
+                    if json {
+                        print_json(&report)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
+                    }
+                }
+                result => anyhow::bail!("Résultat task remove-work-item inattendu: {result:?}"),
             }
         }
         TaskCommand::Finish {
@@ -933,7 +1035,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 workspace: workspace.map(WorkspacePath::from),
                 r#continue,
                 root: root.map(DevWorkflowRoot::from),
-                mode: dw_core::ExecutionMode::Preview,
+                mode: ExecutionMode::Preview,
                 yes: false,
                 message: message.map(dw_core::CommitMessage::from),
                 create_pr,
@@ -941,7 +1043,15 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 skip_verify,
                 skip_ado,
             };
-            let plan = dw_task::finish::finish_plan(args.clone())?;
+            let plan = match *execute_task_cli_action_with_event_output(
+                dw_app::DwActionRequest::TaskFinish(args.clone()),
+                !json,
+            )
+            .await?
+            {
+                dw_app::TaskActionResult::FinishPlan(plan) => plan,
+                result => anyhow::bail!("Résultat task finish preview inattendu: {result:?}"),
+            };
             if json && !execute {
                 print_json(&plan)?;
             } else if !json {
@@ -976,15 +1086,19 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                     plan.skip_ado,
                 ),
             )?;
-            let execution = dw_task::finish::execute_finish(
-                plan,
-                &dw_task::finish::FinishArgs {
+            let execution = match *execute_task_cli_action_with_event_output(
+                dw_app::DwActionRequest::TaskFinish(dw_task::finish::FinishArgs {
                     mode: ExecutionMode::from_execute(execute),
                     yes,
                     ..args
-                },
+                }),
+                !json,
             )
-            .await?;
+            .await?
+            {
+                dw_app::TaskActionResult::FinishExecution(execution) => execution,
+                result => anyhow::bail!("Résultat task finish execute inattendu: {result:?}"),
+            };
             if json {
                 print_json(&execution)?;
             } else {
@@ -1000,7 +1114,14 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
 async fn execute_task_cli_action(
     request: dw_app::DwActionRequest,
 ) -> Result<Box<dw_app::TaskActionResult>> {
-    match execute_cli_action(request).await? {
+    execute_task_cli_action_with_event_output(request, true).await
+}
+
+async fn execute_task_cli_action_with_event_output(
+    request: dw_app::DwActionRequest,
+    print_events: bool,
+) -> Result<Box<dw_app::TaskActionResult>> {
+    match execute_cli_action_with_event_output(request, print_events).await? {
         dw_app::DwActionResult::Task(result) => Ok(result),
         result => anyhow::bail!("Résultat task inattendu: {result:?}"),
     }
