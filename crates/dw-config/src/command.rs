@@ -23,7 +23,7 @@ pub struct RefreshCommandArgs {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigRootSetReport {
-    pub path: ConfigRootPath,
+    pub root: DevWorkflowRoot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +41,7 @@ pub fn doctor(root: Option<&DevWorkflowRoot>) -> crate::ConfigDoctorReport {
 
 pub fn set_root(path: &ConfigRootPath) -> Result<ConfigRootSetReport> {
     Ok(ConfigRootSetReport {
-        path: ConfigRootPath::from(set_user_root(path.as_str())?),
+        root: set_user_root(path.as_str())?,
     })
 }
 

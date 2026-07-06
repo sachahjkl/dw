@@ -591,7 +591,7 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             ],
             ConfigActionResult::SetRoot(report) => vec![
                 "Configuration updated".into(),
-                format!("Root      : {}", report.path),
+                format!("Root      : {}", report.root),
             ],
         },
         DwActionResult::Agent(result) => match result {

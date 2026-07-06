@@ -1387,7 +1387,7 @@ fn config_color_and_set_reports_are_domain_typed() {
             "crates/dw-config/src/command.rs",
             &[
                 "pub struct ConfigRootSetReport",
-                "pub path: ConfigRootPath",
+                "pub root: DevWorkflowRoot",
                 "pub struct ConfigColorSetReport",
                 "pub mode: ConfigColorMode",
                 "pub fn set_root(path: &ConfigRootPath) -> Result<ConfigRootSetReport>",

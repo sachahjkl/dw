@@ -284,7 +284,10 @@ mod tests {
         let settings = load_user_settings();
 
         restore_env("XDG_CONFIG_HOME", previous);
-        assert_eq!(result, root.display().to_string());
+        assert_eq!(
+            result,
+            dw_core::DevWorkflowRoot::from(root.display().to_string())
+        );
         assert_eq!(
             settings.root.as_deref(),
             Some(root.to_str().expect("utf8 path"))
@@ -305,11 +308,13 @@ mod tests {
         restore_env("XDG_CONFIG_HOME", previous);
         assert_eq!(
             result,
-            std::env::current_dir()
-                .unwrap()
-                .join("dw-root")
-                .display()
-                .to_string()
+            dw_core::DevWorkflowRoot::from(
+                std::env::current_dir()
+                    .unwrap()
+                    .join("dw-root")
+                    .display()
+                    .to_string()
+            )
         );
     }
 

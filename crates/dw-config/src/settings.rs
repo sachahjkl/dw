@@ -1,7 +1,7 @@
 use crate::base_dirs::PlatformBaseDirs;
 use crate::json::read_json;
 use crate::types::UserSettings;
-use dw_core::ConfigColorMode;
+use dw_core::{ConfigColorMode, DevWorkflowRoot};
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use std::{env, fs};
@@ -39,12 +39,12 @@ pub fn save_user_settings(settings: &UserSettings) -> std::io::Result<()> {
     fs::write(path, content)
 }
 
-pub fn set_user_root(root: &str) -> std::io::Result<String> {
+pub fn set_user_root(root: &str) -> std::io::Result<DevWorkflowRoot> {
     let root = normalize_path(root)?;
     let mut settings = load_user_settings();
     settings.root = Some(root.clone());
     save_user_settings(&settings)?;
-    Ok(root)
+    Ok(DevWorkflowRoot::from(root))
 }
 
 pub fn set_color_mode(mode: ConfigColorMode) -> std::io::Result<ConfigColorMode> {
