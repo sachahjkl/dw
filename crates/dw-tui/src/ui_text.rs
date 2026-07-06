@@ -1,7 +1,7 @@
 use crate::actions::QuickOptionState;
 use crate::app::App;
 use crate::form::FormState;
-use crate::history::RunHistoryEntry;
+use crate::history::{ActionRunRecord, RunHistoryEntry, capped_lines};
 #[cfg(test)]
 use crate::model::View;
 use crate::model::{ActionRisk, TuiAction};
@@ -187,16 +187,41 @@ pub(crate) fn history_output_lines(app: &App) -> Vec<String> {
         },
         String::new(),
     ];
-    if entry.output_lines.is_empty() {
+    let rendered = history_entry_rendered_lines(entry);
+    if rendered.is_empty() {
         if entry.status == "running" || entry.status == "en cours" {
             lines.push("Waiting for the first output line...".into());
         } else {
             lines.push("No output captured for this run.".into());
         }
     } else {
-        lines.extend(entry.output_lines.clone());
+        lines.extend(rendered);
     }
     lines
+}
+
+pub(crate) fn history_entry_rendered_lines(entry: &RunHistoryEntry) -> Vec<String> {
+    let theme = dw_ui::TerminalTheme::plain();
+    let lines = match &entry.record {
+        ActionRunRecord::Running { events } => events
+            .iter()
+            .map(dw_tui_adapter::render::action_event_line)
+            .collect::<Vec<_>>(),
+        ActionRunRecord::Completed { events, result } => {
+            let mut lines = events
+                .iter()
+                .map(dw_tui_adapter::render::action_event_line)
+                .collect::<Vec<_>>();
+            let result_lines = dw_tui_adapter::render::action_result_lines(result.as_ref(), &theme);
+            if !lines.is_empty() && !result_lines.is_empty() {
+                lines.push(String::new());
+            }
+            lines.extend(result_lines);
+            lines
+        }
+        ActionRunRecord::Failed { error } => vec![error.clone()],
+    };
+    capped_lines(lines)
 }
 
 pub(crate) fn option_active(
@@ -539,8 +564,7 @@ mod tests {
             request_label: "Task finish".into(),
             status: "running".into(),
             success: true,
-            output_preview: Vec::new(),
-            output_lines: Vec::new(),
+            record: ActionRunRecord::running(),
         };
         let success = RunHistoryEntry {
             status: "exit 0".into(),
@@ -581,20 +605,19 @@ mod tests {
     }
 
     #[test]
-    fn history_output_lines_keep_empty_finished_output_clear() {
+    fn history_output_lines_render_failed_record_error() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.history.push(RunHistoryEntry {
             request_label: "Doctor".into(),
-            status: "exit 0".into(),
-            success: true,
-            output_preview: Vec::new(),
-            output_lines: Vec::new(),
+            status: "error".into(),
+            success: false,
+            record: ActionRunRecord::failed("boom".into()),
         });
 
         let lines = history_output_lines(&app);
 
         assert_eq!(lines[2], "Output captured.");
-        assert!(lines.iter().any(|line| line.contains("No output captured")));
+        assert!(lines.iter().any(|line| line == "boom"));
     }
 
     #[test]

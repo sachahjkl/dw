@@ -238,6 +238,37 @@ fn tui_runner_returns_typed_action_results_not_rendered_strings() {
 }
 
 #[test]
+fn tui_history_and_detail_store_typed_action_records_not_rendered_output() {
+    let repo = repo_root();
+    let checked_files = [
+        repo.join("crates/dw-tui/src/history.rs"),
+        repo.join("crates/dw-tui/src/background.rs"),
+        repo.join("crates/dw-tui/src/model.rs"),
+        repo.join("crates/dw-tui/src/app.rs"),
+    ];
+
+    for file in checked_files {
+        let text = fs::read_to_string(&file).expect("read source file");
+        for forbidden in [
+            "output_preview",
+            "output_lines",
+            "append_running_line",
+            "OperationResult",
+            "operation_result",
+            "ActionOutput",
+            "line: String",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "{} contains forbidden rendered history/detail token `{}`",
+                file.display(),
+                forbidden
+            );
+        }
+    }
+}
+
+#[test]
 fn action_stream_protocol_does_not_use_generic_progress_strings() {
     let repo = repo_root();
     let checked_roots = [

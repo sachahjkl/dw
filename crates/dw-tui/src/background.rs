@@ -6,6 +6,7 @@ use crate::model::{
     self, ActionEffect, AdoAssignedProject, TuiAction, TuiPullRequest, TuiSnapshot,
 };
 use crate::runner::{self, CapturedActionRunResult};
+use dw_core::DwActionEvent;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackgroundKind {
@@ -29,10 +30,10 @@ pub enum BackgroundResult {
         generation: u64,
         items: Vec<TuiPullRequest>,
     },
-    ActionOutput {
+    ActionEvent {
         generation: u64,
         label: String,
-        line: String,
+        event: DwActionEvent,
     },
     Action {
         generation: u64,
@@ -271,10 +272,10 @@ impl BackgroundJobs {
             let output_label = label.clone();
             let result = match tokio::spawn(async move {
                 runner::run_captured_streaming(&action, move |event| {
-                    let _ = output_sender.send(BackgroundResult::ActionOutput {
+                    let _ = output_sender.send(BackgroundResult::ActionEvent {
                         generation,
                         label: output_label.clone(),
-                        line: dw_tui_adapter::render::action_event_line(&event),
+                        event,
                     });
                 })
                 .await
@@ -351,10 +352,12 @@ impl BackgroundJobs {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(work(sender));
         } else {
-            let _ = self.sender.send(BackgroundResult::ActionOutput {
+            let _ = self.sender.send(BackgroundResult::ActionEvent {
                 generation: self.generation,
                 label: "background".into(),
-                line: "Runtime async TUI indisponible hors boucle principale.".into(),
+                event: DwActionEvent::Started {
+                    action_id: "runtime-unavailable".into(),
+                },
             });
         }
     }

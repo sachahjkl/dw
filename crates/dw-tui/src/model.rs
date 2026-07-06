@@ -1,8 +1,10 @@
+use dw_app::DwActionResult;
 use dw_config::{
     ConfigDoctorReport, ConfigShow, DatabasesConfig, ProjectsConfig, WorkflowConfig, config_doctor,
     load_databases_config, load_projects_config, load_user_settings, load_workflow_config,
     project_choices, repository_config, resolve_project, resolve_root, root_status,
 };
+use dw_core::DwActionEvent;
 use dw_workspace::{TaskListItem, plan_task_prune, task_list};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,19 +222,23 @@ pub enum TuiActionRequest {
     SecretDelete { key: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct DetailPanel {
     pub content: DetailPanelContent,
     pub scroll: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum DetailPanelContent {
     Guide(Vec<String>),
     ConfigShow(ConfigShow),
     ConfigDoctor(ConfigDoctorReport),
     AgentDoctor(dw_agent::command::AgentDoctorReport),
-    OperationResult { title: String, lines: Vec<String> },
+    ActionResult {
+        title: String,
+        events: Vec<DwActionEvent>,
+        result: DwActionResult,
+    },
 }
 
 impl DetailPanel {
@@ -264,18 +270,16 @@ impl DetailPanel {
         }
     }
 
-    pub fn operation_result(title: impl Into<String>, output: &str) -> Self {
-        let mut lines = output
-            .lines()
-            .map(|line| line.to_owned())
-            .collect::<Vec<_>>();
-        if lines.is_empty() {
-            lines.push("No detail returned.".into());
-        }
+    pub fn action_result(
+        title: impl Into<String>,
+        events: Vec<DwActionEvent>,
+        result: DwActionResult,
+    ) -> Self {
         Self {
-            content: DetailPanelContent::OperationResult {
+            content: DetailPanelContent::ActionResult {
                 title: title.into(),
-                lines,
+                events,
+                result,
             },
             scroll: 0,
         }
@@ -287,7 +291,7 @@ impl DetailPanel {
             DetailPanelContent::ConfigShow(_) => "Effective configuration".into(),
             DetailPanelContent::ConfigDoctor(_) => "Configuration doctor".into(),
             DetailPanelContent::AgentDoctor(_) => "Agent doctor".into(),
-            DetailPanelContent::OperationResult { title, .. } => title.clone(),
+            DetailPanelContent::ActionResult { title, .. } => title.clone(),
         }
     }
 
@@ -337,7 +341,7 @@ impl DetailPanelContent {
                         .count()
                     + footer
             }
-            DetailPanelContent::OperationResult { lines, .. } => lines.len(),
+            DetailPanelContent::ActionResult { events, .. } => events.len().max(1),
         }
     }
 }

@@ -1,10 +1,51 @@
+use dw_app::DwActionResult;
+use dw_core::DwActionEvent;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunHistoryEntry {
     pub request_label: String,
     pub status: String,
     pub success: bool,
-    pub output_preview: Vec<String>,
-    pub output_lines: Vec<String>,
+    pub record: ActionRunRecord,
+}
+
+#[derive(Debug, Clone)]
+pub enum ActionRunRecord {
+    Running {
+        events: Vec<DwActionEvent>,
+    },
+    Completed {
+        events: Vec<DwActionEvent>,
+        result: Box<DwActionResult>,
+    },
+    Failed {
+        error: String,
+    },
+}
+
+impl PartialEq for ActionRunRecord {
+    fn eq(&self, other: &Self) -> bool {
+        core::mem::discriminant(self) == core::mem::discriminant(other)
+    }
+}
+
+impl Eq for ActionRunRecord {}
+
+impl ActionRunRecord {
+    pub fn running() -> Self {
+        Self::Running { events: Vec::new() }
+    }
+
+    pub fn failed(error: String) -> Self {
+        Self::Failed { error }
+    }
+
+    pub fn events(&self) -> &[DwActionEvent] {
+        match self {
+            Self::Running { events } | Self::Completed { events, .. } => events,
+            Self::Failed { .. } => &[],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -29,12 +70,11 @@ impl HistoryState {
             request_label,
             status: "running".into(),
             success: true,
-            output_preview: vec!["Action running...".into()],
-            output_lines: Vec::new(),
+            record: ActionRunRecord::running(),
         });
     }
 
-    pub fn append_running_line(&mut self, request_label: &str, line: String) {
+    pub fn append_running_event(&mut self, request_label: &str, event: DwActionEvent) {
         let Some(entry) = self
             .entries
             .iter_mut()
@@ -43,9 +83,10 @@ impl HistoryState {
         else {
             return;
         };
-        entry.output_lines.push(line);
-        cap_output_lines(&mut entry.output_lines);
-        entry.output_preview = last_preview_lines(&entry.output_lines);
+        if let ActionRunRecord::Running { events } = &mut entry.record {
+            events.push(event);
+            cap_events(events);
+        }
     }
 
     pub fn finish_running(
@@ -53,7 +94,7 @@ impl HistoryState {
         request_label: &str,
         status: String,
         success: bool,
-        output: &str,
+        record: ActionRunRecord,
     ) -> bool {
         let Some(entry) = self
             .entries
@@ -65,8 +106,7 @@ impl HistoryState {
         };
         entry.status = status;
         entry.success = success;
-        entry.output_preview = output_preview(output);
-        entry.output_lines = output_lines(output);
+        entry.record = record;
         true
     }
 
@@ -116,14 +156,17 @@ impl HistoryState {
 
     pub fn output_max_scroll(&self) -> usize {
         self.selected_entry()
-            .map(|entry| entry.output_lines.len().saturating_sub(1))
+            .map(|entry| entry.record.events().len().saturating_sub(1))
             .unwrap_or_default()
     }
 }
 
-pub fn output_preview(output: &str) -> Vec<String> {
-    output_lines(output)
-        .into_iter()
+#[cfg(test)]
+pub fn preview_lines(lines: &[String]) -> Vec<String> {
+    lines
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .cloned()
         .rev()
         .take(3)
         .collect::<Vec<_>>()
@@ -132,18 +175,12 @@ pub fn output_preview(output: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn output_lines(output: &str) -> Vec<String> {
-    let mut lines = output
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    cap_output_lines(&mut lines);
+pub fn capped_lines(mut lines: Vec<String>) -> Vec<String> {
+    cap_rendered_lines(&mut lines);
     lines
 }
 
-fn cap_output_lines(lines: &mut Vec<String>) {
+fn cap_rendered_lines(lines: &mut Vec<String>) {
     const MAX_OUTPUT_LINES: usize = 160;
     if lines.len() <= MAX_OUTPUT_LINES {
         return;
@@ -155,17 +192,13 @@ fn cap_output_lines(lines: &mut Vec<String>) {
     *lines = kept;
 }
 
-fn last_preview_lines(lines: &[String]) -> Vec<String> {
-    lines
-        .iter()
-        .filter(|line| !line.trim().is_empty())
-        .rev()
-        .take(3)
-        .cloned()
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect()
+fn cap_events(events: &mut Vec<DwActionEvent>) {
+    const MAX_EVENTS: usize = 160;
+    if events.len() <= MAX_EVENTS {
+        return;
+    }
+    let omitted = events.len() - MAX_EVENTS;
+    events.drain(0..omitted);
 }
 
 #[cfg(test)]
@@ -173,20 +206,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn output_preview_keeps_last_non_empty_lines() {
-        let preview = output_preview("one\n\ntwo\nthree\nfour\n");
+    fn preview_lines_keeps_last_non_empty_lines() {
+        let preview = preview_lines(&[
+            "one".into(),
+            String::new(),
+            "two".into(),
+            "three".into(),
+            "four".into(),
+        ]);
 
         assert_eq!(preview, ["two", "three", "four"]);
     }
 
     #[test]
-    fn output_lines_caps_long_action_output() {
+    fn capped_lines_caps_long_action_output() {
         let output = (0..170)
             .map(|index| format!("line {index}"))
-            .collect::<Vec<_>>()
-            .join("\n");
+            .collect::<Vec<_>>();
 
-        let lines = output_lines(&output);
+        let lines = capped_lines(output);
 
         assert_eq!(lines.len(), 161);
         assert!(lines[0].contains("previous lines hidden"));
@@ -206,8 +244,19 @@ mod tests {
                 request_label: format!("Doctor {index}"),
                 status: "exit 0".into(),
                 success: true,
-                output_preview: Vec::new(),
-                output_lines: vec!["one".into(), "two".into(), "three".into()],
+                record: ActionRunRecord::Running {
+                    events: vec![
+                        DwActionEvent::Started {
+                            action_id: "one".into(),
+                        },
+                        DwActionEvent::Started {
+                            action_id: "two".into(),
+                        },
+                        DwActionEvent::Started {
+                            action_id: "three".into(),
+                        },
+                    ],
+                },
             });
         }
 
@@ -238,25 +287,37 @@ mod tests {
         let mut history = HistoryState::default();
 
         history.start_running("Task finish".into());
-        history.append_running_line("Task finish", "Preparing...".into());
-        history.append_running_line("Task finish", "Push front...".into());
+        history.append_running_event(
+            "Task finish",
+            DwActionEvent::Started {
+                action_id: "prepare".into(),
+            },
+        );
+        history.append_running_event(
+            "Task finish",
+            DwActionEvent::Started {
+                action_id: "push-front".into(),
+            },
+        );
 
         let entry = history.selected_entry().expect("entry");
         assert_eq!(entry.status, "running");
-        assert_eq!(entry.output_preview, ["Preparing...", "Push front..."]);
+        assert_eq!(entry.record.events().len(), 2);
 
         assert!(history.finish_running(
             "Task finish",
             "exit 0".into(),
             true,
-            "Preparing...\nPush front...\nOK"
+            ActionRunRecord::Completed {
+                events: entry.record.events().to_vec(),
+                result: Box::new(DwActionResult::App(dw_app::AppActionResult::Version {
+                    version: "2026.07.06.3".into(),
+                })),
+            }
         ));
         let entry = history.selected_entry().expect("entry");
         assert_eq!(entry.status, "exit 0");
         assert!(entry.success);
-        assert_eq!(
-            entry.output_preview,
-            ["Preparing...", "Push front...", "OK"]
-        );
+        assert!(matches!(entry.record, ActionRunRecord::Completed { .. }));
     }
 }

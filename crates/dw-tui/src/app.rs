@@ -10,7 +10,7 @@ use crate::actions::{
 };
 use crate::background::{ActionStart, BackgroundJobs, BackgroundKind, BackgroundResult};
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
-use crate::history::{HistoryState, RunHistoryEntry, output_lines, output_preview};
+use crate::history::{ActionRunRecord, HistoryState, RunHistoryEntry};
 use crate::model::{
     ActionEffect, ActionRisk, AdoAssignedProject, CockpitItem, CockpitSeverity, DetailPanel,
     TuiAction, TuiActionRequest, TuiPullRequest, TuiSnapshot, View, WorkspaceAction,
@@ -227,13 +227,13 @@ impl App {
                     self.messages
                         .push(pull_request_load_summary(&self.snapshot.pull_requests));
                 }
-                BackgroundResult::ActionOutput {
+                BackgroundResult::ActionEvent {
                     generation,
                     label,
-                    line,
+                    event,
                 } => {
                     if self.background.accepts_action_output(generation) {
-                        self.history.append_running_line(&label, line);
+                        self.history.append_running_event(&label, event);
                     }
                 }
                 BackgroundResult::Action {
@@ -1551,8 +1551,7 @@ impl App {
             request_label: result.display_label.clone(),
             status: result.status_label.clone(),
             success: result.success,
-            output_preview: Vec::new(),
-            output_lines: Vec::new(),
+            record: ActionRunRecord::failed("External launch completed.".into()),
         });
         self.messages.push(format!(
             "Last launch: {} -> {}",
@@ -1575,34 +1574,21 @@ impl App {
     ) {
         match result {
             Ok(result) => {
-                let rendered_output_lines = dw_tui_adapter::render::action_result_lines(
-                    &result.result,
-                    &dw_ui::TerminalTheme::plain(),
-                );
-                let mut rendered_lines = result
-                    .events
-                    .iter()
-                    .map(dw_tui_adapter::render::action_event_line)
-                    .collect::<Vec<_>>();
-                if !rendered_lines.is_empty() && !rendered_output_lines.is_empty() {
-                    rendered_lines.push(String::new());
-                }
-                rendered_lines.extend(rendered_output_lines);
-                let output = rendered_lines.join("\n");
+                let record = ActionRunRecord::Completed {
+                    events: result.events.clone(),
+                    result: Box::new(result.result.clone()),
+                };
                 if !self.history.finish_running(
                     &result.display_label,
                     result.status_label.clone(),
                     result.success,
-                    &output,
+                    record.clone(),
                 ) {
-                    let output_preview = output_preview(&output);
-                    let output_lines = output_lines(&output);
                     self.history.push(RunHistoryEntry {
                         request_label: result.display_label.clone(),
                         status: result.status_label.clone(),
                         success: result.success,
-                        output_preview,
-                        output_lines,
+                        record: record.clone(),
                     });
                 }
                 self.messages.push(format!(
@@ -1610,9 +1596,10 @@ impl App {
                     result.display_label, result.status_label
                 ));
                 if open_after_success {
-                    self.open_detail_panel(DetailPanel::operation_result(
+                    self.open_detail_panel(DetailPanel::action_result(
                         format!("Result · {}", result.display_label),
-                        &output,
+                        result.events.clone(),
+                        result.result.clone(),
                     ));
                     self.history.close_output();
                     self.sync_closed_modal(ModalKind::History);
@@ -1624,16 +1611,16 @@ impl App {
                 self.continue_action_queue();
             }
             Err(error) => {
+                let record = ActionRunRecord::failed(error.clone());
                 if !self
                     .history
-                    .finish_running(&label, "error".into(), false, &error)
+                    .finish_running(&label, "error".into(), false, record.clone())
                 {
                     self.history.push(RunHistoryEntry {
                         request_label: label.clone(),
                         status: "error".into(),
                         success: false,
-                        output_preview: vec![error.clone()],
-                        output_lines: vec![error.clone()],
+                        record,
                     });
                 }
                 self.messages.push(format!("Failed: {label} -> {error}"));
@@ -3011,15 +2998,30 @@ mod tests {
             request_label: "Doctor".into(),
             status: "exit 0".into(),
             success: true,
-            output_preview: vec!["three".into()],
-            output_lines: vec!["one".into(), "two".into(), "three".into()],
+            record: ActionRunRecord::Running {
+                events: vec![
+                    dw_core::DwActionEvent::Started {
+                        action_id: "one".into(),
+                    },
+                    dw_core::DwActionEvent::Started {
+                        action_id: "two".into(),
+                    },
+                    dw_core::DwActionEvent::Started {
+                        action_id: "three".into(),
+                    },
+                ],
+            },
         });
         app.history.push(RunHistoryEntry {
             request_label: "Version".into(),
             status: "exit 0".into(),
             success: true,
-            output_preview: vec!["version".into()],
-            output_lines: vec!["version".into()],
+            record: ActionRunRecord::Completed {
+                events: Vec::new(),
+                result: Box::new(DwActionResult::App(AppActionResult::Version {
+                    version: "version".into(),
+                })),
+            },
         });
 
         app.open_history_output();
@@ -3118,8 +3120,12 @@ mod tests {
     fn action_result_finishes_streaming_history_entry() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.history.start_running("Version".into());
-        app.history
-            .append_running_line("Version", "Loading...".into());
+        app.history.append_running_event(
+            "Version",
+            dw_core::DwActionEvent::Task(dw_core::TaskActionEvent::ResolvingPullRequestWorkItems {
+                pull_request_id: dw_core::PullRequestId::from("42"),
+            }),
+        );
 
         app.accept_action_result(
             "Version".into(),
@@ -3135,7 +3141,7 @@ mod tests {
         let entry = app.history.selected_entry().expect("entry");
         assert_eq!(entry.status, "exit 0");
         assert_eq!(
-            entry.output_preview,
+            crate::history::preview_lines(&crate::ui_text::history_entry_rendered_lines(entry)),
             [
                 "Task [resolve-pr-work-items] PR #42",
                 "Dev Workflow 2026.07.04"
@@ -3159,15 +3165,16 @@ mod tests {
         assert!(!app.history.output_open);
         let detail = app.detail.expect("detail panel");
         assert_eq!(detail.title(), "Result · My work items · ha");
-        let crate::model::DetailPanelContent::OperationResult { lines, .. } = detail.content else {
-            panic!("expected operation result panel");
+        let crate::model::DetailPanelContent::ActionResult { result, .. } = detail.content else {
+            panic!("expected action result panel");
         };
+        let lines =
+            dw_tui_adapter::render::action_result_lines(&result, &dw_ui::TerminalTheme::plain());
         assert!(lines.iter().any(|line| line.contains("#55264")));
         let entry = app.history.selected_entry().expect("entry");
         assert_eq!(entry.request_label, "My work items · ha");
         assert!(
-            entry
-                .output_lines
+            crate::ui_text::history_entry_rendered_lines(entry)
                 .iter()
                 .any(|line| line.contains("#55264"))
         );

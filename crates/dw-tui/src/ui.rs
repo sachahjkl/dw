@@ -1047,7 +1047,22 @@ fn detail_panel_lines(content: &DetailPanelContent) -> Vec<String> {
         DetailPanelContent::ConfigShow(report) => config_show_detail_lines(report),
         DetailPanelContent::ConfigDoctor(report) => config_doctor_detail_lines(report),
         DetailPanelContent::AgentDoctor(report) => agent_doctor_detail_lines(report),
-        DetailPanelContent::OperationResult { lines, .. } => lines.clone(),
+        DetailPanelContent::ActionResult { events, result, .. } => {
+            let theme = dw_ui::TerminalTheme::plain();
+            let mut lines = events
+                .iter()
+                .map(dw_tui_adapter::render::action_event_line)
+                .collect::<Vec<_>>();
+            let result_lines = dw_tui_adapter::render::action_result_lines(result, &theme);
+            if !lines.is_empty() && !result_lines.is_empty() {
+                lines.push(String::new());
+            }
+            lines.extend(result_lines);
+            if lines.is_empty() {
+                lines.push("No detail returned.".into());
+            }
+            lines
+        }
     }
 }
 
