@@ -6,7 +6,7 @@ use dw_ado::{
     query_assigned_work_items, run_blocking_ado,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{AdoActionEvent, PromptChoice, PromptSpec};
+use dw_core::{AdoActionEvent, ProjectKey, PromptChoice, PromptSpec};
 use serde::Serialize;
 
 pub const MANUAL_WORK_ITEM_PROMPT_VALUE: &str = "__manual_work_item_id__";
@@ -61,7 +61,7 @@ pub async fn report_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(project_key.clone()),
+            project: Some(ProjectKey::from(project_key.clone())),
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
@@ -69,7 +69,7 @@ pub async fn report_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::LoadingAssignedWorkItems {
-            project: project_key.clone(),
+            project: ProjectKey::from(project_key.clone()),
             top,
         },
     );
@@ -83,7 +83,7 @@ pub async fn report_with_events(
             &mut events,
             &mut emit,
             AdoActionEvent::GroupingAssignedWorkItems {
-                project: project_key.clone(),
+                project: ProjectKey::from(project_key.clone()),
             },
         );
         let options = options.clone();
@@ -227,7 +227,7 @@ mod tests {
             &mut final_events,
             &mut |event| streamed.push(event),
             AdoActionEvent::LoadingAssignedWorkItems {
-                project: "ha".into(),
+                project: ProjectKey::from("ha"),
                 top: 20,
             },
         );
@@ -235,14 +235,14 @@ mod tests {
         assert_eq!(
             final_events,
             [AdoActionEvent::LoadingAssignedWorkItems {
-                project: "ha".into(),
+                project: ProjectKey::from("ha"),
                 top: 20,
             }]
         );
         assert_eq!(
             streamed[0],
             AdoActionEvent::LoadingAssignedWorkItems {
-                project: "ha".into(),
+                project: ProjectKey::from("ha"),
                 top: 20,
             }
         );

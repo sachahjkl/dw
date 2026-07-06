@@ -7,7 +7,7 @@ use dw_contracts::{
     PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightIssue,
     TaskPreflightReport,
 };
-use dw_core::WorkItemId;
+use dw_core::{ProjectKey, WorkItemId};
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
     slug_from_phrase_or_fallback,
@@ -399,7 +399,7 @@ pub fn build_handoff_validation_report(
     Ok(TaskHandoffValidationReport {
         schema_version: HANDOFF_VALIDATION_VERSION.into(),
         workspace: workspace.to_string(),
-        project: manifest.project,
+        project: ProjectKey::from(manifest.project),
         items,
         is_valid,
     })
@@ -1307,7 +1307,7 @@ pub fn build_preflight_report_from_ai_context_files(
     Ok(TaskPreflightReport {
         schema_version: PREFLIGHT_VERSION.into(),
         workspace: workspace.into(),
-        project: manifest.project.clone(),
+        project: ProjectKey::from(manifest.project.clone()),
         work_item_ids: manifest
             .parent_work_items()
             .into_iter()
@@ -2138,7 +2138,7 @@ fn build_stale_context_issues(
     let Some(manifest_item) = manifest
         .parent_work_items()
         .into_iter()
-        .find(|item| item.id == ai_context.work_item.id)
+        .find(|item| item.id == ai_context.work_item.id.as_str())
     else {
         return vec![];
     };

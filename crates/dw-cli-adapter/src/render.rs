@@ -332,7 +332,10 @@ pub fn ado_action_event_line(event: &AdoActionEvent) -> String {
     match event {
         AdoActionEvent::Authenticating { project } => format!(
             "ADO auth: {}",
-            project.as_deref().unwrap_or("projet résolu")
+            project
+                .as_ref()
+                .map(|project| project.to_string())
+                .unwrap_or_else(|| "projet résolu".into())
         ),
         AdoActionEvent::LoadingAssignedWorkItems { project, top } => {
             format!("ADO assigned: projet={project} top={top}")
@@ -1698,9 +1701,10 @@ fn ado_relation_display(relation: &dw_contracts::AdoAiContextRelation) -> String
         relation.kind,
         relation
             .work_item_id
-            .as_deref()
-            .or(relation.url.as_deref())
-            .unwrap_or("")
+            .as_ref()
+            .map(|id| id.to_string())
+            .or_else(|| relation.url.clone())
+            .unwrap_or_default()
     )
 }
 
@@ -2416,7 +2420,7 @@ mod tests {
             items: vec![dw_contracts::AdoAiContextItem {
                 schema_version: dw_contracts::AI_CONTEXT_VERSION.into(),
                 work_item: dw_contracts::AdoAiContextWorkItem {
-                    id: "42".into(),
+                    id: dw_core::WorkItemId::from("42"),
                     url: None,
                     title: Some("Corriger".into()),
                     kind: Some("Bug".into()),
@@ -2457,7 +2461,7 @@ mod tests {
                 relations: vec![dw_contracts::AdoAiContextRelation {
                     kind: "Parent".into(),
                     rel: None,
-                    work_item_id: Some("1".into()),
+                    work_item_id: Some(dw_core::WorkItemId::from("1")),
                     name: None,
                     url: None,
                     comment: None,
@@ -2591,13 +2595,13 @@ mod tests {
         let report = TaskPreflightReport {
             schema_version: PREFLIGHT_VERSION.into(),
             workspace: "/tmp/ws".into(),
-            project: "ha".into(),
+            project: dw_core::ProjectKey::from("ha"),
             work_item_ids: vec![dw_core::WorkItemId::from("42")],
             has_blocking_issues: true,
             issues: vec![TaskPreflightIssue {
                 code: "missing_attachment".into(),
                 severity: "blocking".into(),
-                work_item_id: "42".into(),
+                work_item_id: dw_core::WorkItemId::from("42"),
                 message: "Piece jointe manquante".into(),
                 details: Some("screenshot absent".into()),
                 related_ids: vec![],
@@ -2619,7 +2623,7 @@ mod tests {
         let report = TaskHandoffValidationReport {
             schema_version: HANDOFF_VALIDATION_VERSION.into(),
             workspace: "/tmp/ws".into(),
-            project: "ha".into(),
+            project: dw_core::ProjectKey::from("ha"),
             is_valid: false,
             items: vec![TaskHandoffValidationItem {
                 repository: "front".into(),
@@ -2739,7 +2743,7 @@ mod tests {
             handoff: TaskHandoffValidationReport {
                 schema_version: HANDOFF_VALIDATION_VERSION.into(),
                 workspace: "/tmp/ws".into(),
-                project: "ha".into(),
+                project: dw_core::ProjectKey::from("ha"),
                 is_valid: true,
                 items: vec![TaskHandoffValidationItem {
                     repository: "front".into(),

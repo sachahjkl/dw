@@ -7,6 +7,7 @@ use dw_contracts::{
     AdoAiContextAttachments, AdoAiContextComment, AdoAiContextContent, AdoAiContextCore,
     AdoAiContextItem, AdoAiContextLinks, AdoAiContextRelation, AdoAiContextWorkItem,
 };
+use dw_core::WorkItemId;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -34,7 +35,7 @@ pub fn map_ai_context_item(
     AdoAiContextItem {
         schema_version: AI_CONTEXT_VERSION.into(),
         work_item: AdoAiContextWorkItem {
-            id: id.clone(),
+            id: WorkItemId::from(id.clone()),
             url: Some(work_item_web_url(azure_dev_ops, &id)),
             title: field_text(&fields, "System.Title"),
             kind: field_text(&fields, "System.WorkItemType"),
@@ -115,7 +116,7 @@ fn parse_relation(relation: &Value) -> AdoAiContextRelation {
     AdoAiContextRelation {
         kind: kind.into(),
         rel,
-        work_item_id,
+        work_item_id: work_item_id.map(WorkItemId::from),
         name,
         url,
         comment,
@@ -169,7 +170,7 @@ fn describe_relation_target(
     name.or(url).unwrap_or("(url absente)").to_string()
 }
 
-fn distinct_relation_ids(relations: &[AdoAiContextRelation], kind: &str) -> Vec<String> {
+fn distinct_relation_ids(relations: &[AdoAiContextRelation], kind: &str) -> Vec<WorkItemId> {
     let mut ids = Vec::new();
     for relation in relations {
         if relation.kind != kind {

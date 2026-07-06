@@ -352,6 +352,10 @@ fn action_events_use_domain_id_types_not_primitive_id_strings() {
         "pull_request_id: String",
         "work_item_ids: Vec<String>",
         "ids: Vec<String>",
+        "project: String",
+        "project: Option<String>",
+        "LoadingWorkItem {\n        id: String",
+        "LoadingWorkItemContext {\n        id: String",
     ] {
         assert!(
             !text.contains(forbidden),
@@ -360,11 +364,51 @@ fn action_events_use_domain_id_types_not_primitive_id_strings() {
             forbidden
         );
     }
-    for required in ["WorkItemId", "PullRequestId", "AdoRepositoryName"] {
+    for required in [
+        "WorkItemId",
+        "PullRequestId",
+        "AdoRepositoryName",
+        "ProjectKey",
+    ] {
         assert!(
             text.contains(required),
             "{} should expose domain ID type `{}`",
             core.display(),
+            required
+        );
+    }
+}
+
+#[test]
+fn migrated_contracts_use_domain_id_types_not_structured_strings() {
+    let repo = repo_root();
+    let contracts = repo.join("crates/dw-contracts/src/lib.rs");
+    let text = fs::read_to_string(&contracts).expect("read contracts lib");
+    for forbidden in [
+        "pub struct TaskHandoffValidationReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String,\n    pub project: String",
+        "pub struct AdoAiContextWorkItem {\n    pub id: String",
+        "pub parent_ids: Vec<String>",
+        "pub child_ids: Vec<String>",
+        "pub predecessor_ids: Vec<String>",
+        "pub successor_ids: Vec<String>",
+        "pub work_item_id: Option<String>",
+        "pub struct TaskPreflightReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String,\n    pub project: String",
+        "pub work_item_ids: Vec<String>",
+        "pub work_item_id: String",
+        "pub related_ids: Vec<String>",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains primitive structured field `{}` in migrated contracts",
+            contracts.display(),
+            forbidden
+        );
+    }
+    for required in ["ProjectKey", "WorkItemId"] {
+        assert!(
+            text.contains(required),
+            "{} should expose contract domain type `{}`",
+            contracts.display(),
             required
         );
     }

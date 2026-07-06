@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use dw_ado::auth::{AdoToken, require_token};
 use dw_ado::{get_ai_context, get_work_item_expanded};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{AdoActionEvent, WorkItemId};
+use dw_core::{AdoActionEvent, ProjectKey, WorkItemId};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -89,7 +89,7 @@ pub async fn context_report_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(project_key.clone()),
+            project: Some(ProjectKey::from(project_key.clone())),
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;

@@ -921,7 +921,7 @@ mod tests {
         );
 
         assert_eq!(context.schema_version, dw_contracts::AI_CONTEXT_VERSION);
-        assert_eq!(context.work_item.id, "55201");
+        assert_eq!(context.work_item.id, dw_core::WorkItemId::from("55201"));
         assert_eq!(
             context.work_item.title.as_deref(),
             Some("Demande transport SOMOTHA")
@@ -943,9 +943,18 @@ mod tests {
                 .map(String::as_str),
             Some("Ecran existant")
         );
-        assert_eq!(context.links.parent_ids, vec!["54000"]);
-        assert_eq!(context.links.child_ids, vec!["55202"]);
-        assert_eq!(context.links.predecessor_ids, vec!["55199"]);
+        assert_eq!(
+            context.links.parent_ids,
+            vec![dw_core::WorkItemId::from("54000")]
+        );
+        assert_eq!(
+            context.links.child_ids,
+            vec![dw_core::WorkItemId::from("55202")]
+        );
+        assert_eq!(
+            context.links.predecessor_ids,
+            vec![dw_core::WorkItemId::from("55199")]
+        );
         assert_eq!(context.attachments.directory_hint, "attachments/ado/55201");
         assert_eq!(
             context.attachments.items[0].name.as_deref(),
@@ -996,7 +1005,10 @@ mod tests {
             vec![],
         );
 
-        assert_eq!(context.links.parent_ids, vec!["54000"]);
+        assert_eq!(
+            context.links.parent_ids,
+            vec![dw_core::WorkItemId::from("54000")]
+        );
         assert_eq!(context.attachments.items.len(), 1);
         assert!(context.relations.is_empty());
     }

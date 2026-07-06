@@ -3,7 +3,7 @@ use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::{auth::require_token, run_blocking_ado, update_work_item_state_authenticated};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{AdoActionEvent, WorkItemId};
+use dw_core::{AdoActionEvent, ProjectKey, WorkItemId};
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
@@ -83,7 +83,7 @@ pub async fn execute_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(plan.project.clone()),
+            project: Some(ProjectKey::from(plan.project.clone())),
         },
     );
     let token = require_token(load_auth_options(Some(&plan.root))?).await?;

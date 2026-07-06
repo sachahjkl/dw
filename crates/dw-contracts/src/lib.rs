@@ -1,4 +1,4 @@
-use dw_core::WorkItemId;
+use dw_core::{ProjectKey, WorkItemId};
 use serde::{Deserialize, Serialize};
 
 pub mod completion {
@@ -38,7 +38,7 @@ pub struct TaskHandoffValidationReport {
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
     pub workspace: String,
-    pub project: String,
+    pub project: ProjectKey,
     pub items: Vec<TaskHandoffValidationItem>,
     #[serde(rename = "isValid")]
     pub is_valid: bool,
@@ -79,7 +79,7 @@ pub struct AdoAiContextItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdoAiContextWorkItem {
-    pub id: String,
+    pub id: WorkItemId,
     pub url: Option<String>,
     pub title: Option<String>,
     #[serde(rename = "type")]
@@ -121,13 +121,13 @@ pub struct AdoAiContextContent {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdoAiContextLinks {
     #[serde(rename = "parentIds")]
-    pub parent_ids: Vec<String>,
+    pub parent_ids: Vec<WorkItemId>,
     #[serde(rename = "childIds")]
-    pub child_ids: Vec<String>,
+    pub child_ids: Vec<WorkItemId>,
     #[serde(rename = "predecessorIds")]
-    pub predecessor_ids: Vec<String>,
+    pub predecessor_ids: Vec<WorkItemId>,
     #[serde(rename = "successorIds")]
-    pub successor_ids: Vec<String>,
+    pub successor_ids: Vec<WorkItemId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -151,7 +151,7 @@ pub struct AdoAiContextRelation {
     pub kind: String,
     pub rel: Option<String>,
     #[serde(rename = "workItemId")]
-    pub work_item_id: Option<String>,
+    pub work_item_id: Option<WorkItemId>,
     pub name: Option<String>,
     pub url: Option<String>,
     pub comment: Option<String>,
@@ -172,7 +172,7 @@ pub struct TaskPreflightReport {
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
     pub workspace: String,
-    pub project: String,
+    pub project: ProjectKey,
     #[serde(rename = "workItemIds")]
     pub work_item_ids: Vec<WorkItemId>,
     pub issues: Vec<TaskPreflightIssue>,
@@ -185,9 +185,9 @@ pub struct TaskPreflightIssue {
     pub code: String,
     pub severity: String,
     #[serde(rename = "workItemId")]
-    pub work_item_id: String,
+    pub work_item_id: WorkItemId,
     pub message: String,
     pub details: Option<String>,
     #[serde(rename = "relatedIds")]
-    pub related_ids: Vec<String>,
+    pub related_ids: Vec<WorkItemId>,
 }

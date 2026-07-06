@@ -3,7 +3,7 @@ use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{WorkItemSnapshot, query_work_item_snapshots};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{AdoActionEvent, WorkItemId};
+use dw_core::{AdoActionEvent, ProjectKey, WorkItemId};
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
@@ -43,7 +43,7 @@ pub async fn report_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(project_key.clone()),
+            project: Some(ProjectKey::from(project_key.clone())),
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;

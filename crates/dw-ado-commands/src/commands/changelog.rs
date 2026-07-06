@@ -7,7 +7,7 @@ use dw_ado::{
     parse_changelog_format,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::{AdoActionEvent, AdoRepositoryName, PullRequestId, WorkItemId};
+use dw_core::{AdoActionEvent, AdoRepositoryName, ProjectKey, PullRequestId, WorkItemId};
 use serde::Serialize;
 use std::process::Command as ProcessCommand;
 
@@ -99,7 +99,7 @@ pub async fn report_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(project_key.clone()),
+            project: Some(ProjectKey::from(project_key.clone())),
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
@@ -234,7 +234,7 @@ pub async fn report_with_events(
             &mut events,
             &mut emit,
             AdoActionEvent::GroupingAssignedWorkItems {
-                project: project_key.clone(),
+                project: ProjectKey::from(project_key.clone()),
             },
         );
         let options = options.clone();
