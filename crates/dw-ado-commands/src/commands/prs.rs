@@ -30,7 +30,7 @@ pub async fn report(args: PrsArgs) -> Result<PrsReport> {
     ));
     let projects = load_projects_config(root.as_str());
     let workflow = load_workflow_config(root.as_str());
-    let options = resolve_ado_options(&projects, &workflow, args.project.as_str())?;
+    let options = resolve_ado_options(&projects, &workflow, &args.project)?;
     let project_config = resolve_project(&projects, args.project.as_str());
     let repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_ref());
     if repositories.is_empty() {

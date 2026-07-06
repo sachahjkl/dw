@@ -83,7 +83,7 @@ pub async fn context_report_with_events(
         project.ok_or_else(|| anyhow::anyhow!("ado context requiert un projet configuré."))?;
     let projects = load_projects_config(root.as_str());
     let workflow = load_workflow_config(root.as_str());
-    let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
+    let options = resolve_ado_options(&projects, &workflow, &project_key)?;
     let mut events = Vec::new();
     push_event(
         &mut events,

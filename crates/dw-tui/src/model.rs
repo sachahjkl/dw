@@ -1018,10 +1018,11 @@ async fn load_assigned_project(
     workflow: WorkflowConfig,
     token: dw_ado::auth::AdoToken,
 ) -> AdoAssignedProject {
-    match dw_ado_commands::resolve_options(&projects, &workflow, &choice.key) {
+    let project_key = ProjectKey::from(choice.key);
+    match dw_ado_commands::resolve_options(&projects, &workflow, &project_key) {
         Ok(options) => match dw_ado::query_assigned_work_items(&options, 50, &token).await {
             Ok(items) => AdoAssignedProject {
-                key: ProjectKey::from(choice.key),
+                key: project_key.clone(),
                 label: choice.label,
                 items: items
                     .into_iter()
@@ -1033,14 +1034,14 @@ async fn load_assigned_project(
                 error: None,
             },
             Err(error) => AdoAssignedProject {
-                key: ProjectKey::from(choice.key),
+                key: project_key.clone(),
                 label: choice.label,
                 items: Vec::new(),
                 error: Some(error.to_string()),
             },
         },
         Err(error) => AdoAssignedProject {
-            key: ProjectKey::from(choice.key),
+            key: project_key.clone(),
             label: choice.label,
             items: Vec::new(),
             error: Some(error.to_string()),
@@ -1111,8 +1112,9 @@ fn pull_request_targets(
         if is_aggregate_project_key(&choice.key) {
             continue;
         }
-        let project_config = resolve_project(projects, &choice.key);
-        let options = dw_ado_commands::resolve_options(projects, workflow, &choice.key).ok();
+        let project_key = ProjectKey::from(choice.key);
+        let project_config = resolve_project(projects, project_key.as_str());
+        let options = dw_ado_commands::resolve_options(projects, workflow, &project_key).ok();
         let Some(project_config) = project_config.as_ref() else {
             continue;
         };
@@ -1127,7 +1129,7 @@ fn pull_request_targets(
             };
             targets.push(PullRequestTarget {
                 order: targets.len(),
-                project: ProjectKey::from(choice.key.clone()),
+                project: project_key.clone(),
                 repository: WorkspaceRepositoryName::from(repository.clone()),
                 ado_repository: AdoRepositoryName::from(ado_repository),
                 options: options.clone(),

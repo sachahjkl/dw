@@ -75,7 +75,7 @@ pub async fn execute_with_events(
 ) -> Result<SetStateExecutionReport> {
     let projects = load_projects_config(plan.root.as_str());
     let workflow = load_workflow_config(plan.root.as_str());
-    let options = resolve_ado_options(&projects, &workflow, plan.project.as_str())?;
+    let options = resolve_ado_options(&projects, &workflow, &plan.project)?;
     let mut events = Vec::new();
     push_event(
         &mut events,

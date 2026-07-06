@@ -6,14 +6,14 @@ use dw_core::ProjectKey;
 pub fn resolve_ado_options(
     projects: &dw_config::ProjectsConfig,
     workflow: &dw_config::WorkflowConfig,
-    project_key: &str,
+    project_key: &ProjectKey,
 ) -> Result<AzureDevOpsOptions> {
     let workflow_options = workflow
         .azure_dev_ops
         .clone()
         .and_then(|value| serde_json::from_value::<AzureDevOpsOptions>(value).ok());
     let project_options =
-        resolve_project(projects, project_key).and_then(|project| project.azure_dev_ops);
+        resolve_project(projects, project_key.as_str()).and_then(|project| project.azure_dev_ops);
 
     match (workflow_options, project_options) {
         (Some(workflow), Some(project)) => Ok(AzureDevOpsOptions {
@@ -55,38 +55,12 @@ pub fn resolve_cli_ado_options(
         (None, Some(project)) => {
             let projects = dw_config::load_projects_config(root);
             let workflow = dw_config::load_workflow_config(root);
-            resolve_ado_options(&projects, &workflow, project.as_str())
+            resolve_ado_options(&projects, &workflow, &project)
         }
         _ => Err(anyhow::anyhow!(
             "ado ai-context requiert un projet configuré, ou une organisation avec un projet explicite."
         )),
     }
-}
-
-pub fn resolve_project_key_or_prompt(
-    project: Option<String>,
-    projects: &dw_config::ProjectsConfig,
-    command_name: &str,
-) -> Result<String> {
-    if let Some(project) = project.filter(|value| !value.trim().is_empty()) {
-        return Ok(project);
-    }
-
-    let choices = dw_config::project_choices(projects);
-    if choices.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Aucun projet configuré dans projects.json. Initialiser la configuration ou compléter config/projects.json."
-        ));
-    }
-
-    let project_names = choices
-        .into_iter()
-        .map(|choice| choice.key)
-        .collect::<Vec<_>>()
-        .join(", ");
-    Err(anyhow::anyhow!(
-        "{command_name} requiert un projet configuré. Projets disponibles: {project_names}."
-    ))
 }
 
 #[cfg(test)]

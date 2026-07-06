@@ -4,8 +4,9 @@ pub mod commands;
 use anyhow::Result;
 use dw_ado::auth::AdoAuthOptions;
 use dw_config::WorkflowConfig;
+use dw_core::ProjectKey;
 
-pub use commands::project::{resolve_ado_options, resolve_project_key_or_prompt};
+pub use commands::project::resolve_ado_options;
 
 pub fn load_auth_options(root: Option<&str>) -> Result<Option<AdoAuthOptions>> {
     let root = dw_config::resolve_root(root);
@@ -24,7 +25,7 @@ pub fn is_final_state(work_item_type: Option<&str>, state: Option<&str>) -> bool
 pub fn resolve_options(
     projects: &dw_config::ProjectsConfig,
     workflow: &WorkflowConfig,
-    project_key: &str,
+    project_key: &ProjectKey,
 ) -> Result<dw_ado::AzureDevOpsOptions> {
     commands::project::resolve_ado_options(projects, workflow, project_key)
 }
