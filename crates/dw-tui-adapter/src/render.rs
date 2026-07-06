@@ -8,9 +8,9 @@ use dw_app::{
 };
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
 use dw_contracts::{
-    TaskHandoffValidationItem, TaskHandoffValidationReport, TaskHandoffValidationStatus,
-    TaskPreflightIssue, TaskPreflightIssueCode, TaskPreflightIssueDetail, TaskPreflightReport,
-    TaskPreflightSeverity, TaskPreflightStaleReason,
+    TaskHandoffValidationDetail, TaskHandoffValidationItem, TaskHandoffValidationReport,
+    TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightIssueCode,
+    TaskPreflightIssueDetail, TaskPreflightReport, TaskPreflightSeverity, TaskPreflightStaleReason,
 };
 use dw_core::{
     AdoActionEvent, AgentActionEvent, ConfigActionEvent, DbActionEvent, DwActionEvent,
@@ -1576,7 +1576,9 @@ pub fn task_finish_plan_lines(report: &dw_task::finish::FinishPlanReport) -> Vec
     for item in &report.handoff.items {
         lines.push(format!(
             "- [{}] {} - {}",
-            item.status, item.repository, item.message
+            item.status,
+            item.repository,
+            handoff_validation_message(item)
         ));
     }
     for summary in &report.handoff_summaries {
@@ -2156,8 +2158,8 @@ fn push_handoff_group(
             item.repository,
             handoff_status_label(&item.status)
         ));
-        lines.push(format!("  Message : {}", item.message));
-        if !item.path.trim().is_empty() {
+        lines.push(format!("  Message : {}", handoff_validation_message(item)));
+        if !item.path.as_str().trim().is_empty() {
             lines.push(format!("  File    : {}", item.path));
         }
         if item.valid {
@@ -2172,6 +2174,18 @@ fn push_handoff_group(
         }
     }
     lines.push(String::new());
+}
+
+fn handoff_validation_message(item: &TaskHandoffValidationItem) -> String {
+    match &item.detail {
+        TaskHandoffValidationDetail::MissingFile => "Handoff file is missing.".into(),
+        TaskHandoffValidationDetail::Valid => "Handoff is valid.".into(),
+        TaskHandoffValidationDetail::NotFinishReady => format!(
+            "Handoff is parseable but not ready for finish (status: {}).",
+            item.status
+        ),
+        TaskHandoffValidationDetail::InvalidFile { reason } => reason.clone(),
+    }
 }
 
 fn validation_status_label(valid: bool) -> &'static str {
@@ -2999,7 +3013,7 @@ mod tests {
                 path: "/tmp/ws/front/handoff-front.md".into(),
                 status: TaskHandoffValidationStatus::Valid,
                 valid: true,
-                message: "OK".into(),
+                detail: TaskHandoffValidationDetail::Valid,
                 done_count: 2,
                 decision_count: 1,
                 risk_count: 0,
@@ -3119,7 +3133,7 @@ mod tests {
                     path: "/tmp/ws/handoff-front.md".into(),
                     status: TaskHandoffValidationStatus::Valid,
                     valid: true,
-                    message: "OK".into(),
+                    detail: TaskHandoffValidationDetail::Valid,
                     done_count: 1,
                     decision_count: 0,
                     risk_count: 0,
@@ -3159,7 +3173,7 @@ mod tests {
 
         assert_eq!(lines[0], "Workspace finish");
         assert!(lines.contains(&"Status    : OK".into()));
-        assert!(lines.contains(&"- [valid] front - OK".into()));
+        assert!(lines.contains(&"- [valid] front - Handoff is valid.".into()));
         assert!(lines.contains(&"Commit to create".into()));
         assert!(lines.contains(&"Message   : feat(42): demo".into()));
         assert!(lines.contains(&"Handoff front".into()));

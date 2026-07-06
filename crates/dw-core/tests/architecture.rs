@@ -421,6 +421,8 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
     for forbidden in [
         "pub struct TaskHandoffValidationReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String,\n    pub project: String",
         "pub struct TaskHandoffValidationReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String",
+        "pub struct TaskHandoffValidationItem {\n    pub repository: WorkspaceRepositoryName,\n    pub path: String",
+        "pub struct TaskHandoffValidationItem {\n    pub repository: WorkspaceRepositoryName,\n    pub path: HandoffFilePath,\n    pub status: TaskHandoffValidationStatus,\n    pub valid: bool,\n    pub message: String",
         "pub struct AdoAiContextWorkItem {\n    pub id: String",
         "pub parent_ids: Vec<String>",
         "pub child_ids: Vec<String>",
@@ -451,7 +453,9 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
         "WorkItemId",
         "WorkspacePath",
         "WorkspaceRepositoryName",
+        "HandoffFilePath",
         "TaskHandoffValidationStatus",
+        "TaskHandoffValidationDetail",
         "TaskPreflightSeverity",
         "TaskPreflightIssueCode",
         "TaskPreflightIssueDetail",

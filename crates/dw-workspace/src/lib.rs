@@ -4,14 +4,15 @@ use dw_config::{
 };
 use dw_contracts::{
     AdoAiContextItem, HANDOFF_PREFIX, HANDOFF_VALIDATION_VERSION, MARKDOWN_EXTENSION,
-    PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport,
-    TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightIssueCode,
-    TaskPreflightIssueDetail, TaskPreflightReport, TaskPreflightSeverity, TaskPreflightStaleReason,
+    PREFLIGHT_VERSION, TaskHandoffValidationDetail, TaskHandoffValidationItem,
+    TaskHandoffValidationReport, TaskHandoffValidationStatus, TaskPreflightIssue,
+    TaskPreflightIssueCode, TaskPreflightIssueDetail, TaskPreflightReport, TaskPreflightSeverity,
+    TaskPreflightStaleReason,
 };
 use dw_core::{
-    AiContextFilePath, BranchName, GitAnchorName, ProjectKey, ProjectRootPath, RepositoryPath,
-    TaskId, TaskSlug, WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName, WorkspacePath,
-    WorkspaceRepositoryName,
+    AiContextFilePath, BranchName, GitAnchorName, HandoffFilePath, ProjectKey, ProjectRootPath,
+    RepositoryPath, TaskId, TaskSlug, WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName,
+    WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
@@ -494,10 +495,10 @@ pub fn build_handoff_validation_report(
         if !path.exists() {
             items.push(TaskHandoffValidationItem {
                 repository: repository.clone(),
-                path: path.display().to_string(),
+                path: HandoffFilePath::from(path.display().to_string()),
                 status: TaskHandoffValidationStatus::Missing,
                 valid: false,
-                message: "Fichier handoff manquant.".into(),
+                detail: TaskHandoffValidationDetail::MissingFile,
                 done_count: 0,
                 decision_count: 0,
                 risk_count: 0,
@@ -514,16 +515,13 @@ pub fn build_handoff_validation_report(
                 let status = summary.status.validation_status();
                 items.push(TaskHandoffValidationItem {
                     repository: repository.clone(),
-                    path: path.display().to_string(),
+                    path: HandoffFilePath::from(path.display().to_string()),
                     status,
                     valid,
-                    message: if valid {
-                        "Handoff valide.".into()
+                    detail: if valid {
+                        TaskHandoffValidationDetail::Valid
                     } else {
-                        format!(
-                            "Handoff parseable mais pas prêt pour finish (status: {}).",
-                            summary.status
-                        )
+                        TaskHandoffValidationDetail::NotFinishReady
                     },
                     done_count: summary.done.len(),
                     decision_count: summary.decisions.len(),
@@ -534,10 +532,10 @@ pub fn build_handoff_validation_report(
             }
             Err(error) => items.push(TaskHandoffValidationItem {
                 repository: repository.clone(),
-                path: path.display().to_string(),
+                path: HandoffFilePath::from(path.display().to_string()),
                 status: TaskHandoffValidationStatus::Invalid,
                 valid: false,
-                message: error,
+                detail: TaskHandoffValidationDetail::InvalidFile { reason: error },
                 done_count: 0,
                 decision_count: 0,
                 risk_count: 0,

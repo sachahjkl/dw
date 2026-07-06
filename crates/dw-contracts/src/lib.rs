@@ -1,4 +1,4 @@
-use dw_core::{ProjectKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName};
+use dw_core::{HandoffFilePath, ProjectKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -48,10 +48,10 @@ pub struct TaskHandoffValidationReport {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskHandoffValidationItem {
     pub repository: WorkspaceRepositoryName,
-    pub path: String,
+    pub path: HandoffFilePath,
     pub status: TaskHandoffValidationStatus,
     pub valid: bool,
-    pub message: String,
+    pub detail: TaskHandoffValidationDetail,
     #[serde(rename = "doneCount")]
     pub done_count: usize,
     #[serde(rename = "decisionCount")]
@@ -62,6 +62,15 @@ pub struct TaskHandoffValidationItem {
     pub blocker_count: usize,
     #[serde(rename = "followUpCount")]
     pub follow_up_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum TaskHandoffValidationDetail {
+    MissingFile,
+    Valid,
+    NotFinishReady,
+    InvalidFile { reason: String },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

@@ -1409,6 +1409,8 @@ impl fmt::Display for AiContextFilePath {
     }
 }
 
+string_newtype!(HandoffFilePath);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GitOperation {
