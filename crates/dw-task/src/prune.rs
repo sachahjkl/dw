@@ -6,9 +6,9 @@ use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_core::{DevWorkflowRoot, ProjectKey, WorkItemId, WorkspacePath};
 use dw_git::{worktree_prune, worktree_remove};
 use dw_workspace::{
-    WorkspaceSummary, WorkspaceWorkItem, execute_task_sync, execute_task_teardown,
-    filter_workspaces_by_work_item_ids, find_workspaces, plan_task_prune_by_work_item_ids,
-    plan_task_teardown,
+    WorkspaceGitOperation, WorkspaceSummary, WorkspaceWorkItem, execute_task_sync,
+    execute_task_teardown, filter_workspaces_by_work_item_ids, find_workspaces,
+    plan_task_prune_by_work_item_ids, plan_task_teardown,
 };
 use serde::Serialize;
 
@@ -100,12 +100,15 @@ pub fn execute(
     let mut deleted = Vec::new();
     for candidate in selected_candidates {
         let (_manifest, steps) = plan_task_teardown(root.as_str(), &projects, &candidate.path)?;
-        execute_task_teardown(&candidate.path, &steps, |git_dir, args| match args {
-            ["worktree", "remove", "--force", target] => {
-                worktree_remove(git_dir, target).map_err(|error| error.to_string())
+        execute_task_teardown(&candidate.path, &steps, |operation| match operation {
+            WorkspaceGitOperation::WorktreeRemove {
+                git_dir,
+                worktree_path,
+            } => worktree_remove(git_dir.as_str(), worktree_path.as_str())
+                .map_err(|error| error.to_string()),
+            WorkspaceGitOperation::WorktreePrune { git_dir } => {
+                worktree_prune(git_dir.as_str()).map_err(|error| error.to_string())
             }
-            ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
-            _ => Err(format!("commande git non supportée: {}", args.join(" "))),
         })?;
         deleted.push(candidate.path);
     }

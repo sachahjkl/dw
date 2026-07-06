@@ -1,11 +1,12 @@
 use anyhow::{Result, anyhow};
-use base64::Engine;
 use dw_core::SecretValue;
+use git2::{
+    Cred, FetchOptions, IndexAddOption, ObjectType, PushOptions, RebaseOptions, RemoteCallbacks,
+    Repository, StashFlags, StatusOptions, WorktreeAddOptions, build::RepoBuilder,
+};
 use serde::{Deserialize, Serialize};
-use std::ffi::OsStr;
 use std::fmt;
 use std::path::Path;
-use std::process::{Command, Output};
 use thiserror::Error;
 
 const ENV_DW_ADO_TOKEN: &str = "DW_ADO_TOKEN";
@@ -64,10 +65,8 @@ impl GitCredential {
         Self { token }
     }
 
-    fn authorization_header(&self) -> String {
-        let value =
-            base64::engine::general_purpose::STANDARD.encode(format!(":{}", self.token.as_str()));
-        format!("Authorization: Basic {value}")
+    fn token(&self) -> &SecretValue {
+        &self.token
     }
 }
 
@@ -77,17 +76,32 @@ impl fmt::Debug for GitCredential {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GitCommandInvocation {
-    pub cwd: Option<String>,
-    pub git_dir: Option<String>,
-    pub args: Vec<String>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GitOperation {
+    OpenRepository,
+    Status,
+    Fetch,
+    Rebase,
+    Commit,
+    Push,
+    CloneBare,
+    ConfigureRemote,
+    WorktreeAdd,
+    WorktreeRemove,
+    WorktreePrune,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GitCommandStderr(String);
+pub struct GitOperationInvocation {
+    pub operation: GitOperation,
+    pub repository_path: Option<String>,
+}
 
-impl GitCommandStderr {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitErrorDetail(String);
+
+impl GitErrorDetail {
     pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())
     }
@@ -97,7 +111,7 @@ impl GitCommandStderr {
     }
 }
 
-impl fmt::Display for GitCommandStderr {
+impl fmt::Display for GitErrorDetail {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.0.trim())
     }
@@ -153,26 +167,25 @@ impl fmt::Display for GitAuthFailureKind {
 
 #[derive(Debug, Error)]
 pub enum GitError {
-    #[error("Git introuvable: {0}")]
-    MissingGitExecutable(String),
-    #[error("{kind}. {remediation}. Détail Git: {stderr}")]
+    #[error("{kind}. {remediation}. Détail Git: {detail}")]
     Authentication {
         kind: GitAuthFailureKind,
         remediation: GitAuthRemediation,
-        stderr: GitCommandStderr,
-        invocation: GitCommandInvocation,
+        detail: GitErrorDetail,
+        invocation: GitOperationInvocation,
     },
-    #[error("Git a échoué: {stderr}")]
-    CommandFailed {
-        stderr: GitCommandStderr,
-        invocation: GitCommandInvocation,
+    #[error("Git {operation:?} a échoué: {detail}")]
+    OperationFailed {
+        operation: GitOperation,
+        detail: GitErrorDetail,
+        invocation: GitOperationInvocation,
     },
 }
 
 pub fn current_strategy() -> GitRewriteNote {
     GitRewriteNote {
-        strategy: "shell-out-to-git",
-        status: "planned",
+        strategy: "git2",
+        status: "active",
     }
 }
 
@@ -237,40 +250,36 @@ pub fn update_repository(
     default_branch: &str,
     credential: Option<&GitCredential>,
 ) -> Result<()> {
-    let status = run_git(repository_path, &["status", "--short"], credential)?;
-    let has_changes = !status.trim().is_empty();
+    let mut repository = Repository::open(repository_path).map_err(git2_command_error)?;
+    let has_changes = repository_has_changes(&repository)?;
     let mut stashed = false;
 
     if has_changes {
-        run_git(
-            repository_path,
-            &[
-                "stash",
-                "push",
-                "--include-untracked",
-                "-m",
+        let signature = repository.signature().map_err(git2_command_error)?;
+        repository
+            .stash_save(
+                &signature,
                 "dw task repo-latest autostash",
-            ],
-            credential,
-        )?;
+                Some(StashFlags::INCLUDE_UNTRACKED),
+            )
+            .map_err(git2_command_error)?;
         stashed = true;
     }
 
-    run_git(repository_path, &["fetch", "--prune", "origin"], credential)?;
+    fetch_anchor_repository(&repository, credential)?;
     let source_branch = resolve_remote_source_branch(default_branch);
-    if let Err(error) = run_git(repository_path, &["rebase", &source_branch], credential) {
-        let _ = run_git(repository_path, &["rebase", "--abort"], credential);
-        return Err(anyhow!(
+    rebase_current_branch(&repository, &source_branch).map_err(|error| {
+        anyhow!(
             "Conflit de rebase. Relancer manuellement avec: git -C \"{}\" fetch --prune origin puis git -C \"{}\" rebase {}. Cause: {}",
             repository_path,
             repository_path,
             source_branch,
             error
-        ));
-    }
+        )
+    })?;
 
     if stashed {
-        run_git(repository_path, &["stash", "pop"], credential)?;
+        repository.stash_pop(0, None).map_err(git2_command_error)?;
     }
 
     Ok(())
@@ -287,8 +296,8 @@ pub fn repository_status(repository_path: &str) -> RepositoryStatus {
         };
     }
 
-    let status = match run_git(repository_path, &["status", "--short"], None) {
-        Ok(output) => output.trim().to_string(),
+    let repository = match Repository::open(repository_path) {
+        Ok(repository) => repository,
         Err(error) => {
             return RepositoryStatus {
                 path: repository_path.into(),
@@ -299,6 +308,25 @@ pub fn repository_status(repository_path: &str) -> RepositoryStatus {
             };
         }
     };
+    let mut options = StatusOptions::new();
+    options.include_untracked(true).recurse_untracked_dirs(true);
+    let statuses = match repository.statuses(Some(&mut options)) {
+        Ok(statuses) => statuses,
+        Err(error) => {
+            return RepositoryStatus {
+                path: repository_path.into(),
+                is_git_repository: false,
+                has_changes: false,
+                has_unpushed: false,
+                detail: error.message().into(),
+            };
+        }
+    };
+    let status = statuses
+        .iter()
+        .filter_map(|entry| entry.path().ok().map(ToOwned::to_owned))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     if !status.is_empty() {
         return RepositoryStatus {
@@ -310,14 +338,17 @@ pub fn repository_status(repository_path: &str) -> RepositoryStatus {
         };
     }
 
-    let ahead = run_git(
-        repository_path,
-        &["rev-list", "--count", "@{u}..HEAD"],
-        None,
-    )
-    .ok()
-    .and_then(|output| output.trim().parse::<u32>().ok())
-    .unwrap_or(0);
+    let ahead = repository
+        .revparse_single("HEAD")
+        .ok()
+        .zip(repository.revparse_single("@{u}").ok())
+        .and_then(|(head, upstream)| {
+            repository
+                .graph_ahead_behind(head.id(), upstream.id())
+                .ok()
+                .map(|(ahead, _behind)| ahead)
+        })
+        .unwrap_or(0);
 
     RepositoryStatus {
         path: repository_path.into(),
@@ -333,17 +364,50 @@ pub fn repository_status(repository_path: &str) -> RepositoryStatus {
 }
 
 pub fn commit_repository(repository_path: &str, message: &str) -> Result<()> {
-    run_git(repository_path, &["add", "."], None)?;
-    run_git(repository_path, &["commit", "-m", message], None)?;
+    let repository = Repository::open(repository_path).map_err(git2_command_error)?;
+    let mut index = repository.index().map_err(git2_command_error)?;
+    index
+        .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
+        .map_err(git2_command_error)?;
+    index.write().map_err(git2_command_error)?;
+    let tree_id = index.write_tree().map_err(git2_command_error)?;
+    let tree = repository.find_tree(tree_id).map_err(git2_command_error)?;
+    let signature = repository.signature().map_err(git2_command_error)?;
+    let parent = repository
+        .head()
+        .ok()
+        .and_then(|head| head.peel_to_commit().ok());
+    let parents = parent.iter().collect::<Vec<_>>();
+    repository
+        .commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .map_err(git2_command_error)?;
     Ok(())
 }
 
 pub fn push_repository(repository_path: &str, branch_name: &str) -> Result<()> {
-    run_git(
-        repository_path,
-        &["push", "-u", "origin", branch_name],
-        None,
-    )?;
+    let repository = Repository::open(repository_path).map_err(git2_command_error)?;
+    let mut remote = repository
+        .find_remote("origin")
+        .map_err(git2_command_error)?;
+    let environment_credential = remote
+        .url()
+        .ok()
+        .filter(|url| is_azure_devops_url(url))
+        .and_then(|_| git_credential_from_environment());
+    let callbacks = remote_callbacks(environment_credential.as_ref());
+    let mut options = PushOptions::new();
+    options.remote_callbacks(callbacks);
+    let refspec = format!("refs/heads/{branch_name}:refs/heads/{branch_name}");
+    remote
+        .push(&[refspec.as_str()], Some(&mut options))
+        .map_err(|error| git2_auth_error(error, environment_credential.is_some()))?;
     Ok(())
 }
 
@@ -371,42 +435,13 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
         .as_ref()
         .or(environment_credential.as_ref());
 
-    if !anchor_path.is_dir() {
-        run_git_in(
-            &request.project_root,
-            &[
-                "clone",
-                "--bare",
-                &request.url,
-                anchor_path.to_str().unwrap_or_default(),
-            ],
-            credential,
-        )?;
-        run_git_dir(
-            anchor_path.to_str().unwrap_or_default(),
-            &[
-                "config",
-                "remote.origin.fetch",
-                "+refs/heads/*:refs/remotes/origin/*",
-            ],
-            credential,
-        )?;
+    let anchor_repository = if !anchor_path.is_dir() {
+        clone_bare_repository(&request.url, &anchor_path, credential)?
     } else {
-        run_git_dir(
-            anchor_path.to_str().unwrap_or_default(),
-            &[
-                "config",
-                "remote.origin.fetch",
-                "+refs/heads/*:refs/remotes/origin/*",
-            ],
-            credential,
-        )?;
-        run_git_dir(
-            anchor_path.to_str().unwrap_or_default(),
-            &["fetch", "--prune", "origin"],
-            credential,
-        )?;
-    }
+        Repository::open_bare(&anchor_path).map_err(git2_command_error)?
+    };
+    configure_anchor_fetch_refspec(&anchor_repository)?;
+    fetch_anchor_repository(&anchor_repository, credential)?;
 
     if Path::new(&request.worktree_path).is_dir() {
         return Ok(WorktreePrepareResult {
@@ -416,15 +451,12 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
         });
     }
 
-    let anchor = anchor_path.to_str().unwrap_or_default();
     let base_ref = [
         format!("origin/{}", request.default_branch),
         format!("refs/heads/{}", request.default_branch),
     ]
     .into_iter()
-    .find(|candidate| {
-        run_git_dir(anchor, &["rev-parse", "--verify", candidate], credential).is_ok()
-    })
+    .find(|candidate| anchor_repository.revparse_single(candidate).is_ok())
     .ok_or_else(|| {
         anyhow!(
             "Branche de base introuvable: {}. Références testées: origin/{}, refs/heads/{}.",
@@ -434,33 +466,35 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
         )
     })?;
     let branch_ref = format!("refs/heads/{}", request.branch_name);
-    let branch_exists =
-        run_git_dir(anchor, &["rev-parse", "--verify", &branch_ref], credential).is_ok();
-    if branch_exists {
-        run_git_dir(
-            anchor,
-            &[
-                "worktree",
-                "add",
-                &request.worktree_path,
-                &request.branch_name,
-            ],
-            credential,
-        )?;
-    } else {
-        run_git_dir(
-            anchor,
-            &[
-                "worktree",
-                "add",
-                "-b",
-                &request.branch_name,
-                &request.worktree_path,
-                &base_ref,
-            ],
-            credential,
-        )?;
+    let branch_exists = anchor_repository.find_reference(&branch_ref).is_ok();
+    if !branch_exists {
+        let base_object = anchor_repository
+            .revparse_single(&base_ref)
+            .map_err(git2_command_error)?;
+        let base_commit = base_object
+            .peel(ObjectType::Commit)
+            .and_then(|object| {
+                object
+                    .into_commit()
+                    .map_err(|_| git2::Error::from_str("référence de base sans commit"))
+            })
+            .map_err(git2_command_error)?;
+        anchor_repository
+            .branch(&request.branch_name, &base_commit, false)
+            .map_err(git2_command_error)?;
     }
+    let reference = anchor_repository
+        .find_reference(&branch_ref)
+        .map_err(git2_command_error)?;
+    let mut options = WorktreeAddOptions::new();
+    options.reference(Some(&reference));
+    anchor_repository
+        .worktree(
+            &worktree_name(request),
+            Path::new(&request.worktree_path),
+            Some(&options),
+        )
+        .map_err(git2_command_error)?;
 
     Ok(WorktreePrepareResult {
         repository: request.repository.clone(),
@@ -476,114 +510,213 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
     })
 }
 
+fn clone_bare_repository(
+    url: &str,
+    anchor_path: &Path,
+    credential: Option<&GitCredential>,
+) -> std::result::Result<Repository, GitError> {
+    let fetch_options = fetch_options(credential);
+    let mut builder = RepoBuilder::new();
+    builder.bare(true).fetch_options(fetch_options);
+    builder
+        .clone(url, anchor_path)
+        .map_err(|error| git2_auth_error(error, credential.is_some()))
+}
+
+fn configure_anchor_fetch_refspec(repository: &Repository) -> std::result::Result<(), GitError> {
+    let mut config = repository.config().map_err(git2_command_error)?;
+    config
+        .set_str("remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        .map_err(git2_command_error)
+}
+
+fn fetch_anchor_repository(
+    repository: &Repository,
+    credential: Option<&GitCredential>,
+) -> std::result::Result<(), GitError> {
+    let mut remote = repository
+        .find_remote("origin")
+        .map_err(git2_command_error)?;
+    let mut fetch_options = fetch_options(credential);
+    remote
+        .fetch(
+            &["+refs/heads/*:refs/remotes/origin/*"],
+            Some(&mut fetch_options),
+            None,
+        )
+        .map_err(|error| git2_auth_error(error, credential.is_some()))
+}
+
+fn repository_has_changes(repository: &Repository) -> std::result::Result<bool, GitError> {
+    let mut options = StatusOptions::new();
+    options.include_untracked(true).recurse_untracked_dirs(true);
+    let statuses = repository
+        .statuses(Some(&mut options))
+        .map_err(git2_command_error)?;
+    Ok(!statuses.is_empty())
+}
+
+fn rebase_current_branch(
+    repository: &Repository,
+    upstream_ref: &str,
+) -> std::result::Result<(), GitError> {
+    let upstream = repository
+        .revparse_single(upstream_ref)
+        .map_err(git2_command_error)?;
+    let head = repository
+        .revparse_single("HEAD")
+        .map_err(git2_command_error)?;
+    if head.id() == upstream.id() {
+        return Ok(());
+    }
+    let upstream = repository
+        .find_annotated_commit(upstream.id())
+        .map_err(git2_command_error)?;
+    let signature = repository.signature().map_err(git2_command_error)?;
+    let mut options = RebaseOptions::new();
+    options.quiet(true);
+    let mut rebase = repository
+        .rebase(None, Some(&upstream), None, Some(&mut options))
+        .map_err(git2_command_error)?;
+
+    while let Some(operation) = rebase.next() {
+        if let Err(error) = operation {
+            let _ = rebase.abort();
+            return Err(git2_command_error(error));
+        }
+        let index = repository.index().map_err(git2_command_error)?;
+        if index.has_conflicts() {
+            let _ = rebase.abort();
+            return Err(GitError::OperationFailed {
+                operation: GitOperation::Rebase,
+                detail: GitErrorDetail::new("Conflit de rebase"),
+                invocation: GitOperationInvocation {
+                    operation: GitOperation::Rebase,
+                    repository_path: None,
+                },
+            });
+        }
+        if let Err(error) = rebase.commit(None, &signature, None) {
+            let _ = rebase.abort();
+            return Err(git2_command_error(error));
+        }
+    }
+    rebase.finish(Some(&signature)).map_err(git2_command_error)
+}
+
+fn fetch_options(credential: Option<&GitCredential>) -> FetchOptions<'_> {
+    let callbacks = remote_callbacks(credential);
+    let mut fetch_options = FetchOptions::new();
+    fetch_options.remote_callbacks(callbacks);
+    fetch_options
+}
+
+fn remote_callbacks(credential: Option<&GitCredential>) -> RemoteCallbacks<'_> {
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(move |_url, username_from_url, _allowed_types| {
+        if let Some(credential) = credential {
+            return Cred::userpass_plaintext(
+                username_from_url.unwrap_or("dw"),
+                credential.token().as_str(),
+            );
+        }
+        if let Some(username) = username_from_url {
+            return Cred::ssh_key_from_agent(username);
+        }
+        Err(git2::Error::from_str("credential HTTPS Git manquant"))
+    });
+    callbacks
+}
+
+fn worktree_name(request: &WorktreePrepareRequest) -> String {
+    let raw = format!("{}-{}", request.repository, request.branch_name);
+    let mut name = String::new();
+    let mut previous_dash = false;
+    for character in raw.chars() {
+        if character.is_ascii_alphanumeric() {
+            name.push(character.to_ascii_lowercase());
+            previous_dash = false;
+        } else if !previous_dash {
+            name.push('-');
+            previous_dash = true;
+        }
+    }
+    name.trim_matches('-').to_string()
+}
+
 pub fn worktree_remove(git_dir: &str, worktree_path: &str) -> Result<()> {
-    run_git_dir(
-        git_dir,
-        &["worktree", "remove", "--force", worktree_path],
-        None,
-    )?;
+    let repository = Repository::open_bare(git_dir).map_err(git2_command_error)?;
+    if Path::new(worktree_path).exists() {
+        std::fs::remove_dir_all(worktree_path)?;
+    }
+    if let Some(name) = find_worktree_name_by_path(&repository, Path::new(worktree_path))? {
+        let worktree = repository
+            .find_worktree(&name)
+            .map_err(git2_command_error)?;
+        worktree.prune(None).map_err(git2_command_error)?;
+    }
     Ok(())
 }
 
 pub fn worktree_prune(git_dir: &str) -> Result<()> {
-    run_git_dir(git_dir, &["worktree", "prune"], None)?;
+    let repository = Repository::open_bare(git_dir).map_err(git2_command_error)?;
+    let worktrees = repository.worktrees().map_err(git2_command_error)?;
+    for name in worktrees.iter().filter_map(|name| name.ok().flatten()) {
+        let worktree = repository.find_worktree(name).map_err(git2_command_error)?;
+        if worktree.is_prunable(None).map_err(git2_command_error)? {
+            worktree.prune(None).map_err(git2_command_error)?;
+        }
+    }
     Ok(())
 }
 
-fn run_git(
-    repository_path: &str,
-    args: &[&str],
-    credential: Option<&GitCredential>,
-) -> std::result::Result<String, GitError> {
-    let mut command = Command::new("git");
-    command.args(args).current_dir(repository_path);
-    run_git_command(
-        command,
-        GitCommandInvocation {
-            cwd: Some(repository_path.into()),
-            git_dir: None,
-            args: args_to_strings(args),
-        },
-        credential,
-    )
-}
-
-fn run_git_in(
-    working_directory: &str,
-    args: &[&str],
-    credential: Option<&GitCredential>,
-) -> std::result::Result<String, GitError> {
-    let mut command = Command::new("git");
-    command.args(args).current_dir(working_directory);
-    run_git_command(
-        command,
-        GitCommandInvocation {
-            cwd: Some(working_directory.into()),
-            git_dir: None,
-            args: args_to_strings(args),
-        },
-        credential,
-    )
-}
-
-fn run_git_dir(
-    git_dir: &str,
-    args: &[&str],
-    credential: Option<&GitCredential>,
-) -> std::result::Result<String, GitError> {
-    let mut command = Command::new("git");
-    command.arg("--git-dir").arg(git_dir).args(args);
-    run_git_command(
-        command,
-        GitCommandInvocation {
-            cwd: None,
-            git_dir: Some(git_dir.into()),
-            args: args_to_strings(args),
-        },
-        credential,
-    )
-}
-
-fn run_git_command(
-    mut command: Command,
-    invocation: GitCommandInvocation,
-    credential: Option<&GitCredential>,
-) -> std::result::Result<String, GitError> {
-    configure_non_interactive_git(&mut command, credential);
-    let credential_was_available = credential.is_some();
-    let output = command
-        .output()
-        .map_err(|error| GitError::MissingGitExecutable(error.to_string()))?;
-    if !output.status.success() {
-        return Err(git_command_error(
-            output,
-            invocation,
-            credential_was_available,
-        ));
+fn find_worktree_name_by_path(repository: &Repository, path: &Path) -> Result<Option<String>> {
+    let target = normalize_path_for_compare(path);
+    let worktrees = repository.worktrees().map_err(git2_command_error)?;
+    for name in worktrees.iter().filter_map(|name| name.ok().flatten()) {
+        let worktree = repository.find_worktree(name).map_err(git2_command_error)?;
+        if normalize_path_for_compare(worktree.path()) == target {
+            return Ok(Some(name.into()));
+        }
     }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(None)
+}
+
+fn normalize_path_for_compare(path: &Path) -> String {
+    path.components()
+        .collect::<std::path::PathBuf>()
+        .display()
+        .to_string()
+}
+
+fn git2_command_error(error: git2::Error) -> GitError {
+    git2_auth_error(error, false)
+}
+
+fn git2_auth_error(error: git2::Error, credential_was_available: bool) -> GitError {
+    let detail = GitErrorDetail::new(error.message().to_string());
+    let invocation = GitOperationInvocation {
+        operation: GitOperation::OpenRepository,
+        repository_path: None,
+    };
+    if let Some(kind) = classify_auth_failure(detail.as_str(), credential_was_available) {
+        return GitError::Authentication {
+            kind,
+            remediation: auth_remediation(kind),
+            detail,
+            invocation,
+        };
+    }
+    GitError::OperationFailed {
+        operation: GitOperation::OpenRepository,
+        detail,
+        invocation,
+    }
 }
 
 fn is_azure_devops_url(url: &str) -> bool {
     let normalized = url.to_ascii_lowercase();
     normalized.contains("dev.azure.com") || normalized.contains("visualstudio.com")
-}
-
-fn configure_non_interactive_git(command: &mut Command, credential: Option<&GitCredential>) {
-    command
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GCM_INTERACTIVE", "never")
-        .env(
-            "GIT_SSH_COMMAND",
-            "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes",
-        );
-
-    if let Some(credential) = credential {
-        command
-            .env("GIT_CONFIG_COUNT", "1")
-            .env("GIT_CONFIG_KEY_0", "http.extraHeader")
-            .env("GIT_CONFIG_VALUE_0", credential.authorization_header());
-    }
 }
 
 fn git_credential_from_environment() -> Option<GitCredential> {
@@ -597,32 +730,6 @@ fn git_credential_from_environment() -> Option<GitCredential> {
         })
         .map(SecretValue::from)
         .map(GitCredential::personal_access_token)
-}
-
-fn git_command_error(
-    output: Output,
-    invocation: GitCommandInvocation,
-    credential_was_available: bool,
-) -> GitError {
-    let stderr = command_stderr(output);
-    if let Some(kind) = classify_auth_failure(stderr.as_str(), credential_was_available) {
-        return GitError::Authentication {
-            kind,
-            remediation: auth_remediation(kind),
-            stderr,
-            invocation,
-        };
-    }
-    GitError::CommandFailed { stderr, invocation }
-}
-
-fn command_stderr(output: Output) -> GitCommandStderr {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if stderr.is_empty() {
-        GitCommandStderr::new(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        GitCommandStderr::new(stderr)
-    }
 }
 
 fn classify_auth_failure(
@@ -644,6 +751,8 @@ fn classify_auth_failure(
         || normalized.contains("could not read username")
         || normalized.contains("could not read password")
         || normalized.contains("authentication failed")
+        || normalized.contains("credential https git manquant")
+        || normalized.contains("authentication required")
     {
         return Some(if credential_was_available {
             GitAuthFailureKind::HttpsCredentialRejected
@@ -661,14 +770,6 @@ fn auth_remediation(kind: GitAuthFailureKind) -> GitAuthRemediation {
         GitAuthFailureKind::SshHostKeyMissing => GitAuthRemediation::TrustSshHostKey,
         GitAuthFailureKind::SshKeyUnavailable => GitAuthRemediation::ConfigureSshKey,
     }
-}
-
-fn args_to_strings(args: &[&str]) -> Vec<String> {
-    args.iter().map(OsStr::new).map(os_to_string).collect()
-}
-
-fn os_to_string(value: &OsStr) -> String {
-    value.to_string_lossy().into_owned()
 }
 
 fn distinct_non_empty(values: &[String]) -> Vec<String> {

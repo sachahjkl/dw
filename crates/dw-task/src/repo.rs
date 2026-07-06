@@ -9,10 +9,11 @@ use dw_git::{
     prepare_worktree, repository_status, update_repository, worktree_prune, worktree_remove,
 };
 use dw_workspace::{
-    WorkspaceError, WorkspaceManifest, WorkspaceTeardownStep, build_commit_message,
-    execute_task_add_repo, execute_task_teardown, plan_task_add_repo, plan_task_commit,
-    plan_task_repo_latest, plan_task_teardown, resolve_git_credential_from_keyring,
-    resolve_workspace_by_work_item_ids, resolve_workspace_for_workspace_command,
+    WorkspaceError, WorkspaceGitOperation, WorkspaceManifest, WorkspaceTeardownStep,
+    build_commit_message, execute_task_add_repo, execute_task_teardown, plan_task_add_repo,
+    plan_task_commit, plan_task_repo_latest, plan_task_teardown,
+    resolve_git_credential_from_keyring, resolve_workspace_by_work_item_ids,
+    resolve_workspace_for_workspace_command,
 };
 use serde::{Deserialize, Serialize};
 
@@ -312,12 +313,15 @@ pub fn execute_teardown(plan: &TeardownPlanReport) -> Result<TeardownExecutionRe
         .workspace
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Aucun workspace task trouvé."))?;
-    execute_task_teardown(workspace, &plan.steps, |git_dir, args| match args {
-        ["worktree", "remove", "--force", target] => {
-            worktree_remove(git_dir, target).map_err(|error| error.to_string())
+    execute_task_teardown(workspace, &plan.steps, |operation| match operation {
+        WorkspaceGitOperation::WorktreeRemove {
+            git_dir,
+            worktree_path,
+        } => worktree_remove(git_dir.as_str(), worktree_path.as_str())
+            .map_err(|error| error.to_string()),
+        WorkspaceGitOperation::WorktreePrune { git_dir } => {
+            worktree_prune(git_dir.as_str()).map_err(|error| error.to_string())
         }
-        ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
-        _ => Err(format!("commande git non supportée: {}", args.join(" "))),
     })?;
 
     Ok(TeardownExecutionReport {

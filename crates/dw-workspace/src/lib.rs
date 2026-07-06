@@ -311,6 +311,21 @@ pub enum WorkspaceTeardownAction {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum WorkspaceGitOperation {
+    WorktreeRemove {
+        #[serde(rename = "gitDir")]
+        git_dir: RepositoryPath,
+        #[serde(rename = "worktreePath")]
+        worktree_path: RepositoryPath,
+    },
+    WorktreePrune {
+        #[serde(rename = "gitDir")]
+        git_dir: RepositoryPath,
+    },
+}
+
 impl WorkspaceTeardownStep {
     pub fn repository_name(&self) -> Option<&WorkspaceRepositoryName> {
         match &self.subject {
@@ -1337,10 +1352,10 @@ pub fn plan_task_teardown(
 pub fn execute_task_teardown<F>(
     workspace: &WorkspacePath,
     steps: &[WorkspaceTeardownStep],
-    mut run_git_dir: F,
+    mut run_git_operation: F,
 ) -> Result<(), WorkspaceError>
 where
-    F: FnMut(&str, &[&str]) -> Result<(), String>,
+    F: FnMut(WorkspaceGitOperation) -> Result<(), String>,
 {
     for step in steps
         .iter()
@@ -1356,10 +1371,10 @@ where
         let WorkspaceTeardownAction::WorktreeRemove { worktree_path, .. } = &step.action else {
             unreachable!("filtered to worktree remove");
         };
-        run_git_dir(
-            git_dir,
-            &["worktree", "remove", "--force", worktree_path.as_str()],
-        )
+        run_git_operation(WorkspaceGitOperation::WorktreeRemove {
+            git_dir: RepositoryPath::from(git_dir),
+            worktree_path: worktree_path.clone(),
+        })
         .map_err(|message| WorkspaceError::TeardownFailed {
             repository: step.subject.clone(),
             message: WorkspaceOperationError::from(message),
@@ -1374,11 +1389,12 @@ where
         if !Path::new(git_dir).exists() {
             continue;
         }
-        run_git_dir(git_dir, &["worktree", "prune"]).map_err(|message| {
-            WorkspaceError::TeardownFailed {
-                repository: step.subject.clone(),
-                message: WorkspaceOperationError::from(message),
-            }
+        run_git_operation(WorkspaceGitOperation::WorktreePrune {
+            git_dir: RepositoryPath::from(git_dir),
+        })
+        .map_err(|message| WorkspaceError::TeardownFailed {
+            repository: step.subject.clone(),
+            message: WorkspaceOperationError::from(message),
         })?;
     }
 
@@ -4088,34 +4104,28 @@ artifacts:
                 },
             },
         ];
-        let mut calls: Vec<(String, Vec<String>)> = Vec::new();
+        let mut calls: Vec<WorkspaceGitOperation> = Vec::new();
 
-        execute_task_teardown(
-            &typed_workspace_path(&workspace),
-            &steps,
-            |git_dir, args| {
-                calls.push((
-                    git_dir.to_string(),
-                    args.iter().map(|arg| arg.to_string()).collect(),
-                ));
-                Ok(())
-            },
-        )
+        execute_task_teardown(&typed_workspace_path(&workspace), &steps, |operation| {
+            calls.push(operation);
+            Ok(())
+        })
         .expect("teardown should execute");
 
-        assert!(calls.iter().any(|(git_dir, args)| {
-            git_dir == anchor.to_str().expect("utf8 path")
-                && args
-                    == &vec![
-                        "worktree".to_string(),
-                        "remove".to_string(),
-                        "--force".to_string(),
+        assert!(calls.iter().any(|operation| {
+            operation
+                == &WorkspaceGitOperation::WorktreeRemove {
+                    git_dir: RepositoryPath::from(anchor.display().to_string()),
+                    worktree_path: RepositoryPath::from(
                         workspace.join("front").display().to_string(),
-                    ]
+                    ),
+                }
         }));
-        assert!(calls.iter().any(|(git_dir, args)| {
-            git_dir == anchor.to_str().expect("utf8 path")
-                && args == &vec!["worktree".to_string(), "prune".to_string()]
+        assert!(calls.iter().any(|operation| {
+            operation
+                == &WorkspaceGitOperation::WorktreePrune {
+                    git_dir: RepositoryPath::from(anchor.display().to_string()),
+                }
         }));
         assert!(!workspace.exists());
     }
@@ -4144,14 +4154,10 @@ artifacts:
         ];
         let mut calls = 0;
 
-        execute_task_teardown(
-            &typed_workspace_path(&workspace),
-            &steps,
-            |_git_dir, _args| {
-                calls += 1;
-                Ok(())
-            },
-        )
+        execute_task_teardown(&typed_workspace_path(&workspace), &steps, |_operation| {
+            calls += 1;
+            Ok(())
+        })
         .expect("teardown should skip missing prune anchor");
 
         assert_eq!(calls, 0);
