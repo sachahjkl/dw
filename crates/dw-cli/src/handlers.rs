@@ -2141,30 +2141,28 @@ async fn handle_secret(command: SecretCommand) -> Result<()> {
         SecretCommand::Set {
             key,
             value,
-            from_env: Some(from_env),
-        } if value.is_none() => {
-            run_cli_action(dw_app::DwActionRequest::SecretSetFromEnv {
-                key: SecretKey::from(key),
-                env: EnvironmentVariableName::from(from_env),
-            })
-            .await?;
-        }
-        SecretCommand::Set {
-            key,
-            value,
             from_env,
         } => {
-            let secret = match (value, from_env) {
-                (Some(secret), None) => SecretValue::from(secret),
-                (None, Some(name)) => {
-                    dw_secret::secret_from_env(&EnvironmentVariableName::from(name))?
+            let request = match (value, from_env) {
+                (Some(secret), None) => dw_app::DwActionRequest::SecretSet {
+                    key: SecretKey::from(key),
+                    value: SecretValue::from(secret),
+                },
+                (None, Some(name)) => dw_app::DwActionRequest::SecretSetFromEnv {
+                    key: SecretKey::from(key),
+                    env: EnvironmentVariableName::from(name),
+                },
+                (None, None) if std::io::stdin().is_terminal() => {
+                    dw_app::DwActionRequest::SecretSet {
+                        key: SecretKey::from(key),
+                        value: SecretValue::from(
+                            Password::new("Secret")
+                                .with_display_mode(PasswordDisplayMode::Hidden)
+                                .without_confirmation()
+                                .prompt()?,
+                        ),
+                    }
                 }
-                (None, None) if std::io::stdin().is_terminal() => SecretValue::from(
-                    Password::new("Secret")
-                        .with_display_mode(PasswordDisplayMode::Hidden)
-                        .without_confirmation()
-                        .prompt()?,
-                ),
                 (None, None) => {
                     return Err(anyhow::anyhow!(
                         "secret set requiert --value ou --from-env en mode non interactif"
@@ -2172,11 +2170,7 @@ async fn handle_secret(command: SecretCommand) -> Result<()> {
                 }
                 (Some(_), Some(_)) => unreachable!("clap rejects --value with --from-env"),
             };
-            run_cli_action(dw_app::DwActionRequest::SecretSet {
-                key: SecretKey::from(key),
-                value: secret,
-            })
-            .await?;
+            run_cli_action(request).await?;
         }
         SecretCommand::Get { key } => {
             run_cli_action(dw_app::DwActionRequest::SecretGet {
