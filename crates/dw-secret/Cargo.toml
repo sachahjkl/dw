@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 dw-contracts = { path = "../dw-contracts" }
+dw-core = { path = "../dw-core" }
 keyring.workspace = true
 serde.workspace = true
 thiserror.workspace = true

@@ -215,19 +215,27 @@ pub fn agent_doctor_lines(report: &AgentDoctorReport, theme: &TerminalTheme) -> 
     lines
 }
 
-pub fn agent_config_lines(root: &str, agent: &str, theme: &TerminalTheme) -> Vec<String> {
+pub fn agent_config_lines(
+    root: &impl std::fmt::Display,
+    agent: &impl std::fmt::Display,
+    theme: &TerminalTheme,
+) -> Vec<String> {
     vec![
         theme.command("Agent config"),
-        format!("Default agent: {}", theme.bold(agent)),
-        format!("Root DevWorkflow: {}", theme.path(root)),
+        format!("Default agent: {}", theme.bold(&agent.to_string())),
+        format!("Root DevWorkflow: {}", theme.path(&root.to_string())),
     ]
 }
 
-pub fn agent_config_updated_lines(root: &str, agent: &str, theme: &TerminalTheme) -> Vec<String> {
+pub fn agent_config_updated_lines(
+    root: &impl std::fmt::Display,
+    agent: &impl std::fmt::Display,
+    theme: &TerminalTheme,
+) -> Vec<String> {
     vec![
         theme.success("✓ Agent config updated"),
-        format!("Default agent: {}", theme.bold(agent)),
-        format!("Root DevWorkflow: {}", theme.path(root)),
+        format!("Default agent: {}", theme.bold(&agent.to_string())),
+        format!("Root DevWorkflow: {}", theme.path(&root.to_string())),
     ]
 }
 

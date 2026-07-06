@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreContext {
@@ -588,6 +589,90 @@ impl fmt::Display for DevWorkflowRoot {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
+pub struct ConfigRootPath(String);
+
+impl ConfigRootPath {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for ConfigRootPath {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for ConfigRootPath {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for ConfigRootPath {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConfigColorMode {
+    Auto,
+    Always,
+    Never,
+}
+
+impl ConfigColorMode {
+    pub const ALL: [Self; 3] = [Self::Auto, Self::Always, Self::Never];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Always => "always",
+            Self::Never => "never",
+        }
+    }
+}
+
+impl FromStr for ConfigColorMode {
+    type Err = ConfigColorModeParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|mode| mode.as_str().eq_ignore_ascii_case(value.trim()))
+            .ok_or_else(|| ConfigColorModeParseError {
+                value: value.into(),
+            })
+    }
+}
+
+impl fmt::Display for ConfigColorMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigColorModeParseError {
+    value: String,
+}
+
+impl fmt::Display for ConfigColorModeParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "mode couleur inconnu: {}", self.value)
+    }
+}
+
+impl std::error::Error for ConfigColorModeParseError {}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct WorkspaceRepositoryName(String);
 
 impl WorkspaceRepositoryName {
@@ -645,6 +730,135 @@ impl From<&str> for AgentName {
 }
 
 impl fmt::Display for AgentName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Agent {
+    Opencode,
+    Cursor,
+    Claude,
+    Codex,
+    CodexCli,
+    Copilot,
+}
+
+impl Agent {
+    pub const ALL: [Self; 6] = [
+        Self::Opencode,
+        Self::Cursor,
+        Self::Claude,
+        Self::Codex,
+        Self::CodexCli,
+        Self::Copilot,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Opencode => "opencode",
+            Self::Cursor => "cursor",
+            Self::Claude => "claude",
+            Self::Codex => "codex",
+            Self::CodexCli => "codex-cli",
+            Self::Copilot => "copilot",
+        }
+    }
+}
+
+impl FromStr for Agent {
+    type Err = AgentParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|agent| agent.as_str().eq_ignore_ascii_case(value.trim()))
+            .ok_or_else(|| AgentParseError {
+                value: value.into(),
+            })
+    }
+}
+
+impl fmt::Display for Agent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentParseError {
+    value: String,
+}
+
+impl fmt::Display for AgentParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "agent inconnu: {}", self.value)
+    }
+}
+
+impl std::error::Error for AgentParseError {}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SecretKey(String);
+
+impl SecretKey {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for SecretKey {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for SecretKey {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for SecretKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct EnvironmentVariableName(String);
+
+impl EnvironmentVariableName {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for EnvironmentVariableName {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for EnvironmentVariableName {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for EnvironmentVariableName {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
     }

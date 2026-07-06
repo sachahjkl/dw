@@ -1,5 +1,8 @@
 use anyhow::Result;
-use dw_core::{DwActionEvent, TaskActionEvent};
+use dw_core::{
+    Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
+    EnvironmentVariableName, SecretKey, TaskActionEvent,
+};
 
 #[derive(Debug, Clone)]
 pub enum DwActionRequest {
@@ -7,14 +10,29 @@ pub enum DwActionRequest {
     Doctor,
     Guide,
     Refresh(dw_config::command::RefreshCommandArgs),
-    ConfigShow { root: Option<String> },
+    ConfigShow {
+        root: Option<DevWorkflowRoot>,
+    },
     ConfigInit(dw_config::command::InitCommandArgs),
-    ConfigDoctor { root: Option<String> },
-    ConfigSetColor { mode: String },
-    ConfigSetRoot { path: String },
-    AgentConfig { root: Option<String> },
-    AgentSetDefault { root: Option<String>, agent: String },
-    AgentDoctor { agent: Option<String> },
+    ConfigDoctor {
+        root: Option<DevWorkflowRoot>,
+    },
+    ConfigSetColor {
+        mode: ConfigColorMode,
+    },
+    ConfigSetRoot {
+        path: ConfigRootPath,
+    },
+    AgentConfig {
+        root: Option<DevWorkflowRoot>,
+    },
+    AgentSetDefault {
+        root: Option<DevWorkflowRoot>,
+        agent: Agent,
+    },
+    AgentDoctor {
+        agent: Option<Agent>,
+    },
     DbGuard(dw_db::commands::GuardArgs),
     DbSchema(dw_db::commands::SchemaArgs),
     DbDescribe(dw_db::commands::DescribeArgs),
@@ -41,9 +59,16 @@ pub enum DwActionRequest {
     TaskCreateChildTask(dw_task::lifecycle::CreateChildTaskArgs),
     TaskAddWorkItem(dw_task::work_item::AddWorkItemArgs),
     TaskRemoveWorkItem(dw_task::work_item::RemoveWorkItemArgs),
-    SecretGet { key: String },
-    SecretSetFromEnv { key: String, env: String },
-    SecretDelete { key: String },
+    SecretGet {
+        key: SecretKey,
+    },
+    SecretSetFromEnv {
+        key: SecretKey,
+        env: EnvironmentVariableName,
+    },
+    SecretDelete {
+        key: SecretKey,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -81,8 +106,8 @@ pub enum ConfigActionResult {
 
 #[derive(Debug, Clone)]
 pub enum AgentActionResult {
-    Config { root: String, agent: String },
-    SetDefault { root: String, agent: String },
+    Config { root: DevWorkflowRoot, agent: Agent },
+    SetDefault { root: DevWorkflowRoot, agent: Agent },
     Doctor(dw_agent::command::AgentDoctorReport),
 }
 
@@ -169,13 +194,13 @@ pub async fn run_action(
             dw_config::command::refresh(args)?,
         ))),
         DwActionRequest::ConfigShow { root } => Ok(DwActionResult::Config(
-            ConfigActionResult::Show(dw_config::command::show(root.as_deref())),
+            ConfigActionResult::Show(dw_config::command::show(root.as_ref())),
         )),
         DwActionRequest::ConfigInit(args) => Ok(DwActionResult::Config(ConfigActionResult::Init(
             dw_config::command::init(args)?,
         ))),
         DwActionRequest::ConfigDoctor { root } => Ok(DwActionResult::Config(
-            ConfigActionResult::Doctor(dw_config::command::doctor(root.as_deref())),
+            ConfigActionResult::Doctor(dw_config::command::doctor(root.as_ref())),
         )),
         DwActionRequest::ConfigSetColor { mode } => Ok(DwActionResult::Config(
             ConfigActionResult::SetColor(dw_config::command::set_color(&mode)?),
@@ -184,7 +209,8 @@ pub async fn run_action(
             ConfigActionResult::SetRoot(dw_config::command::set_root(&path)?),
         )),
         DwActionRequest::AgentConfig { root } => {
-            let root = dw_config::resolve_root(root.as_deref());
+            let root = dw_config::resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
+            let root = DevWorkflowRoot::from(root);
             let agent = dw_config::default_agent(&root);
             Ok(DwActionResult::Agent(AgentActionResult::Config {
                 root,
@@ -192,15 +218,16 @@ pub async fn run_action(
             }))
         }
         DwActionRequest::AgentSetDefault { root, agent } => {
-            let root = dw_config::resolve_root(root.as_deref());
-            let agent = dw_config::set_default_agent(&root, &agent)?;
+            let root = dw_config::resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
+            let root = DevWorkflowRoot::from(root);
+            let agent = dw_config::set_default_agent(&root, agent)?;
             Ok(DwActionResult::Agent(AgentActionResult::SetDefault {
                 root,
                 agent,
             }))
         }
         DwActionRequest::AgentDoctor { agent } => Ok(DwActionResult::Agent(
-            AgentActionResult::Doctor(dw_agent::command::agent_doctor(agent.as_deref())?),
+            AgentActionResult::Doctor(dw_agent::command::agent_doctor(agent)?),
         )),
         DwActionRequest::DbGuard(args) => Ok(DwActionResult::Db(DbActionResult::Guard(
             dw_db::commands::guard(args),

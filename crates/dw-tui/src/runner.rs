@@ -91,7 +91,7 @@ fn action_request(action: &TuiAction) -> Result<DwActionRequest> {
             Ok(DwActionRequest::ConfigDoctor { root: root.clone() })
         }
         TuiActionRequest::ConfigSetColor { mode } => {
-            Ok(DwActionRequest::ConfigSetColor { mode: mode.clone() })
+            Ok(DwActionRequest::ConfigSetColor { mode: *mode })
         }
         TuiActionRequest::ConfigSetRoot { path } => {
             Ok(DwActionRequest::ConfigSetRoot { path: path.clone() })
@@ -101,11 +101,11 @@ fn action_request(action: &TuiAction) -> Result<DwActionRequest> {
         }
         TuiActionRequest::AgentSetDefault { root, agent } => Ok(DwActionRequest::AgentSetDefault {
             root: root.clone(),
-            agent: agent.clone(),
+            agent: *agent,
         }),
-        TuiActionRequest::AgentDoctor { agent } => Ok(DwActionRequest::AgentDoctor {
-            agent: agent.clone(),
-        }),
+        TuiActionRequest::AgentDoctor { agent } => {
+            Ok(DwActionRequest::AgentDoctor { agent: *agent })
+        }
         TuiActionRequest::AgentOpen(_) => {
             anyhow::bail!("External action executed by run_attached.")
         }

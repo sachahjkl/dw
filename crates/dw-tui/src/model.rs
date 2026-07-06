@@ -4,7 +4,10 @@ use dw_config::{
     load_databases_config, load_projects_config, load_user_settings, load_workflow_config,
     project_choices, repository_config, resolve_project, resolve_root, root_status,
 };
-use dw_core::DwActionEvent;
+use dw_core::{
+    Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
+    EnvironmentVariableName, SecretKey,
+};
 use dw_workspace::{TaskListItem, plan_task_prune, task_list};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,14 +185,29 @@ pub enum TuiActionRequest {
     Doctor,
     Guide,
     Refresh(dw_config::command::RefreshCommandArgs),
-    ConfigShow { root: Option<String> },
+    ConfigShow {
+        root: Option<DevWorkflowRoot>,
+    },
     ConfigInit(dw_config::command::InitCommandArgs),
-    ConfigDoctor { root: Option<String> },
-    ConfigSetColor { mode: String },
-    ConfigSetRoot { path: String },
-    AgentConfig { root: Option<String> },
-    AgentSetDefault { root: Option<String>, agent: String },
-    AgentDoctor { agent: Option<String> },
+    ConfigDoctor {
+        root: Option<DevWorkflowRoot>,
+    },
+    ConfigSetColor {
+        mode: ConfigColorMode,
+    },
+    ConfigSetRoot {
+        path: ConfigRootPath,
+    },
+    AgentConfig {
+        root: Option<DevWorkflowRoot>,
+    },
+    AgentSetDefault {
+        root: Option<DevWorkflowRoot>,
+        agent: Agent,
+    },
+    AgentDoctor {
+        agent: Option<Agent>,
+    },
     AgentOpen(dw_task::open::OpenWorkspaceArgs),
     DbGuard(dw_db::commands::GuardArgs),
     DbSchema(dw_db::commands::SchemaArgs),
@@ -217,9 +235,16 @@ pub enum TuiActionRequest {
     TaskCreateChildTask(dw_task::lifecycle::CreateChildTaskArgs),
     TaskAddWorkItem(dw_task::work_item::AddWorkItemArgs),
     TaskRemoveWorkItem(dw_task::work_item::RemoveWorkItemArgs),
-    SecretGet { key: String },
-    SecretSetFromEnv { key: String, env: String },
-    SecretDelete { key: String },
+    SecretGet {
+        key: SecretKey,
+    },
+    SecretSetFromEnv {
+        key: SecretKey,
+        env: EnvironmentVariableName,
+    },
+    SecretDelete {
+        key: SecretKey,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -379,6 +404,12 @@ impl TuiAction {
             TuiActionRequest::AgentOpen(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
+            TuiActionRequest::ConfigShow { root: value }
+            | TuiActionRequest::ConfigDoctor { root: value }
+            | TuiActionRequest::AgentConfig { root: value }
+            | TuiActionRequest::AgentSetDefault { root: value, .. } => {
+                *value = Some(dw_core::DevWorkflowRoot::from(root))
+            }
             _ => {}
         }
         self
@@ -532,12 +563,12 @@ impl TuiAction {
     pub fn successful_effect(&self) -> Option<ActionEffect> {
         match &self.request {
             TuiActionRequest::ConfigSetColor { mode } => {
-                Some(ActionEffect::ColorMode(mode.clone()))
+                Some(ActionEffect::ColorMode(mode.to_string()))
             }
             TuiActionRequest::AgentSetDefault { agent, .. } => {
-                Some(ActionEffect::DefaultAgent(agent.clone()))
+                Some(ActionEffect::DefaultAgent(agent.to_string()))
             }
-            TuiActionRequest::ConfigSetRoot { path } => Some(ActionEffect::Root(path.clone())),
+            TuiActionRequest::ConfigSetRoot { path } => Some(ActionEffect::Root(path.to_string())),
             TuiActionRequest::ConfigInit(args) => Some(ActionEffect::InitializedRoot(
                 resolve_root(args.root.as_deref()),
             )),
@@ -1714,7 +1745,9 @@ mod tests {
         };
         let unconfirmed_destructive = TuiAction {
             label: "Delete".into(),
-            request: TuiActionRequest::SecretDelete { key: "KEY".into() },
+            request: TuiActionRequest::SecretDelete {
+                key: dw_core::SecretKey::from("KEY"),
+            },
             description: "delete".into(),
             kind: ActionRisk::Destructive,
         };
@@ -1791,7 +1824,7 @@ mod tests {
         let color = TuiAction {
             label: "Color".into(),
             request: TuiActionRequest::ConfigSetColor {
-                mode: "always".into(),
+                mode: dw_core::ConfigColorMode::Always,
             },
             description: String::new(),
             kind: ActionRisk::Safe,

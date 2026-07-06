@@ -7,8 +7,9 @@ use dw_cli_adapter::{
     repositories_prompt_spec,
 };
 use dw_core::{
-    AdoActionEvent, DevWorkflowRoot, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind,
-    PromptSpec, PullRequestId, WorkItemId, WorkspacePath, WorkspaceRepositoryName,
+    AdoActionEvent, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
+    EnvironmentVariableName, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
+    PullRequestId, SecretKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
@@ -1807,7 +1808,9 @@ fn handle_secret(command: SecretCommand) -> Result<()> {
         } => {
             let secret = match (value, from_env) {
                 (Some(secret), None) => secret,
-                (None, Some(name)) => dw_secret::secret_from_env(&name)?,
+                (None, Some(name)) => {
+                    dw_secret::secret_from_env(&EnvironmentVariableName::from(name))?
+                }
                 (None, None) if std::io::stdin().is_terminal() => Password::new("Secret")
                     .with_display_mode(PasswordDisplayMode::Hidden)
                     .without_confirmation()
@@ -1819,15 +1822,15 @@ fn handle_secret(command: SecretCommand) -> Result<()> {
                 }
                 (Some(_), Some(_)) => unreachable!("clap rejects --value with --from-env"),
             };
-            let report = dw_secret::command::set_secret(&key, &secret)?;
+            let report = dw_secret::command::set_secret(&SecretKey::from(key), &secret)?;
             print_lines(&dw_cli_adapter::render::secret_set_lines(&report));
         }
         SecretCommand::Get { key } => {
-            let report = dw_secret::command::get_secret(&key)?;
+            let report = dw_secret::command::get_secret(&SecretKey::from(key))?;
             print_lines(&dw_cli_adapter::render::secret_get_lines(&report));
         }
         SecretCommand::Delete { key } => {
-            let report = dw_secret::command::delete_secret_key(&key)?;
+            let report = dw_secret::command::delete_secret_key(&SecretKey::from(key))?;
             print_lines(&dw_cli_adapter::render::secret_delete_lines(&report));
         }
     }
@@ -1869,6 +1872,7 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
         }
         AgentCommand::Config { root } | AgentCommand::Show { root } => {
             let root = dw_config::resolve_root(root.as_deref());
+            let root = DevWorkflowRoot::from(root);
             let agent = dw_config::default_agent(&root);
             print_lines(&dw_cli_adapter::render::agent_config_lines(
                 &root,
@@ -1878,7 +1882,8 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
         }
         AgentCommand::SetDefault { root, agent } => {
             let root = dw_config::resolve_root(root.as_deref());
-            let agent = dw_config::set_default_agent(&root, &agent)?;
+            let root = DevWorkflowRoot::from(root);
+            let agent = dw_config::set_default_agent(&root, agent.parse::<Agent>()?)?;
             print_lines(&dw_cli_adapter::render::agent_config_updated_lines(
                 &root,
                 &agent,
@@ -1886,7 +1891,9 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
             ));
         }
         AgentCommand::Doctor { agent } => {
-            let report = dw_agent::command::agent_doctor(agent.as_deref())?;
+            let report = dw_agent::command::agent_doctor(
+                agent.as_deref().map(str::parse::<Agent>).transpose()?,
+            )?;
             print_lines(&dw_cli_adapter::render::agent_doctor_lines(
                 &report,
                 &TerminalTheme::stdout_auto(),
@@ -1899,7 +1906,8 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
 fn handle_config(command: ConfigCommand) -> Result<()> {
     match command {
         ConfigCommand::Show { root, json } => {
-            let report = dw_config::command::show(root.as_deref());
+            let root = root.map(DevWorkflowRoot::from);
+            let report = dw_config::command::show(root.as_ref());
             if json {
                 print_json(&report)?;
             } else {
@@ -1910,7 +1918,8 @@ fn handle_config(command: ConfigCommand) -> Result<()> {
             }
         }
         ConfigCommand::Doctor { root, json } => {
-            let report = dw_config::command::doctor(root.as_deref());
+            let root = root.map(DevWorkflowRoot::from);
+            let report = dw_config::command::doctor(root.as_ref());
             if json {
                 print_json(&report)?;
             } else {
@@ -1924,14 +1933,14 @@ fn handle_config(command: ConfigCommand) -> Result<()> {
             }
         }
         ConfigCommand::SetRoot { path } => {
-            let report = dw_config::command::set_root(&path)?;
+            let report = dw_config::command::set_root(&ConfigRootPath::from(path))?;
             print_lines(&[
                 "Configuration mise à jour".into(),
                 format!("Root      : {}", report.value),
             ]);
         }
         ConfigCommand::SetColor { mode } => {
-            let report = dw_config::command::set_color(&mode)?;
+            let report = dw_config::command::set_color(&mode.parse::<ConfigColorMode>()?)?;
             print_lines(&[
                 "Configuration mise à jour".into(),
                 format!("Couleur   : {}", report.value),

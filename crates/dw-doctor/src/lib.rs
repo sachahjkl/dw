@@ -1,8 +1,8 @@
 use anyhow::Result;
-use dw_agent::parse_agent_kind;
 use dw_config::{
     InitRequest, default_agent, init_root, load_user_settings, resolve_root, user_settings_path,
 };
+use dw_core::DevWorkflowRoot;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -82,20 +82,12 @@ pub fn run_doctor(fix: bool) -> Result<DoctorReport> {
 }
 
 fn check_default_agent(root: &str) -> DoctorCheck {
-    let agent = default_agent(root);
-    match parse_agent_kind(Some(&agent)) {
-        Ok(kind) => DoctorCheck {
-            name: "Agent par défaut".into(),
-            passed: true,
-            detail: Some(kind.name().into()),
-            remediation: "Configurer: dw agent config set-default opencode".into(),
-        },
-        Err(error) => DoctorCheck {
-            name: "Agent par défaut".into(),
-            passed: false,
-            detail: Some(agent),
-            remediation: error.to_string(),
-        },
+    let agent = default_agent(&DevWorkflowRoot::from(root));
+    DoctorCheck {
+        name: "Agent par défaut".into(),
+        passed: true,
+        detail: Some(agent.to_string()),
+        remediation: "Configurer: dw agent config set-default opencode".into(),
     }
 }
 

@@ -1216,13 +1216,13 @@ impl App {
                 true
             }
             TuiActionRequest::ConfigShow { root } => {
-                let report = dw_config::config_show(root.as_deref());
+                let report = dw_config::command::show(root.as_ref());
                 self.open_detail_panel(DetailPanel::config_show(&report));
                 self.messages.push("Configuration loaded from core.".into());
                 true
             }
             TuiActionRequest::ConfigDoctor { root } => {
-                let report = dw_config::config_doctor(root.as_deref());
+                let report = dw_config::command::doctor(root.as_ref());
                 self.snapshot.config_doctor = report.clone();
                 self.open_detail_panel(DetailPanel::config_doctor(&report));
                 self.messages
@@ -1230,7 +1230,7 @@ impl App {
                 true
             }
             TuiActionRequest::AgentDoctor { agent } => {
-                match dw_agent::command::agent_doctor(agent.as_deref()) {
+                match dw_agent::command::agent_doctor(*agent) {
                     Ok(report) => {
                         self.open_detail_panel(DetailPanel::agent_doctor(&report));
                         self.messages

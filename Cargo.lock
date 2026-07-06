@@ -1080,6 +1080,7 @@ dependencies = [
  "directories",
  "dw-ado",
  "dw-contracts",
+ "dw-core",
  "serde",
  "serde_json",
  "tempfile",
@@ -1124,6 +1125,7 @@ dependencies = [
  "anyhow",
  "dw-agent",
  "dw-config",
+ "dw-core",
  "dw-process",
  "serde",
 ]
@@ -1147,6 +1149,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "dw-contracts",
+ "dw-core",
  "keyring",
  "serde",
  "tempfile",

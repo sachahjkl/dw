@@ -2,6 +2,7 @@ use crate::model::{
     ActionRisk, TuiAction, TuiActionRequest, TuiDatabase, TuiSnapshot, WorkspaceAction,
     workspace_action,
 };
+use dw_core::{Agent, ConfigColorMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdoItemAction {
@@ -31,8 +32,8 @@ pub enum DatabaseAction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuickOptionAction {
-    Agent(&'static str),
-    Color(&'static str),
+    Agent(Agent),
+    Color(ConfigColorMode),
     ConfigShow,
     ConfigDoctor,
     Refresh,
@@ -63,7 +64,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Default agent",
         label: "opencode",
         hint: "Set opencode as the default agent",
-        action: QuickOptionAction::Agent("opencode"),
+        action: QuickOptionAction::Agent(Agent::Opencode),
         state: QuickOptionState::Agent("opencode"),
     },
     QuickOptionItem {
@@ -71,7 +72,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Default agent",
         label: "cursor",
         hint: "Set cursor as the default agent",
-        action: QuickOptionAction::Agent("cursor"),
+        action: QuickOptionAction::Agent(Agent::Cursor),
         state: QuickOptionState::Agent("cursor"),
     },
     QuickOptionItem {
@@ -79,7 +80,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Default agent",
         label: "claude",
         hint: "Set claude as the default agent",
-        action: QuickOptionAction::Agent("claude"),
+        action: QuickOptionAction::Agent(Agent::Claude),
         state: QuickOptionState::Agent("claude"),
     },
     QuickOptionItem {
@@ -87,7 +88,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Default agent",
         label: "codex",
         hint: "Set codex as the default agent",
-        action: QuickOptionAction::Agent("codex"),
+        action: QuickOptionAction::Agent(Agent::Codex),
         state: QuickOptionState::Agent("codex"),
     },
     QuickOptionItem {
@@ -95,7 +96,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Default agent",
         label: "codex-cli",
         hint: "Set codex-cli as the default agent",
-        action: QuickOptionAction::Agent("codex-cli"),
+        action: QuickOptionAction::Agent(Agent::CodexCli),
         state: QuickOptionState::Agent("codex-cli"),
     },
     QuickOptionItem {
@@ -103,7 +104,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Default agent",
         label: "copilot",
         hint: "Set copilot as the default agent",
-        action: QuickOptionAction::Agent("copilot"),
+        action: QuickOptionAction::Agent(Agent::Copilot),
         state: QuickOptionState::Agent("copilot"),
     },
     QuickOptionItem {
@@ -111,7 +112,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Terminal color mode",
         label: "auto",
         hint: "Follow terminal capabilities",
-        action: QuickOptionAction::Color("auto"),
+        action: QuickOptionAction::Color(ConfigColorMode::Auto),
         state: QuickOptionState::Color("auto"),
     },
     QuickOptionItem {
@@ -119,7 +120,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Terminal color mode",
         label: "always",
         hint: "Always enable colors",
-        action: QuickOptionAction::Color("always"),
+        action: QuickOptionAction::Color(ConfigColorMode::Always),
         state: QuickOptionState::Color("always"),
     },
     QuickOptionItem {
@@ -127,7 +128,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         section: "Terminal color mode",
         label: "never",
         hint: "Disable colors",
-        action: QuickOptionAction::Color("never"),
+        action: QuickOptionAction::Color(ConfigColorMode::Never),
         state: QuickOptionState::Color("never"),
     },
     QuickOptionItem {
@@ -185,22 +186,22 @@ pub fn option_action(root: &str, action: QuickOptionAction) -> TuiAction {
         QuickOptionAction::Agent(agent) => TuiAction {
             label: format!("Default agent · {agent}"),
             request: TuiActionRequest::AgentSetDefault {
-                root: Some(root.into()),
-                agent: agent.into(),
+                root: Some(dw_core::DevWorkflowRoot::from(root)),
+                agent,
             },
             description: "Change the default agent".into(),
             kind: ActionRisk::Safe,
         },
         QuickOptionAction::Color(mode) => TuiAction {
             label: format!("Color · {mode}"),
-            request: TuiActionRequest::ConfigSetColor { mode: mode.into() },
+            request: TuiActionRequest::ConfigSetColor { mode },
             description: "Change terminal color mode".into(),
             kind: ActionRisk::Safe,
         },
         QuickOptionAction::ConfigShow => TuiAction {
             label: "Show configuration".into(),
             request: TuiActionRequest::ConfigShow {
-                root: Some(root.into()),
+                root: Some(dw_core::DevWorkflowRoot::from(root)),
             },
             description: "Show effective paths and settings".into(),
             kind: ActionRisk::Safe,
@@ -208,7 +209,7 @@ pub fn option_action(root: &str, action: QuickOptionAction) -> TuiAction {
         QuickOptionAction::ConfigDoctor => TuiAction {
             label: "Configuration doctor".into(),
             request: TuiActionRequest::ConfigDoctor {
-                root: Some(root.into()),
+                root: Some(dw_core::DevWorkflowRoot::from(root)),
             },
             description: "Validate configuration files".into(),
             kind: ActionRisk::Safe,
@@ -818,11 +819,11 @@ mod tests {
 
         assert!(matches!(
             show.request,
-            TuiActionRequest::ConfigShow { root: Some(ref root) } if root == "/tmp/dw"
+            TuiActionRequest::ConfigShow { root: Some(ref root) } if root.as_str() == "/tmp/dw"
         ));
         assert!(matches!(
             doctor.request,
-            TuiActionRequest::ConfigDoctor { root: Some(ref root) } if root == "/tmp/dw"
+            TuiActionRequest::ConfigDoctor { root: Some(ref root) } if root.as_str() == "/tmp/dw"
         ));
         assert!(matches!(
             refresh.request,
@@ -832,17 +833,17 @@ mod tests {
 
     #[test]
     fn option_actions_build_preferences_actions() {
-        let agent = option_action("/tmp/dw", QuickOptionAction::Agent("codex"));
-        let color = option_action("/tmp/dw", QuickOptionAction::Color("always"));
+        let agent = option_action("/tmp/dw", QuickOptionAction::Agent(Agent::Codex));
+        let color = option_action("/tmp/dw", QuickOptionAction::Color(ConfigColorMode::Always));
 
         assert!(matches!(
             agent.request,
             TuiActionRequest::AgentSetDefault { root: Some(ref root), ref agent }
-                if root == "/tmp/dw" && agent == "codex"
+                if root.as_str() == "/tmp/dw" && *agent == Agent::Codex
         ));
         assert!(matches!(
             color.request,
-            TuiActionRequest::ConfigSetColor { ref mode } if mode == "always"
+            TuiActionRequest::ConfigSetColor { mode } if mode == ConfigColorMode::Always
         ));
     }
 
@@ -851,11 +852,11 @@ mod tests {
         assert_eq!(QUICK_OPTIONS[0].key, '1');
         assert_eq!(
             quick_option_by_key('4'),
-            Some(QuickOptionAction::Agent("codex"))
+            Some(QuickOptionAction::Agent(Agent::Codex))
         );
         assert_eq!(
             quick_option_by_key('5'),
-            Some(QuickOptionAction::Agent("codex-cli"))
+            Some(QuickOptionAction::Agent(Agent::CodexCli))
         );
         assert_eq!(
             quick_option_by_key('d'),
@@ -874,7 +875,10 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(agents, dw_config::AGENT_DEFAULT_CHOICES);
+        assert_eq!(
+            agents.into_iter().map(Agent::as_str).collect::<Vec<_>>(),
+            dw_config::AGENT_DEFAULT_CHOICES
+        );
     }
 
     #[test]

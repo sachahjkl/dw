@@ -1,4 +1,5 @@
 use anyhow::Result;
+use dw_core::{ConfigColorMode, ConfigRootPath, DevWorkflowRoot};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -26,25 +27,25 @@ pub struct ConfigSetReport {
     pub value: String,
 }
 
-pub fn show(root: Option<&str>) -> crate::ConfigShow {
-    config_show(root)
+pub fn show(root: Option<&DevWorkflowRoot>) -> crate::ConfigShow {
+    config_show(root.map(DevWorkflowRoot::as_str))
 }
 
-pub fn doctor(root: Option<&str>) -> crate::ConfigDoctorReport {
-    config_doctor(root)
+pub fn doctor(root: Option<&DevWorkflowRoot>) -> crate::ConfigDoctorReport {
+    config_doctor(root.map(DevWorkflowRoot::as_str))
 }
 
-pub fn set_root(path: &str) -> Result<ConfigSetReport> {
+pub fn set_root(path: &ConfigRootPath) -> Result<ConfigSetReport> {
     Ok(ConfigSetReport {
         field: "root".into(),
-        value: set_user_root(path)?,
+        value: set_user_root(path.as_str())?,
     })
 }
 
-pub fn set_color(mode: &str) -> Result<ConfigSetReport> {
+pub fn set_color(mode: &ConfigColorMode) -> Result<ConfigSetReport> {
     Ok(ConfigSetReport {
         field: "color".into(),
-        value: set_color_mode(mode)?,
+        value: set_color_mode(mode.as_str())?,
     })
 }
 

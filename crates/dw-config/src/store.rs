@@ -1,5 +1,6 @@
 use crate::json::read_json;
 use crate::types::{DatabasesConfig, WorkflowConfig};
+use dw_core::{Agent, DevWorkflowRoot};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -30,17 +31,11 @@ pub fn load_databases_config(root: &str) -> DatabasesConfig {
     read_json::<DatabasesConfig>(&path).unwrap_or_default()
 }
 
-pub fn set_default_agent(root: &str, agent: &str) -> std::io::Result<String> {
-    let Some(normalized_agent) = normalize_default_agent(agent) else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!(
-                "Agent inconnu: {agent}. Agents disponibles: {}",
-                AGENT_DEFAULT_CHOICES.join(", ")
-            ),
-        ));
-    };
-    let path = Path::new(root).join("config").join("workflow.json");
+pub fn set_default_agent(root: &DevWorkflowRoot, agent: Agent) -> std::io::Result<Agent> {
+    let normalized_agent = agent.as_str();
+    let path = Path::new(root.as_str())
+        .join("config")
+        .join("workflow.json");
     let text = fs::read_to_string(&path)?;
     let mut value: Value = serde_json::from_str(&text).map_err(std::io::Error::other)?;
     if !value.is_object() {
@@ -54,13 +49,14 @@ pub fn set_default_agent(root: &str, agent: &str) -> std::io::Result<String> {
         .ok_or_else(|| std::io::Error::other("workflow.agent doit etre un objet JSON"))?;
     agent_node.insert("default".into(), Value::String(normalized_agent.into()));
     fs::write(path, serde_json::to_string_pretty(&value)?)?;
-    Ok(normalized_agent.into())
+    Ok(agent)
 }
 
-pub fn default_agent(root: &str) -> String {
-    load_workflow_config(root)
+pub fn default_agent(root: &DevWorkflowRoot) -> Agent {
+    load_workflow_config(root.as_str())
         .agent
         .map(|agent| agent.default)
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "opencode".into())
+        .and_then(|value| value.parse::<Agent>().ok())
+        .unwrap_or(Agent::Opencode)
 }

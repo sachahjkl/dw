@@ -406,20 +406,20 @@ impl FormState {
                 })
             }
             FormTemplate::Secret => {
-                let key = value("Key")?;
+                let key = value("Key").map(dw_core::SecretKey::from)?;
                 if enabled("Delete") {
                     TuiActionRequest::SecretDelete { key }
                 } else if enabled("Set from env") {
                     TuiActionRequest::SecretSetFromEnv {
                         key,
-                        env: value("From env")?,
+                        env: value("From env").map(dw_core::EnvironmentVariableName::from)?,
                     }
                 } else {
                     TuiActionRequest::SecretGet { key }
                 }
             }
             FormTemplate::ConfigSetRoot => TuiActionRequest::ConfigSetRoot {
-                path: value("Root")?,
+                path: value("Root").map(dw_core::ConfigRootPath::from)?,
             },
         };
 
@@ -1231,7 +1231,7 @@ mod tests {
 
         assert!(matches!(
             action.request,
-            TuiActionRequest::SecretDelete { ref key } if key == "db/password"
+            TuiActionRequest::SecretDelete { ref key } if key.as_str() == "db/password"
         ));
         assert!(matches!(action.kind, ActionRisk::Destructive));
     }
@@ -1256,7 +1256,7 @@ mod tests {
         assert!(matches!(
             action.request,
             TuiActionRequest::SecretSetFromEnv { ref key, ref env }
-                if key == "db/password" && env == "DW_DB_PASSWORD"
+                if key.as_str() == "db/password" && env.as_str() == "DW_DB_PASSWORD"
         ));
         assert!(matches!(action.kind, ActionRisk::Safe));
     }

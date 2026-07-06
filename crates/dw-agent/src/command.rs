@@ -1,5 +1,6 @@
 use crate::{ALL_AGENT_KINDS, AgentKind, AgentOpenRequest, build_open_launch};
 use anyhow::Result;
+use dw_core::Agent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,9 +46,9 @@ pub struct AgentDoctorCheck {
     pub available: bool,
 }
 
-pub fn agent_doctor(requested: Option<&str>) -> Result<AgentDoctorReport> {
-    let agents = if let Some(agent) = requested.filter(|value| !value.trim().is_empty()) {
-        vec![crate::parse_agent_kind(Some(agent))?]
+pub fn agent_doctor(requested: Option<Agent>) -> Result<AgentDoctorReport> {
+    let agents = if let Some(agent) = requested {
+        vec![agent_kind(agent)]
     } else {
         ALL_AGENT_KINDS.to_vec()
     };
@@ -65,6 +66,16 @@ pub fn agent_doctor(requested: Option<&str>) -> Result<AgentDoctorReport> {
         .collect::<Vec<_>>();
 
     Ok(AgentDoctorReport { checks })
+}
+
+fn agent_kind(agent: Agent) -> AgentKind {
+    match agent {
+        Agent::Opencode => AgentKind::Opencode,
+        Agent::Cursor => AgentKind::Cursor,
+        Agent::Claude => AgentKind::Claude,
+        Agent::Codex | Agent::CodexCli => AgentKind::Codex,
+        Agent::Copilot => AgentKind::Copilot,
+    }
 }
 
 fn launch_probe(agent: AgentKind) -> crate::AgentLaunch {

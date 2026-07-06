@@ -236,46 +236,36 @@ mod tests {
         let root = temp.path();
         std::fs::create_dir_all(root.join("config")).expect("config dir");
         std::fs::write(root.join("config/workflow.json"), "{}").expect("workflow");
+        let root = dw_core::DevWorkflowRoot::from(root.to_str().expect("utf8 path"));
 
-        for agent in AGENT_DEFAULT_CHOICES {
-            let result = set_default_agent(root.to_str().expect("utf8 path"), agent)
-                .expect("agent should save");
-            assert_eq!(result, *agent);
+        for agent in dw_core::Agent::ALL {
+            let result = set_default_agent(&root, agent).expect("agent should save");
+            assert_eq!(result, agent);
         }
     }
 
     #[test]
-    fn set_default_agent_normalizes_case_and_spaces() {
+    fn default_agent_reads_parsed_agent() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
         std::fs::create_dir_all(root.join("config")).expect("config dir");
         std::fs::write(root.join("config/workflow.json"), "{}").expect("workflow");
+        let root = dw_core::DevWorkflowRoot::from(root.to_str().expect("utf8 path"));
 
-        let result = set_default_agent(root.to_str().expect("utf8 path"), "  CODEX-CLI  ")
-            .expect("agent should save");
+        let result = set_default_agent(&root, dw_core::Agent::CodexCli).expect("agent should save");
 
-        assert_eq!(result, "codex-cli");
-        assert_eq!(
-            default_agent(root.to_str().expect("utf8 path")),
-            "codex-cli"
-        );
-        assert_eq!(normalize_default_agent("CoDeX"), Some("codex"));
+        assert_eq!(result, dw_core::Agent::CodexCli);
+        assert_eq!(default_agent(&root), dw_core::Agent::CodexCli);
     }
 
     #[test]
-    fn set_default_agent_error_lists_all_choices() {
-        let temp = tempdir().expect("tempdir should be created");
-        let root = temp.path();
-        std::fs::create_dir_all(root.join("config")).expect("config dir");
-        std::fs::write(root.join("config/workflow.json"), "{}").expect("workflow");
-
-        let error = set_default_agent(root.to_str().expect("utf8 path"), "unknown")
+    fn agent_parse_rejects_unknown_agent() {
+        let error = "unknown"
+            .parse::<dw_core::Agent>()
             .expect_err("unknown agent should fail")
             .to_string();
 
-        assert!(error.contains("codex"));
-        assert!(error.contains("codex-cli"));
-        assert!(error.contains(&AGENT_DEFAULT_CHOICES.join(", ")));
+        assert!(error.contains("unknown"));
     }
 
     #[test]

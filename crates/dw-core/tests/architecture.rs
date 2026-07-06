@@ -648,6 +648,135 @@ fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
 }
 
 #[test]
+fn app_and_tui_core_requests_use_typed_config_agent_and_secret_values() {
+    let repo = repo_root();
+    let checked: &[(&str, &[&str], &[&str])] = &[
+        (
+            "crates/dw-app/src/lib.rs",
+            &[
+                "Agent",
+                "ConfigColorMode",
+                "ConfigRootPath",
+                "DevWorkflowRoot",
+                "EnvironmentVariableName",
+                "SecretKey",
+                "root: Option<DevWorkflowRoot>",
+                "mode: ConfigColorMode",
+                "path: ConfigRootPath",
+                "agent: Agent",
+                "agent: Option<Agent>",
+                "key: SecretKey",
+                "key: SecretKey",
+                "env: EnvironmentVariableName",
+            ],
+            &[
+                "ConfigShow { root: Option<String> }",
+                "ConfigDoctor { root: Option<String> }",
+                "ConfigSetColor { mode: String }",
+                "ConfigSetRoot { path: String }",
+                "AgentSetDefault { root: Option<String>, agent: String }",
+                "AgentDoctor { agent: Option<String> }",
+                "SecretGet { key: String }",
+                "SecretDelete { key: String }",
+                "SecretSetFromEnv { key: String, env: String }",
+            ],
+        ),
+        (
+            "crates/dw-tui/src/model.rs",
+            &[
+                "Agent",
+                "ConfigColorMode",
+                "ConfigRootPath",
+                "DevWorkflowRoot",
+                "EnvironmentVariableName",
+                "SecretKey",
+                "root: Option<DevWorkflowRoot>",
+                "mode: ConfigColorMode",
+                "path: ConfigRootPath",
+                "agent: Agent",
+                "agent: Option<Agent>",
+                "key: SecretKey",
+                "key: SecretKey",
+                "env: EnvironmentVariableName",
+            ],
+            &[
+                "ConfigShow { root: Option<String> }",
+                "ConfigDoctor { root: Option<String> }",
+                "ConfigSetColor { mode: String }",
+                "ConfigSetRoot { path: String }",
+                "AgentSetDefault { root: Option<String>, agent: String }",
+                "AgentDoctor { agent: Option<String> }",
+                "SecretGet { key: String }",
+                "SecretDelete { key: String }",
+                "SecretSetFromEnv { key: String, env: String }",
+            ],
+        ),
+        (
+            "crates/dw-config/src/store.rs",
+            &[
+                "pub fn set_default_agent(root: &DevWorkflowRoot, agent: Agent)",
+                "pub fn default_agent(root: &DevWorkflowRoot) -> Agent",
+            ],
+            &[
+                "pub fn set_default_agent(root: &str, agent: &str)",
+                "pub fn default_agent(root: &str) -> String",
+            ],
+        ),
+        (
+            "crates/dw-config/src/command.rs",
+            &[
+                "pub fn show(root: Option<&DevWorkflowRoot>)",
+                "pub fn doctor(root: Option<&DevWorkflowRoot>)",
+                "pub fn set_root(path: &ConfigRootPath)",
+                "pub fn set_color(mode: &ConfigColorMode)",
+            ],
+            &[
+                "pub fn show(root: Option<&str>)",
+                "pub fn doctor(root: Option<&str>)",
+                "pub fn set_root(path: &str)",
+                "pub fn set_color(mode: &str)",
+            ],
+        ),
+        (
+            "crates/dw-secret/src/command.rs",
+            &[
+                "pub key: SecretKey",
+                "pub fn set_secret(key: &SecretKey",
+                "pub fn get_secret(key: &SecretKey)",
+                "pub fn delete_secret_key(key: &SecretKey)",
+            ],
+            &[
+                "pub key: String",
+                "pub fn set_secret(key: &str",
+                "pub fn get_secret(key: &str)",
+                "pub fn delete_secret_key(key: &str)",
+            ],
+        ),
+    ];
+
+    for &(relative, required_tokens, forbidden_tokens) in checked {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read source file");
+        for required in required_tokens {
+            assert!(
+                text.contains(required),
+                "{} should expose typed core contract token `{}`",
+                path.display(),
+                required
+            );
+        }
+        for forbidden in forbidden_tokens {
+            assert!(
+                !text.contains(forbidden),
+                "{} contains forbidden primitive core contract token `{}`",
+                path.display(),
+                forbidden
+            );
+        }
+    }
+}
+
+#[test]
 fn task_open_contract_uses_typed_workspace_filters_repositories_and_agent() {
     let repo = repo_root();
     let path = repo.join("crates/dw-task/src/open.rs");

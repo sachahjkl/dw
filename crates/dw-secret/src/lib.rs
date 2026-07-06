@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
+use dw_core::EnvironmentVariableName;
+
 pub const KEYRING_SERVICE: &str = "dw";
 pub const KEY_PREFIX: &str = "dw/";
 
@@ -90,8 +92,9 @@ impl SecretStore for MemorySecretStore {
     }
 }
 
-pub fn secret_from_env(name: &str) -> Result<String, SecretError> {
-    std::env::var(name).map_err(|_| SecretError::MissingEnvironmentVariable(name.into()))
+pub fn secret_from_env(name: &EnvironmentVariableName) -> Result<String, SecretError> {
+    std::env::var(name.as_str())
+        .map_err(|_| SecretError::MissingEnvironmentVariable(name.to_string()))
 }
 
 pub fn store_secret(store: &impl SecretStore, key: &str, secret: &str) -> Result<(), SecretError> {
