@@ -87,6 +87,9 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             AdoActionResult::SetState(report) => ado_set_state_execution_lines(report),
         },
         DwActionResult::Task(result) => match result.as_ref() {
+            TaskActionResult::Status(report) => task_status_lines(report),
+            TaskActionResult::List(report) => task_list_lines(report),
+            TaskActionResult::Current(report) => task_current_lines(report),
             TaskActionResult::Open(plan) => task_open_launch_lines(plan),
             TaskActionResult::StartPlan(report) => task_start_plan_lines(report),
             TaskActionResult::StartExecution(report) => task_start_execution_lines(report),
@@ -1400,6 +1403,10 @@ pub fn task_status_lines(report: &TaskStatusReport) -> Vec<String> {
 }
 
 pub fn task_list_lines(report: &TaskListReport) -> Vec<String> {
+    if report.items.is_empty() {
+        return vec!["Aucun workspace task trouvé.".into()];
+    }
+
     let mut lines = vec![
         format!("Workspaces task: {}", report.items.len()),
         "Projet  Créé        Type   Work items".into(),

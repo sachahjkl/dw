@@ -1,7 +1,8 @@
 use anyhow::Result;
 use dw_core::{
     Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
-    EnvironmentVariableName, RuntimeIdentifier, SecretKey, SecretValue, TaskActionEvent,
+    EnvironmentVariableName, ProjectKey, RuntimeIdentifier, SecretKey, SecretValue,
+    TaskActionEvent, WorkItemId,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::task::JoinHandle;
@@ -54,6 +55,15 @@ pub enum DwActionRequest {
     AdoSetStatePlan(dw_ado_commands::commands::set_state::SetStateArgs),
     AdoSetStateExecute(dw_ado_commands::commands::set_state::SetStatePlanReport),
     AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs),
+    TaskStatus {
+        root: Option<DevWorkflowRoot>,
+    },
+    TaskList {
+        root: Option<DevWorkflowRoot>,
+        project: Option<ProjectKey>,
+        work_item_ids: Vec<WorkItemId>,
+    },
+    TaskCurrent,
     TaskOpen(dw_task::open::OpenWorkspaceArgs),
     TaskStart(dw_task::start::StartArgs),
     TaskStartPr(dw_task::start::StartPrArgs),
@@ -155,6 +165,9 @@ pub enum AdoActionResult {
 
 #[derive(Debug, Clone)]
 pub enum TaskActionResult {
+    Status(dw_task::open::TaskStatusReport),
+    List(dw_task::open::TaskListReport),
+    Current(dw_task::open::TaskCurrentReport),
     Open(dw_core::ExternalLaunchPlan),
     StartPlan(dw_task::start::StartPlanReport),
     StartExecution(dw_task::start::StartExecutionReport),
@@ -386,6 +399,19 @@ pub async fn run_action(
                 .await?;
             Ok(DwActionResult::Ado(AdoActionResult::SetState(execution)))
         }
+        DwActionRequest::TaskStatus { root } => Ok(task_result(TaskActionResult::Status(
+            dw_task::open::status_report(root),
+        ))),
+        DwActionRequest::TaskList {
+            root,
+            project,
+            work_item_ids,
+        } => Ok(task_result(TaskActionResult::List(
+            dw_task::open::list_report(root, project, work_item_ids),
+        ))),
+        DwActionRequest::TaskCurrent => Ok(task_result(TaskActionResult::Current(
+            dw_task::open::current_report()?,
+        ))),
         DwActionRequest::TaskOpen(args) => Ok(task_result(TaskActionResult::Open(
             dw_task::open::resolve_open_launch_async(args).await?,
         ))),

@@ -273,8 +273,10 @@ async fn handle_auth(command: AuthCommand) -> Result<()> {
 async fn handle_task(command: TaskCommand) -> Result<()> {
     match command {
         TaskCommand::Status { root } => {
-            let report = dw_task::open::status_report(root.map(DevWorkflowRoot::from));
-            print_lines(&dw_cli_adapter::render::task_status_lines(&report));
+            run_cli_action(dw_app::DwActionRequest::TaskStatus {
+                root: root.map(DevWorkflowRoot::from),
+            })
+            .await?;
         }
         TaskCommand::List {
             root,
@@ -282,28 +284,39 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             work_item,
             json,
         } => {
-            let report = dw_task::open::list_report(
-                root.map(DevWorkflowRoot::from),
-                project.map(ProjectKey::from),
-                work_item
+            let request = dw_app::DwActionRequest::TaskList {
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                work_item_ids: work_item
                     .as_deref()
                     .map(WorkItemId::parse_many)
                     .unwrap_or_default(),
-            );
+            };
             if json {
-                print_json(&report.items)?;
-            } else if report.items.is_empty() {
-                print_lines(&["Aucun workspace task trouvé.".into()]);
+                let result = execute_cli_action(request).await?;
+                match result {
+                    dw_app::DwActionResult::Task(result) => match result.as_ref() {
+                        dw_app::TaskActionResult::List(report) => print_json(&report.items)?,
+                        result => anyhow::bail!("Résultat task list inattendu: {result:?}"),
+                    },
+                    result => anyhow::bail!("Résultat task list inattendu: {result:?}"),
+                }
             } else {
-                print_lines(&dw_cli_adapter::render::task_list_lines(&report));
+                run_cli_action(request).await?;
             }
         }
         TaskCommand::Current { json } => {
-            let report = dw_task::open::current_report()?;
             if json {
-                print_json(&report)?;
+                let result = execute_cli_action(dw_app::DwActionRequest::TaskCurrent).await?;
+                match result {
+                    dw_app::DwActionResult::Task(result) => match result.as_ref() {
+                        dw_app::TaskActionResult::Current(report) => print_json(report)?,
+                        result => anyhow::bail!("Résultat task current inattendu: {result:?}"),
+                    },
+                    result => anyhow::bail!("Résultat task current inattendu: {result:?}"),
+                }
             } else {
-                print_lines(&dw_cli_adapter::render::task_current_lines(&report));
+                run_cli_action(dw_app::DwActionRequest::TaskCurrent).await?;
             }
         }
         TaskCommand::Open {

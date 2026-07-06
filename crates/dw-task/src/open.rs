@@ -38,6 +38,8 @@ pub struct TaskListReport {
     pub items: Vec<TaskListItem>,
 }
 
+pub type TaskCurrentReport = TaskCurrentItem;
+
 pub fn status_report(root: Option<DevWorkflowRoot>) -> TaskStatusReport {
     let root = resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
     let items = task_list(&root, None, None);
