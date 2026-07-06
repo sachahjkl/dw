@@ -1137,43 +1137,35 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     match report {
         dw_upgrade::UpgradeReport::Check(report) => {
             let mut lines = vec![
-                "Upgrade check".into(),
-                format!("✓ Release disponible : {}", report.release_tag),
+                "Mise à jour de dw".into(),
+                format!("✓ 1. Release trouvée      {}", report.release_tag),
                 format!(
-                    "✓ Version cible      : {}+{}",
+                    "✓ 2. Version cible        {}+{}",
                     report.version, report.commit
                 ),
-                format!("✓ Artefacts trouvés  : {}", report.assets.len()),
+                format!("✓ 3. Artefacts disponibles {}", report.assets.len()),
             ];
-            lines.extend(
-                report.assets.iter().map(|asset| {
-                    format!("  - {:14} {} {}", asset.rid, asset.file_name, asset.sha256)
-                }),
-            );
+            lines.extend(report.assets.iter().map(|asset| {
+                format!("   • {:14} {} {}", asset.rid, asset.file_name, asset.sha256)
+            }));
             lines
         }
         dw_upgrade::UpgradeReport::Installed(report) => {
+            let mut lines = vec![
+                "Mise à jour de dw".into(),
+                format!(
+                    "✓ 1. Version préparée     {}+{}",
+                    report.version, report.commit
+                ),
+                "✓ 2. Binaire téléchargé et vérifié".into(),
+            ];
             if report.deferred_windows_replacement {
-                vec![
-                    "Upgrade installé".into(),
-                    format!(
-                        "✓ Version préparée   : {}+{}",
-                        report.version, report.commit
-                    ),
-                    "↪ Remplacement planifié: le binaire sera remplacé après la fermeture de dw"
-                        .into(),
-                    format!("→ Binaire cible      : {}", report.executable_path),
-                ]
+                lines.push("↪ 3. Remplacement programmé après la fermeture de dw".into());
             } else {
-                vec![
-                    "Upgrade terminé".into(),
-                    format!(
-                        "✓ Version installée  : {}+{}",
-                        report.version, report.commit
-                    ),
-                    format!("✓ Binaire remplacé   : {}", report.executable_path),
-                ]
+                lines.push("✓ 3. Binaire remplacé".into());
             }
+            lines.push(format!("   Cible: {}", report.executable_path));
+            lines
         }
     }
 }
