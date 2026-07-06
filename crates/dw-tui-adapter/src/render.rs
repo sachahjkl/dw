@@ -601,6 +601,7 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             AdoActionResult::SetState(report) => ado_set_state_execution_lines(report),
         },
         DwActionResult::Task(result) => match result.as_ref() {
+            TaskActionResult::Open(plan) => task_open_launch_lines(plan),
             TaskActionResult::StartPlan(report) => task_start_plan_lines(report),
             TaskActionResult::StartExecution(report) => task_start_execution_lines(report),
             TaskActionResult::StartPrPlan(report) => task_start_pr_plan_lines(report),
@@ -655,6 +656,17 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             upgrade_report_lines(report)
         }
     }
+}
+
+pub fn task_open_launch_lines(plan: &dw_core::ExternalLaunchPlan) -> Vec<String> {
+    let mut lines = vec![
+        "Open agent".into(),
+        format!("Command: {}", plan.display_command()),
+    ];
+    if let Some(working_directory) = &plan.working_directory {
+        lines.push(format!("Directory: {working_directory}"));
+    }
+    lines
 }
 
 pub fn action_event_line(event: &DwActionEvent) -> String {

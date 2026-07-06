@@ -1023,6 +1023,7 @@ dependencies = [
  "dw-core",
  "dw-db",
  "dw-doctor",
+ "dw-process",
  "dw-secret",
  "dw-task",
  "dw-tui",

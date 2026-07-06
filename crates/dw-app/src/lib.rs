@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dw_core::{
     Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
-    EnvironmentVariableName, RuntimeIdentifier, SecretKey, TaskActionEvent,
+    EnvironmentVariableName, RuntimeIdentifier, SecretKey, SecretValue, TaskActionEvent,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::task::JoinHandle;
@@ -48,6 +48,7 @@ pub enum DwActionRequest {
     AdoSetStatePlan(dw_ado_commands::commands::set_state::SetStateArgs),
     AdoSetStateExecute(dw_ado_commands::commands::set_state::SetStatePlanReport),
     AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs),
+    TaskOpen(dw_task::open::OpenWorkspaceArgs),
     TaskStart(dw_task::start::StartArgs),
     TaskStartPr(dw_task::start::StartPrArgs),
     TaskPreflight(dw_task::validate::PreflightArgs),
@@ -69,6 +70,10 @@ pub enum DwActionRequest {
     SecretSetFromEnv {
         key: SecretKey,
         env: EnvironmentVariableName,
+    },
+    SecretSet {
+        key: SecretKey,
+        value: SecretValue,
     },
     SecretDelete {
         key: SecretKey,
@@ -142,6 +147,7 @@ pub enum AdoActionResult {
 
 #[derive(Debug, Clone)]
 pub enum TaskActionResult {
+    Open(dw_core::ExternalLaunchPlan),
     StartPlan(dw_task::start::StartPlanReport),
     StartExecution(dw_task::start::StartExecutionReport),
     StartPrPlan(dw_task::start::StartPrPlanReport),
@@ -366,6 +372,9 @@ pub async fn run_action(
                 .await?;
             Ok(DwActionResult::Ado(AdoActionResult::SetState(execution)))
         }
+        DwActionRequest::TaskOpen(args) => Ok(task_result(TaskActionResult::Open(
+            dw_task::open::resolve_open_launch_async(args).await?,
+        ))),
         DwActionRequest::TaskStart(args) => {
             let plan = dw_task::start::start_plan(args.clone()).await?;
             if args.mode.executes() {
@@ -536,6 +545,9 @@ pub async fn run_action(
                 dw_secret::command::set_secret(&key, &secret)?,
             )))
         }
+        DwActionRequest::SecretSet { key, value } => Ok(DwActionResult::Secret(
+            SecretActionResult::Set(dw_secret::command::set_secret(&key, &value)?),
+        )),
         DwActionRequest::SecretDelete { key } => Ok(DwActionResult::Secret(
             SecretActionResult::Delete(dw_secret::command::delete_secret_key(&key)?),
         )),

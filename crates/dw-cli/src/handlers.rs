@@ -7,9 +7,9 @@ use dw_cli_adapter::{
 };
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
-    DwActionEvent, EnvironmentVariableName, ExecutionMode, ProjectKey, PromptChoiceValue,
-    PromptKind, PromptSpec, PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId,
-    WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
+    DwActionEvent, EnvironmentVariableName, ExecutionMode, ExternalLaunchPlan, ProjectKey,
+    PromptChoiceValue, PromptKind, PromptSpec, PullRequestId, SecretKey, SecretValue, TaskId,
+    TaskSlug, WorkItemId, WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
@@ -123,6 +123,22 @@ fn print_cli_action_event(event: &DwActionEvent) {
         DwActionEvent::Upgrade(event) => print_upgrade_event_line(event),
         _ => {}
     }
+}
+
+fn run_external_launch_plan(launch: &ExternalLaunchPlan) -> Result<()> {
+    let status = dw_process::status(
+        &launch.program,
+        &launch.arguments,
+        launch.working_directory.as_deref(),
+        launch
+            .environment
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    )?;
+    if !status.success() {
+        anyhow::bail!("agent exited with status {status}");
+    }
+    Ok(())
 }
 
 async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> {
@@ -306,11 +322,11 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 agent: agent.map(parse_agent).transpose()?,
                 root: root.map(DevWorkflowRoot::from),
             })?;
-            let launch = dw_task::open::resolve_open_launch_async(args).await?;
+            let launch = execute_task_open_cli_action(args).await?;
             if json {
                 print_json(&launch)?;
             } else {
-                dw_task::open::run_external_launch(&launch)?;
+                run_external_launch_plan(&launch)?;
             }
         }
         TaskCommand::Start {
@@ -1124,6 +1140,15 @@ async fn execute_task_cli_action_with_event_output(
     match execute_cli_action_with_event_output(request, print_events).await? {
         dw_app::DwActionResult::Task(result) => Ok(result),
         result => anyhow::bail!("Résultat task inattendu: {result:?}"),
+    }
+}
+
+async fn execute_task_open_cli_action(
+    args: dw_task::open::OpenWorkspaceArgs,
+) -> Result<ExternalLaunchPlan> {
+    match *execute_task_cli_action(dw_app::DwActionRequest::TaskOpen(args)).await? {
+        dw_app::TaskActionResult::Open(plan) => Ok(plan),
+        result => anyhow::bail!("Résultat task open inattendu: {result:?}"),
     }
 }
 
@@ -2136,8 +2161,11 @@ async fn handle_secret(command: SecretCommand) -> Result<()> {
                 }
                 (Some(_), Some(_)) => unreachable!("clap rejects --value with --from-env"),
             };
-            let report = dw_secret::command::set_secret(&SecretKey::from(key), &secret)?;
-            print_lines(&dw_cli_adapter::render::secret_set_lines(&report));
+            run_cli_action(dw_app::DwActionRequest::SecretSet {
+                key: SecretKey::from(key),
+                value: secret,
+            })
+            .await?;
         }
         SecretCommand::Get { key } => {
             run_cli_action(dw_app::DwActionRequest::SecretGet {
@@ -2178,7 +2206,7 @@ async fn handle_agent(command: AgentCommand) -> Result<()> {
             agent,
             positional_work_item,
         } => {
-            let launch = dw_task::open::resolve_open_launch(resolve_open_args_interactively(
+            let launch = execute_task_open_cli_action(resolve_open_args_interactively(
                 dw_task::open::OpenWorkspaceArgs {
                     workspace: workspace.map(WorkspacePath::from),
                     root: root.map(DevWorkflowRoot::from),
@@ -2192,8 +2220,9 @@ async fn handle_agent(command: AgentCommand) -> Result<()> {
                     repo: repo.map(WorkspaceRepositoryName::from),
                     agent: agent.map(parse_agent).transpose()?,
                 },
-            )?)?;
-            dw_task::open::run_external_launch(&launch)?;
+            )?)
+            .await?;
+            run_external_launch_plan(&launch)?;
         }
         AgentCommand::Config { root } | AgentCommand::Show { root } => {
             run_cli_action(dw_app::DwActionRequest::AgentConfig {

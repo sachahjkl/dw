@@ -197,19 +197,3 @@ fn parse_config_agent(value: &str) -> Result<Agent> {
         .parse::<Agent>()
         .map_err(|error| anyhow::anyhow!(error))
 }
-
-pub fn run_external_launch(launch: &ExternalLaunchPlan) -> Result<()> {
-    let status = dw_process::status(
-        &launch.program,
-        &launch.arguments,
-        launch.working_directory.as_deref(),
-        launch
-            .environment
-            .iter()
-            .map(|(key, value)| (key.as_str(), value.as_str())),
-    )?;
-    if !status.success() {
-        return Err(anyhow::anyhow!("agent exited with status {status}"));
-    }
-    Ok(())
-}
