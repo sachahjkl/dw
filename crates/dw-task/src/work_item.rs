@@ -4,7 +4,10 @@ use dw_ado::WorkItemSnapshot;
 use dw_ado::auth::require_token;
 use dw_ado::{get_work_item_snapshots_authenticated, query_assigned_work_items, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{DevWorkflowRoot, ProjectKey, WorkItemId, WorkspacePath};
+use dw_core::{
+    DevWorkflowRoot, ProjectKey, WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName,
+    WorkspacePath,
+};
 use dw_workspace::{
     WorkspaceManifest, WorkspaceWorkItem, execute_work_item_update, plan_add_work_item_snapshots,
     plan_add_work_items, plan_remove_work_items, read_manifest_path,
@@ -21,9 +24,9 @@ pub struct AddWorkItemArgs {
     pub workspace_work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
     pub skip_ado: bool,
-    pub type_name: Option<String>,
-    pub title: Option<String>,
-    pub state: Option<String>,
+    pub type_name: Option<WorkItemTypeName>,
+    pub title: Option<WorkItemTitle>,
+    pub state: Option<WorkItemState>,
     pub mode: dw_core::ExecutionMode,
 }
 
@@ -170,9 +173,9 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
             &root,
             &workspace,
             &missing_ids,
-            args.type_name.as_deref(),
-            args.title.as_deref(),
-            args.state.as_deref(),
+            args.type_name.as_ref().map(WorkItemTypeName::as_str),
+            args.title.as_ref().map(WorkItemTitle::as_str),
+            args.state.as_ref().map(WorkItemState::as_str),
         )?;
         (plan, Vec::new())
     } else {

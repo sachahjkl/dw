@@ -304,9 +304,9 @@ impl FormState {
                         .unwrap_or_default(),
                     r#continue: enabled("Continue"),
                     skip_ado: enabled("Skip ADO"),
-                    type_name: value("Type"),
-                    title: value("Title"),
-                    state: value("State"),
+                    type_name: value("Type").map(dw_core::WorkItemTypeName::from),
+                    title: value("Title").map(dw_core::WorkItemTitle::from),
+                    state: value("State").map(dw_core::WorkItemState::from),
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 })
             }
@@ -337,7 +337,7 @@ impl FormState {
             }
             FormTemplate::TaskRename => {
                 TuiActionRequest::TaskRename(dw_task::lifecycle::RenameArgs {
-                    slug: value("Slug")?,
+                    slug: dw_core::TaskSlug::from(value("Slug")?),
                     workspace: value("Workspace").map(dw_core::WorkspacePath::from),
                     root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: value("Project").map(dw_core::ProjectKey::from),

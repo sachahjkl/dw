@@ -622,7 +622,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             positional_work_item,
         } => {
             let report = dw_task::lifecycle::rename_plan(dw_task::lifecycle::RenameArgs {
-                slug,
+                slug: dw_core::TaskSlug::from(slug),
                 workspace: workspace.map(WorkspacePath::from),
                 root: root.map(DevWorkflowRoot::from),
                 project: project.map(ProjectKey::from),
@@ -662,7 +662,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             let report = dw_task::lifecycle::create_child_task_report(
                 dw_task::lifecycle::CreateChildTaskArgs {
                     repo: dw_core::WorkspaceRepositoryName::from(repo),
-                    title,
+                    title: dw_core::WorkItemTitle::from(title),
                     workspace: workspace.map(WorkspacePath::from),
                     root: root.map(DevWorkflowRoot::from),
                     project: project.map(ProjectKey::from),
@@ -722,9 +722,9 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 )?,
                 r#continue,
                 skip_ado,
-                type_name,
-                title,
-                state,
+                type_name: type_name.map(dw_core::WorkItemTypeName::from),
+                title: title.map(dw_core::WorkItemTitle::from),
+                state: state.map(dw_core::WorkItemState::from),
                 mode: dw_core::ExecutionMode::Preview,
             })
             .await?;
