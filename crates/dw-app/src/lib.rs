@@ -40,6 +40,10 @@ pub enum DwActionRequest {
     DbSchema(dw_db::commands::SchemaArgs),
     DbDescribe(dw_db::commands::DescribeArgs),
     DbQuery(dw_db::commands::QueryArgs),
+    AdoAuthLogin {
+        root: Option<DevWorkflowRoot>,
+        mode: dw_ado_commands::auth::AuthLoginMode,
+    },
     AdoAuthStatus {
         root: Option<DevWorkflowRoot>,
     },
@@ -151,6 +155,7 @@ pub enum DbActionResult {
 
 #[derive(Debug, Clone)]
 pub enum AdoActionResult {
+    AuthLogin(dw_ado_commands::auth::AuthLoginReport),
     AuthStatus(dw_ado_commands::auth::AuthStatusReport),
     AuthLogout(dw_ado_commands::auth::AuthLogoutReport),
     Assigned(dw_ado_commands::commands::assigned::AssignedReport),
@@ -330,6 +335,13 @@ pub async fn run_action(
             dw_db::commands::query_with_events(args, |event| emit(DwActionEvent::Db(event)))
                 .await?,
         ))),
+        DwActionRequest::AdoAuthLogin { root, mode } => {
+            let report = dw_ado_commands::auth::login_report_with_events(root, mode, |event| {
+                emit(DwActionEvent::Ado(event))
+            })
+            .await?;
+            Ok(DwActionResult::Ado(AdoActionResult::AuthLogin(report)))
+        }
         DwActionRequest::AdoAuthStatus { root } => Ok(DwActionResult::Ado(
             AdoActionResult::AuthStatus(dw_ado_commands::auth::status_report(root).await?),
         )),

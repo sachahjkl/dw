@@ -233,17 +233,17 @@ fn write_upgrade_spinner_clear() -> Result<()> {
 async fn handle_auth(command: AuthCommand) -> Result<()> {
     match command {
         AuthCommand::Login { root } => {
-            let root = root.map(DevWorkflowRoot::from);
             let mode = Select::new(
                 "Mode de connexion Azure DevOps",
                 dw_ado_commands::auth::auth_login_choices(),
             )
             .prompt()?
             .mode;
-            let report =
-                dw_ado_commands::auth::login_report(root, mode, |message| print_lines(&[message]))
-                    .await?;
-            print_lines(&dw_cli_adapter::render::auth_login_lines(&report));
+            run_cli_action(dw_app::DwActionRequest::AdoAuthLogin {
+                root: root.map(DevWorkflowRoot::from),
+                mode,
+            })
+            .await?;
         }
         AuthCommand::Status { root } => {
             let result = execute_cli_action(dw_app::DwActionRequest::AdoAuthStatus {

@@ -49,6 +49,14 @@ pub struct AdoAuthStatus {
     pub expires_on: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeviceLoginInstructions {
+    pub verification_uri: String,
+    pub user_code: String,
+    pub expires_in_seconds: u32,
+    pub poll_interval_seconds: u32,
+}
+
 #[derive(Debug, Error)]
 pub enum AdoAuthError {
     #[error("Auth ADO non configurée. Renseigner auth dans workflow.json ou définir DW_ADO_TOKEN.")]
@@ -96,18 +104,18 @@ pub async fn login_browser_interactive(
 
 pub async fn login_device_code(
     auth: Option<AdoAuthOptions>,
-    mut on_message: impl FnMut(String),
+    mut on_instructions: impl FnMut(DeviceLoginInstructions),
 ) -> Result<AdoToken, AdoAuthError> {
     let auth = auth.ok_or(AdoAuthError::MissingConfig)?;
     let scopes = scopes(&auth);
     let flow = initiate_device_flow(&auth, &scopes).await?;
     open_browser(&flow.verification_uri);
-    on_message(flow.message.clone().unwrap_or_else(|| {
-        format!(
-            "Ouvrir {} et entrer le code {}.",
-            flow.verification_uri, flow.user_code
-        )
-    }));
+    on_instructions(DeviceLoginInstructions {
+        verification_uri: flow.verification_uri.clone(),
+        user_code: flow.user_code.clone(),
+        expires_in_seconds: flow.expires_in,
+        poll_interval_seconds: flow.interval.unwrap_or(5).max(1),
+    });
 
     let token = acquire_device_token_polling(&auth, flow).await?;
     if let Some(refresh_token) = token.refresh_token.as_deref() {
@@ -123,7 +131,6 @@ struct DeviceAuthorizationResponse {
     verification_uri: String,
     expires_in: u32,
     interval: Option<u32>,
-    message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

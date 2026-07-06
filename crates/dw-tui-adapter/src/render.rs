@@ -589,6 +589,7 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             DbActionResult::Describe(None) => Vec::new(),
         },
         DwActionResult::Ado(result) => match result {
+            AdoActionResult::AuthLogin(report) => auth_login_lines(report),
             AdoActionResult::AuthStatus(report) => auth_status_lines(report),
             AdoActionResult::AuthLogout(report) => auth_logout_lines(report),
             AdoActionResult::Assigned(report) => ado_assigned_lines(report, theme),
@@ -773,6 +774,14 @@ fn ado_action_event_line(event: &AdoActionEvent) -> String {
                 .as_ref()
                 .map(|project| project.to_string())
                 .unwrap_or_else(|| "default project".into())
+        ),
+        AdoActionEvent::DeviceLoginRequired {
+            verification_uri,
+            user_code,
+            expires_in_seconds,
+            poll_interval_seconds,
+        } => format!(
+            "ADO [device-login] open {verification_uri}, enter {user_code}, expires={expires_in_seconds}s, polling={poll_interval_seconds}s"
         ),
         AdoActionEvent::LoadingAssignedWorkItems { project, top } => {
             format!("ADO [assigned] project={project} top={top}")

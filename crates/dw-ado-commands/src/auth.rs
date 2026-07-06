@@ -1,8 +1,9 @@
 use anyhow::Result;
 use dw_ado::auth::{
-    AdoAuthStatus, AdoToken, login_browser_interactive, login_device_code, logout, status,
+    AdoAuthStatus, AdoToken, DeviceLoginInstructions, login_browser_interactive, login_device_code,
+    logout, status,
 };
-use dw_core::DevWorkflowRoot;
+use dw_core::{AdoActionEvent, AdoDeviceUserCode, AdoDeviceVerificationUri, DevWorkflowRoot};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -135,7 +136,14 @@ pub fn auth_login_choices() -> Vec<AuthLoginChoice> {
 pub async fn login_report(
     root: Option<DevWorkflowRoot>,
     mode: AuthLoginMode,
-    on_device_message: impl FnMut(String),
+) -> Result<AuthLoginReport> {
+    login_report_with_events(root, mode, |_| {}).await
+}
+
+pub async fn login_report_with_events(
+    root: Option<DevWorkflowRoot>,
+    mode: AuthLoginMode,
+    mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<AuthLoginReport> {
     let auth = load_auth_options(root.as_ref().map(DevWorkflowRoot::as_str))?;
     match mode {
@@ -145,7 +153,10 @@ pub async fn login_report(
         )),
         AuthLoginMode::DeviceCode => Ok(token_login_report(
             mode,
-            login_device_code(auth, on_device_message).await?,
+            login_device_code(auth, |instructions| {
+                emit(device_login_required_event(instructions))
+            })
+            .await?,
         )),
         AuthLoginMode::EnvironmentPat => Ok(AuthLoginReport {
             mode,
@@ -153,6 +164,15 @@ pub async fn login_report(
             expires_on: None,
             uses_environment_pat: true,
         }),
+    }
+}
+
+fn device_login_required_event(instructions: DeviceLoginInstructions) -> AdoActionEvent {
+    AdoActionEvent::DeviceLoginRequired {
+        verification_uri: AdoDeviceVerificationUri::from(instructions.verification_uri),
+        user_code: AdoDeviceUserCode::from(instructions.user_code),
+        expires_in_seconds: instructions.expires_in_seconds,
+        poll_interval_seconds: instructions.poll_interval_seconds,
     }
 }
 

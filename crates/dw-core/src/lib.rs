@@ -1147,6 +1147,8 @@ string_newtype!(SemanticVersion);
 string_newtype!(UpgradeReleaseTag);
 string_newtype!(GitCommitSha);
 string_newtype!(AgentExecutableName);
+string_newtype!(AdoDeviceVerificationUri);
+string_newtype!(AdoDeviceUserCode);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -1527,6 +1529,12 @@ pub enum TaskActionEvent {
 pub enum AdoActionEvent {
     Authenticating {
         project: Option<ProjectKey>,
+    },
+    DeviceLoginRequired {
+        verification_uri: AdoDeviceVerificationUri,
+        user_code: AdoDeviceUserCode,
+        expires_in_seconds: u32,
+        poll_interval_seconds: u32,
     },
     LoadingAssignedWorkItems {
         project: ProjectKey,
