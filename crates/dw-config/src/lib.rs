@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn set_color_rejects_unknown_mode() {
         let error = parse_color_mode(Some("rainbow")).expect_err("color should fail");
-        assert!(error.contains("Mode couleur inconnu"));
+        assert!(error.contains("Unknown color mode"));
     }
 
     #[test]

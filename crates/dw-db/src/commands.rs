@@ -47,9 +47,9 @@ enum DbQueryKind {
 impl DbQueryKind {
     fn label(self) -> &'static str {
         match self {
-            DbQueryKind::Schema => "schéma",
+            DbQueryKind::Schema => "schema",
             DbQueryKind::Describe => "description",
-            DbQueryKind::Query => "requête",
+            DbQueryKind::Query => "query",
         }
     }
 }
@@ -136,12 +136,12 @@ async fn execute_db_query(
     let guard = validate_read_only_sql(sql);
     if !guard.is_allowed {
         return Err(anyhow::anyhow!(
-            "Requête bloquée: {}",
+            "Query blocked: {}",
             guard
                 .reason
                 .as_ref()
                 .map(|reason| reason.as_str())
-                .unwrap_or("raison inconnue")
+                .unwrap_or("unknown reason")
         ));
     }
 
@@ -186,7 +186,7 @@ async fn resolve_describe_table(
     }
     let _ = (project, database, env);
     Err(anyhow::anyhow!(
-        "Table manquante. Fournir un nom de table à décrire."
+        "Missing table. Provide a table name to describe."
     ))
 }
 
@@ -228,8 +228,8 @@ mod tests {
 
     #[test]
     fn db_query_kind_labels_are_user_facing() {
-        assert_eq!(DbQueryKind::Schema.label(), "schéma");
+        assert_eq!(DbQueryKind::Schema.label(), "schema");
         assert_eq!(DbQueryKind::Describe.label(), "description");
-        assert_eq!(DbQueryKind::Query.label(), "requête");
+        assert_eq!(DbQueryKind::Query.label(), "query");
     }
 }

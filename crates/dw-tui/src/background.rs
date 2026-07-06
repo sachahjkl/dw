@@ -7,7 +7,7 @@ use crate::model::{
     self, ActionEffect, AdoAssignedProject, TuiAction, TuiPullRequest, TuiSnapshot,
 };
 use crate::runner::{self, CapturedActionRunError, CapturedActionRunResult};
-use dw_core::DwActionEvent;
+use dw_core::{DwActionEvent, InputRequest, InputResponse};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackgroundKind {
@@ -35,6 +35,12 @@ pub enum BackgroundResult {
         generation: u64,
         run_id: ActionRunId,
         event: DwActionEvent,
+    },
+    ActionInput {
+        generation: u64,
+        run_id: ActionRunId,
+        request: InputRequest,
+        response: Sender<InputResponse>,
     },
     Action {
         generation: u64,
@@ -281,14 +287,30 @@ impl BackgroundJobs {
         self.spawn_async(move |sender| async move {
             let output_sender = sender.clone();
             let action_label = label.to_string();
+            let input_sender = sender.clone();
             let result = match tokio::spawn(async move {
-                runner::run_captured_streaming(&action, move |event| {
-                    let _ = output_sender.send(BackgroundResult::ActionEvent {
-                        generation,
-                        run_id,
-                        event,
-                    });
-                })
+                runner::run_captured_streaming_with_input(
+                    &action,
+                    move |event| {
+                        let _ = output_sender.send(BackgroundResult::ActionEvent {
+                            generation,
+                            run_id,
+                            event,
+                        });
+                    },
+                    move |request| {
+                        let (response_sender, response_receiver) = mpsc::channel();
+                        let _ = input_sender.send(BackgroundResult::ActionInput {
+                            generation,
+                            run_id,
+                            request: request.clone(),
+                            response: response_sender,
+                        });
+                        response_receiver.recv().map_err(|_| {
+                            anyhow::anyhow!("TUI input `{}` was cancelled", request.id())
+                        })
+                    },
+                )
                 .await
             })
             .await
@@ -415,7 +437,7 @@ mod tests {
     #[test]
     fn accepting_wrong_generation_keeps_job_running() {
         let mut jobs = BackgroundJobs::new();
-        let mut snapshot = TuiSnapshot::load(Some("/tmp/missing-dw-root"));
+        let mut snapshot = TuiSnapshot::loading(Some("/tmp/missing-dw-root"));
 
         assert!(jobs.start_assigned(&mut snapshot));
         assert!(!jobs.accept_assigned(999));

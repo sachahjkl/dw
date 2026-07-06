@@ -36,7 +36,7 @@ pub fn set_default_agent(root: &DevWorkflowRoot, agent: Agent) -> std::io::Resul
         .entry("agent")
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
-        .ok_or_else(|| std::io::Error::other("workflow.agent doit etre un objet JSON"))?;
+        .ok_or_else(|| std::io::Error::other("workflow.agent must be a JSON object"))?;
     agent_node.insert("default".into(), Value::String(normalized_agent.into()));
     fs::write(path, serde_json::to_string_pretty(&value)?)?;
     Ok(agent)

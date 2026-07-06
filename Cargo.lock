@@ -1236,6 +1236,8 @@ name = "dw-ui"
 version = "0.1.1"
 dependencies = [
  "anstyle",
+ "dw-ado",
+ "dw-ado-commands",
 ]
 
 [[package]]

@@ -31,8 +31,8 @@ pub fn print_completion_show() {
 
 fn render_completion_show(theme: &TerminalTheme) -> String {
     [
-        theme.command("Autocomplétion shell"),
-        "Installer l'intégration adaptée à votre shell:".into(),
+        theme.command("Shell completion"),
+        "Install the integration for your shell:".into(),
         String::new(),
         completion_install_line("bash", "dw completion install bash >> ~/.bashrc", theme),
         completion_install_line("zsh", "dw completion install zsh >> ~/.zshrc", theme),
@@ -85,9 +85,11 @@ compdef _dw_complete dw"#;
             "Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock {{ param($wordToComplete, $commandAst, $cursorPosition) dw completion complete --format json -- @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object {{ $_.Extent.Text }}) | ConvertFrom-Json | ForEach-Object {{ [System.Management.Automation.CompletionResult]::new($_.label, $_.label, 'ParameterValue', $_.description) }} }}"
         ),
         Shell::Elvish => {
-            println!("Utiliser `dw completion generate elvish` pour générer ce shell.")
+            println!("Use `dw completion generate elvish` to generate completion for this shell.")
         }
-        _ => println!("Utiliser `dw completion generate {shell}` pour générer ce shell."),
+        _ => {
+            println!("Use `dw completion generate {shell}` to generate completion for this shell.")
+        }
     }
 }
 
@@ -408,77 +410,77 @@ fn root_commands() -> Vec<CompletionItem> {
 
 fn option_description(option: &str) -> String {
     match option {
-        "--root" => "Root DevWorkflow à utiliser".into(),
-        "--project" => "Projet configuré".into(),
-        "--work-item" => "Work item pour résoudre le workspace".into(),
-        "--workspace" => "Workspace task existant".into(),
-        "--repo" | "--only" => "Repository configuré".into(),
-        "--database" => "Connexion base déclarée dans databases.json".into(),
-        "--env" => "Alias d'environnement base".into(),
-        "--json" => "Sortie JSON déterministe".into(),
-        "--execute" => "Appliquer réellement l'action".into(),
-        "--yes" => "Confirmer sans prompt interactif".into(),
-        "--dry-run" => "Prévisualiser sans écrire".into(),
-        "--no-save" => "Ne pas enregistrer le root par défaut".into(),
-        "--fix" => "Appliquer les corrections automatiques".into(),
-        "--format" => "Format de sortie".into(),
-        "--agent" => "Agent IA à lancer".into(),
-        "--max-rows" => "Nombre maximum de lignes".into(),
-        "--sql" => "Requête SQL read-only".into(),
-        "--message" => "Message explicite".into(),
-        "--title" => "Titre explicite".into(),
-        "--task" => "Task enfant à inclure".into(),
-        "--slug" => "Slug explicite".into(),
-        "--value" => "Valeur du secret".into(),
-        "--from-env" => "Variable d'environnement contenant le secret".into(),
-        "--state" => "État ADO ou état local selon la commande".into(),
-        "--history" => "Message d'historique ADO".into(),
-        "--type" => "Type de branche/workspace".into(),
-        "--profile" => "Profil de templates".into(),
-        "--check" => "Vérifier sans mettre à jour".into(),
-        "--rid" => "Runtime identifier de l'artefact".into(),
-        "--continue" => "Reprendre le workspace récent".into(),
-        "--skip-ado" => "Ne pas appeler Azure DevOps".into(),
-        "--with-active-children" => "Inclure les enfants ADO actifs".into(),
-        "--create-child-tasks" => "Créer les tasks ADO par repository".into(),
-        "--create-pr" => "Créer ou vérifier les PR ADO".into(),
-        "--ready" => "Marquer la PR comme prête".into(),
-        "--skip-verify" => "Ignorer les validations locales".into(),
-        "--no-sync" => "Ignorer la synchronisation ADO".into(),
-        "--ai-context-file" => "Fichier de contexte IA".into(),
-        "--from-pr" => "Lire depuis des pull requests".into(),
-        "--from-git" => "Lire depuis l'historique git".into(),
-        "--group-by-parent" => "Regrouper par parent ADO".into(),
-        "--table" => "Rendu tableau".into(),
-        "--ids-only" => "Afficher seulement les IDs".into(),
-        "--git-to" => "Révision git de fin".into(),
-        "--top" => "Nombre maximum d'éléments".into(),
-        "--all" => "Inclure les états finaux".into(),
-        "--summary" => "Inclure le résumé ADO".into(),
-        "--comments" => "Nombre de commentaires à inclure".into(),
-        "--include-comments" => "Inclure les commentaires".into(),
-        "--organization" => "Organisation Azure DevOps".into(),
-        "--help" => "Afficher l'aide".into(),
+        "--root" => "DevWorkflow root to use".into(),
+        "--project" => "Configured project".into(),
+        "--work-item" => "Work item used to resolve the workspace".into(),
+        "--workspace" => "Existing task workspace".into(),
+        "--repo" | "--only" => "Configured repository".into(),
+        "--database" => "Database connection declared in databases.json".into(),
+        "--env" => "Database environment alias".into(),
+        "--json" => "Deterministic JSON output".into(),
+        "--execute" => "Apply the action for real".into(),
+        "--yes" => "Confirm without interactive prompt".into(),
+        "--dry-run" => "Preview without writing".into(),
+        "--no-save" => "Do not save the default root".into(),
+        "--fix" => "Apply automatic fixes".into(),
+        "--format" => "Output format".into(),
+        "--agent" => "AI agent to launch".into(),
+        "--max-rows" => "Maximum number of rows".into(),
+        "--sql" => "Read-only SQL query".into(),
+        "--message" => "Explicit message".into(),
+        "--title" => "Explicit title".into(),
+        "--task" => "Child task to include".into(),
+        "--slug" => "Explicit slug".into(),
+        "--value" => "Secret value".into(),
+        "--from-env" => "Environment variable containing the secret".into(),
+        "--state" => "ADO state or local state depending on the command".into(),
+        "--history" => "ADO history message".into(),
+        "--type" => "Branch/workspace type".into(),
+        "--profile" => "Template profile".into(),
+        "--check" => "Check without updating".into(),
+        "--rid" => "Artifact runtime identifier".into(),
+        "--continue" => "Resume the recent workspace".into(),
+        "--skip-ado" => "Do not call Azure DevOps".into(),
+        "--with-active-children" => "Include active ADO children".into(),
+        "--create-child-tasks" => "Create ADO tasks per repository".into(),
+        "--create-pr" => "Create or verify ADO PRs".into(),
+        "--ready" => "Mark the PR as ready".into(),
+        "--skip-verify" => "Skip local validations".into(),
+        "--no-sync" => "Skip ADO synchronization".into(),
+        "--ai-context-file" => "AI context file".into(),
+        "--from-pr" => "Read from pull requests".into(),
+        "--from-git" => "Read from git history".into(),
+        "--group-by-parent" => "Group by ADO parent".into(),
+        "--table" => "Table rendering".into(),
+        "--ids-only" => "Show IDs only".into(),
+        "--git-to" => "Ending git revision".into(),
+        "--top" => "Maximum number of items".into(),
+        "--all" => "Include final states".into(),
+        "--summary" => "Include the ADO summary".into(),
+        "--comments" => "Number of comments to include".into(),
+        "--include-comments" => "Include comments".into(),
+        "--organization" => "Azure DevOps organization".into(),
+        "--help" => "Show help".into(),
         _ => String::new(),
     }
 }
 
 fn value_description(option: &str, value: &str) -> String {
     match option {
-        "--project" => "Projet configuré".into(),
+        "--project" => "Configured project".into(),
         "--repo" | "--only" => "Repository".into(),
-        "--database" => "Connexion base".into(),
-        "--env" => "Environnement base".into(),
-        "--workspace" => "Workspace task".into(),
-        "--work-item" => "Work item local".into(),
-        "--agent" => "Agent IA".into(),
-        "--format" => "Format de sortie".into(),
-        "--from-env" => "Variable d'environnement".into(),
-        "--state" => "État ADO/workflow".into(),
-        "--max-rows" => "Limite de lignes".into(),
-        "--type" => "Type de branche/workspace".into(),
-        "--profile" => "Profil".into(),
-        _ if !value.trim().is_empty() => "Valeur".into(),
+        "--database" => "Database connection".into(),
+        "--env" => "Database environment".into(),
+        "--workspace" => "Task workspace".into(),
+        "--work-item" => "Local work item".into(),
+        "--agent" => "AI agent".into(),
+        "--format" => "Output format".into(),
+        "--from-env" => "Environment variable".into(),
+        "--state" => "ADO/workflow state".into(),
+        "--max-rows" => "Row limit".into(),
+        "--type" => "Branch/workspace type".into(),
+        "--profile" => "Profile".into(),
+        _ if !value.trim().is_empty() => "Value".into(),
         _ => String::new(),
     }
 }
@@ -486,94 +488,94 @@ fn value_description(option: &str, value: &str) -> String {
 fn positional_value_description(path: &[&str], value: &str) -> String {
     match path {
         ["config", "set-color"] => match value {
-            "auto" => "Couleur selon le terminal".into(),
-            "always" => "Forcer la couleur".into(),
-            "never" => "Désactiver la couleur".into(),
-            _ => "Mode couleur".into(),
+            "auto" => "Color based on terminal".into(),
+            "always" => "Force color".into(),
+            "never" => "Disable color".into(),
+            _ => "Color mode".into(),
         },
-        ["agent", "set-default"] => "Agent IA par défaut".into(),
-        ["completion", "generate"] => "Shell cible pour la completion statique".into(),
-        ["completion", "install"] => "Shell cible pour le snippet dynamique".into(),
+        ["agent", "set-default"] => "Default AI agent".into(),
+        ["completion", "generate"] => "Target shell for static completion".into(),
+        ["completion", "install"] => "Target shell for dynamic snippet".into(),
         ["secret", "set"] | ["secret", "get"] | ["secret", "delete"] => {
-            "Clé secret déclarée dans databases.json".into()
+            "Secret key declared in databases.json".into()
         }
-        _ if !value.trim().is_empty() => "Valeur".into(),
+        _ if !value.trim().is_empty() => "Value".into(),
         _ => String::new(),
     }
 }
 
 fn root_command_description(label: &str) -> String {
     match label {
-        "version" => "Afficher la version".into(),
-        "guide" => "Parcours de démarrage".into(),
-        "doctor" => "Diagnostic machine et configuration".into(),
-        "init" => "Initialiser un root DevWorkflow".into(),
-        "refresh" => "Régénérer schémas et contextes agents".into(),
-        "tui" => "Dashboard interactif".into(),
-        "agent" => "Ouvrir/configurer les agents IA".into(),
-        "auth" => "Connexion Azure DevOps".into(),
-        "completion" => "Installer/interroger l'autocomplétion".into(),
-        "config" => "Lire/modifier la configuration".into(),
-        "ado" => "Commandes Azure DevOps".into(),
-        "db" => "Accès base read-only".into(),
-        "secret" => "Secrets locaux".into(),
-        "upgrade" => "Mettre à jour le binaire".into(),
-        "task" => "Cycle workspace/worktrees/PR".into(),
+        "version" => "Show version".into(),
+        "guide" => "Getting started guide".into(),
+        "doctor" => "Machine and configuration diagnostics".into(),
+        "init" => "Initialize a DevWorkflow root".into(),
+        "refresh" => "Regenerate schemas and agent contexts".into(),
+        "tui" => "Interactive dashboard".into(),
+        "agent" => "Open/configure AI agents".into(),
+        "auth" => "Azure DevOps login".into(),
+        "completion" => "Install/query shell completion".into(),
+        "config" => "Read/modify configuration".into(),
+        "ado" => "Azure DevOps commands".into(),
+        "db" => "Read-only database access".into(),
+        "secret" => "Local secrets".into(),
+        "upgrade" => "Update the binary".into(),
+        "task" => "Workspace/worktrees/PR lifecycle".into(),
         _ => String::new(),
     }
 }
 
 fn subcommand_description(path: &[&str], label: &str) -> String {
     match (path, label) {
-        (["task"], "start") => "Créer/préparer un workspace task".into(),
-        (["task"], "start-pr") => "Créer/préparer un workspace depuis une PR".into(),
-        (["task"], "status") => "Vue synthétique des workspaces".into(),
-        (["task"], "list") => "Lister les workspaces filtrables".into(),
-        (["task"], "current") => "Afficher le workspace courant".into(),
-        (["task"], "sync") => "Synchroniser task.json avec ADO".into(),
-        (["task"], "preflight") => "Contrôler les blocages avant dev".into(),
-        (["task"], "handoff-validate") => "Valider le handoff workspace".into(),
-        (["task"], "rename") => "Renommer workspace et branche".into(),
-        (["task"], "open") => "Ouvrir le workspace avec un agent".into(),
-        (["task"], "add-repo") => "Ajouter un repository au workspace".into(),
-        (["task"], "create-child-task") => "Créer une sous-tâche ADO".into(),
-        (["task"], "repo-latest") => "Mettre les repositories à jour".into(),
-        (["task"], "add-work-item") => "Ajouter des work items au workspace".into(),
-        (["task"], "remove-work-item") => "Retirer des work items du workspace".into(),
-        (["task"], "commit") => "Préparer ou créer les commits".into(),
-        (["task"], "finish") => "Commit, push, PR et état ADO".into(),
-        (["task"], "prune") => "Nettoyer les workspaces terminés".into(),
-        (["task"], "teardown") => "Supprimer un workspace".into(),
-        (["auth"], "login") => "Connexion interactive Azure DevOps".into(),
-        (["auth"], "status") => "État de connexion Azure DevOps".into(),
-        (["auth"], "logout") => "Supprimer la session ADO locale".into(),
-        (["ado"], "assigned") => "Work items assignés".into(),
-        (["ado"], "prs") => "Pull requests actives".into(),
-        (["ado"], "changelog") => "Changelog depuis PR/git/work items".into(),
-        (["ado"], "work-item") => "Détail work item".into(),
-        (["ado"], "set-state") => "Changer l'état ADO".into(),
-        (["ado"], "context") => "Contexte détaillé humain".into(),
-        (["ado"], "ai-context") => "Contexte structuré pour IA".into(),
-        (["db"], "schema") => "Lister tables et vues".into(),
-        (["db"], "describe") => "Décrire une table".into(),
-        (["db"], "query") => "Exécuter une requête read-only".into(),
-        (["db"], "guard") => "Vérifier une requête sans exécuter".into(),
-        (["agent"], "context") => "Afficher le contexte agent".into(),
-        (["agent"], "open") => "Ouvrir un agent sur un workspace".into(),
-        (["agent"], "config") => "Afficher la configuration agent".into(),
-        (["agent"], "show") => "Alias de configuration agent".into(),
-        (["agent"], "set-default") => "Définir l'agent par défaut".into(),
-        (["agent"], "doctor") => "Diagnostiquer les agents installés".into(),
-        (["completion"], "show") => "Afficher les commandes d'installation".into(),
-        (["completion"], "generate") => "Générer une completion statique".into(),
-        (["completion"], "install") => "Afficher le snippet shell dynamique".into(),
-        (["config"], "show") => "Afficher la configuration effective".into(),
-        (["config"], "set-root") => "Définir le root DevWorkflow".into(),
-        (["config"], "set-color") => "Définir le mode couleur".into(),
-        (["config"], "doctor") => "Valider les fichiers de config".into(),
-        (["secret"], "set") => "Enregistrer un secret local".into(),
-        (["secret"], "get") => "Vérifier la présence d'un secret".into(),
-        (["secret"], "delete") => "Supprimer un secret local".into(),
+        (["task"], "start") => "Create/prepare a task workspace".into(),
+        (["task"], "start-pr") => "Create/prepare a workspace from a PR".into(),
+        (["task"], "status") => "Workspace summary view".into(),
+        (["task"], "list") => "List filterable workspaces".into(),
+        (["task"], "current") => "Show the current workspace".into(),
+        (["task"], "sync") => "Synchronize task.json with ADO".into(),
+        (["task"], "preflight") => "Check blockers before development".into(),
+        (["task"], "handoff-validate") => "Validate workspace handoff".into(),
+        (["task"], "rename") => "Rename workspace and branch".into(),
+        (["task"], "open") => "Open the workspace with an agent".into(),
+        (["task"], "add-repo") => "Add a repository to the workspace".into(),
+        (["task"], "create-child-task") => "Create an ADO child task".into(),
+        (["task"], "repo-latest") => "Update repositories".into(),
+        (["task"], "add-work-item") => "Add work items to the workspace".into(),
+        (["task"], "remove-work-item") => "Remove work items from the workspace".into(),
+        (["task"], "commit") => "Prepare or create commits".into(),
+        (["task"], "finish") => "Commit, push, PR, and ADO state".into(),
+        (["task"], "prune") => "Clean up finished workspaces".into(),
+        (["task"], "teardown") => "Delete a workspace".into(),
+        (["auth"], "login") => "Interactive Azure DevOps login".into(),
+        (["auth"], "status") => "Azure DevOps connection state".into(),
+        (["auth"], "logout") => "Delete the local ADO session".into(),
+        (["ado"], "assigned") => "Assigned work items".into(),
+        (["ado"], "prs") => "Active pull requests".into(),
+        (["ado"], "changelog") => "Changelog from PRs/git/work items".into(),
+        (["ado"], "work-item") => "Work item details".into(),
+        (["ado"], "set-state") => "Change ADO state".into(),
+        (["ado"], "context") => "Detailed human-readable context".into(),
+        (["ado"], "ai-context") => "Structured context for AI".into(),
+        (["db"], "schema") => "List tables and views".into(),
+        (["db"], "describe") => "Describe a table".into(),
+        (["db"], "query") => "Run a read-only query".into(),
+        (["db"], "guard") => "Check a query without running it".into(),
+        (["agent"], "context") => "Show agent context".into(),
+        (["agent"], "open") => "Open an agent on a workspace".into(),
+        (["agent"], "config") => "Show agent configuration".into(),
+        (["agent"], "show") => "Agent configuration alias".into(),
+        (["agent"], "set-default") => "Set the default agent".into(),
+        (["agent"], "doctor") => "Diagnose installed agents".into(),
+        (["completion"], "show") => "Show installation commands".into(),
+        (["completion"], "generate") => "Generate static completion".into(),
+        (["completion"], "install") => "Show the dynamic shell snippet".into(),
+        (["config"], "show") => "Show effective configuration".into(),
+        (["config"], "set-root") => "Set the DevWorkflow root".into(),
+        (["config"], "set-color") => "Set color mode".into(),
+        (["config"], "doctor") => "Validate config files".into(),
+        (["secret"], "set") => "Save a local secret".into(),
+        (["secret"], "get") => "Check whether a secret exists".into(),
+        (["secret"], "delete") => "Delete a local secret".into(),
         _ => String::new(),
     }
 }
@@ -628,24 +630,21 @@ mod tests {
             .iter()
             .find(|item| item.label == "task")
             .expect("task command");
-        assert_eq!(task.description, "Cycle workspace/worktrees/PR");
+        assert_eq!(task.description, "Workspace/worktrees/PR lifecycle");
 
         let task_subcommands = complete_words(&words(&["task"]));
         let start_pr = task_subcommands
             .iter()
             .find(|item| item.label == "start-pr")
             .expect("start-pr command");
-        assert_eq!(
-            start_pr.description,
-            "Créer/préparer un workspace depuis une PR"
-        );
+        assert_eq!(start_pr.description, "Create/prepare a workspace from a PR");
 
         let options = complete_words(&words(&["task", "open", "--"]));
         let workspace = options
             .iter()
             .find(|item| item.label == "--workspace")
             .expect("workspace option");
-        assert_eq!(workspace.description, "Workspace task existant");
+        assert_eq!(workspace.description, "Existing task workspace");
     }
 
     #[test]
@@ -719,7 +718,7 @@ mod tests {
             .iter()
             .find(|item| item.label == "set-state")
             .expect("set-state command");
-        assert_eq!(set_state.description, "Changer l'état ADO");
+        assert_eq!(set_state.description, "Change ADO state");
 
         let options = complete_words(&words(&["ado", "set-state", "--"]));
         let state = options
@@ -733,9 +732,9 @@ mod tests {
 
         assert_eq!(
             state.description,
-            "État ADO ou état local selon la commande"
+            "ADO state or local state depending on the command"
         );
-        assert_eq!(history.description, "Message d'historique ADO");
+        assert_eq!(history.description, "ADO history message");
     }
 
     #[test]
@@ -760,7 +759,7 @@ mod tests {
         let value_labels = labels(values.clone());
 
         assert_eq!(value_labels, vec!["auto", "always", "never"]);
-        assert_eq!(values[0].description, "Couleur selon le terminal");
+        assert_eq!(values[0].description, "Color based on terminal");
 
         let filtered = labels(complete_words(&words(&["config", "set-color", "a"])));
         assert_eq!(filtered, vec!["auto", "always"]);
@@ -789,7 +788,7 @@ mod tests {
         assert!(
             values
                 .iter()
-                .all(|item| item.description == "Agent IA par défaut")
+                .all(|item| item.description == "Default AI agent")
         );
 
         let filtered = labels(complete_words(&words(&["agent", "set-default", "codex"])));
@@ -809,7 +808,7 @@ mod tests {
                 .find(|item| item.label == "fish")
                 .expect("fish shell")
                 .description,
-            "Shell cible pour le snippet dynamique"
+            "Target shell for dynamic snippet"
         );
 
         let generate = labels(complete_words(&words(&["completion", "generate", "p"])));
@@ -849,7 +848,7 @@ mod tests {
         assert!(
             values
                 .iter()
-                .all(|item| item.description == "Clé secret déclarée dans databases.json")
+                .all(|item| item.description == "Secret key declared in databases.json")
         );
     }
 
@@ -1029,7 +1028,7 @@ mod tests {
 
         assert_eq!(
             rich_shell_row(workspace),
-            "--workspace\tWorkspace task existant"
+            "--workspace\tExisting task workspace"
         );
     }
 
@@ -1037,8 +1036,8 @@ mod tests {
     fn completion_show_renders_install_commands() {
         let report = render_completion_show(&TerminalTheme::plain());
 
-        assert!(report.contains("Autocomplétion shell"));
-        assert!(report.contains("Installer l'intégration adaptée à votre shell"));
+        assert!(report.contains("Shell completion"));
+        assert!(report.contains("Install the integration for your shell"));
         assert!(report.contains("bash       dw completion install bash >> ~/.bashrc"));
         assert!(report.contains("zsh        dw completion install zsh >> ~/.zshrc"));
         assert!(report.contains(

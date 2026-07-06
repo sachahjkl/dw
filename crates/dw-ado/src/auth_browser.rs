@@ -121,15 +121,15 @@ fn parse_callback_url(url: &str, expected_state: &str) -> Result<BrowserCallback
     }
     let state = query
         .get("state")
-        .ok_or_else(|| AdoAuthError::BrowserLogin("Callback OAuth sans state.".into()))?;
+        .ok_or_else(|| AdoAuthError::BrowserLogin("OAuth callback is missing state.".into()))?;
     if state.as_ref() != expected_state {
         return Err(AdoAuthError::BrowserLogin(
-            "Callback OAuth state invalide.".into(),
+            "Invalid OAuth callback state.".into(),
         ));
     }
     let code = query
         .get("code")
-        .ok_or_else(|| AdoAuthError::BrowserLogin("Callback OAuth sans code.".into()))?;
+        .ok_or_else(|| AdoAuthError::BrowserLogin("OAuth callback is missing code.".into()))?;
     Ok(BrowserCallback {
         code: code.to_string(),
     })
@@ -197,7 +197,7 @@ async fn exchange_authorization_code(
         .map_err(|error| AdoAuthError::BrowserLogin(error.to_string()))?;
     serde_json::from_str::<OAuthTokenResponse>(&body).map_err(|error| {
         AdoAuthError::BrowserLogin(format!(
-            "Réponse token OAuth invalide: {error}. Body: {body}"
+            "Invalid OAuth token response: {error}. Body: {body}"
         ))
     })
 }
@@ -235,11 +235,11 @@ fn html_response(html: String) -> Response<std::io::Cursor<Vec<u8>>> {
 
 fn success_page() -> String {
     r#"<!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DevWorkflow connecté</title>
+  <title>DevWorkflow connected</title>
   <style>
     :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
@@ -252,9 +252,9 @@ fn success_page() -> String {
 </head>
 <body>
   <main>
-    <div class="top"><span>DevWorkflow</span><span>Connecté</span></div>
+    <div class="top"><span>DevWorkflow</span><span>Connected</span></div>
     <h1>Success.</h1>
-    <p>Vous pouvez fermer cet onglet.</p>
+    <p>You may close this tab.</p>
   </main>
 </body>
 </html>"#
@@ -263,7 +263,7 @@ fn success_page() -> String {
 
 fn error_page(message: &str) -> String {
     format!(
-        r#"<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DevWorkflow - erreur</title><style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#fff;color:#111;font-family:system-ui,sans-serif}}main{{width:min(90vw,520px);padding:36px;border:1px solid #111;background:#fff}}.top{{display:flex;justify-content:space-between;border-bottom:1px solid #111;padding-bottom:14px;text-transform:uppercase;letter-spacing:.1em;font-size:.78rem}}h1{{font-size:clamp(2.4rem,8vw,4.7rem);line-height:.92;letter-spacing:-.06em;margin:42px 0 10px;font-weight:650}}p{{color:#333;line-height:1.6}}</style></head><body><main><div class="top"><span>DevWorkflow</span><span>Erreur</span></div><h1>Failed.</h1><p>{}</p></main></body></html>"#,
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DevWorkflow - error</title><style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#fff;color:#111;font-family:system-ui,sans-serif}}main{{width:min(90vw,520px);padding:36px;border:1px solid #111;background:#fff}}.top{{display:flex;justify-content:space-between;border-bottom:1px solid #111;padding-bottom:14px;text-transform:uppercase;letter-spacing:.1em;font-size:.78rem}}h1{{font-size:clamp(2.4rem,8vw,4.7rem);line-height:.92;letter-spacing:-.06em;margin:42px 0 10px;font-weight:650}}p{{color:#333;line-height:1.6}}</style></head><body><main><div class="top"><span>DevWorkflow</span><span>Error</span></div><h1>Failed.</h1><p>{}</p></main></body></html>"#,
         html_escape(message)
     )
 }

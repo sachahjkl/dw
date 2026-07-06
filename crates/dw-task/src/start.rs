@@ -95,7 +95,7 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
     let projects = load_projects_config(root.as_str());
     let workflow = load_workflow_config(root.as_str());
     if args.work_item_ids.is_empty() {
-        anyhow::bail!("work-item-id requis pour construire un plan de démarrage task.");
+        anyhow::bail!("work-item-id is required to build a task start plan.");
     }
     let project = args.project.as_ref();
     let ado_context = if args.skip_ado {

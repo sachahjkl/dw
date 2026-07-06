@@ -119,15 +119,15 @@ impl fmt::Display for AuthTokenExpiration {
 pub fn auth_login_choices() -> Vec<AuthLoginChoice> {
     vec![
         AuthLoginChoice {
-            label: "Navigateur automatique (recommandé)",
+            label: "Automatic browser (recommended)",
             mode: AuthLoginMode::Browser,
         },
         AuthLoginChoice {
-            label: "Code appareil manuel",
+            label: "Manual device code",
             mode: AuthLoginMode::DeviceCode,
         },
         AuthLoginChoice {
-            label: "PAT via variable d'environnement",
+            label: "PAT from environment variable",
             mode: AuthLoginMode::EnvironmentPat,
         },
     ]
@@ -216,7 +216,7 @@ mod tests {
     fn auth_login_choices_keep_browser_first() {
         let choices = auth_login_choices();
 
-        assert_eq!(choices[0].label, "Navigateur automatique (recommandé)");
+        assert_eq!(choices[0].label, "Automatic browser (recommended)");
         assert!(matches!(choices[0].mode, AuthLoginMode::Browser));
     }
 

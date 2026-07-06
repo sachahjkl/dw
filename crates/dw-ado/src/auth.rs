@@ -58,17 +58,17 @@ pub struct DeviceLoginInstructions {
 
 #[derive(Debug, Error)]
 pub enum AdoAuthError {
-    #[error("Auth ADO non configurée. Renseigner auth dans workflow.json ou définir DW_ADO_TOKEN.")]
+    #[error("ADO auth is not configured. Add auth to workflow.json or set DW_ADO_TOKEN.")]
     MissingConfig,
-    #[error("Token ADO indisponible. Lancer l'action de login auth ou définir DW_ADO_TOKEN.")]
+    #[error("ADO token unavailable. Run the auth login action or set DW_ADO_TOKEN.")]
     MissingToken,
-    #[error("OAuth Azure DevOps a échoué: {0}")]
+    #[error("Azure DevOps OAuth failed: {0}")]
     OAuth(String),
-    #[error("Stockage credentials OS indisponible: {0}")]
+    #[error("OS credential storage unavailable: {0}")]
     Keyring(String),
-    #[error("Connexion ADO expirée avant validation dans le navigateur.")]
+    #[error("ADO login expired before browser validation.")]
     LoginExpired,
-    #[error("Login navigateur impossible: {0}")]
+    #[error("Browser login failed: {0}")]
     BrowserLogin(String),
 }
 
@@ -95,10 +95,10 @@ pub async fn login_browser_interactive(
     let auth = auth.ok_or(AdoAuthError::MissingConfig)?;
     let token = auth_browser::login(&auth).await?;
     let refresh_token = token.refresh_token.as_deref().ok_or_else(|| {
-        AdoAuthError::BrowserLogin("Microsoft n'a pas renvoyé de refresh_token.".into())
+        AdoAuthError::BrowserLogin("Microsoft did not return a refresh_token.".into())
     })?;
     store_refresh_token(refresh_token)?;
-    Ok(oauth_token_result(token, "navigateur"))
+    Ok(oauth_token_result(token, "browser"))
 }
 
 pub async fn login_device_code(
@@ -120,7 +120,7 @@ pub async fn login_device_code(
     if let Some(refresh_token) = token.refresh_token.as_deref() {
         store_refresh_token(refresh_token)?;
     }
-    Ok(oauth_token_result(token, "code appareil"))
+    Ok(oauth_token_result(token, "device code"))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -325,7 +325,7 @@ async fn post_oauth_form<T: for<'de> Deserialize<'de>>(
     }
 
     serde_json::from_str::<T>(&body).map_err(|error| {
-        AdoAuthError::OAuth(format!("Réponse OAuth invalide: {error}. Body: {body}"))
+        AdoAuthError::OAuth(format!("Invalid OAuth response: {error}. Body: {body}"))
     })
 }
 

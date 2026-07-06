@@ -169,7 +169,7 @@ pub(crate) fn resolve_updates(workflow: &WorkflowConfig) -> Result<UpdateOptions
         string_property(value, "repository").unwrap_or_else(|| DEFAULT_REPOSITORY.into());
     if owner.trim().is_empty() || repository.trim().is_empty() {
         return Err(anyhow!(
-            "Configuration updates.owner / updates.repository manquante dans workflow.json."
+            "Missing updates.owner / updates.repository configuration in workflow.json."
         ));
     }
     Ok(UpdateOptions {
@@ -211,7 +211,7 @@ async fn get_latest_release(
         releases
             .into_iter()
             .next()
-            .ok_or_else(|| anyhow!("Aucune release GitHub trouvée."))
+            .ok_or_else(|| anyhow!("No GitHub release found."))
     } else {
         Ok(serde_json::from_str(&body)?)
     }
@@ -226,13 +226,13 @@ async fn download_manifest(
         .assets
         .iter()
         .find(|asset| asset.name.eq_ignore_ascii_case(asset_name.as_str()))
-        .ok_or_else(|| anyhow!("Asset release introuvable: {asset_name}"))?;
+        .ok_or_else(|| anyhow!("Release asset not found: {asset_name}"))?;
     let response = client.get(&asset.browser_download_url).send().await?;
     let status = response.status().as_u16();
     let body = response.text().await?;
     if !(200..300).contains(&status) {
         return Err(anyhow!(
-            "Téléchargement release.json impossible HTTP {status}: {body}"
+            "Could not download release.json HTTP {status}: {body}"
         ));
     }
     Ok(serde_json::from_str(&body)?)
@@ -253,10 +253,10 @@ async fn run_upgrade(
         .assets
         .iter()
         .find(|asset| asset.rid.eq_ignore_ascii_case(rid.as_str()))
-        .ok_or_else(|| anyhow!("Aucun asset pour RID {rid}."))?;
+        .ok_or_else(|| anyhow!("No asset for RID {rid}."))?;
     if asset.url.trim().is_empty() {
         return Err(anyhow!(
-            "release.json doit contenir assets[].url pour télécharger un asset."
+            "release.json must contain assets[].url to download an asset."
         ));
     }
     let executable_path = std::env::current_exe()?;
@@ -281,7 +281,7 @@ async fn run_upgrade(
     if !hash.eq_ignore_ascii_case(&asset.sha256) {
         let _ = fs::remove_file(&temp_asset);
         return Err(anyhow!(
-            "SHA256 invalide pour {}. Attendu {}, obtenu {}.",
+            "Invalid SHA256 for {}. Expected {}, got {}.",
             temp_asset.display(),
             asset.sha256,
             hash
@@ -357,7 +357,7 @@ async fn download_asset(
     let status = response.status().as_u16();
     let total = response.content_length().map(ByteCount::from);
     if !(200..300).contains(&status) {
-        return Err(anyhow!("Téléchargement upgrade impossible HTTP {status}."));
+        return Err(anyhow!("Could not download upgrade HTTP {status}."));
     }
     let path = std::env::temp_dir().join(format!(
         "dw-upgrade-{}{}",
@@ -423,7 +423,7 @@ fn extract_windows_executable(archive_path: &Path) -> Result<PathBuf> {
             ensure_windows_executable(&destination, entry.name())?;
             return Ok(destination.clone());
         }
-        Err(anyhow!("Archive upgrade invalide: dw.exe introuvable."))
+        Err(anyhow!("Invalid upgrade archive: dw.exe not found."))
     })();
     let _ = fs::remove_file(archive_path);
     if result.is_err() {
@@ -454,7 +454,7 @@ fn extract_unix_executable(archive_path: &Path, rid: &str) -> Result<PathBuf> {
             ensure_unix_executable(&destination, "dw", rid)?;
             return Ok(destination.clone());
         }
-        Err(anyhow!("Archive upgrade invalide: dw introuvable."))
+        Err(anyhow!("Invalid upgrade archive: dw not found."))
     })();
     let _ = fs::remove_file(archive_path);
     if result.is_err() {
@@ -469,7 +469,7 @@ fn ensure_windows_executable(path: &Path, display_name: &str) -> Result<()> {
     if signature != WINDOWS_PE_SIGNATURE {
         let _ = fs::remove_file(path);
         return Err(anyhow!(
-            "Asset upgrade invalide: {display_name} n'est pas un exécutable Windows."
+            "Invalid upgrade asset: {display_name} is not a Windows executable."
         ));
     }
     Ok(())
@@ -478,13 +478,13 @@ fn ensure_windows_executable(path: &Path, display_name: &str) -> Result<()> {
 fn ensure_unix_executable(path: &Path, display_name: &str, rid: &str) -> Result<()> {
     if rid.starts_with("win-") {
         return Err(anyhow!(
-            "Asset upgrade invalide: {display_name} n'est pas un exécutable Windows."
+            "Invalid upgrade asset: {display_name} is not a Windows executable."
         ));
     }
     if !fs::metadata(path)?.is_file() {
         let _ = fs::remove_file(path);
         return Err(anyhow!(
-            "Asset upgrade invalide: {display_name} n'est pas un fichier."
+            "Invalid upgrade asset: {display_name} is not a file."
         ));
     }
     #[cfg(unix)]
@@ -539,7 +539,7 @@ fn replace_windows_executable(
     fs::write(&script, script_content)?;
     if !script.is_file() {
         return Err(anyhow!(
-            "Script de remplacement Windows introuvable après création: {}",
+            "Windows replacement script not found after creation: {}",
             script.display()
         ));
     }
@@ -552,7 +552,7 @@ fn replace_windows_executable(
         .spawn()
         .map_err(|error| {
             anyhow!(
-                "Impossible de lancer le script de remplacement Windows {} via {}: {error}",
+                "Could not launch Windows replacement script {} via {}: {error}",
                 script.display(),
                 PathBuf::from(&command).display()
             )
@@ -624,7 +624,7 @@ pub(crate) fn ensure_supported_host(executable_path: Option<&Path>) -> Result<()
         .is_some_and(|path| path.contains("/nix/store/"))
     {
         return Err(anyhow!(
-            "Auto-update indisponible pour une installation Nix. Utiliser un rafraîchissement Nix explicite ou une mise à jour de profil Nix."
+            "Auto-update is unavailable for Nix installations. Use an explicit Nix refresh or Nix profile update."
         ));
     }
     Ok(())
@@ -715,7 +715,7 @@ mod tests {
         let error = ensure_supported_host(Some(Path::new("/nix/store/hash-dw/bin/dw")))
             .expect_err("nix path should fail");
 
-        assert!(error.to_string().contains("Auto-update indisponible"));
+        assert!(error.to_string().contains("Auto-update is unavailable"));
     }
 
     #[test]
@@ -816,7 +816,7 @@ mod tests {
         let error = prepare_replacement_executable("dw-win-x64.zip", &path, "win-x64")
             .expect_err("zip without dw.exe should fail");
 
-        assert!(error.to_string().contains("dw.exe introuvable"));
+        assert!(error.to_string().contains("dw.exe not found"));
         assert!(!path.exists());
     }
 
@@ -827,11 +827,7 @@ mod tests {
         let error = prepare_replacement_executable("dw-win-x64.zip", &path, "win-x64")
             .expect_err("invalid dw.exe should fail");
 
-        assert!(
-            error
-                .to_string()
-                .contains("n'est pas un exécutable Windows")
-        );
+        assert!(error.to_string().contains("is not a Windows executable"));
         assert!(!path.exists());
     }
 

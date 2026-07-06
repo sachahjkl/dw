@@ -34,7 +34,7 @@ pub enum SecretStorage {
 impl fmt::Display for SecretStorage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SystemKeyring => formatter.write_str("keyring système"),
+            Self::SystemKeyring => formatter.write_str("system keyring"),
         }
     }
 }

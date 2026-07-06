@@ -39,7 +39,7 @@ pub(crate) fn resolve_profile(name: &str) -> std::io::Result<InitProfile> {
         }),
         _ => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("Profil init inconnu: {name}. Profils disponibles: business, default."),
+            format!("Unknown init profile: {name}. Available profiles: business, default."),
         )),
     }
 }

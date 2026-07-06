@@ -1,10 +1,12 @@
 use anyhow::Result;
+pub use dw_core::DwActionEvent;
 use dw_core::{
-    Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
-    EnvironmentVariableName, ProjectKey, RuntimeIdentifier, SecretKey, SecretValue,
-    TaskActionEvent, WorkItemId,
+    Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, EnvironmentVariableName, InputRequest,
+    InputResponse, ProjectKey, PromptChoice, PromptChoiceValue, PromptKind, PromptSpec,
+    RuntimeIdentifier, SecretKey, SecretValue, TaskActionEvent, WorkItemId,
+    WorkspaceRepositoryName,
 };
-use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone)]
@@ -96,10 +98,11 @@ pub enum DwActionRequest {
     },
     SecretSet {
         key: SecretKey,
-        value: SecretValue,
+        value: Option<SecretValue>,
     },
     SecretDelete {
         key: SecretKey,
+        confirmed: bool,
     },
     Upgrade {
         check: bool,
@@ -232,7 +235,21 @@ pub enum UpgradeActionResult {
 
 pub struct DwActionRun {
     pub events: UnboundedReceiver<DwActionEvent>,
+    pub input: DwActionInput,
     pub result: JoinHandle<Result<DwActionResult>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DwActionInput {
+    sender: UnboundedSender<InputResponse>,
+}
+
+impl DwActionInput {
+    pub fn respond(&self, response: InputResponse) -> Result<()> {
+        self.sender
+            .send(response)
+            .map_err(|_| anyhow::anyhow!("action is no longer waiting for input"))
+    }
 }
 
 pub fn spawn_action(request: DwActionRequest) -> DwActionRun {
@@ -244,14 +261,19 @@ pub fn spawn_action(request: DwActionRequest) -> DwActionRun {
 
 fn spawn_callback_action(request: DwActionRequest) -> DwActionRun {
     let (sender, receiver) = mpsc::unbounded_channel();
+    let (input_sender, mut input_receiver) = mpsc::unbounded_channel();
+    let input = DwActionInput {
+        sender: input_sender,
+    };
     let result = tokio::spawn(async move {
-        run_action(request, |event| {
+        let mut emit = |event| {
             let _ = sender.send(event);
-        })
-        .await
+        };
+        run_action_inner(request, &mut emit, Some(&mut input_receiver)).await
     });
     DwActionRun {
         events: receiver,
+        input,
         result,
     }
 }
@@ -259,6 +281,7 @@ fn spawn_callback_action(request: DwActionRequest) -> DwActionRun {
 fn spawn_upgrade_action(check: bool, rid: Option<RuntimeIdentifier>) -> DwActionRun {
     let upgrade = dw_upgrade::spawn_upgrade(check, rid);
     let (sender, receiver) = mpsc::unbounded_channel();
+    let (input_sender, _input_receiver) = mpsc::unbounded_channel();
     let result = tokio::spawn(async move {
         let mut upgrade_events = upgrade.events;
         while let Some(event) = upgrade_events.recv().await {
@@ -269,6 +292,9 @@ fn spawn_upgrade_action(check: bool, rid: Option<RuntimeIdentifier>) -> DwAction
     });
     DwActionRun {
         events: receiver,
+        input: DwActionInput {
+            sender: input_sender,
+        },
         result,
     }
 }
@@ -276,6 +302,14 @@ fn spawn_upgrade_action(check: bool, rid: Option<RuntimeIdentifier>) -> DwAction
 pub async fn run_action(
     request: DwActionRequest,
     mut emit: impl FnMut(DwActionEvent),
+) -> Result<DwActionResult> {
+    run_action_inner(request, &mut emit, None).await
+}
+
+async fn run_action_inner(
+    request: DwActionRequest,
+    emit: &mut impl FnMut(DwActionEvent),
+    mut input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
 ) -> Result<DwActionResult> {
     match request {
         DwActionRequest::Version => Ok(DwActionResult::App(AppActionResult::Version {
@@ -439,6 +473,7 @@ pub async fn run_action(
             dw_task::open::resolve_open_launch_async(args).await?,
         ))),
         DwActionRequest::TaskStart(args) => {
+            let args = resolve_task_start_input(args, emit, input_receiver.as_deref_mut()).await?;
             let plan = dw_task::start::start_plan(args.clone()).await?;
             if args.mode.executes() {
                 Ok(task_result(TaskActionResult::StartExecution(
@@ -608,12 +643,23 @@ pub async fn run_action(
                 dw_secret::command::set_secret(&key, &secret)?,
             )))
         }
-        DwActionRequest::SecretSet { key, value } => Ok(DwActionResult::Secret(
-            SecretActionResult::Set(dw_secret::command::set_secret(&key, &value)?),
-        )),
-        DwActionRequest::SecretDelete { key } => Ok(DwActionResult::Secret(
-            SecretActionResult::Delete(dw_secret::command::delete_secret_key(&key)?),
-        )),
+        DwActionRequest::SecretSet { key, value } => {
+            let value = match value {
+                Some(value) => value,
+                None => request_secret_value(&key, emit, input_receiver.as_deref_mut()).await?,
+            };
+            Ok(DwActionResult::Secret(SecretActionResult::Set(
+                dw_secret::command::set_secret(&key, &value)?,
+            )))
+        }
+        DwActionRequest::SecretDelete { key, confirmed } => {
+            if !confirmed {
+                confirm_secret_delete(&key, emit, input_receiver).await?;
+            }
+            Ok(DwActionResult::Secret(SecretActionResult::Delete(
+                dw_secret::command::delete_secret_key(&key)?,
+            )))
+        }
         DwActionRequest::Upgrade { check, rid } => {
             let report = dw_upgrade::handle_upgrade(check, rid).await?;
             Ok(DwActionResult::Upgrade(UpgradeActionResult::Report(report)))
@@ -621,6 +667,392 @@ pub async fn run_action(
     }
 }
 
+async fn resolve_task_start_input(
+    mut args: dw_task::start::StartArgs,
+    emit: &mut impl FnMut(DwActionEvent),
+    mut input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
+) -> Result<dw_task::start::StartArgs> {
+    if args.project.is_none() {
+        args.project =
+            request_task_start_project(&args, emit, input_receiver.as_deref_mut()).await?;
+    }
+
+    if args.repositories.is_empty() {
+        args.repositories =
+            request_task_start_repositories(&args, emit, input_receiver.as_deref_mut()).await?;
+    }
+
+    if !args.work_item_ids.is_empty() {
+        return Ok(args);
+    }
+
+    let work_item_id = if args.skip_ado {
+        request_work_item_text(emit, input_receiver.as_deref_mut()).await?
+    } else if let Some(project) = args.project.clone() {
+        let report = dw_ado_commands::commands::assigned::report(
+            dw_ado_commands::commands::assigned::AssignedArgs {
+                root: args.root.clone(),
+                project: Some(project),
+                top: 50,
+                all: false,
+                group_by_parent: false,
+            },
+        )
+        .await?;
+        resolve_work_item_id_from_assigned_report(&report, emit, input_receiver.as_deref_mut())
+            .await?
+    } else {
+        request_work_item_text(emit, input_receiver).await?
+    };
+    args.work_item_ids = vec![work_item_id];
+    Ok(args)
+}
+
+async fn request_task_start_project(
+    args: &dw_task::start::StartArgs,
+    emit: &mut impl FnMut(DwActionEvent),
+    input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
+) -> Result<Option<ProjectKey>> {
+    let root = dw_config::resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
+    let projects = dw_config::load_projects_config(&root);
+    let choices = dw_config::project_choices(&projects);
+    if choices.is_empty() {
+        return Ok(None);
+    }
+
+    let request = InputRequest::SelectOne {
+        id: "project".into(),
+        label: "Project".into(),
+        help: Some("Choose the ADO project for the task workspace".into()),
+        choices: choices
+            .iter()
+            .map(|choice| PromptChoice::new(choice.key.clone(), choice.to_string()))
+            .collect(),
+    };
+    match request_input(emit, input_receiver, request).await? {
+        InputResponse::SelectOne { value } => Ok(Some(ProjectKey::from(value.as_str()))),
+        response => anyhow::bail!("input response kind mismatch for project: {response:?}"),
+    }
+}
+
+async fn request_task_start_repositories(
+    args: &dw_task::start::StartArgs,
+    emit: &mut impl FnMut(DwActionEvent),
+    input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
+) -> Result<Vec<WorkspaceRepositoryName>> {
+    let Some(project) = args.project.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let root = dw_config::resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
+    let projects = dw_config::load_projects_config(&root);
+    let Some(project_config) = dw_config::resolve_project(&projects, project.as_str()) else {
+        return Ok(Vec::new());
+    };
+    let repositories = project_config
+        .repositories
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    if repositories.len() <= 1 {
+        return Ok(Vec::new());
+    }
+
+    let request = InputRequest::SelectMany {
+        id: "repositories".into(),
+        label: "Repositories".into(),
+        help: Some("Leave empty to include every configured repository".into()),
+        choices: repositories
+            .into_iter()
+            .map(|repository| PromptChoice::new(repository.clone(), repository))
+            .collect(),
+    };
+    match request_input(emit, input_receiver, request).await? {
+        InputResponse::SelectMany { values } => Ok(values
+            .into_iter()
+            .map(|value| WorkspaceRepositoryName::from(value.as_str()))
+            .collect()),
+        response => anyhow::bail!("input response kind mismatch for repositories: {response:?}"),
+    }
+}
+
+async fn request_secret_value(
+    key: &SecretKey,
+    emit: &mut impl FnMut(DwActionEvent),
+    input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
+) -> Result<SecretValue> {
+    let request = InputRequest::Secret {
+        id: format!("secret-set:{key}").into(),
+        label: format!("Secret value for `{key}`"),
+        help: Some("Hidden input; value is sent only to the central action runtime".into()),
+    };
+    match request_input(emit, input_receiver, request).await? {
+        InputResponse::Secret { value } => Ok(SecretValue::from(value)),
+        response => anyhow::bail!("input response kind mismatch for secret `{key}`: {response:?}"),
+    }
+}
+
+async fn confirm_secret_delete(
+    key: &SecretKey,
+    emit: &mut impl FnMut(DwActionEvent),
+    input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
+) -> Result<()> {
+    let request = InputRequest::Confirm {
+        id: format!("secret-delete:{key}").into(),
+        label: format!("Delete secret `{key}` from the system keyring?"),
+        help: Some("This removes the local entry if it exists.".into()),
+        default: false,
+    };
+    match request_input(emit, input_receiver, request).await? {
+        InputResponse::Confirm { accepted: true } => Ok(()),
+        InputResponse::Confirm { accepted: false } => {
+            anyhow::bail!("Secret deletion canceled.")
+        }
+        response => anyhow::bail!("input response kind mismatch for secret `{key}`: {response:?}"),
+    }
+}
+
+async fn resolve_work_item_id_from_assigned_report(
+    report: &dw_ado_commands::commands::assigned::AssignedReport,
+    emit: &mut impl FnMut(DwActionEvent),
+    mut input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
+) -> Result<WorkItemId> {
+    if report.items.is_empty() {
+        return request_work_item_text(emit, input_receiver).await;
+    }
+
+    let spec = dw_ado_commands::commands::assigned::assigned_work_item_prompt_spec(&report.items);
+    let response = request_input(
+        emit,
+        input_receiver.as_deref_mut(),
+        input_request_from_prompt_spec(&spec),
+    )
+    .await?;
+    let InputResponse::SelectOne { value } = response else {
+        anyhow::bail!("input response kind mismatch for `{}`", spec.id);
+    };
+    if value.as_str() == dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE {
+        request_work_item_text(emit, input_receiver).await
+    } else {
+        Ok(WorkItemId::from(value.as_str()))
+    }
+}
+
+async fn request_work_item_text(
+    emit: &mut impl FnMut(DwActionEvent),
+    input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
+) -> Result<WorkItemId> {
+    let request = input_request_from_prompt_spec(&PromptSpec::text("work-item-id", "Work item ID"));
+    match request_input(emit, input_receiver, request).await? {
+        InputResponse::Text { value } => Ok(WorkItemId::from(value)),
+        response => anyhow::bail!("input response kind mismatch for work-item-id: {response:?}"),
+    }
+}
+
+async fn request_input(
+    emit: &mut impl FnMut(DwActionEvent),
+    input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
+    request: InputRequest,
+) -> Result<InputResponse> {
+    emit(DwActionEvent::NeedsInput {
+        request: request.clone(),
+    });
+    let Some(input_receiver) = input_receiver else {
+        anyhow::bail!(
+            "action requires input `{}` but this runtime has no input responder",
+            request.id()
+        );
+    };
+    let response = input_receiver.recv().await.ok_or_else(|| {
+        anyhow::anyhow!(
+            "action input `{}` was cancelled before a response",
+            request.id()
+        )
+    })?;
+    validate_input_response(&request, &response)?;
+    Ok(response)
+}
+
+fn input_request_from_prompt_spec(spec: &PromptSpec) -> InputRequest {
+    match spec.kind {
+        PromptKind::Confirm => InputRequest::Confirm {
+            id: spec.id.clone(),
+            label: spec.label.clone(),
+            help: spec.help.clone(),
+            default: false,
+        },
+        PromptKind::Select => InputRequest::SelectOne {
+            id: spec.id.clone(),
+            label: spec.label.clone(),
+            help: spec.help.clone(),
+            choices: spec.choices.clone(),
+        },
+        PromptKind::MultiSelect => InputRequest::SelectMany {
+            id: spec.id.clone(),
+            label: spec.label.clone(),
+            help: spec.help.clone(),
+            choices: spec.choices.clone(),
+        },
+        PromptKind::Text => InputRequest::Text {
+            id: spec.id.clone(),
+            label: spec.label.clone(),
+            help: spec.help.clone(),
+            default: None,
+        },
+    }
+}
+
+fn validate_input_response(request: &InputRequest, response: &InputResponse) -> Result<()> {
+    match (request, response) {
+        (InputRequest::Confirm { .. }, InputResponse::Confirm { .. })
+        | (InputRequest::Text { .. }, InputResponse::Text { .. })
+        | (InputRequest::Secret { .. }, InputResponse::Secret { .. }) => Ok(()),
+        (InputRequest::SelectOne { choices, .. }, InputResponse::SelectOne { value }) => {
+            validate_choice_value(request, choices, value)
+        }
+        (InputRequest::SelectMany { choices, .. }, InputResponse::SelectMany { values }) => {
+            for value in values {
+                validate_choice_value(request, choices, value)?;
+            }
+            Ok(())
+        }
+        _ => anyhow::bail!("input response kind mismatch for `{}`", request.id()),
+    }
+}
+
+fn validate_choice_value(
+    request: &InputRequest,
+    choices: &[dw_core::PromptChoice],
+    value: &PromptChoiceValue,
+) -> Result<()> {
+    if choices.iter().any(|choice| choice.value == *value) {
+        Ok(())
+    } else {
+        anyhow::bail!("invalid input choice `{value}` for `{}`", request.id())
+    }
+}
+
 fn task_result(result: TaskActionResult) -> DwActionResult {
     DwActionResult::Task(Box::new(result))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn request_input_emits_typed_request_and_waits_for_response() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        sender
+            .send(InputResponse::Text {
+                value: "55264".into(),
+            })
+            .expect("response channel should be open");
+        let request = InputRequest::Text {
+            id: "work-item-id".into(),
+            label: "Work item ID".into(),
+            help: None,
+            default: None,
+        };
+        let mut events = Vec::new();
+
+        let response = request_input(
+            &mut |event| events.push(event),
+            Some(&mut receiver),
+            request,
+        )
+        .await
+        .expect("text response should be accepted");
+
+        assert_eq!(
+            response,
+            InputResponse::Text {
+                value: "55264".into()
+            }
+        );
+        assert!(matches!(
+            events.as_slice(),
+            [DwActionEvent::NeedsInput {
+                request: InputRequest::Text { id, .. }
+            }] if id.as_str() == "work-item-id"
+        ));
+    }
+
+    #[tokio::test]
+    async fn request_input_rejects_select_value_outside_request_choices() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        sender
+            .send(InputResponse::SelectOne {
+                value: "unknown".into(),
+            })
+            .expect("response channel should be open");
+        let request = InputRequest::SelectOne {
+            id: "assigned-work-item".into(),
+            label: "Work item Azure DevOps".into(),
+            help: None,
+            choices: vec![dw_core::PromptChoice::new("55264", "#55264")],
+        };
+        let mut events = Vec::new();
+
+        let error = request_input(
+            &mut |event| events.push(event),
+            Some(&mut receiver),
+            request,
+        )
+        .await
+        .expect_err("unknown choice value should fail");
+
+        assert!(error.to_string().contains("invalid input choice"));
+        assert_eq!(events.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn secret_delete_confirmation_uses_duplex_input() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        sender
+            .send(InputResponse::Confirm { accepted: true })
+            .expect("response channel should be open");
+        let mut events = Vec::new();
+
+        confirm_secret_delete(
+            &SecretKey::from("db/password"),
+            &mut |event| events.push(event),
+            Some(&mut receiver),
+        )
+        .await
+        .expect("accepted confirmation should continue");
+
+        assert!(matches!(
+            events.as_slice(),
+            [DwActionEvent::NeedsInput {
+                request: InputRequest::Confirm { id, default: false, .. }
+            }] if id.as_str() == "secret-delete:db/password"
+        ));
+    }
+
+    #[tokio::test]
+    async fn secret_value_uses_hidden_duplex_input() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        sender
+            .send(InputResponse::Secret {
+                value: "s3cr3t".into(),
+            })
+            .expect("response channel should be open");
+        let mut events = Vec::new();
+
+        let value = request_secret_value(
+            &SecretKey::from("db/password"),
+            &mut |event| events.push(event),
+            Some(&mut receiver),
+        )
+        .await
+        .expect("secret input should be accepted");
+
+        assert_eq!(value, SecretValue::from("s3cr3t"));
+        assert!(matches!(
+            events.as_slice(),
+            [DwActionEvent::NeedsInput {
+                request: InputRequest::Secret { id, .. }
+            }] if id.as_str() == "secret-set:db/password"
+        ));
+    }
 }

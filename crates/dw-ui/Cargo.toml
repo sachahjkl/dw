@@ -8,3 +8,5 @@ repository.workspace = true
 
 [dependencies]
 anstyle.workspace = true
+dw-ado = { path = "../dw-ado" }
+dw-ado-commands = { path = "../dw-ado-commands" }

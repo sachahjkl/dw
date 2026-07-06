@@ -405,7 +405,7 @@ impl WorkspaceHandoffStatus {
             "done" => Ok(Self::Done),
             "blocked" => Ok(Self::Blocked),
             _ => Err(HandoffParseError::from(format!(
-                "status handoff invalide: {}. Attendus: {}.",
+                "invalid handoff status: {}. Expected: {}.",
                 value,
                 Self::allowed_values()
             ))),
@@ -483,35 +483,35 @@ impl fmt::Display for HandoffSummaryEntry {
 
 #[derive(Debug, Error)]
 pub enum WorkspaceError {
-    #[error("Manifest task introuvable: {0}")]
+    #[error("Task manifest not found: {0}")]
     MissingManifest(String),
-    #[error("Manifest task invalide: {0}")]
+    #[error("Invalid task manifest: {0}")]
     InvalidManifest(String),
-    #[error("Workspace introuvable: {0}")]
+    #[error("Workspace not found: {0}")]
     MissingWorkspace(String),
-    #[error("Aucun workspace task trouvé.")]
+    #[error("No task workspace found.")]
     NoWorkspaceFound,
-    #[error("Aucun workspace task trouvé depuis le dossier courant.")]
+    #[error("No task workspace found from the current directory.")]
     NoCurrentWorkspace,
-    #[error("Les deux sélections de work item doivent pointer vers le même work item.")]
+    #[error("Both work item selections must point to the same work item.")]
     ConflictingWorkItemSelection,
-    #[error("Repo absent du workspace: {0}")]
+    #[error("Repository missing from workspace: {0}")]
     MissingWorkspaceRepository(String),
-    #[error("Workspace déjà existant pour un des work items demandés: {0}")]
+    #[error("Workspace already exists for one of the requested work items: {0}")]
     WorkspaceConflict(String),
-    #[error("Fichier ai-context introuvable: {0}")]
+    #[error("ai-context file not found: {0}")]
     MissingAiContext(String),
-    #[error("Suppression workspace échouée [{repository}]: {message}")]
+    #[error("Workspace deletion failed [{repository}]: {message}")]
     TeardownFailed {
         repository: WorkspaceTeardownSubject,
         message: WorkspaceOperationError,
     },
-    #[error("Préparation worktree échouée [{repository}]: {message}")]
+    #[error("Worktree preparation failed [{repository}]: {message}")]
     WorktreePrepareFailed {
         repository: WorkspaceRepositoryName,
         message: WorkspaceOperationError,
     },
-    #[error("Impossible de retirer tous les work items du workspace.")]
+    #[error("Cannot remove all work items from the workspace.")]
     EmptyWorkItemSet,
 }
 
@@ -1362,7 +1362,7 @@ where
         if !Path::new(git_dir).exists() {
             return Err(WorkspaceError::TeardownFailed {
                 repository: step.subject.clone(),
-                message: WorkspaceOperationError::from(format!("gitDir introuvable {git_dir}")),
+                message: WorkspaceOperationError::from(format!("gitDir not found {git_dir}")),
             });
         }
         let WorkspaceTeardownAction::WorktreeRemove { worktree_path, .. } = &step.action else {
@@ -1952,11 +1952,11 @@ pub fn resolve_git_credential_from_keyring(
     };
     let store = KeyringSecretStore;
     let secret = store.get(secret_key).map_err(|error| {
-        WorkspaceOperationError::from(format!("Secret Git illisible `{secret_key}`: {error}"))
+        WorkspaceOperationError::from(format!("Could not read Git secret `{secret_key}`: {error}"))
     })?;
     let Some(secret) = secret else {
         return Err(WorkspaceOperationError::from(format!(
-            "Secret Git introuvable `{secret_key}`. Stocker le PAT avec `dw secret set {secret_key}` ou retirer gitCredentialSecret."
+            "Git secret not found `{secret_key}`. Store the PAT with `dw secret set {secret_key}` or remove gitCredentialSecret."
         )));
     };
     Ok(Some(GitCredential::personal_access_token(secret)))
@@ -1971,14 +1971,14 @@ pub fn try_parse_summary(
     let start = lines
         .iter()
         .position(|line| line.trim().eq_ignore_ascii_case("```yaml"))
-        .ok_or_else(|| HandoffParseError::from("bloc ```yaml absent"))?;
+        .ok_or_else(|| HandoffParseError::from("missing ```yaml block"))?;
     let end = lines
         .iter()
         .enumerate()
         .skip(start + 1)
         .find(|(_, line)| line.trim() == "```")
         .map(|(index, _)| index)
-        .ok_or_else(|| HandoffParseError::from("fin du bloc yaml absente"))?;
+        .ok_or_else(|| HandoffParseError::from("missing end of yaml block"))?;
 
     let mut status = String::new();
     let mut repository = String::new();
@@ -2013,19 +2013,19 @@ pub fn try_parse_summary(
         if indent == 2 {
             let Some(section) = current_section.clone() else {
                 return Err(HandoffParseError::from(format!(
-                    "section inconnue autour de '{trimmed}'"
+                    "unknown section around '{trimmed}'"
                 )));
             };
             let Some((key, value)) = split_key_value(trimmed) else {
                 return Err(HandoffParseError::from(format!(
-                    "cle inconnue dans {section}: '{trimmed}'"
+                    "unknown key in {section}: '{trimmed}'"
                 )));
             };
             let bucket = sections.get_mut(&section).ok_or_else(|| {
-                HandoffParseError::from(format!("section inconnue autour de '{trimmed}'"))
+                HandoffParseError::from(format!("unknown section around '{trimmed}'"))
             })?;
             let list = bucket.get_mut(&key).ok_or_else(|| {
-                HandoffParseError::from(format!("cle inconnue dans {section}: '{trimmed}'"))
+                HandoffParseError::from(format!("unknown key in {section}: '{trimmed}'"))
             })?;
             current_key = Some(key);
             if value != "[]" && !trim_scalar(&value).is_empty() {
@@ -2056,21 +2056,21 @@ pub fn try_parse_summary(
         }
 
         return Err(HandoffParseError::from(format!(
-            "ligne handoff non supportée: '{trimmed}'"
+            "unsupported handoff line: '{trimmed}'"
         )));
     }
 
     if status.trim().is_empty() {
-        return Err(HandoffParseError::from("status absent"));
+        return Err(HandoffParseError::from("missing status"));
     }
 
     if repository.trim().is_empty() {
-        return Err(HandoffParseError::from("repository absent"));
+        return Err(HandoffParseError::from("missing repository"));
     }
 
     if !repository.eq_ignore_ascii_case(expected_repository) {
         return Err(HandoffParseError::from(format!(
-            "repository attendu '{}', trouvé '{}'",
+            "expected repository '{}', found '{}'",
             expected_repository, repository
         )));
     }
@@ -2259,7 +2259,7 @@ fn reject_workspace_conflicts(
         .into_iter()
         .map(|(path, ids)| {
             format!(
-                "{} déjà présent(s) dans {}",
+                "{} already present in {}",
                 ids.iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
@@ -2462,7 +2462,7 @@ fn teardown_git_dir(step: &WorkspaceTeardownStep) -> Result<&str, WorkspaceError
     if git_dir.trim().is_empty() {
         return Err(WorkspaceError::TeardownFailed {
             repository: step.subject.clone(),
-            message: WorkspaceOperationError::from("gitDir manquant"),
+            message: WorkspaceOperationError::from("missing gitDir"),
         });
     }
 
@@ -2686,7 +2686,7 @@ artifacts:
 "#;
 
         let error = try_parse_summary(text, "front").expect_err("repository mismatch should fail");
-        assert!(error.to_string().contains("repository attendu 'front'"));
+        assert!(error.to_string().contains("expected repository 'front'"));
     }
 
     #[test]
@@ -2714,7 +2714,7 @@ artifacts:
 "#;
 
         let error = try_parse_summary(text, "front").expect_err("unsupported line should fail");
-        assert!(error.to_string().contains("ligne handoff non supportée"));
+        assert!(error.to_string().contains("unsupported handoff line"));
     }
 
     #[test]

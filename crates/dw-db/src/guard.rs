@@ -30,13 +30,13 @@ impl SqlGuardResult {
 
 pub fn validate_read_only_sql(sql: &str) -> SqlGuardResult {
     if sql.trim().is_empty() {
-        return SqlGuardResult::blocked("La requête SQL est vide.");
+        return SqlGuardResult::blocked("The SQL query is empty.");
     }
 
     let cleaned = strip_comments(sql).trim().to_string();
     if !starts_with_readonly_verb(&cleaned) {
         return SqlGuardResult::blocked(
-            "Seules les requêtes SELECT/WITH et l'introspection read-only sont autorisées.",
+            "Only SELECT/WITH queries and read-only introspection are allowed.",
         );
     }
 
@@ -44,7 +44,7 @@ pub fn validate_read_only_sql(sql: &str) -> SqlGuardResult {
     for token in FORBIDDEN_TOKENS {
         if contains_word(&lowered, token) {
             return SqlGuardResult::blocked(format!(
-                "Mot-cle SQL interdit en mode read-only: {}.",
+                "Forbidden SQL keyword in read-only mode: {}.",
                 token.to_uppercase()
             ));
         }

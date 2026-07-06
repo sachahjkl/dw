@@ -57,7 +57,7 @@ pub fn resolve_ado_options(
         }),
         (Some(options), None) | (None, Some(options)) => Ok(options),
         (None, None) => Err(anyhow::anyhow!(
-            "Configuration azureDevOps manquante pour {}.",
+            "Missing azureDevOps configuration for {}.",
             project_key
         )),
     }

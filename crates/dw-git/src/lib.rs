@@ -265,16 +265,16 @@ impl fmt::Display for GitAuthRemediation {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ConfigureHttpsCredential => formatter.write_str(
-                "Configurer gitCredentialSecret dans projects.json puis stocker le PAT avec dw secret set <key>, ou définir DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT, ou configurer un credential helper Git non interactif",
+                "Configure gitCredentialSecret in projects.json and store the PAT with dw secret set <key>, or set DW_ADO_TOKEN/AZURE_DEVOPS_EXT_PAT, or configure a non-interactive Git credential helper",
             ),
             Self::VerifyHttpsCredential => formatter.write_str(
-                "Vérifier que le PAT Git a accès au repository et qu'il n'est pas expiré",
+                "Verify that the Git PAT can access the repository and is not expired",
             ),
             Self::TrustSshHostKey => formatter.write_str(
-                "Précharger l'empreinte SSH hors de dw, par exemple avec ssh-keyscan/known_hosts ou une connexion ssh manuelle validée",
+                "Preload the SSH fingerprint outside dw, for example with ssh-keyscan/known_hosts or a validated manual ssh connection",
             ),
             Self::ConfigureSshKey => formatter.write_str(
-                "Charger une clé SSH valide dans l'agent ou configurer l'accès repository avant de relancer dw",
+                "Load a valid SSH key into the agent or configure repository access before rerunning dw",
             ),
         }
     }
@@ -283,24 +283,24 @@ impl fmt::Display for GitAuthRemediation {
 impl fmt::Display for GitAuthFailureKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::HttpsCredentialMissing => formatter.write_str("credential HTTPS Git manquant"),
-            Self::HttpsCredentialRejected => formatter.write_str("credential HTTPS Git refusé"),
-            Self::SshHostKeyMissing => formatter.write_str("empreinte SSH inconnue"),
-            Self::SshKeyUnavailable => formatter.write_str("clé SSH indisponible ou refusée"),
+            Self::HttpsCredentialMissing => formatter.write_str("missing Git HTTPS credential"),
+            Self::HttpsCredentialRejected => formatter.write_str("rejected Git HTTPS credential"),
+            Self::SshHostKeyMissing => formatter.write_str("unknown SSH fingerprint"),
+            Self::SshKeyUnavailable => formatter.write_str("SSH key unavailable or rejected"),
         }
     }
 }
 
 #[derive(Debug, Error)]
 pub enum GitError {
-    #[error("{kind}. {remediation}. Détail Git: {detail}")]
+    #[error("{kind}. {remediation}. Git detail: {detail}")]
     Authentication {
         kind: GitAuthFailureKind,
         remediation: GitAuthRemediation,
         detail: GitErrorDetail,
         invocation: GitOperationInvocation,
     },
-    #[error("Git {operation:?} a échoué: {detail}")]
+    #[error("Git {operation:?} failed: {detail}")]
     OperationFailed {
         operation: GitOperation,
         detail: GitErrorDetail,
@@ -410,7 +410,7 @@ pub fn update_repository(
     let source_branch = resolve_remote_source_branch(default_branch);
     rebase_current_branch(&repository, &source_branch).map_err(|error| {
         anyhow!(
-            "Conflit de rebase. Relancer manuellement avec: git -C \"{}\" fetch --prune origin puis git -C \"{}\" rebase {}. Cause: {}",
+            "Rebase conflict. Rerun manually with: git -C \"{}\" fetch --prune origin then git -C \"{}\" rebase {}. Cause: {}",
             repository_path,
             repository_path,
             source_branch,
@@ -645,7 +645,7 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
     .find(|candidate| anchor_repository.revparse_single(candidate).is_ok())
     .ok_or_else(|| {
         anyhow!(
-            "Branche de base introuvable: {}. Références testées: origin/{}, refs/heads/{}.",
+            "Base branch not found: {}. Tried references: origin/{}, refs/heads/{}.",
             request.default_branch,
             request.default_branch,
             request.default_branch
@@ -662,7 +662,7 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
             .and_then(|object| {
                 object
                     .into_commit()
-                    .map_err(|_| git2::Error::from_str("référence de base sans commit"))
+                    .map_err(|_| git2::Error::from_str("base reference is not a commit"))
             })
             .map_err(git2_command_error)?;
         anchor_repository
@@ -776,7 +776,7 @@ fn rebase_current_branch(
             let _ = rebase.abort();
             return Err(GitError::OperationFailed {
                 operation: GitOperation::Rebase,
-                detail: GitErrorDetail::new("Conflit de rebase"),
+                detail: GitErrorDetail::new("Rebase conflict"),
                 invocation: GitOperationInvocation {
                     operation: GitOperation::Rebase,
                     repository_path: None,
@@ -810,7 +810,7 @@ fn remote_callbacks(credential: Option<&GitCredential>) -> RemoteCallbacks<'_> {
         if let Some(username) = username_from_url {
             return Cred::ssh_key_from_agent(username);
         }
-        Err(git2::Error::from_str("credential HTTPS Git manquant"))
+        Err(git2::Error::from_str("missing Git HTTPS credential"))
     });
     callbacks
 }
@@ -939,7 +939,7 @@ fn classify_auth_failure(
         || normalized.contains("could not read username")
         || normalized.contains("could not read password")
         || normalized.contains("authentication failed")
-        || normalized.contains("credential https git manquant")
+        || normalized.contains("missing git https credential")
         || normalized.contains("authentication required")
     {
         return Some(if credential_was_available {

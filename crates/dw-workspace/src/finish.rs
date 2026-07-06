@@ -19,14 +19,14 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum TaskFinishError {
-    #[error("task finish bloqué: vérification échouée.")]
+    #[error("task finish blocked: verification failed.")]
     VerificationFailed,
-    #[error("Handoff manquant pour {repository}: {path}")]
+    #[error("Missing handoff for {repository}: {path}")]
     MissingHandoff {
         repository: WorkspaceRepositoryName,
         path: HandoffFilePath,
     },
-    #[error("Handoff invalide pour {repository}: {error}. Fichier: {path}")]
+    #[error("Invalid handoff for {repository}: {error}. File: {path}")]
     InvalidHandoff {
         repository: WorkspaceRepositoryName,
         error: HandoffParseError,

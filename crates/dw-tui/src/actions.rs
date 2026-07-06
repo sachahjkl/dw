@@ -314,13 +314,18 @@ pub fn selected_ado_action(
 
     Some(TuiAction {
         label: match action {
-            AdoItemAction::OpenAgent => {
-                format!("Open agent · #{}", item.id)
+            AdoItemAction::StartPreview => {
+                format!("Preview work item workspace · #{}", item.id)
             }
+            AdoItemAction::StartExecute => {
+                format!("Create work item workspace · #{}", item.id)
+            }
+            AdoItemAction::OpenAgent => format!("Open agent · #{}", item.id),
+            AdoItemAction::Context => format!("Show context · #{}", item.id),
+            AdoItemAction::WorkItem => format!("Show work item · #{}", item.id),
             AdoItemAction::SetStartState => {
                 format!("Move work item to ready state · #{}", item.id)
             }
-            _ => format!("Prepare work item · #{}", item.id),
         },
         request,
         description: format!("{} · {}", project.key, item.title),
@@ -597,6 +602,7 @@ mod tests {
             _ => panic!("expected task start request"),
         }
         assert!(matches!(action.kind, ActionRisk::Destructive));
+        assert!(action.label.contains("Create work item workspace"));
         assert!(!action.runs_attached_in_tui());
     }
 

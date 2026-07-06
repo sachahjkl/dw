@@ -24,21 +24,21 @@ pub struct QueryResult {
 
 #[derive(Debug, Error)]
 pub enum DbError {
-    #[error("Provider DB non supporté: {provider}")]
+    #[error("Unsupported DB provider: {provider}")]
     UnsupportedProvider { provider: DatabaseProvider },
-    #[error("Requête bloquée: {reason}")]
+    #[error("Query blocked: {reason}")]
     BlockedQuery { reason: SqlGuardReason },
     #[error(
-        "Connection string SQL introuvable. Renseigner connectionString, connectionStringEnvironmentVariable ou credentialKey."
+        "SQL connection string not found. Set connectionString, connectionStringEnvironmentVariable, or credentialKey."
     )]
     MissingConnectionString,
-    #[error("Secret SQL introuvable: {key}")]
+    #[error("SQL secret not found: {key}")]
     MissingSecret { key: SecretKey },
     #[error(transparent)]
     Secret(#[from] SecretError),
-    #[error("Timeout SQL après {seconds}s.")]
+    #[error("SQL timed out after {seconds}s.")]
     Timeout { seconds: u64 },
-    #[error("Erreur SQL: {0}")]
+    #[error("SQL error: {0}")]
     Sql(String),
 }
 
@@ -124,7 +124,7 @@ pub async fn query_sql_server(
         return Err(DbError::BlockedQuery {
             reason: guard
                 .reason
-                .unwrap_or_else(|| SqlGuardReason::from("raison inconnue")),
+                .unwrap_or_else(|| SqlGuardReason::from("unknown reason")),
         });
     }
 
@@ -357,7 +357,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("Secret SQL introuvable: db/missing")
+                .contains("SQL secret not found: db/missing")
         );
     }
 }

@@ -10,7 +10,7 @@ async fn main() {
             Ok(()) => {}
             Err(error) if is_broken_pipe_error(&error) => {}
             Err(error) => {
-                eprintln!("Erreur: {error}");
+                eprintln!("Error: {error}");
                 std::process::exit(1);
             }
         },

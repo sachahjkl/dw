@@ -84,14 +84,14 @@ pub fn get_work_item_ids_from_pull_requests(
 ) -> Result<Vec<WorkItemId>, AdoError> {
     if repositories.is_empty() {
         return Err(AdoError::InvalidInput(
-            "Le mode PR requiert un repository explicite, ou un projet avec des repositories AzureDevOpsRepository configurés.".into(),
+            "PR mode requires an explicit repository, or a project with configured AzureDevOpsRepository entries.".into(),
         ));
     }
 
     let mut ids = Vec::new();
     for pull_request_id in pull_request_ids {
         let numeric_pull_request_id = pull_request_id.as_str().parse::<i64>().map_err(|_| {
-            AdoError::InvalidInput(format!("ID de pull request invalide: {pull_request_id}"))
+            AdoError::InvalidInput(format!("Invalid pull request ID: {pull_request_id}"))
         })?;
         let mut matches = Vec::new();
         for repository in repositories {
@@ -108,14 +108,14 @@ pub fn get_work_item_ids_from_pull_requests(
         match matches.len() {
             0 => {
                 return Err(AdoError::Request(format!(
-                    "Pull request #{pull_request_id} introuvable dans les repos Azure DevOps testés: {}",
+                    "Pull request #{pull_request_id} was not found in tested Azure DevOps repos: {}",
                     repositories.join(", ")
                 )));
             }
             1 => ids.extend(matches.remove(0).1),
             _ => {
                 return Err(AdoError::InvalidInput(format!(
-                    "Pull request #{pull_request_id} trouvée dans plusieurs repos ({}). Préciser le repository.",
+                    "Pull request #{pull_request_id} was found in multiple repos ({}). Specify the repository.",
                     matches
                         .into_iter()
                         .map(|item| item.0)

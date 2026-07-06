@@ -77,11 +77,7 @@ fn check_known_config(path: &Path, required_properties: &[&str]) -> ConfigDoctor
         Err(message) => return doctor_check(path, false, Some(message)),
     };
     let Some(object) = json.as_object() else {
-        return doctor_check(
-            path,
-            false,
-            Some("la racine doit être un objet JSON".into()),
-        );
+        return doctor_check(path, false, Some("root must be a JSON object".into()));
     };
     let missing = required_properties
         .iter()
@@ -94,7 +90,7 @@ fn check_known_config(path: &Path, required_properties: &[&str]) -> ConfigDoctor
         doctor_check(
             path,
             false,
-            Some(format!("propriétés manquantes: {}", missing.join(", "))),
+            Some(format!("missing properties: {}", missing.join(", "))),
         )
     }
 }
@@ -113,7 +109,7 @@ fn check_exists(path: &Path) -> ConfigDoctorCheck {
         if path.exists() {
             None
         } else {
-            Some("fichier manquant".into())
+            Some("missing file".into())
         },
     )
 }

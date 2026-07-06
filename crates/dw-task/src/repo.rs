@@ -312,7 +312,7 @@ pub fn execute_teardown(plan: &TeardownPlanReport) -> Result<TeardownExecutionRe
     let workspace = plan
         .workspace
         .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Aucun workspace task trouvé."))?;
+        .ok_or_else(|| anyhow::anyhow!("No task workspace found."))?;
     execute_task_teardown(workspace, &plan.steps, |operation| match operation {
         WorkspaceGitOperation::WorktreeRemove {
             git_dir,

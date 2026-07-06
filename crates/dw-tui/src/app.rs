@@ -1,7 +1,10 @@
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+use dw_core::{InputRequest, InputResponse, PromptChoiceValue};
 use ratatui::{Terminal, backend::CrosstermBackend};
+use std::collections::BTreeSet;
 use std::io;
+use std::sync::mpsc::Sender;
 use std::time::Duration;
 
 use crate::actions::{
@@ -92,6 +95,86 @@ impl MenuSection {
     }
 }
 
+pub struct TuiInputPrompt {
+    pub run_id: ActionRunId,
+    pub request: InputRequest,
+    pub value: String,
+    pub selected: usize,
+    pub selected_many: BTreeSet<usize>,
+    response: Option<Sender<InputResponse>>,
+}
+
+impl TuiInputPrompt {
+    fn new(run_id: ActionRunId, request: InputRequest, response: Sender<InputResponse>) -> Self {
+        Self {
+            run_id,
+            request,
+            value: String::new(),
+            selected: 0,
+            selected_many: BTreeSet::new(),
+            response: Some(response),
+        }
+    }
+
+    fn move_up(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
+    }
+
+    fn move_down(&mut self) {
+        let max = match &self.request {
+            InputRequest::SelectOne { choices, .. } | InputRequest::SelectMany { choices, .. } => {
+                choices.len().saturating_sub(1)
+            }
+            _ => 0,
+        };
+        self.selected = (self.selected + 1).min(max);
+    }
+
+    fn toggle_selected(&mut self) {
+        if matches!(self.request, InputRequest::SelectMany { .. })
+            && !self.selected_many.remove(&self.selected)
+        {
+            self.selected_many.insert(self.selected);
+        }
+    }
+
+    fn input_response(&self, accepted: bool) -> InputResponse {
+        match &self.request {
+            InputRequest::Confirm { .. } => InputResponse::Confirm { accepted },
+            InputRequest::SelectOne { choices, .. } => InputResponse::SelectOne {
+                value: choices
+                    .get(self.selected)
+                    .map(|choice| choice.value.clone())
+                    .unwrap_or_else(|| PromptChoiceValue::from("")),
+            },
+            InputRequest::SelectMany { choices, .. } => InputResponse::SelectMany {
+                values: self
+                    .selected_many
+                    .iter()
+                    .filter_map(|index| choices.get(*index))
+                    .map(|choice| choice.value.clone())
+                    .collect(),
+            },
+            InputRequest::Text { .. } => InputResponse::Text {
+                value: self.value.clone(),
+            },
+            InputRequest::Secret { .. } => InputResponse::Secret {
+                value: self.value.clone(),
+            },
+        }
+    }
+
+    fn answer(&mut self, accepted: bool) -> Result<()> {
+        let message = self.input_response(accepted);
+        let Some(response) = self.response.take() else {
+            return Ok(());
+        };
+        response
+            .send(message)
+            .map_err(|_| anyhow::anyhow!("Action stopped before receiving input"))
+    }
+}
+
 pub struct App {
     pub snapshot: TuiSnapshot,
     pub root_override: Option<String>,
@@ -108,6 +191,7 @@ pub struct App {
     pub filter: String,
     pub filter_active: bool,
     pub confirmation: Option<TuiAction>,
+    pub input_prompt: Option<TuiInputPrompt>,
     pub form: Option<FormState>,
     pub action_form: FormState,
     pub options_open: bool,
@@ -147,7 +231,7 @@ impl App {
 
     #[cfg(test)]
     pub(crate) fn new_ready(root: Option<String>) -> Self {
-        let mut snapshot = TuiSnapshot::load(root.as_deref());
+        let mut snapshot = TuiSnapshot::loading(root.as_deref());
         snapshot.needs_init = false;
         Self::from_snapshot(
             root,
@@ -179,6 +263,7 @@ impl App {
             filter: String::new(),
             filter_active: false,
             confirmation: None,
+            input_prompt: None,
             form: None,
             action_form: FormState::selecting(),
             options_open: false,
@@ -236,6 +321,18 @@ impl App {
                 } => {
                     if self.background.accepts_action_output(generation) {
                         self.history.append_running_event(run_id, event);
+                    }
+                }
+                BackgroundResult::ActionInput {
+                    generation,
+                    run_id,
+                    request,
+                    response,
+                } => {
+                    if self.background.accepts_action_output(generation) {
+                        self.messages
+                            .push(format!("Input required: {}", request.id()));
+                        self.input_prompt = Some(TuiInputPrompt::new(run_id, request, response));
                     }
                 }
                 BackgroundResult::Action {
@@ -609,6 +706,10 @@ impl App {
             return self.handle_init_required_key(key, terminal).await;
         }
 
+        if self.input_prompt.is_some() {
+            return self.handle_input_prompt_key(key);
+        }
+
         if self.form.is_some() {
             return self.handle_form_key(key, terminal).await;
         }
@@ -677,6 +778,54 @@ impl App {
             } else {
                 self.request_or_run_selected_action(terminal).await?;
             }
+        }
+        Ok(())
+    }
+
+    fn handle_input_prompt_key(&mut self, key: KeyEvent) -> Result<()> {
+        let Some(prompt) = self.input_prompt.as_mut() else {
+            return Ok(());
+        };
+        match key.code {
+            KeyCode::Esc => {
+                prompt.answer(false)?;
+                self.input_prompt = None;
+                self.messages.push("Input canceled.".into());
+            }
+            KeyCode::Enter => {
+                prompt.answer(true)?;
+                self.input_prompt = None;
+                self.messages.push("Input sent.".into());
+            }
+            KeyCode::Char('y') | KeyCode::Char('Y')
+                if matches!(prompt.request, InputRequest::Confirm { .. }) =>
+            {
+                prompt.answer(true)?;
+                self.input_prompt = None;
+                self.messages.push("Confirmation sent.".into());
+            }
+            KeyCode::Char('n') | KeyCode::Char('N')
+                if matches!(prompt.request, InputRequest::Confirm { .. }) =>
+            {
+                prompt.answer(false)?;
+                self.input_prompt = None;
+                self.messages.push("Confirmation declined.".into());
+            }
+            KeyCode::Up | KeyCode::Char('k') => prompt.move_up(),
+            KeyCode::Down | KeyCode::Char('j') => prompt.move_down(),
+            KeyCode::Char(' ') => prompt.toggle_selected(),
+            KeyCode::Backspace => {
+                prompt.value.pop();
+            }
+            KeyCode::Char(value)
+                if matches!(
+                    prompt.request,
+                    InputRequest::Text { .. } | InputRequest::Secret { .. }
+                ) =>
+            {
+                prompt.value.push(value);
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -3474,7 +3623,7 @@ mod tests {
 
     #[test]
     fn snapshot_reload_summary_includes_operational_counts() {
-        let mut snapshot = TuiSnapshot::load(Some("/tmp/missing-dw-root"));
+        let mut snapshot = TuiSnapshot::loading(Some("/tmp/missing-dw-root"));
         snapshot.workspaces = vec![workspace("/tmp/ws-one", "one")];
         snapshot
             .databases

@@ -143,7 +143,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "config.show",
         domain: ActionDomain::Config,
         label: "Config show",
-        description: "Afficher chemins et réglages effectifs",
+        description: "Show effective paths and settings",
         risk: ActionRisk::ReadOnly,
         refresh_after_success: false,
     },
@@ -151,7 +151,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "config.doctor",
         domain: ActionDomain::Config,
         label: "Config doctor",
-        description: "Valider les fichiers de configuration",
+        description: "Validate configuration files",
         risk: ActionRisk::ReadOnly,
         refresh_after_success: false,
     },
@@ -159,7 +159,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "ado.assigned",
         domain: ActionDomain::Ado,
         label: "ADO assigned",
-        description: "Lister les work items assignés",
+        description: "List assigned work items",
         risk: ActionRisk::ReadOnly,
         refresh_after_success: false,
     },
@@ -167,7 +167,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "ado.set-state",
         domain: ActionDomain::Ado,
         label: "ADO set-state",
-        description: "Changer l'état de work items Azure DevOps",
+        description: "Change Azure DevOps work item state",
         risk: ActionRisk::Mutating,
         refresh_after_success: true,
     },
@@ -175,7 +175,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "db.query",
         domain: ActionDomain::Db,
         label: "DB query",
-        description: "Exécuter une requête SQL read-only",
+        description: "Run a read-only SQL query",
         risk: ActionRisk::ReadOnly,
         refresh_after_success: false,
     },
@@ -183,7 +183,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "task.start",
         domain: ActionDomain::Task,
         label: "Task start",
-        description: "Créer ou prévisualiser un workspace task",
+        description: "Create or preview a task workspace",
         risk: ActionRisk::Mutating,
         refresh_after_success: true,
     },
@@ -191,7 +191,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "task.finish",
         domain: ActionDomain::Task,
         label: "Task finish",
-        description: "Terminer un workspace task",
+        description: "Finish a task workspace",
         risk: ActionRisk::Mutating,
         refresh_after_success: true,
     },
@@ -199,7 +199,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "task.teardown",
         domain: ActionDomain::Task,
         label: "Task teardown",
-        description: "Supprimer un workspace task",
+        description: "Delete a task workspace",
         risk: ActionRisk::Destructive,
         refresh_after_success: true,
     },
@@ -207,7 +207,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         id: "agent.open",
         domain: ActionDomain::Agent,
         label: "Agent open",
-        description: "Ouvrir un workspace avec un agent externe",
+        description: "Open a workspace with an external agent",
         risk: ActionRisk::ExternalLaunch,
         refresh_after_success: false,
     },
@@ -415,6 +415,18 @@ pub enum InputRequest {
     },
 }
 
+impl InputRequest {
+    pub fn id(&self) -> &PromptId {
+        match self {
+            Self::Confirm { id, .. }
+            | Self::SelectOne { id, .. }
+            | Self::SelectMany { id, .. }
+            | Self::Text { id, .. }
+            | Self::Secret { id, .. } => id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InputResponse {
@@ -583,7 +595,7 @@ pub struct WorkItemStateParseError;
 
 impl fmt::Display for WorkItemStateParseError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("état work item vide")
+        formatter.write_str("empty work item state")
     }
 }
 
@@ -999,7 +1011,7 @@ pub struct ConfigColorModeParseError {
 
 impl fmt::Display for ConfigColorModeParseError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "mode couleur inconnu: {}", self.value)
+        write!(formatter, "unknown color mode: {}", self.value)
     }
 }
 
@@ -1118,7 +1130,7 @@ pub struct AgentParseError {
 
 impl fmt::Display for AgentParseError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "agent inconnu: {}", self.value)
+        write!(formatter, "unknown agent: {}", self.value)
     }
 }
 

@@ -219,11 +219,11 @@ pub async fn execute_finish_with_events(
     mut emit: impl FnMut(TaskActionEvent),
 ) -> Result<FinishExecutionReport> {
     if plan.create_pr && plan.skip_ado {
-        anyhow::bail!("La création de PR ne peut pas être combinée avec le mode sans ADO.");
+        anyhow::bail!("PR creation cannot be combined with ADO-less mode.");
     }
     if !plan.handoff.is_valid {
         anyhow::bail!(
-            "task finish bloqué: handoff invalide. Corriger ou compléter les handoffs avant push."
+            "task finish blocked: invalid handoff. Fix or complete handoffs before pushing."
         );
     }
 

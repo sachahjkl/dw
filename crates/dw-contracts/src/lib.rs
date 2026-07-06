@@ -193,7 +193,6 @@ pub struct AdoAiContextRelation {
     pub url: Option<String>,
     pub comment: Option<String>,
     pub artifact: Option<String>,
-    pub display: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

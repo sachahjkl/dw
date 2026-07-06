@@ -35,7 +35,7 @@ pub fn resolve_ado_options(
         }),
         (Some(options), None) | (None, Some(options)) => Ok(options),
         (None, None) => Err(anyhow::anyhow!(
-            "Configuration azureDevOps manquante pour {}.",
+            "Missing azureDevOps configuration for {}.",
             project_key
         )),
     }
@@ -58,7 +58,7 @@ pub fn resolve_cli_ado_options(
             resolve_ado_options(&projects, &workflow, &project)
         }
         _ => Err(anyhow::anyhow!(
-            "ado ai-context requiert un projet configuré, ou une organisation avec un projet explicite."
+            "ado ai-context requires a configured project, or an organization with an explicit project."
         )),
     }
 }

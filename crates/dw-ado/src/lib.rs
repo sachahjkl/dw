@@ -67,13 +67,13 @@ pub struct AuthStatus {
 pub enum AdoError {
     #[error("{0}")]
     InvalidInput(String),
-    #[error("Azure DevOps auth indisponible. Définir DW_ADO_TOKEN ou AZURE_DEVOPS_EXT_PAT.")]
+    #[error("Azure DevOps auth unavailable. Set DW_ADO_TOKEN or AZURE_DEVOPS_EXT_PAT.")]
     MissingAuth,
     #[error("Azure DevOps HTTP {status}: {body}")]
     Http { status: u16, body: String },
-    #[error("Azure DevOps requête échouée: {0}")]
+    #[error("Azure DevOps request failed: {0}")]
     Request(String),
-    #[error("Azure DevOps réponse JSON invalide: {0}")]
+    #[error("Invalid Azure DevOps JSON response: {0}")]
     Json(String),
 }
 

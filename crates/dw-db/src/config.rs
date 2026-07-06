@@ -109,12 +109,12 @@ pub struct DatabaseCatalogEntry {
 
 #[derive(Debug, Error)]
 pub enum DbConfigError {
-    #[error("Base introuvable dans databases.json: {project}/{database}")]
+    #[error("Database not found in databases.json: {project}/{database}")]
     MissingDatabase {
         project: ProjectKey,
         database: DatabaseKey,
     },
-    #[error("Exécution SQL refusée: readonly doit rester true.")]
+    #[error("SQL execution refused: readonly must stay true.")]
     ReadOnlyRequired,
 }
 

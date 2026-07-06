@@ -106,12 +106,6 @@ fn parse_relation(relation: &Value) -> AdoAiContextRelation {
         .and_then(|value| clean_text(Some(value)));
     let work_item_id = url.as_deref().and_then(work_item_id_from_relation_url);
     let kind = relation_kind(rel.as_deref(), work_item_id.as_deref(), url.as_deref());
-    let display = describe_relation_target(
-        rel.as_deref(),
-        work_item_id.as_deref(),
-        name.as_deref(),
-        url.as_deref(),
-    );
 
     AdoAiContextRelation {
         kind: kind.into(),
@@ -121,7 +115,6 @@ fn parse_relation(relation: &Value) -> AdoAiContextRelation {
         url,
         comment,
         artifact: None,
-        display,
     }
 }
 
@@ -150,24 +143,6 @@ fn relation_kind(rel: Option<&str>, related_id: Option<&str>, url: Option<&str>)
         return "artifact";
     }
     "relation"
-}
-
-fn describe_relation_target(
-    rel: Option<&str>,
-    related_id: Option<&str>,
-    name: Option<&str>,
-    url: Option<&str>,
-) -> String {
-    if let Some(related_id) = related_id {
-        return format!(
-            "#{related_id} {}",
-            name.unwrap_or(rel.unwrap_or("(relation)"))
-        );
-    }
-    if rel.is_some_and(|value| value.contains("AttachedFile")) && name.is_some() && url.is_some() {
-        return format!("{} ({})", name.unwrap_or_default(), url.unwrap_or_default());
-    }
-    name.or(url).unwrap_or("(url absente)").to_string()
 }
 
 fn distinct_relation_ids(relations: &[AdoAiContextRelation], kind: &str) -> Vec<WorkItemId> {

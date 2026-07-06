@@ -3,13 +3,14 @@ use crate::version::informational_version;
 use anyhow::Result;
 use dw_cli_adapter::{
     PromptUi, confirm_risk_prompt_spec, print_ado_action_output, print_db_action_output,
-    print_json, print_lines, project_prompt_spec, repositories_prompt_spec,
+    print_json, print_lines, project_prompt_spec,
 };
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
     DwActionEvent, EnvironmentVariableName, ExecutionMode, ExternalLaunchPlan, GitRevision,
-    ProjectKey, PromptChoiceValue, PromptKind, PromptSpec, PullRequestId, SecretKey, SecretValue,
-    TaskId, TaskSlug, WorkItemId, WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
+    InputRequest, InputResponse, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
+    PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId, WorkItemTypeName,
+    WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
@@ -32,7 +33,7 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
             if let dw_app::DwActionResult::Doctor(report) = result
                 && !report.passed()
             {
-                return Err(anyhow::anyhow!("doctor a détecté des points à corriger."));
+                return Err(anyhow::anyhow!("doctor found issues to fix."));
             }
         }
         Command::Init {
@@ -93,11 +94,15 @@ async fn execute_cli_action_with_event_output(
     print_events: bool,
 ) -> Result<dw_app::DwActionResult> {
     let action = dw_app::spawn_action(request);
+    let input = action.input.clone();
     let result = action.result;
     let mut events = action.events;
     while let Some(event) = events.recv().await {
         if print_events {
             print_cli_action_event(&event);
+        }
+        if let DwActionEvent::NeedsInput { request } = &event {
+            input.respond(prompt_cli_input(request)?)?;
         }
     }
     result.await?
@@ -111,6 +116,81 @@ fn print_cli_action_event(event: &DwActionEvent) {
         }
         DwActionEvent::Upgrade(event) => print_upgrade_event_line(event),
         _ => {}
+    }
+}
+
+fn prompt_cli_input(request: &InputRequest) -> Result<InputResponse> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "Action input `{}` requires an interactive terminal.",
+            request.id()
+        );
+    }
+    match request {
+        InputRequest::Confirm { label, default, .. } => Ok(InputResponse::Confirm {
+            accepted: Confirm::new(label).with_default(*default).prompt()?,
+        }),
+        InputRequest::SelectOne {
+            label,
+            help,
+            choices,
+            ..
+        } => {
+            let labels = choices
+                .iter()
+                .map(|choice| choice.label.clone())
+                .collect::<Vec<_>>();
+            let selected = Select::new(label, labels)
+                .with_help_message(help.as_deref().unwrap_or(""))
+                .prompt_skippable()?
+                .ok_or_else(|| anyhow::anyhow!("Selection canceled: {label}"))?;
+            let value = choices
+                .iter()
+                .find(|choice| choice.label == selected)
+                .map(|choice| choice.value.clone())
+                .ok_or_else(|| anyhow::anyhow!("Invalid selection: {label}"))?;
+            Ok(InputResponse::SelectOne { value })
+        }
+        InputRequest::SelectMany {
+            label,
+            help,
+            choices,
+            ..
+        } => {
+            let labels = choices
+                .iter()
+                .map(|choice| choice.label.clone())
+                .collect::<Vec<_>>();
+            let selected = MultiSelect::new(label, labels)
+                .with_help_message(help.as_deref().unwrap_or(""))
+                .prompt()?;
+            let values = selected
+                .iter()
+                .map(|selected| {
+                    choices
+                        .iter()
+                        .find(|choice| choice.label == *selected)
+                        .map(|choice| choice.value.clone())
+                        .ok_or_else(|| anyhow::anyhow!("Invalid selection: {label}"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(InputResponse::SelectMany { values })
+        }
+        InputRequest::Text { label, default, .. } => {
+            let mut prompt = Text::new(label);
+            if let Some(default) = default {
+                prompt = prompt.with_default(default);
+            }
+            Ok(InputResponse::Text {
+                value: prompt.prompt()?,
+            })
+        }
+        InputRequest::Secret { label, .. } => Ok(InputResponse::Secret {
+            value: Password::new(label)
+                .with_display_mode(PasswordDisplayMode::Hidden)
+                .without_confirmation()
+                .prompt()?,
+        }),
     }
 }
 
@@ -182,7 +262,7 @@ async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> 
 
     let report = match result.await?? {
         dw_app::DwActionResult::Upgrade(dw_app::UpgradeActionResult::Report(report)) => report,
-        result => anyhow::bail!("Résultat upgrade inattendu: {result:?}"),
+        result => anyhow::bail!("Unexpected upgrade result: {result:?}"),
     };
     print_lines(&dw_cli_adapter::render::upgrade_report_lines(&report));
     Ok(())
@@ -220,7 +300,7 @@ async fn handle_auth(command: AuthCommand) -> Result<()> {
     match command {
         AuthCommand::Login { root } => {
             let mode = Select::new(
-                "Mode de connexion Azure DevOps",
+                "Azure DevOps connection mode",
                 dw_ado_commands::auth::auth_login_choices(),
             )
             .prompt()?
@@ -243,7 +323,7 @@ async fn handle_auth(command: AuthCommand) -> Result<()> {
                         std::process::exit(1);
                     }
                 }
-                result => anyhow::bail!("Résultat auth status inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected auth status result: {result:?}"),
             }
         }
         AuthCommand::Logout { root } => {
@@ -283,9 +363,9 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 match result {
                     dw_app::DwActionResult::Task(result) => match result.as_ref() {
                         dw_app::TaskActionResult::List(report) => print_json(&report.items)?,
-                        result => anyhow::bail!("Résultat task list inattendu: {result:?}"),
+                        result => anyhow::bail!("Unexpected task list result: {result:?}"),
                     },
-                    result => anyhow::bail!("Résultat task list inattendu: {result:?}"),
+                    result => anyhow::bail!("Unexpected task list result: {result:?}"),
                 }
             } else {
                 run_cli_action(request).await?;
@@ -297,9 +377,9 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 match result {
                     dw_app::DwActionResult::Task(result) => match result.as_ref() {
                         dw_app::TaskActionResult::Current(report) => print_json(report)?,
-                        result => anyhow::bail!("Résultat task current inattendu: {result:?}"),
+                        result => anyhow::bail!("Unexpected task current result: {result:?}"),
                     },
-                    result => anyhow::bail!("Résultat task current inattendu: {result:?}"),
+                    result => anyhow::bail!("Unexpected task current result: {result:?}"),
                 }
             } else {
                 run_cli_action(dw_app::DwActionRequest::TaskCurrent).await?;
@@ -351,7 +431,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
             execute,
         } => {
-            let args = resolve_start_args_interactively(dw_task::start::StartArgs {
+            let args = dw_task::start::StartArgs {
                 work_item_ids: work_item_id
                     .as_deref()
                     .map(parse_work_item_ids)
@@ -366,8 +446,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 with_active_children,
                 create_child_tasks,
                 mode: ExecutionMode::from_execute(execute),
-            })
-            .await?;
+            };
             match *execute_task_cli_action_with_event_output(
                 dw_app::DwActionRequest::TaskStart(args),
                 !json,
@@ -390,7 +469,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_start_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Résultat task start inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task start result: {result:?}"),
             }
         }
         TaskCommand::StartPr {
@@ -434,7 +513,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_start_pr_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Résultat task start-pr inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task start-pr result: {result:?}"),
             }
         }
         TaskCommand::Preflight {
@@ -466,7 +545,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             .await?
             {
                 dw_app::TaskActionResult::Preflight(report) => report,
-                result => anyhow::bail!("Résultat task preflight inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task preflight result: {result:?}"),
             };
             if json {
                 print_json(&report)?;
@@ -499,7 +578,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 .await?
                 {
                     dw_app::TaskActionResult::HandoffValidate(report) => report,
-                    result => anyhow::bail!("Résultat task handoff validate inattendu: {result:?}"),
+                    result => anyhow::bail!("Unexpected task handoff validate result: {result:?}"),
                 };
             if json {
                 print_json(&report)?;
@@ -535,7 +614,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                     .await?
                 {
                     dw_app::TaskActionResult::PrunePlan(plan) => plan,
-                    result => anyhow::bail!("Résultat task prune preview inattendu: {result:?}"),
+                    result => anyhow::bail!("Unexpected task prune preview result: {result:?}"),
                 };
             if json && !execute {
                 print_json(&report)?;
@@ -549,7 +628,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             let selected = resolve_prune_selection(&report, yes)?;
             if selected.is_empty() {
                 if !json {
-                    print_lines(&["Prune annulé.".into()]);
+                    print_lines(&["Prune canceled.".into()]);
                 }
                 return Ok(());
             }
@@ -567,7 +646,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             .await?
             {
                 dw_app::TaskActionResult::PruneExecution(execution) => execution,
-                result => anyhow::bail!("Résultat task prune execute inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task prune execute result: {result:?}"),
             };
             if json {
                 print_json(&execution)?;
@@ -619,7 +698,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         ));
                     }
                 }
-                result => anyhow::bail!("Résultat task repo-latest inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task repo-latest result: {result:?}"),
             }
         }
         TaskCommand::Commit {
@@ -660,7 +739,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         ));
                     }
                 }
-                result => anyhow::bail!("Résultat task commit inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task commit result: {result:?}"),
             }
         }
         TaskCommand::AddRepo {
@@ -698,7 +777,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_add_repo_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Résultat task add-repo inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task add-repo result: {result:?}"),
             }
         }
         TaskCommand::Teardown {
@@ -729,7 +808,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                     .await?
                 {
                     dw_app::TaskActionResult::TeardownPlan { plan, .. } => plan,
-                    result => anyhow::bail!("Résultat task teardown preview inattendu: {result:?}"),
+                    result => anyhow::bail!("Unexpected task teardown preview result: {result:?}"),
                 };
             if !execute {
                 if json {
@@ -760,7 +839,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                     .unwrap_or_default(),
             )? {
                 if !json {
-                    print_lines(&["Suppression annulée.".into()]);
+                    print_lines(&["Removal canceled.".into()]);
                 }
                 return Ok(());
             }
@@ -774,7 +853,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             .await?
             {
                 dw_app::TaskActionResult::TeardownExecution(execution) => execution,
-                result => anyhow::bail!("Résultat task teardown execute inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task teardown execute result: {result:?}"),
             };
             if json {
                 print_json(&execution)?;
@@ -808,7 +887,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             .await?
             {
                 dw_app::TaskActionResult::Sync(report) => report,
-                result => anyhow::bail!("Résultat task sync inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task sync result: {result:?}"),
             };
             if json {
                 print_json(&report)?;
@@ -859,7 +938,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_rename_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Résultat task rename inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task rename result: {result:?}"),
             }
         }
         TaskCommand::CreateChildTask {
@@ -873,8 +952,8 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             positional_work_item,
             json,
         } => {
-            let report = match *execute_task_cli_action(
-                dw_app::DwActionRequest::TaskCreateChildTask(
+            let report =
+                match *execute_task_cli_action(dw_app::DwActionRequest::TaskCreateChildTask(
                     dw_task::lifecycle::CreateChildTaskArgs {
                         repo: dw_core::WorkspaceRepositoryName::from(repo),
                         title: dw_core::WorkItemTitle::from(title),
@@ -887,13 +966,12 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         )?,
                         r#continue,
                     },
-                ),
-            )
-            .await?
-            {
-                dw_app::TaskActionResult::CreateChildTask(report) => report,
-                result => anyhow::bail!("Résultat task create-child-task inattendu: {result:?}"),
-            };
+                ))
+                .await?
+                {
+                    dw_app::TaskActionResult::CreateChildTask(report) => report,
+                    result => anyhow::bail!("Unexpected task create-child-task result: {result:?}"),
+                };
             if json {
                 print_json(&report)?;
             } else {
@@ -970,7 +1048,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Résultat task add-work-item inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task add-work-item result: {result:?}"),
             }
         }
         TaskCommand::RemoveWorkItem {
@@ -1034,7 +1112,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Résultat task remove-work-item inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task remove-work-item result: {result:?}"),
             }
         }
         TaskCommand::Finish {
@@ -1074,7 +1152,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             .await?
             {
                 dw_app::TaskActionResult::FinishPlan(plan) => plan,
-                result => anyhow::bail!("Résultat task finish preview inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task finish preview result: {result:?}"),
             };
             if json && !execute {
                 print_json(&plan)?;
@@ -1083,7 +1161,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             }
             if !dw_task::finish::finish_has_work(&plan) {
                 if !json {
-                    print_lines(&[String::new(), "Rien à terminer.".into()]);
+                    print_lines(&[String::new(), "Nothing to finish.".into()]);
                 }
                 return Ok(());
             }
@@ -1121,7 +1199,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             .await?
             {
                 dw_app::TaskActionResult::FinishExecution(execution) => execution,
-                result => anyhow::bail!("Résultat task finish execute inattendu: {result:?}"),
+                result => anyhow::bail!("Unexpected task finish execute result: {result:?}"),
             };
             if json {
                 print_json(&execution)?;
@@ -1147,7 +1225,7 @@ async fn execute_task_cli_action_with_event_output(
 ) -> Result<Box<dw_app::TaskActionResult>> {
     match execute_cli_action_with_event_output(request, print_events).await? {
         dw_app::DwActionResult::Task(result) => Ok(result),
-        result => anyhow::bail!("Résultat task inattendu: {result:?}"),
+        result => anyhow::bail!("Unexpected task result: {result:?}"),
     }
 }
 
@@ -1156,7 +1234,7 @@ async fn execute_task_open_cli_action(
 ) -> Result<ExternalLaunchPlan> {
     match *execute_task_cli_action(dw_app::DwActionRequest::TaskOpen(args)).await? {
         dw_app::TaskActionResult::Open(plan) => Ok(plan),
-        result => anyhow::bail!("Résultat task open inattendu: {result:?}"),
+        result => anyhow::bail!("Unexpected task open result: {result:?}"),
     }
 }
 
@@ -1214,7 +1292,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
         } => {
             let source = if from_git {
                 let git_to = git_to.ok_or_else(|| {
-                    anyhow::anyhow!("ado changelog --from-git requiert --git-to.")
+                    anyhow::anyhow!("ado changelog --from-git requires --git-to.")
                 })?;
                 dw_ado_commands::commands::changelog::ChangelogSource::GitRange(
                     dw_git::GitRevisionRange::new(
@@ -1262,7 +1340,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             json,
         } => {
             if json && !yes {
-                anyhow::bail!("ado set-state --json requiert --yes pour rester déterministe.");
+                anyhow::bail!("ado set-state --json requires --yes to stay deterministic.");
             }
             let args = dw_ado_commands::commands::set_state::SetStateArgs {
                 ids: parse_work_item_ids(&id),
@@ -1346,7 +1424,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
 
     let result = execute_ado_cli_action(request, print_events).await?;
     let dw_app::DwActionResult::Ado(result) = result else {
-        anyhow::bail!("Résultat ADO inattendu: {result:?}");
+        anyhow::bail!("Unexpected ADO result: {result:?}");
     };
     let output = dw_cli_adapter::render::ado_action_output(
         &result,
@@ -1364,7 +1442,7 @@ async fn execute_ado_set_state_plan(
         execute_ado_cli_action(dw_app::DwActionRequest::AdoSetStatePlan(args), false).await?;
     match result {
         dw_app::DwActionResult::Ado(dw_app::AdoActionResult::SetStatePlan(plan)) => Ok(plan),
-        result => anyhow::bail!("Plan ADO set-state inattendu: {result:?}"),
+        result => anyhow::bail!("Unexpected ADO set-state plan: {result:?}"),
     }
 }
 
@@ -1373,15 +1451,19 @@ async fn execute_ado_cli_action(
     print_events: bool,
 ) -> Result<dw_app::DwActionResult> {
     let action = dw_app::spawn_action(request);
+    let input = action.input.clone();
     let result = action.result;
     let mut events = action.events;
     while let Some(event) = events.recv().await {
         if print_events {
-            if let DwActionEvent::Ado(event) = event {
-                print_ado_action_event(event);
+            if let DwActionEvent::Ado(event) = &event {
+                print_ado_action_event(event.clone());
             } else {
                 print_cli_action_event(&event);
             }
+        }
+        if let DwActionEvent::NeedsInput { request } = &event {
+            input.respond(prompt_cli_input(request)?)?;
         }
     }
     result.await?
@@ -1392,11 +1474,7 @@ fn print_ado_action_event(event: AdoActionEvent) {
 }
 
 fn add_work_item_choices_loading_line() -> String {
-    "Chargement des work items ADO à ajouter...".into()
-}
-
-fn assigned_work_items_loading_line(project: &str) -> String {
-    format!("Chargement des work items assignés pour le projet {project}...")
+    "Loading ADO work items to add...".into()
 }
 
 fn resolve_ado_project_interactively(
@@ -1408,7 +1486,7 @@ fn resolve_ado_project_interactively(
         return Ok(ProjectKey::from(project));
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("{command_name} requiert --project configuré en mode non-interactif.");
+        anyhow::bail!("{command_name} requires --project in non-interactive mode.");
     }
 
     let root = dw_config::resolve_root(root.as_deref());
@@ -1416,14 +1494,14 @@ fn resolve_ado_project_interactively(
     let choices = dw_config::project_choices(&projects);
     if choices.is_empty() {
         anyhow::bail!(
-            "Aucun projet configuré dans projects.json. Exécuter dw init ou compléter config/projects.json."
+            "No project configured in projects.json. Run dw init or complete config/projects.json."
         );
     }
     let mut prompt = InquirePrompt;
     prompt
         .select_value(&project_prompt_spec(
             "ado-project",
-            "Projet Azure DevOps",
+            "Azure DevOps project",
             &choices,
         ))
         .map(|value| ProjectKey::from(value.to_string()))
@@ -1437,10 +1515,10 @@ fn confirm_ado_set_state(
         return Ok(());
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Changement d'état ADO refusé: ajouter --yes avec ado set-state.");
+        anyhow::bail!("ADO state change refused: add --yes with ado set-state.");
     }
     let prompt = format!(
-        "Mettre {} work item(s) du projet {} en état `{}` ?\n{}",
+        "Move {} work item(s) from project {} to state `{}`?\n{}",
         plan.ids.len(),
         plan.project,
         plan.state,
@@ -1454,7 +1532,7 @@ fn confirm_ado_set_state(
     if prompt_ui.confirm(&confirm_risk_prompt_spec("ado-set-state", prompt), false)? {
         Ok(())
     } else {
-        anyhow::bail!("Mise à jour ADO annulée.")
+        anyhow::bail!("ADO update canceled.")
     }
 }
 
@@ -1468,10 +1546,10 @@ enum FinishMode {
 
 fn finish_mode_choices() -> Vec<String> {
     vec![
-        "Push uniquement, sans ADO".to_string(),
+        "Push only, no ADO".to_string(),
         "Push + PR ADO draft".to_string(),
         "Push + PR ADO ready".to_string(),
-        "Garder les flags actuels".to_string(),
+        "Keep current flags".to_string(),
     ]
 }
 
@@ -1479,7 +1557,7 @@ fn finish_mode_from_label(label: &str) -> FinishMode {
     match label {
         "Push + PR ADO draft" => FinishMode::DraftPr,
         "Push + PR ADO ready" => FinishMode::ReadyPr,
-        "Garder les flags actuels" => FinishMode::KeepFlags,
+        "Keep current flags" => FinishMode::KeepFlags,
         _ => FinishMode::PushOnly,
     }
 }
@@ -1524,7 +1602,7 @@ fn parse_workspace_filter_work_item_ids(
     let option = option.filter(|value| !value.trim().is_empty());
     let positional = positional.filter(|value| !value.trim().is_empty());
     if option.is_some() && positional.is_some() {
-        anyhow::bail!("Work item fourni à la fois en option et en positionnel.");
+        anyhow::bail!("Work item provided both as an option and as a positional argument.");
     }
     Ok(option
         .or(positional)
@@ -1543,7 +1621,7 @@ fn should_prompt_finish_mode(
 }
 
 fn select_finish_mode() -> Result<Option<FinishMode>> {
-    Ok(Select::new("Mode de finalisation", finish_mode_choices())
+    Ok(Select::new("Finish mode", finish_mode_choices())
         .prompt_skippable()?
         .map(|label| finish_mode_from_label(&label)))
 }
@@ -1594,11 +1672,7 @@ fn finish_confirmation_prompt(
         actions.push("sans ADO");
     }
 
-    format!(
-        "Exécuter la finalisation ({}) ?\n{}",
-        actions.join(" + "),
-        workspace
-    )
+    format!("Run finish ({})?\n{}", actions.join(" + "), workspace)
 }
 
 fn confirm_finish(yes: bool, prompt: &str) -> Result<()> {
@@ -1606,13 +1680,13 @@ fn confirm_finish(yes: bool, prompt: &str) -> Result<()> {
         return Ok(());
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Finalisation destructive refusée: ajouter --yes avec --execute.");
+        anyhow::bail!("Destructive finish refused: add --yes with --execute.");
     }
     let mut prompt_ui = InquirePrompt;
     if prompt_ui.confirm(&confirm_risk_prompt_spec("task-finish-mode", prompt), false)? {
         Ok(())
     } else {
-        anyhow::bail!("Finalisation annulée.")
+        anyhow::bail!("Finish canceled.")
     }
 }
 
@@ -1636,7 +1710,7 @@ fn resolve_prune_selection(
         return Ok(report.candidates.clone());
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Suppression destructive refusée: ajouter --yes avec --execute.");
+        anyhow::bail!("Destructive removal refused: add --yes with --execute.");
     }
 
     let choices = report
@@ -1648,7 +1722,7 @@ fn resolve_prune_selection(
             label: dw_task::prune::prune_candidate_choice(candidate),
         })
         .collect::<Vec<_>>();
-    let selected_choices = MultiSelect::new("Workspaces à supprimer", choices)
+    let selected_choices = MultiSelect::new("Workspaces to remove", choices)
         .prompt_skippable()?
         .unwrap_or_default();
 
@@ -1668,16 +1742,16 @@ fn resolve_add_repo_selection(
         return Ok(WorkspaceRepositoryName::from(repo));
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Repository manquant. Fournir `dw task add-repo <repo>`.");
+        anyhow::bail!("Missing repository. Provide `dw task add-repo <repo>`.");
     }
 
     let report = dw_task::repo::add_repo_choices(dw_task::repo::AddRepoChoicesArgs {
         workspace: workspace.map(WorkspacePath::from),
         root: root.map(DevWorkflowRoot::from),
     })?;
-    let selected = Select::new("Repository à ajouter", report.choices)
+    let selected = Select::new("Repository to add", report.choices)
         .prompt_skippable()?
-        .ok_or_else(|| anyhow::anyhow!("Aucun repository configuré à ajouter."))?;
+        .ok_or_else(|| anyhow::anyhow!("No configured repository to add."))?;
     Ok(selected)
 }
 
@@ -1686,10 +1760,10 @@ fn confirm_teardown(yes: bool, workspace: &str) -> Result<bool> {
         return Ok(true);
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Suppression destructive refusée: ajouter --yes avec --execute.");
+        anyhow::bail!("Destructive removal refused: add --yes with --execute.");
     }
     Confirm::new(&format!(
-        "Supprimer ce workspace et ses worktrees ?\n{workspace}"
+        "Remove this workspace and its worktrees?\n{workspace}"
     ))
     .with_default(false)
     .prompt()
@@ -1705,19 +1779,19 @@ async fn resolve_add_work_item_ids_interactively(
         return Ok(Some(parse_work_item_ids(&ids)));
     }
     if skip_ado || !std::io::stdin().is_terminal() {
-        anyhow::bail!("Work items à ajouter manquants. Fournir `dw task add-work-item <ids>`.");
+        anyhow::bail!("Missing work items to add. Provide `dw task add-work-item <ids>`.");
     }
 
     print_lines(&[add_work_item_choices_loading_line()]);
     let report = dw_task::work_item::add_work_item_choices_report(choices_args).await?;
     if report.choices.is_empty() {
         print_lines(&[format!(
-            "Aucun work item assigné disponible à ajouter pour le projet {}.",
+            "No assigned work item is available to add for project {}.",
             report.project
         )]);
         return Ok(None);
     }
-    select_work_item_ids("Work items à ajouter", &report.choices)
+    select_work_item_ids("Work items to add", &report.choices)
 }
 
 fn resolve_remove_work_item_ids_interactively(
@@ -1728,15 +1802,15 @@ fn resolve_remove_work_item_ids_interactively(
         return Ok(Some(parse_work_item_ids(&ids)));
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`.");
+        anyhow::bail!("Missing work items to remove. Provide `dw task remove-work-item <ids>`.");
     }
 
     let report = dw_task::work_item::removable_work_item_choices_report(choices_args)?;
     if report.choices.is_empty() {
-        print_lines(&["Aucun work item disponible à retirer.".into()]);
+        print_lines(&["No work item is available to remove.".into()]);
         return Ok(None);
     }
-    select_work_item_ids("Work items à retirer", &report.choices)
+    select_work_item_ids("Work items to remove", &report.choices)
 }
 
 fn select_work_item_ids(
@@ -1748,10 +1822,10 @@ fn select_work_item_ids(
         .map(dw_task::work_item::work_item_choice_label)
         .collect::<Vec<_>>();
     let Some(selected) = MultiSelect::new(prompt, labels).prompt_skippable()? else {
-        anyhow::bail!("{prompt} manquants.");
+        anyhow::bail!("{prompt} missing.");
     };
     if selected.is_empty() {
-        print_lines(&["Aucun work item sélectionné.".into()]);
+        print_lines(&["No work item selected.".into()]);
         return Ok(None);
     }
     Ok(Some(
@@ -1781,7 +1855,7 @@ fn resolve_open_args_interactively(
         work_item,
     );
     if items.is_empty() {
-        anyhow::bail!("Aucun workspace task trouvé.");
+        anyhow::bail!("No task workspace found.");
     }
     if items.len() == 1 {
         args.workspace = Some(items[0].path.clone());
@@ -1813,117 +1887,15 @@ fn resolve_open_args_interactively(
         .collect::<Vec<_>>();
     let selected = Select::new("Workspace", labels)
         .prompt_skippable()?
-        .ok_or_else(|| anyhow::anyhow!("Sélection workspace annulée."))?;
+        .ok_or_else(|| anyhow::anyhow!("Workspace selection canceled."))?;
     args.workspace = options
         .into_iter()
         .find(|(label, _)| *label == selected)
         .map(|(_, path)| path);
     if args.workspace.is_none() {
-        anyhow::bail!("Sélection workspace invalide");
+        anyhow::bail!("Invalid workspace selection");
     }
     Ok(args)
-}
-
-async fn resolve_start_args_interactively(
-    mut args: dw_task::start::StartArgs,
-) -> Result<dw_task::start::StartArgs> {
-    if args.project.is_none() && std::io::stdin().is_terminal() {
-        let root = dw_config::resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
-        let projects = dw_config::load_projects_config(&root);
-        let choices = dw_config::project_choices(&projects);
-        if !choices.is_empty() {
-            let mut prompt = InquirePrompt;
-            args.project = prompt
-                .select_value(&project_prompt_spec("project", "Projet", &choices))
-                .map(|value| ProjectKey::from(value.to_string()))
-                .ok();
-        }
-    }
-
-    if args.work_item_ids.is_empty() {
-        if !std::io::stdin().is_terminal() {
-            anyhow::bail!(
-                "work-item-id requis en mode non interactif. Fournir `dw task start <id>`."
-            );
-        }
-        args.work_item_ids = vec![resolve_start_work_item_id_interactively(&args).await?];
-    }
-
-    if args.repositories.is_empty() && std::io::stdin().is_terminal() {
-        let Some(project) = args.project.as_ref() else {
-            return Ok(args);
-        };
-        let root = dw_config::resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
-        let projects = dw_config::load_projects_config(&root);
-        let Some(project_config) = dw_config::resolve_project(&projects, project.as_str()) else {
-            return Ok(args);
-        };
-        let repositories = project_config
-            .repositories
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
-        if repositories.len() > 1 {
-            let mut prompt = InquirePrompt;
-            let selected = prompt.multiselect_values(&repositories_prompt_spec(repositories))?;
-            if !selected.is_empty() {
-                args.repositories = selected
-                    .into_iter()
-                    .map(|value| WorkspaceRepositoryName::from(value.to_string()))
-                    .collect();
-            }
-        }
-    }
-
-    Ok(args)
-}
-
-async fn resolve_start_work_item_id_interactively(
-    args: &dw_task::start::StartArgs,
-) -> Result<WorkItemId> {
-    if args.skip_ado {
-        return Ok(WorkItemId::from(Text::new("Work item ID").prompt()?));
-    }
-
-    let Some(project) = args.project.clone() else {
-        return Ok(WorkItemId::from(Text::new("Work item ID").prompt()?));
-    };
-    print_lines(&[assigned_work_items_loading_line(project.as_str())]);
-    let report = dw_ado_commands::commands::assigned::report(
-        dw_ado_commands::commands::assigned::AssignedArgs {
-            root: args.root.clone(),
-            project: Some(project),
-            top: 50,
-            all: false,
-            group_by_parent: false,
-        },
-    )
-    .await?;
-    let mut prompt = InquirePrompt;
-    resolve_start_work_item_id_from_report(&report, &mut prompt)
-}
-
-fn resolve_start_work_item_id_from_report(
-    report: &dw_ado_commands::commands::assigned::AssignedReport,
-    prompt: &mut impl PromptUi,
-) -> Result<WorkItemId> {
-    if report.items.is_empty() {
-        print_lines(&[dw_ado_commands::commands::assigned::empty_assigned_message(false).into()]);
-        return prompt
-            .text_value(&PromptSpec::text("work-item-id", "Work item ID"))
-            .map(WorkItemId::from);
-    }
-
-    let selected = prompt.select_value(
-        &dw_ado_commands::commands::assigned::assigned_work_item_prompt_spec(&report.items),
-    )?;
-    if selected.as_str() == dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE {
-        prompt
-            .text_value(&PromptSpec::text("work-item-id", "Work item ID"))
-            .map(WorkItemId::from)
-    } else {
-        Ok(WorkItemId::from(selected.as_str()))
-    }
 }
 
 struct InquirePrompt;
@@ -1935,7 +1907,7 @@ impl PromptUi for InquirePrompt {
 
     fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<PromptChoiceValue>> {
         if spec.kind != PromptKind::MultiSelect {
-            anyhow::bail!("PromptSpec `{}` n'est pas un multiselect.", spec.id);
+            anyhow::bail!("PromptSpec `{}` is not a multiselect.", spec.id);
         }
         let labels = spec
             .choices
@@ -1953,14 +1925,14 @@ impl PromptUi for InquirePrompt {
 
     fn confirm(&mut self, spec: &PromptSpec, default: bool) -> Result<bool> {
         if spec.kind != PromptKind::Confirm {
-            anyhow::bail!("PromptSpec `{}` n'est pas une confirmation.", spec.id);
+            anyhow::bail!("PromptSpec `{}` is not a confirmation.", spec.id);
         }
         Ok(Confirm::new(&spec.label).with_default(default).prompt()?)
     }
 
     fn text_value(&mut self, spec: &PromptSpec) -> Result<String> {
         if spec.kind != PromptKind::Text {
-            anyhow::bail!("PromptSpec `{}` n'est pas un champ texte.", spec.id);
+            anyhow::bail!("PromptSpec `{}` is not a text field.", spec.id);
         }
         Ok(Text::new(&spec.label).prompt()?)
     }
@@ -1968,7 +1940,7 @@ impl PromptUi for InquirePrompt {
 
 fn prompt_select_value(spec: &PromptSpec) -> Result<PromptChoiceValue> {
     if spec.kind != PromptKind::Select {
-        anyhow::bail!("PromptSpec `{}` n'est pas un select.", spec.id);
+        anyhow::bail!("PromptSpec `{}` is not a select.", spec.id);
     }
     let choices = spec
         .choices
@@ -1978,7 +1950,7 @@ fn prompt_select_value(spec: &PromptSpec) -> Result<PromptChoiceValue> {
     let selected = Select::new(&spec.label, choices)
         .with_help_message(spec.help.as_deref().unwrap_or(""))
         .prompt_skippable()?
-        .ok_or_else(|| anyhow::anyhow!("Sélection annulée: {}", spec.label))?;
+        .ok_or_else(|| anyhow::anyhow!("Selection canceled: {}", spec.label))?;
     prompt_choice_value_from_label(spec, &selected)
 }
 
@@ -1987,7 +1959,7 @@ fn prompt_choice_value_from_label(spec: &PromptSpec, selected: &str) -> Result<P
         .iter()
         .find(|choice| choice.label == selected)
         .map(|choice| choice.value.clone())
-        .ok_or_else(|| anyhow::anyhow!("Sélection invalide: {}", spec.label))
+        .ok_or_else(|| anyhow::anyhow!("Invalid selection: {}", spec.label))
 }
 
 async fn handle_db(command: DbCommand) -> Result<()> {
@@ -2048,7 +2020,7 @@ async fn handle_db(command: DbCommand) -> Result<()> {
 
     let result = execute_db_cli_action(request).await?;
     let dw_app::DwActionResult::Db(result) = result else {
-        anyhow::bail!("Résultat DB inattendu: {result:?}");
+        anyhow::bail!("Unexpected DB result: {result:?}");
     };
     let output = dw_cli_adapter::render::db_action_output(
         &result,
@@ -2062,6 +2034,7 @@ async fn handle_db(command: DbCommand) -> Result<()> {
 
 async fn execute_db_cli_action(request: dw_app::DwActionRequest) -> Result<dw_app::DwActionResult> {
     let action = dw_app::spawn_action(request);
+    let input = action.input.clone();
     let result = action.result;
     let mut events = action.events;
     let interactive = std::io::stderr().is_terminal();
@@ -2073,6 +2046,10 @@ async fn execute_db_cli_action(request: dw_app::DwActionRequest) -> Result<dw_ap
 
     while !result.is_finished() {
         while let Ok(event) = events.try_recv() {
+            if let DwActionEvent::NeedsInput { request } = &event {
+                input.respond(prompt_cli_input(request)?)?;
+                continue;
+            }
             let DwActionEvent::Db(event) = event else {
                 continue;
             };
@@ -2090,6 +2067,10 @@ async fn execute_db_cli_action(request: dw_app::DwActionRequest) -> Result<dw_ap
     }
 
     while let Ok(event) = events.try_recv() {
+        if let DwActionEvent::NeedsInput { request } = &event {
+            input.respond(prompt_cli_input(request)?)?;
+            continue;
+        }
         let DwActionEvent::Db(event) = event else {
             continue;
         };
@@ -2117,15 +2098,13 @@ fn resolve_query_sql(sql: Option<String>, sql_parts: Vec<String>) -> Result<Stri
 
     match (sql, positional.is_empty()) {
         (Some(_), false) => {
-            anyhow::bail!(
-                "Utiliser soit l'option SQL, soit la requête positionnelle, pas les deux."
-            )
+            anyhow::bail!("Use either the SQL option or the positional query, not both.")
         }
         (Some(sql), true) => Ok(sql),
         (None, false) => Ok(positional.to_string()),
-        (None, true) => anyhow::bail!(
-            "Requête SQL manquante. Fournir l'option SQL ou une requête positionnelle."
-        ),
+        (None, true) => {
+            anyhow::bail!("Missing SQL query. Provide the SQL option or a positional query.")
+        }
     }
 }
 
@@ -2166,7 +2145,7 @@ async fn handle_secret(command: SecretCommand) -> Result<()> {
             let request = match (value, from_env) {
                 (Some(secret), None) => dw_app::DwActionRequest::SecretSet {
                     key: SecretKey::from(key),
-                    value: SecretValue::from(secret),
+                    value: Some(SecretValue::from(secret)),
                 },
                 (None, Some(name)) => dw_app::DwActionRequest::SecretSetFromEnv {
                     key: SecretKey::from(key),
@@ -2175,17 +2154,12 @@ async fn handle_secret(command: SecretCommand) -> Result<()> {
                 (None, None) if std::io::stdin().is_terminal() => {
                     dw_app::DwActionRequest::SecretSet {
                         key: SecretKey::from(key),
-                        value: SecretValue::from(
-                            Password::new("Secret")
-                                .with_display_mode(PasswordDisplayMode::Hidden)
-                                .without_confirmation()
-                                .prompt()?,
-                        ),
+                        value: None,
                     }
                 }
                 (None, None) => {
                     return Err(anyhow::anyhow!(
-                        "secret set requiert --value ou --from-env en mode non interactif"
+                        "secret set requires --value or --from-env in non-interactive mode"
                     ));
                 }
                 (Some(_), Some(_)) => unreachable!("clap rejects --value with --from-env"),
@@ -2198,9 +2172,13 @@ async fn handle_secret(command: SecretCommand) -> Result<()> {
             })
             .await?;
         }
-        SecretCommand::Delete { key } => {
+        SecretCommand::Delete { key, yes } => {
+            if !yes && !std::io::stdin().is_terminal() {
+                anyhow::bail!("Secret deletion refused: add --yes with secret delete.");
+            }
             run_cli_action(dw_app::DwActionRequest::SecretDelete {
                 key: SecretKey::from(key),
+                confirmed: yes,
             })
             .await?;
         }
@@ -2349,35 +2327,6 @@ fn handle_completion(command: CompletionCommand) -> Result<()> {
 mod prompt_tests {
     use super::*;
 
-    struct FakePrompt {
-        selected: PromptChoiceValue,
-        text: String,
-        selected_specs: Vec<dw_core::PromptId>,
-        text_specs: Vec<dw_core::PromptId>,
-    }
-
-    impl PromptUi for FakePrompt {
-        fn select_value(&mut self, spec: &PromptSpec) -> Result<PromptChoiceValue> {
-            self.selected_specs.push(spec.id.clone());
-            Ok(self.selected.clone())
-        }
-
-        fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<PromptChoiceValue>> {
-            self.selected_specs.push(spec.id.clone());
-            Ok(vec![self.selected.clone()])
-        }
-
-        fn confirm(&mut self, spec: &PromptSpec, _default: bool) -> Result<bool> {
-            self.selected_specs.push(spec.id.clone());
-            Ok(true)
-        }
-
-        fn text_value(&mut self, spec: &PromptSpec) -> Result<String> {
-            self.text_specs.push(spec.id.clone());
-            Ok(self.text.clone())
-        }
-    }
-
     #[test]
     fn prompt_choice_value_returns_typed_value_not_label_text() {
         let spec = PromptSpec::select(
@@ -2385,97 +2334,22 @@ mod prompt_tests {
             "Work item Azure DevOps",
             vec![dw_core::PromptChoice::new(
                 "55264",
-                "#55264 [Task] (Actif) Transmission automatique",
+                "#55264 [Task] (Active) Automatic transmission",
             )],
         );
 
         let value =
-            prompt_choice_value_from_label(&spec, "#55264 [Task] (Actif) Transmission automatique")
+            prompt_choice_value_from_label(&spec, "#55264 [Task] (Active) Automatic transmission")
                 .expect("choice should resolve");
 
         assert_eq!(value.as_str(), "55264");
     }
 
     #[test]
-    fn task_start_interactive_prompt_uses_assigned_select_value() {
-        let report = assigned_report(vec![dw_ado::WorkItemSnapshot {
-            id: "55264".into(),
-            kind: Some("Task".into()),
-            state: Some("Actif".into()),
-            title: Some("Transmission automatique".into()),
-            url: None,
-        }]);
-        let mut prompt = FakePrompt {
-            selected: PromptChoiceValue::from("55264"),
-            text: "ignored".into(),
-            selected_specs: Vec::new(),
-            text_specs: Vec::new(),
-        };
-
-        let value = resolve_start_work_item_id_from_report(&report, &mut prompt)
-            .expect("assigned select should resolve");
-
-        assert_eq!(value, WorkItemId::from("55264"));
-        assert_eq!(
-            prompt.selected_specs,
-            [dw_core::PromptId::from("assigned-work-item")]
-        );
-        assert!(prompt.text_specs.is_empty());
-    }
-
-    #[test]
-    fn task_start_interactive_prompt_keeps_manual_id_fallback_in_select() {
-        let report = assigned_report(vec![dw_ado::WorkItemSnapshot {
-            id: "55264".into(),
-            kind: Some("Task".into()),
-            state: Some("Actif".into()),
-            title: Some("Transmission automatique".into()),
-            url: None,
-        }]);
-        let mut prompt = FakePrompt {
-            selected: PromptChoiceValue::from(
-                dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE,
-            ),
-            text: "99999".into(),
-            selected_specs: Vec::new(),
-            text_specs: Vec::new(),
-        };
-
-        let value = resolve_start_work_item_id_from_report(&report, &mut prompt)
-            .expect("manual fallback should resolve");
-
-        assert_eq!(value, WorkItemId::from("99999"));
-        assert_eq!(
-            prompt.selected_specs,
-            [dw_core::PromptId::from("assigned-work-item")]
-        );
-        assert_eq!(prompt.text_specs, [dw_core::PromptId::from("work-item-id")]);
-    }
-
-    #[test]
     fn interactive_ado_loads_have_visible_loading_lines() {
         assert_eq!(
-            assigned_work_items_loading_line("ha"),
-            "Chargement des work items assignés pour le projet ha..."
-        );
-        assert_eq!(
             add_work_item_choices_loading_line(),
-            "Chargement des work items ADO à ajouter..."
+            "Loading ADO work items to add..."
         );
-    }
-
-    fn assigned_report(
-        items: Vec<dw_ado::WorkItemSnapshot>,
-    ) -> dw_ado_commands::commands::assigned::AssignedReport {
-        dw_ado_commands::commands::assigned::AssignedReport {
-            root: "/tmp/dw".into(),
-            project: "ha".into(),
-            top: 50,
-            include_final_states: false,
-            group_by_parent: false,
-            items,
-            groups: Vec::new(),
-            events: Vec::new(),
-        }
     }
 }

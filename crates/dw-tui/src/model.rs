@@ -9,8 +9,6 @@ use dw_core::{
     ProjectKey, PullRequestId, WorkItemId, WorkItemState, WorkspaceRepositoryName,
 };
 use dw_workspace::TaskListItem;
-#[cfg(test)]
-use dw_workspace::{plan_task_prune, task_list};
 
 const GUIDE_DETAIL_LINE_COUNT: usize = 29;
 
@@ -700,38 +698,6 @@ impl TuiSnapshot {
         }
     }
 
-    #[cfg(test)]
-    pub fn load(root: Option<&str>) -> Self {
-        let root = resolve_root(root);
-        let needs_init = !root_status(Some(&root)).initialized;
-        let projects = load_projects_config(&root);
-        let workflow = load_workflow_config(&root);
-        let databases = load_databases_config(&root);
-        let database_entries = database_entries_for_tui(&databases);
-        let config_doctor = config_doctor(Some(&root));
-        let workspaces = task_list(&root, None, None);
-        let prune_candidates = plan_task_prune(&root, None, None).len();
-        let actions = build_actions(&root, &projects, &databases, &workspaces);
-        let color_mode = load_user_settings().color.unwrap_or(ConfigColorMode::Auto);
-        Self {
-            root,
-            needs_init,
-            projects,
-            workflow,
-            databases,
-            database_entries,
-            config_doctor,
-            workspaces,
-            assigned: Vec::new(),
-            assigned_loaded: false,
-            pull_requests: Vec::new(),
-            pull_requests_loaded: false,
-            prune_candidates,
-            actions,
-            color_mode,
-        }
-    }
-
     pub async fn load_background(root: Option<&str>) -> Self {
         let root = resolve_root(root);
         let needs_init = !root_status(Some(&root)).initialized;
@@ -996,7 +962,7 @@ async fn load_assigned_projects(
                     key: "-".into(),
                     label: "ADO project".into(),
                     items: Vec::new(),
-                    error: Some(format!("Chargement ADO interrompu: {error}")),
+                    error: Some(format!("ADO loading was interrupted: {error}")),
                 },
             )),
         }
@@ -1169,7 +1135,7 @@ async fn load_pull_request_targets(
                     is_draft: false,
                     work_item_ids: Vec::new(),
                     url: None,
-                    error: Some(format!("Chargement PR interrompu: {error}")),
+                    error: Some(format!("PR loading was interrupted: {error}")),
                 }],
             )),
         }
@@ -1189,7 +1155,7 @@ fn load_pull_request_target(
     let Some(options) = target.options.as_ref() else {
         return vec![pull_request_error(
             target,
-            "Configuration Azure DevOps introuvable.",
+            "Azure DevOps configuration not found.",
         )];
     };
 
@@ -1737,6 +1703,7 @@ mod tests {
             label: "Delete".into(),
             request: TuiActionRequest::SecretDelete {
                 key: dw_core::SecretKey::from("KEY"),
+                confirmed: false,
             },
             description: "delete".into(),
             kind: ActionRisk::Destructive,

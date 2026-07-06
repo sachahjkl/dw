@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::actions::{AdoItemAction, PullRequestAction};
-use crate::app::{App, MENU_SECTIONS, MenuSection, ModalKind};
+use crate::app::{App, MENU_SECTIONS, MenuSection, ModalKind, TuiInputPrompt};
 use crate::background::BackgroundKind;
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
 use crate::model::{
@@ -81,6 +81,11 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 
     if app.snapshot.needs_init {
         render_init_required(frame, area, app);
+        return;
+    }
+
+    if let Some(prompt) = &app.input_prompt {
+        render_input_prompt(frame, area, prompt);
         return;
     }
 
@@ -1751,6 +1756,15 @@ fn risk_badge_line(risk: ActionRisk) -> Line<'static> {
     Line::from(vec![Span::styled(label, style)])
 }
 
+fn confirmation_confirm_button(risk: ActionRisk) -> ActionButton {
+    match risk {
+        ActionRisk::Safe => ActionButton::new("Run", "Enter", ActionIntent::Primary),
+        ActionRisk::DryRun => ActionButton::new("Run preview", "Enter", ActionIntent::Review),
+        ActionRisk::OpensExternal => ActionButton::new("Open", "Enter", ActionIntent::External),
+        ActionRisk::Destructive => ActionButton::new("Confirm", "Enter", ActionIntent::Dangerous),
+    }
+}
+
 fn target_line(label: &'static str, value: impl Into<String>) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{label:<12}"), Style::default().fg(Color::DarkGray)),
@@ -1852,11 +1866,113 @@ fn render_confirmation(frame: &mut Frame<'_>, area: Rect, action: &TuiAction) {
     );
     frame.render_widget(
         Paragraph::new(action_bar_line(&[
-            ActionButton::new("Confirm", "Enter", ActionIntent::Dangerous),
+            confirmation_confirm_button(action.kind),
             ActionButton::new("Cancel", "Esc", ActionIntent::Review),
         ])),
         chunks[3],
     );
+}
+
+fn render_input_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &TuiInputPrompt) {
+    let popup = centered_rect(72, 36, area);
+    frame.render_widget(Clear, popup);
+    let block = Block::default().title("Action input").borders(Borders::ALL);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(5),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+    frame.render_widget(
+        Paragraph::new(input_prompt_header_lines(prompt)).wrap(Wrap { trim: true }),
+        chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(input_prompt_body_lines(prompt).join("\n")).wrap(Wrap { trim: false }),
+        chunks[1],
+    );
+    frame.render_widget(Paragraph::new(input_prompt_footer(prompt)), chunks[2]);
+}
+
+fn input_prompt_header_lines(prompt: &TuiInputPrompt) -> Vec<Line<'static>> {
+    let (label, help) = match &prompt.request {
+        dw_core::InputRequest::Confirm { label, help, .. }
+        | dw_core::InputRequest::SelectOne { label, help, .. }
+        | dw_core::InputRequest::SelectMany { label, help, .. }
+        | dw_core::InputRequest::Text { label, help, .. }
+        | dw_core::InputRequest::Secret { label, help, .. } => (label, help),
+    };
+    vec![
+        target_line("Run", format!("{:?}", prompt.run_id)),
+        target_line("Prompt", label.clone()),
+        target_line(
+            "Help",
+            help.clone()
+                .unwrap_or_else(|| "Respond to continue the action.".into()),
+        ),
+    ]
+}
+
+fn input_prompt_body_lines(prompt: &TuiInputPrompt) -> Vec<String> {
+    match &prompt.request {
+        dw_core::InputRequest::Confirm { default, .. } => {
+            vec![format!("Default: {}", if *default { "yes" } else { "no" })]
+        }
+        dw_core::InputRequest::SelectOne { choices, .. } => choices
+            .iter()
+            .enumerate()
+            .map(|(index, choice)| {
+                format!(
+                    "{} {}",
+                    if index == prompt.selected { ">" } else { " " },
+                    choice.label
+                )
+            })
+            .collect(),
+        dw_core::InputRequest::SelectMany { choices, .. } => choices
+            .iter()
+            .enumerate()
+            .map(|(index, choice)| {
+                format!(
+                    "{} [{}] {}",
+                    if index == prompt.selected { ">" } else { " " },
+                    if prompt.selected_many.contains(&index) {
+                        "x"
+                    } else {
+                        " "
+                    },
+                    choice.label
+                )
+            })
+            .collect(),
+        dw_core::InputRequest::Text { .. } => vec![format!("Value: {}", prompt.value)],
+        dw_core::InputRequest::Secret { .. } => vec![format!(
+            "Value: {}",
+            "*".repeat(prompt.value.chars().count())
+        )],
+    }
+}
+
+fn input_prompt_footer(prompt: &TuiInputPrompt) -> Line<'static> {
+    match &prompt.request {
+        dw_core::InputRequest::Confirm { .. } => action_bar_line(&[
+            ActionButton::new("Yes", "y/Enter", ActionIntent::Primary),
+            ActionButton::new("No", "n/Esc", ActionIntent::Review),
+        ]),
+        dw_core::InputRequest::SelectOne { .. } => {
+            Line::from("select [j/k]    submit [Enter]    cancel [Esc]")
+        }
+        dw_core::InputRequest::SelectMany { .. } => {
+            Line::from("select [j/k]    toggle [Space]    submit [Enter]    cancel [Esc]")
+        }
+        dw_core::InputRequest::Text { .. } | dw_core::InputRequest::Secret { .. } => {
+            Line::from("type value    backspace    submit [Enter]    cancel [Esc]")
+        }
+    }
 }
 
 fn render_options(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -2449,6 +2565,20 @@ mod tests {
     }
 
     #[test]
+    fn confirmation_button_matches_action_risk() {
+        let preview = confirmation_confirm_button(ActionRisk::DryRun);
+        let external = confirmation_confirm_button(ActionRisk::OpensExternal);
+        let destructive = confirmation_confirm_button(ActionRisk::Destructive);
+
+        assert_eq!(preview.label, "Run preview");
+        assert_eq!(preview.intent, ActionIntent::Review);
+        assert_eq!(external.label, "Open");
+        assert_eq!(external.intent, ActionIntent::External);
+        assert_eq!(destructive.label, "Confirm");
+        assert_eq!(destructive.intent, ActionIntent::Dangerous);
+    }
+
+    #[test]
     fn ado_action_buttons_preview_workflow_state_action() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.assigned_loaded = true;
@@ -2595,7 +2725,7 @@ mod tests {
                 dw_config::ConfigDoctorCheck {
                     path: "/tmp/missing-dw-root/config/workflow.jsonc".into(),
                     passed: false,
-                    message: Some("Fichier introuvable".into()),
+                    message: Some("File not found".into()),
                 },
             ],
         };
@@ -2604,11 +2734,7 @@ mod tests {
 
         assert!(lines.iter().any(|line| line.contains("Status")));
         assert!(lines.iter().any(|line| line.contains("Checks")));
-        assert!(
-            lines
-                .iter()
-                .any(|line| line.contains("Fichier introuvable"))
-        );
+        assert!(lines.iter().any(|line| line.contains("File not found")));
     }
 
     fn ado_project(key: &str, kind: &str) -> crate::model::AdoAssignedProject {

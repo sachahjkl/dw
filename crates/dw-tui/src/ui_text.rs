@@ -125,7 +125,7 @@ pub(crate) fn view_hint(app: &App) -> &'static str {
             "PRs are loading in the background; you can keep navigating."
         }
         View::PullRequests => {
-            "prepare workspace [n]    create workspace [x]    PR form [N]    finish preview [f]    finish execute [F]    changes [c]    diff [d]    open PR [u]"
+            "prepare workspace [n]    create workspace [x]    PR form [N]    finish preview [f]    finish execute [F]    changes [c]    diff [d]    open agent [o]    open PR [u]"
         }
         View::Db => {
             "explore schema [Enter]    explore schema [s]    describe table [d]    guided query [e]"
@@ -138,8 +138,27 @@ pub(crate) fn view_hint(app: &App) -> &'static str {
 
 pub(crate) fn confirmation_lines(action: &TuiAction) -> Vec<String> {
     let mut lines = Vec::new();
-    if matches!(action.kind, ActionRisk::Destructive) && action.bypasses_cli_confirmation() {
-        lines.push("Destructive confirmation is carried by the TUI request.".into());
+    match action.kind {
+        ActionRisk::Safe => {
+            lines.push("This reads or inspects data; no expected modification.".into());
+        }
+        ActionRisk::OpensExternal => {
+            lines.push("This opens an external or interactive process.".into());
+            lines.push("Return here when that process exits.".into());
+        }
+        ActionRisk::DryRun => {
+            lines.push(
+                "Preview only: review the returned plan before choosing an execute action.".into(),
+            );
+        }
+        ActionRisk::Destructive => {
+            if action.bypasses_cli_confirmation() {
+                lines.push("Destructive confirmation is carried by the TUI request.".into());
+            } else {
+                lines.push("This may modify or delete data, workspaces, or remote state.".into());
+            }
+            lines.push("Review the Operation and Effect before confirming.".into());
+        }
     }
     lines
 }
@@ -288,6 +307,8 @@ pub(crate) fn action_builder_preview_lines(app: &App) -> Vec<String> {
 
 fn form_preview_lines_for(form: &FormState, app: &App) -> Vec<String> {
     let mut lines = Vec::new();
+    let missing = form.missing_required_fields();
+    let invalid = form.invalid_field_messages();
     match form.build_action(&app.snapshot.root) {
         Some(action) => {
             lines.push(action.display_label());
@@ -300,8 +321,14 @@ fn form_preview_lines_for(form: &FormState, app: &App) -> Vec<String> {
                 );
             }
         }
-        None => lines.push("Incomplete action".into()),
+        None => {
+            lines.push("Incomplete action".into());
+        }
     }
+    if !missing.is_empty() {
+        lines.push(format!("Required: {}", missing.join(", ")));
+    }
+    lines.extend(invalid.into_iter().map(|message| format!("Fix: {message}")));
     if let Some(field) = form.fields.get(form.selected_field) {
         let value = if field.value.trim().is_empty() {
             "<empty>"
@@ -446,6 +473,7 @@ mod tests {
         assert!(hint.contains("finish"));
         assert!(hint.contains("changes"));
         assert!(hint.contains("diff"));
+        assert!(hint.contains("open agent"));
         assert!(hint.contains("open PR"));
     }
 
@@ -530,6 +558,11 @@ mod tests {
         let joined = lines.join("\n");
 
         assert!(lines.iter().any(|line| line.contains("TUI request")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Review the Operation"))
+        );
         assert!(!joined.contains("Enter/"));
         assert!(!joined.contains("Esc/"));
         assert!(!joined.contains("Teardown execute"));
@@ -587,6 +620,7 @@ mod tests {
         let lines = form_preview_lines(&app);
 
         assert_eq!(lines[0], "Incomplete action");
+        assert!(lines.iter().any(|line| line == "Required: SQL"));
         assert!(lines.iter().any(|line| line == "Field: Project = <empty>"));
         assert!(
             lines
@@ -594,6 +628,31 @@ mod tests {
                 .any(|line| line == "Help: Optional configured project")
         );
         assert!(lines.last().is_some_and(|line| line.contains("Enter")));
+    }
+
+    #[test]
+    fn form_preview_lines_warn_about_invalid_numeric_fields() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let mut form = FormState::selecting();
+        form.template_index = FormTemplate::ALL
+            .iter()
+            .position(|template| *template == FormTemplate::DbQuery)
+            .expect("db query template");
+        form.begin_editing(&app.snapshot);
+        form.fields
+            .iter_mut()
+            .find(|field| field.label == "Max rows")
+            .expect("max rows field")
+            .value = "many".into();
+        app.form = Some(form);
+
+        let lines = form_preview_lines(&app);
+
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == "Fix: Max rows must be a whole number.")
+        );
     }
 
     #[test]

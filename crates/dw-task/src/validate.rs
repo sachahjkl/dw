@@ -52,7 +52,7 @@ pub fn preflight_report(args: PreflightArgs) -> Result<TaskPreflightReport> {
 
     if files.is_empty() {
         return Err(anyhow::anyhow!(
-            "Aucun fichier ai-context détecté. Fournir des fichiers ai-context explicites ou placer des fichiers ai-context*.json dans le workspace."
+            "No ai-context file detected. Provide explicit ai-context files or place ai-context*.json files in the workspace."
         ));
     }
 

@@ -19,14 +19,14 @@ function Add-UserPath {
     }
 
     if ($parts -contains $PathToAdd) {
-        Write-Host "PATH utilisateur deja configure: $PathToAdd"
+        Write-Host "User PATH already configured: $PathToAdd"
         return
     }
 
     $newPath = ($parts + $PathToAdd) -join ';'
     [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    Write-Host "PATH utilisateur mis a jour. Ouvre un nouveau terminal pour utiliser dw."
-    Write-Host "PATH de la session courante mis a jour aussi."
+    Write-Host "User PATH updated. Open a new terminal to use dw."
+    Write-Host "Current session PATH updated too."
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -44,7 +44,7 @@ $extract = Join-Path $temp "extract"
 New-Item -ItemType Directory -Force -Path $temp, $extract | Out-Null
 
 try {
-    Write-Host "Telechargement $assetUrl..."
+    Write-Host "Downloading $assetUrl..."
     Invoke-WebRequest -Uri $assetUrl -OutFile $zip -Headers @{ "User-Agent" = "dw-installer" }
     Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
     Copy-Item -Path (Join-Path $extract "dw.exe") -Destination (Join-Path $InstallDir "dw.exe") -Force
@@ -53,7 +53,7 @@ finally {
     Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue
 }
 
-Write-Host "dw installe dans $InstallDir"
+Write-Host "dw installed in $InstallDir"
 
 if (-not $NoPathUpdate) {
     Add-UserPath -PathToAdd $InstallDir

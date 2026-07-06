@@ -108,7 +108,7 @@ pub fn refresh_root(request: RefreshRequest) -> std::io::Result<RefreshReport> {
     if !Path::new(&root).is_dir() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            format!("Root DevWorkflow introuvable: {root}"),
+            format!("DevWorkflow root not found: {root}"),
         ));
     }
     let profile = match request

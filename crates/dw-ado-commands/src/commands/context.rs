@@ -80,7 +80,7 @@ pub async fn context_report_with_events(
     } = args;
     let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
-        project.ok_or_else(|| anyhow::anyhow!("ado context requiert un projet configuré."))?;
+        project.ok_or_else(|| anyhow::anyhow!("ado context requires a configured project."))?;
     let projects = load_projects_config(root.as_str());
     let workflow = load_workflow_config(root.as_str());
     let options = resolve_ado_options(&projects, &workflow, &project_key)?;
@@ -94,7 +94,7 @@ pub async fn context_report_with_events(
     );
     let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
     if ids.is_empty() {
-        return Err(anyhow::anyhow!("Au moins un work item est requis."));
+        return Err(anyhow::anyhow!("At least one work item is required."));
     }
     let id_values = ado_work_item_id_values(&ids);
     push_event(
@@ -168,7 +168,7 @@ pub async fn ai_context_report_with_events(
     );
     let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
     if ids.is_empty() {
-        return Err(anyhow::anyhow!("Au moins un work item est requis."));
+        return Err(anyhow::anyhow!("At least one work item is required."));
     }
     let id_values = ado_work_item_id_values(&ids);
     push_event(
@@ -241,15 +241,17 @@ fn push_event(
 }
 
 pub fn context_fetch_line(count: usize, include_comments: bool, comments: i32) -> String {
-    let comment_part = if include_comments && comments > 0 {
-        format!(" avec {comments} commentaire(s)")
+    let comment_part = if include_comments && comments == 1 {
+        " with 1 comment".to_string()
+    } else if include_comments && comments > 1 {
+        format!(" with {comments} comments")
     } else {
         String::new()
     };
     match count {
-        0 => format!("Chargement contexte ADO: aucun work item{comment_part}."),
-        1 => format!("Chargement contexte ADO: 1 work item{comment_part}..."),
-        count => format!("Chargement contexte ADO: {count} work items{comment_part}..."),
+        0 => format!("Loading ADO context: no work items{comment_part}."),
+        1 => format!("Loading ADO context: 1 work item{comment_part}..."),
+        count => format!("Loading ADO context: {count} work items{comment_part}..."),
     }
 }
 
@@ -261,15 +263,15 @@ mod tests {
     fn context_fetch_line_handles_counts_and_comments() {
         assert_eq!(
             context_fetch_line(0, true, 5),
-            "Chargement contexte ADO: aucun work item avec 5 commentaire(s)."
+            "Loading ADO context: no work items with 5 comments."
         );
         assert_eq!(
             context_fetch_line(1, false, 5),
-            "Chargement contexte ADO: 1 work item..."
+            "Loading ADO context: 1 work item..."
         );
         assert_eq!(
             context_fetch_line(3, true, 2),
-            "Chargement contexte ADO: 3 work items avec 2 commentaire(s)..."
+            "Loading ADO context: 3 work items with 2 comments..."
         );
     }
 }

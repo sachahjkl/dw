@@ -134,7 +134,7 @@ pub fn removable_work_item_choices_report(
 pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport> {
     if args.work_item_ids.is_empty() {
         return Err(anyhow::anyhow!(
-            "Work items à ajouter manquants. Fournir au moins un identifiant."
+            "Missing work items to add. Provide at least one ID."
         ));
     }
     let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
@@ -213,7 +213,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
 pub fn remove_plan(args: RemoveWorkItemArgs) -> Result<WorkItemUpdatePlanReport> {
     if args.work_item_ids.is_empty() {
         return Err(anyhow::anyhow!(
-            "Work items à retirer manquants. Fournir au moins un identifiant."
+            "Missing work items to remove. Provide at least one ID."
         ));
     }
     let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
@@ -314,7 +314,7 @@ fn ensure_all_snapshots_resolved(
         .cloned()
         .collect::<Vec<_>>();
     Err(anyhow::anyhow!(
-        "Work items ADO introuvables ou inaccessibles: {}",
+        "ADO work items not found or inaccessible: {}",
         unresolved
             .iter()
             .map(WorkItemId::as_str)
@@ -339,12 +339,12 @@ fn ensure_no_final_snapshots(snapshots: &[WorkItemSnapshot]) -> Result<()> {
             format!(
                 "#{} ({})",
                 item.id,
-                item.state.as_deref().unwrap_or("état inconnu")
+                item.state.as_deref().unwrap_or("unknown state")
             )
         })
         .collect::<Vec<_>>();
     Err(anyhow::anyhow!(
-        "Impossible d'ajouter des work items en état final: {}",
+        "Cannot add work items in a final state: {}",
         labels.join(", ")
     ))
 }

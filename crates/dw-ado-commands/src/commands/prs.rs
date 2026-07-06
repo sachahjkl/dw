@@ -35,7 +35,7 @@ pub async fn report(args: PrsArgs) -> Result<PrsReport> {
     let repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_ref());
     if repositories.is_empty() {
         return Err(anyhow::anyhow!(
-            "ado prs requiert un repository explicite, ou un projet avec des azureDevOpsRepository configurés."
+            "ado prs requires an explicit repository, or a project with configured azureDevOpsRepository entries."
         ));
     }
 

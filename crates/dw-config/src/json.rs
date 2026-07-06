@@ -12,12 +12,12 @@ where
 }
 
 pub(crate) fn read_json_value(path: &Path) -> Result<Value, String> {
-    let text = fs::read_to_string(path).map_err(|_| "fichier manquant".to_string())?;
+    let text = fs::read_to_string(path).map_err(|_| "missing file".to_string())?;
     serde_json::from_str::<Value>(&text).map_err(|error| error.to_string())
 }
 
 pub(crate) fn read_jsonc_value(path: &Path) -> Result<Value, String> {
-    let text = fs::read_to_string(path).map_err(|_| "fichier manquant".to_string())?;
+    let text = fs::read_to_string(path).map_err(|_| "missing file".to_string())?;
     serde_json::from_str::<Value>(&strip_jsonc_comments(&text)).map_err(|error| error.to_string())
 }
 

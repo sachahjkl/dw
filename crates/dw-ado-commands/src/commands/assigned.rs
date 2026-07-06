@@ -10,7 +10,7 @@ use dw_core::{AdoActionEvent, DevWorkflowRoot, ProjectKey, PromptChoice, PromptS
 use serde::Serialize;
 
 pub const MANUAL_WORK_ITEM_PROMPT_VALUE: &str = "__manual_work_item_id__";
-pub const MANUAL_WORK_ITEM_PROMPT_LABEL: &str = "Entrer un ID manuel...";
+pub const MANUAL_WORK_ITEM_PROMPT_LABEL: &str = "Enter a manual ID...";
 
 #[derive(Debug, Clone)]
 pub struct AssignedArgs {
@@ -52,7 +52,7 @@ pub async fn report_with_events(
     } = args;
     let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
-        project.ok_or_else(|| anyhow::anyhow!("ado assigned requiert un projet configuré."))?;
+        project.ok_or_else(|| anyhow::anyhow!("ado assigned requires a configured project."))?;
     let projects = load_projects_config(root.as_str());
     let workflow = load_workflow_config(root.as_str());
     let options = resolve_ado_options(&projects, &workflow, &project_key)?;
@@ -117,9 +117,9 @@ fn push_event(
 
 pub fn empty_assigned_message(include_final_states: bool) -> &'static str {
     if include_final_states {
-        "Aucun work item assigné."
+        "No assigned work items."
     } else {
-        "Aucun work item assigné hors états finaux."
+        "No assigned work items outside final states."
     }
 }
 
@@ -166,7 +166,7 @@ pub fn assigned_work_item_prompt_spec(items: &[WorkItemSnapshot]) -> PromptSpec 
     ));
 
     PromptSpec::select("assigned-work-item", "Work item Azure DevOps", choices)
-        .with_help("Choisir un work item assigné hors états finaux")
+        .with_help("Choose an assigned work item outside final states")
 }
 
 #[cfg(test)]

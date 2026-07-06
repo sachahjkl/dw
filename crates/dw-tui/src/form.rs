@@ -221,6 +221,66 @@ impl FormState {
         next_suggestion(field.value.as_str(), &suggestions)
     }
 
+    pub fn missing_required_fields(&self) -> Vec<&'static str> {
+        let mut required = match self.template {
+            FormTemplate::TaskStartPr => vec!["Pull request", "Project"],
+            FormTemplate::TaskAddRepo => vec!["Repository"],
+            FormTemplate::TaskRename => vec!["Slug"],
+            FormTemplate::AdoSetState => vec!["Work item IDs", "Destination state"],
+            FormTemplate::DbDescribe => vec!["Table"],
+            FormTemplate::DbQuery => vec!["SQL"],
+            FormTemplate::Secret => vec!["Key"],
+            FormTemplate::ConfigSetRoot => vec!["Root"],
+            _ => Vec::new(),
+        };
+        if self.template == FormTemplate::Secret && field_enabled(&self.fields, "Set from env") {
+            required.push("From env");
+        }
+        required
+            .into_iter()
+            .filter(|label| field_value(&self.fields, label).is_none())
+            .collect()
+    }
+
+    pub fn invalid_field_messages(&self) -> Vec<String> {
+        let mut messages = Vec::new();
+        match self.template {
+            FormTemplate::AdoAssigned => {
+                if let Some(top) = field_value(&self.fields, "Top")
+                    && top.parse::<usize>().is_err()
+                {
+                    messages.push("Top must be a whole number.".into());
+                }
+            }
+            FormTemplate::AdoSetState => {
+                if let Some(state) = field_value(&self.fields, "Destination state")
+                    && dw_core::WorkItemState::parse(state).is_err()
+                {
+                    messages.push("Destination state must be an exact ADO state.".into());
+                }
+            }
+            FormTemplate::DbQuery => {
+                if let Some(max_rows) = field_value(&self.fields, "Max rows")
+                    && max_rows.parse::<usize>().is_err()
+                {
+                    messages.push("Max rows must be a whole number.".into());
+                }
+            }
+            FormTemplate::AgentOpen => {
+                if let Some(agent) = field_value(&self.fields, "Agent")
+                    && agent.parse::<dw_core::Agent>().is_err()
+                {
+                    messages.push(
+                        "Agent must be opencode, cursor, claude, codex, codex-cli or copilot."
+                            .into(),
+                    );
+                }
+            }
+            _ => {}
+        }
+        messages
+    }
+
     pub fn build_action(&self, root: &str) -> Option<TuiAction> {
         let value = |label: &str| field_value(&self.fields, label);
         let enabled = |label: &str| field_enabled(&self.fields, label);
@@ -413,7 +473,10 @@ impl FormState {
             FormTemplate::Secret => {
                 let key = value("Key").map(dw_core::SecretKey::from)?;
                 if enabled("Delete") {
-                    TuiActionRequest::SecretDelete { key }
+                    TuiActionRequest::SecretDelete {
+                        key,
+                        confirmed: false,
+                    }
                 } else if enabled("Set from env") {
                     TuiActionRequest::SecretSetFromEnv {
                         key,
@@ -1270,8 +1333,10 @@ mod tests {
 
         assert!(matches!(
             action.request,
-            TuiActionRequest::SecretDelete { ref key }
-                if *key == dw_core::SecretKey::from("db/password")
+            TuiActionRequest::SecretDelete {
+                ref key,
+                confirmed: false
+            } if *key == dw_core::SecretKey::from("db/password")
         ));
         assert!(matches!(action.kind, ActionRisk::Destructive));
     }

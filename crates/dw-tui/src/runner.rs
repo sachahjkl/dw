@@ -5,7 +5,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use dw_app::{DwActionRequest, DwActionResult};
-use dw_core::{DwActionEvent, ExternalLaunchPlan};
+use dw_core::{DwActionEvent, ExternalLaunchPlan, InputRequest, InputResponse};
 use std::io;
 
 use crate::history::ActionRunErrorMessage;
@@ -83,20 +83,53 @@ pub async fn run_attached(action: &TuiAction) -> Result<ActionRunResult> {
 
 pub async fn run_captured_streaming<F>(
     action: &TuiAction,
-    mut on_event: F,
+    on_event: F,
 ) -> std::result::Result<CapturedActionRunResult, CapturedActionRunError>
 where
     F: FnMut(DwActionEvent),
 {
+    run_captured_streaming_with_input(action, on_event, |request| {
+        anyhow::bail!(
+            "Action requires interactive input `{}`; no TUI input adapter was provided.",
+            request.id()
+        )
+    })
+    .await
+}
+
+pub async fn run_captured_streaming_with_input<F, I>(
+    action: &TuiAction,
+    mut on_event: F,
+    mut on_input: I,
+) -> std::result::Result<CapturedActionRunResult, CapturedActionRunError>
+where
+    F: FnMut(DwActionEvent),
+    I: FnMut(&InputRequest) -> Result<InputResponse>,
+{
     let mut events = Vec::new();
     let display_label = action.display_label();
     let action_run = dw_app::spawn_action(action.request.clone());
+    let input = action_run.input.clone();
     let mut event_stream = action_run.events;
     let result = action_run.result;
 
     while let Some(event) = event_stream.recv().await {
         on_event(event.clone());
+        let input_result = match &event {
+            DwActionEvent::NeedsInput { request } => Some(on_input(request).and_then(|response| {
+                input.respond(response)?;
+                Ok(())
+            })),
+            _ => None,
+        };
         events.push(event);
+        if let Some(Err(error)) = input_result {
+            return Err(CapturedActionRunError::from_error(
+                display_label.clone(),
+                events,
+                error,
+            ));
+        }
     }
     let result = result
         .await
@@ -121,7 +154,14 @@ async fn external_launch_plan(action: &TuiAction) -> Result<ExternalLaunchPlan> 
         TuiActionRequest::TaskOpen(args) => {
             let action_run = dw_app::spawn_action(DwActionRequest::TaskOpen(args.clone()));
             let mut events = action_run.events;
-            while events.recv().await.is_some() {}
+            while let Some(event) = events.recv().await {
+                if let DwActionEvent::NeedsInput { request } = event {
+                    anyhow::bail!(
+                        "External action requires interactive input `{}` before launch.",
+                        request.id()
+                    );
+                }
+            }
             match action_run.result.await?? {
                 DwActionResult::Task(result) => match *result {
                     dw_app::TaskActionResult::Open(plan) => Ok(plan),
@@ -188,5 +228,45 @@ mod tests {
                 pull_request_id
             }) if *pull_request_id == dw_core::PullRequestId::from("42")
         )));
+    }
+
+    #[tokio::test]
+    async fn background_action_fails_instead_of_hanging_when_input_is_required() {
+        let action = TuiAction {
+            label: "Start preview".into(),
+            request: TuiActionRequest::TaskStart(dw_task::start::StartArgs {
+                work_item_ids: Vec::new(),
+                root: None,
+                project: Some(dw_core::ProjectKey::from("ha")),
+                task: None,
+                type_name: None,
+                repositories: vec![dw_core::WorkspaceRepositoryName::from("front")],
+                slug: None,
+                skip_ado: true,
+                with_active_children: false,
+                create_child_tasks: false,
+                mode: dw_core::ExecutionMode::Preview,
+            }),
+            description: "test".into(),
+            kind: ActionRisk::Safe,
+        };
+        let mut output = Vec::new();
+
+        let error = run_captured_streaming(&action, |event| output.push(event))
+            .await
+            .expect_err("TUI background prompts should fail explicitly");
+
+        assert!(output.iter().any(|event| matches!(
+            event,
+            DwActionEvent::NeedsInput {
+                request: dw_core::InputRequest::Text { id, .. }
+            } if id.as_str() == "work-item-id"
+        )));
+        assert!(
+            error
+                .message
+                .to_string()
+                .contains("requires interactive input")
+        );
     }
 }

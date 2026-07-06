@@ -93,7 +93,7 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
         .and_then(|project| project.azure_dev_ops)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "Configuration azureDevOps manquante dans projects.json pour {}.",
+                "Missing azureDevOps configuration in projects.json for {}.",
                 manifest.project
             )
         })?;
@@ -164,7 +164,7 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
     let parent = manifest.parent_work_items()[0].clone();
     if !requires_child_tasks(parent.kind.as_ref().map(|kind| kind.as_str())) {
         return Err(anyhow::anyhow!(
-            "Cette commande est réservée aux User Story et Anomalie."
+            "This command is only available for User Story and Anomalie."
         ));
     }
     let projects = load_projects_config(&root);

@@ -71,7 +71,7 @@ pub fn parse_color_mode(mode: Option<&str>) -> Result<ConfigColorMode, String> {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
-                "Mode couleur inconnu: {}. Valeurs autorisées: {}.",
+                "Unknown color mode: {}. Allowed values: {}.",
                 mode.unwrap_or_default(),
                 choices
             )

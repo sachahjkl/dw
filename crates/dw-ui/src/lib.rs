@@ -1,3 +1,7 @@
+mod ado_changelog;
+
+pub use ado_changelog::render_ado_changelog_document;
+
 use std::io::IsTerminal;
 
 pub fn banner(title: &str) -> String {
@@ -83,7 +87,7 @@ impl TerminalTheme {
             return line.into();
         }
 
-        if is_error || line.starts_with_ignore_ascii_case("Erreur") {
+        if is_error || line.starts_with_ignore_ascii_case("Error") {
             return self.bold(&self.error(line));
         }
 
@@ -98,7 +102,7 @@ impl TerminalTheme {
 
         if starts_with_any_ignore_ascii_case(
             &styled,
-            &["Dry-run", "Relancer", "PR non créée", "Prévisualisation"],
+            &["Dry-run", "Retry", "PR not created", "Preview"],
         ) {
             return self.warning(&styled);
         }
@@ -131,14 +135,14 @@ impl TerminalTheme {
         if starts_with_any_ignore_ascii_case(
             &styled,
             &[
-                "Aucun",
-                "Rien",
-                "Sync ignorée",
-                "PR ignorée",
-                "ADO ignore",
-                "Prune annul",
-                "Suppression annul",
-                "Finalisation annul",
+                "No ",
+                "Nothing",
+                "Sync skipped",
+                "PR skipped",
+                "ADO skipped",
+                "Prune canceled",
+                "Deletion canceled",
+                "Finish canceled",
             ],
         ) {
             return self.warning(&styled);
@@ -147,42 +151,42 @@ impl TerminalTheme {
         if starts_with_any_ignore_ascii_case(
             &styled,
             &[
-                "Prochaine étape",
-                "Puis, pour",
-                "Et pour terminer",
-                "Workspaces disponibles",
+                "Next step",
+                "Then, to",
+                "Finally",
+                "Available workspaces",
                 "Project  WorkItem",
-                "Mise à jour",
-                "Préparation de la mise à jour",
-                "Schémas et contextes agents régénérés",
-                "Configuration DevWorkflow",
-                "Diagnostic configuration",
-                "Configuration mise à jour",
-                "Workspaces task",
-                "Synchronisation task",
-                "Renommage workspace",
-                "Nettoyage workspaces",
-                "Work items workspace",
-                "Workspace courant",
-                "Mise à jour repositories",
-                "Commit des repositories",
-                "Ajout repository",
-                "Suppression workspace",
-                "Finalisation workspace",
+                "Update",
+                "Update preparation",
+                "Schemas and agent contexts regenerated",
+                "DevWorkflow configuration",
+                "Configuration diagnostics",
+                "Configuration updated",
+                "Task workspaces",
+                "Task sync",
+                "Workspace rename",
+                "Workspace cleanup",
+                "Workspace work items",
+                "Current workspace",
+                "Repository update",
+                "Repository commits",
+                "Add repository",
+                "Workspace deletion",
+                "Workspace finish",
                 "Handoff ",
-                "Commit à créer",
-                "Pull requests à créer",
-                "Préflight task",
-                "Détails préflight",
-                "Validation handoff",
-                "Détails handoff",
-                "ADO assignés",
+                "Commit to create",
+                "Pull requests to create",
+                "Task preflight",
+                "Preflight details",
+                "Handoff validation",
+                "Handoff details",
+                "Assigned ADO",
                 "ADO work item",
                 "ADO context",
-                "Connexion ADO",
-                "Requête DB",
-                "Garde SQL",
-                "Sous-tâche ADO",
+                "ADO connection",
+                "DB query",
+                "SQL guard",
+                "ADO child task",
                 "Secret",
             ],
         ) {
@@ -200,7 +204,7 @@ impl TerminalTheme {
 
         let label = &line[..separator_index];
         let label_name = label.trim();
-        if !matches!(label_name, "Statut" | "Résultat" | "Décision" | "À faire") {
+        if !matches!(label_name, "Status" | "Result" | "Decision" | "Next") {
             return None;
         }
 
@@ -216,8 +220,8 @@ impl TerminalTheme {
 
     fn style_known_value(&self, label_name: &str, value: &str) -> String {
         match label_name {
-            "À faire" => self.warning(value),
-            "Décision" => {
+            "Next" => self.warning(value),
+            "Decision" => {
                 if value.contains('✓') {
                     self.success(value)
                 } else if value.contains('!') || value.contains('✕') {
@@ -226,7 +230,7 @@ impl TerminalTheme {
                     self.bold(value)
                 }
             }
-            "Statut" | "Résultat" => self.style_status_value(value),
+            "Status" | "Result" => self.style_status_value(value),
             _ => value.into(),
         }
     }
@@ -236,31 +240,31 @@ impl TerminalTheme {
         if contains_any(
             &normalized,
             &[
-                "non connecté",
-                "à corriger",
-                "bloqué",
-                "introuvable",
-                "incomplète",
-                "erreur",
-                "échec",
+                "not connected",
+                "needs fixing",
+                "blocked",
+                "not found",
+                "incomplete",
+                "error",
+                "failed",
             ],
         ) {
             self.error(value)
         } else if contains_any(
             &normalized,
-            &["changement", "tronqué", "ignoré", "ignorée", "à faire"],
+            &["changed", "truncated", "skipped", "to do", "pending"],
         ) {
             self.warning(value)
         } else if contains_any(
             &normalized,
             &[
-                "connecté",
-                "terminé",
-                "valide",
-                "autorisé",
-                "enregistré",
-                "présent",
-                "supprimé",
+                "connected",
+                "finished",
+                "valid",
+                "authorized",
+                "saved",
+                "present",
+                "deleted",
                 "ok",
                 "done",
             ],
@@ -289,19 +293,19 @@ fn is_success_status_line(line: &str) -> bool {
     starts_with_any_ignore_ascii_case(
         line,
         &[
-            "Workspace créé",
-            "Worktree créé",
-            "Workspace renommé",
-            "Workspace synchronisé",
-            "Workspace supprimé",
-            "Repository ajouté",
-            "Work items ajoutés",
-            "Work items retirés",
-            "Binaire remplacé",
-            "Commits/push terminés",
-            "PR créée",
-            "Root rafraîchi",
-            "Workspace mis à jour",
+            "Workspace created",
+            "Worktree created",
+            "Workspace renamed",
+            "Workspace synchronized",
+            "Workspace deleted",
+            "Repository added",
+            "Work items added",
+            "Work items removed",
+            "Binary replaced",
+            "Commits/push finished",
+            "PR created",
+            "Root refreshed",
+            "Workspace updated",
         ],
     ) || (line.starts_with_ignore_ascii_case("Repo ") && line.contains(':'))
 }
@@ -352,26 +356,26 @@ mod tests {
     #[test]
     fn style_line_colors_status_lines() {
         let theme = TerminalTheme::new(ColorMode::Always, false, false);
-        let styled = theme.style_line("Workspace créé: S:/dw", false);
+        let styled = theme.style_line("Workspace created: S:/dw", false);
 
         assert!(styled.contains("\u{1b}"));
-        assert!(styled.contains("Workspace créé"));
+        assert!(styled.contains("Workspace created"));
     }
 
     #[test]
     fn style_line_colors_known_status_values() {
         let theme = TerminalTheme::new(ColorMode::Always, false, false);
-        let ok = theme.style_line("Statut    : connecté", false);
-        let blocked = theme.style_line("Statut    : bloqué", false);
+        let ok = theme.style_line("Status    : connected", false);
+        let blocked = theme.style_line("Status    : blocked", false);
 
-        assert!(ok.contains("\u{1b}[1m\u{1b}[32mconnecté"));
-        assert!(blocked.contains("\u{1b}[1m\u{1b}[31mbloqué"));
+        assert!(ok.contains("\u{1b}[1m\u{1b}[32mconnected"));
+        assert!(blocked.contains("\u{1b}[1m\u{1b}[31mblocked"));
     }
 
     #[test]
     fn style_line_colors_action_commands() {
         let theme = TerminalTheme::new(ColorMode::Always, false, false);
-        let styled = theme.style_line("Action    : finaliser le workspace", false);
+        let styled = theme.style_line("Action    : finish workspace", false);
 
         assert!(styled.contains("\u{1b}[1m\u{1b}[36mAction"));
     }
@@ -382,17 +386,17 @@ mod tests {
 
         assert!(
             theme
-                .style_line("Aucun workspace task trouvé.", false)
+                .style_line("No task workspace found.", false)
                 .contains("\u{1b}[33m")
         );
         assert!(
             theme
-                .style_line("Rien à terminer.", false)
+                .style_line("Nothing to finish.", false)
                 .contains("\u{1b}[33m")
         );
         assert!(
             theme
-                .style_line("Suppression annulée.", false)
+                .style_line("Deletion canceled.", false)
                 .contains("\u{1b}[33m")
         );
     }
@@ -402,12 +406,12 @@ mod tests {
         let theme = TerminalTheme::plain();
 
         assert_eq!(
-            theme.style_line("Action    : finaliser le workspace", false),
-            "Action    : finaliser le workspace"
+            theme.style_line("Action    : finish workspace", false),
+            "Action    : finish workspace"
         );
         assert_eq!(
-            theme.style_line("Statut    : bloqué", false),
-            "Statut    : bloqué"
+            theme.style_line("Status    : blocked", false),
+            "Status    : blocked"
         );
     }
 
@@ -426,8 +430,8 @@ mod tests {
         let theme = TerminalTheme::plain();
 
         assert_eq!(
-            theme.style_line("Workspace créé: S:/dw", false),
-            "Workspace créé: S:/dw"
+            theme.style_line("Workspace created: S:/dw", false),
+            "Workspace created: S:/dw"
         );
     }
 
