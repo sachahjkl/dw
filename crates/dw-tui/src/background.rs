@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
+use crate::history::ActionRunId;
 use crate::model::{
     self, ActionEffect, AdoAssignedProject, TuiAction, TuiPullRequest, TuiSnapshot,
 };
@@ -32,11 +33,12 @@ pub enum BackgroundResult {
     },
     ActionEvent {
         generation: u64,
-        label: String,
+        run_id: ActionRunId,
         event: DwActionEvent,
     },
     Action {
         generation: u64,
+        run_id: ActionRunId,
         label: String,
         refresh_after_success: bool,
         open_after_success: bool,
@@ -47,7 +49,7 @@ pub enum BackgroundResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionStart {
-    Started { label: String },
+    Started { run_id: ActionRunId, label: String },
     Queued { label: String, position: usize },
 }
 
@@ -55,6 +57,7 @@ pub struct BackgroundJobs {
     generation: u64,
     sender: Sender<BackgroundResult>,
     receiver: Receiver<BackgroundResult>,
+    next_action_run_id: u64,
     snapshot: Option<RunningJob>,
     assigned: Option<RunningJob>,
     pull_requests: Option<RunningJob>,
@@ -89,6 +92,7 @@ impl BackgroundJobs {
             generation: 0,
             sender,
             receiver,
+            next_action_run_id: 0,
             snapshot: None,
             assigned: None,
             pull_requests: None,
@@ -179,8 +183,8 @@ impl BackgroundJobs {
                 position: self.pending_actions.len(),
             };
         }
-        self.spawn_action(action, label.clone());
-        ActionStart::Started { label }
+        let run_id = self.spawn_action(action, label.clone());
+        ActionStart::Started { run_id, label }
     }
 
     pub fn poll(&mut self) -> Vec<BackgroundResult> {
@@ -229,14 +233,14 @@ impl BackgroundJobs {
             .is_some_and(|job| job.generation == generation)
     }
 
-    pub fn start_next_action(&mut self) -> Option<String> {
+    pub fn start_next_action(&mut self) -> Option<(ActionRunId, String)> {
         if self.is_loading(BackgroundKind::Action) {
             return None;
         }
         let action = self.pending_actions.pop_front()?;
         let label = action.display_label();
-        self.spawn_action(action, label.clone());
-        Some(label)
+        let run_id = self.spawn_action(action, label.clone());
+        Some((run_id, label))
     }
 
     pub fn restart_assigned(&mut self, snapshot: &mut TuiSnapshot) {
@@ -261,20 +265,20 @@ impl BackgroundJobs {
         generation
     }
 
-    fn spawn_action(&mut self, action: TuiAction, label: String) {
+    fn spawn_action(&mut self, action: TuiAction, label: String) -> ActionRunId {
         let generation = self.start_job(BackgroundKind::Action);
+        let run_id = self.next_action_run_id();
         let refresh_after_success = action.should_refresh_after_success();
         let open_after_success = action.opens_result_after_success();
         let effect = action.successful_effect();
         self.action_label = Some(label.clone());
         self.spawn_async(move |sender| async move {
             let output_sender = sender.clone();
-            let output_label = label.clone();
             let result = match tokio::spawn(async move {
                 runner::run_captured_streaming(&action, move |event| {
                     let _ = output_sender.send(BackgroundResult::ActionEvent {
                         generation,
-                        label: output_label.clone(),
+                        run_id,
                         event,
                     });
                 })
@@ -292,6 +296,7 @@ impl BackgroundJobs {
             };
             let _ = sender.send(BackgroundResult::Action {
                 generation,
+                run_id,
                 label,
                 refresh_after_success,
                 open_after_success,
@@ -299,6 +304,12 @@ impl BackgroundJobs {
                 result: Box::new(result),
             });
         });
+        run_id
+    }
+
+    fn next_action_run_id(&mut self) -> ActionRunId {
+        self.next_action_run_id += 1;
+        ActionRunId::new(self.next_action_run_id)
     }
 
     fn accept_job(&mut self, kind: BackgroundKind, generation: u64) -> bool {
@@ -354,7 +365,7 @@ impl BackgroundJobs {
         } else {
             let _ = self.sender.send(BackgroundResult::ActionEvent {
                 generation: self.generation,
-                label: "background".into(),
+                run_id: ActionRunId::new(0),
                 event: DwActionEvent::Started {
                     action_id: "runtime-unavailable".into(),
                 },
@@ -439,7 +450,7 @@ mod tests {
         assert_eq!(jobs.pending_action_labels(), ["Second"]);
         assert!(jobs.accept_action(1));
 
-        let label = jobs.start_next_action().expect("queued action");
+        let (_, label) = jobs.start_next_action().expect("queued action");
 
         assert_eq!(label, "Second");
         assert_eq!(jobs.pending_action_count(), 0);

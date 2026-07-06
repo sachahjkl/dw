@@ -1,7 +1,9 @@
 use crate::actions::QuickOptionState;
 use crate::app::App;
 use crate::form::FormState;
-use crate::history::{ActionRunRecord, RunHistoryEntry, capped_lines};
+#[cfg(test)]
+use crate::history::{ActionRunErrorMessage, ActionRunId, ActionRunLabel};
+use crate::history::{ActionRunRecord, ActionRunStatus, RunHistoryEntry, capped_lines};
 #[cfg(test)]
 use crate::model::View;
 use crate::model::{ActionRisk, TuiAction};
@@ -99,12 +101,10 @@ pub(crate) fn guide_detail_lines() -> Vec<String> {
 }
 
 pub(crate) fn history_marker(entry: &RunHistoryEntry) -> &'static str {
-    if entry.status == "running" || entry.status == "en cours" {
-        "..."
-    } else if entry.success {
-        "OK"
-    } else {
-        "KO"
+    match entry.status {
+        ActionRunStatus::Running => "...",
+        ActionRunStatus::Succeeded => "OK",
+        ActionRunStatus::Failed => "KO",
     }
 }
 
@@ -181,7 +181,7 @@ pub(crate) fn history_output_lines(app: &App) -> Vec<String> {
             app.history.entries.len()
         ),
         format!("{marker} {} ({})", entry.request_label, entry.status),
-        if entry.status == "running" || entry.status == "en cours" {
+        if entry.status.is_running() {
             "Output is being captured; closing this modal does not interrupt the action.".into()
         } else {
             "Output captured.".into()
@@ -190,7 +190,7 @@ pub(crate) fn history_output_lines(app: &App) -> Vec<String> {
     ];
     let rendered = history_entry_rendered_lines(entry);
     if rendered.is_empty() {
-        if entry.status == "running" || entry.status == "en cours" {
+        if entry.status.is_running() {
             lines.push("Waiting for the first output line...".into());
         } else {
             lines.push("No output captured for this run.".into());
@@ -220,7 +220,7 @@ pub(crate) fn history_entry_rendered_lines(entry: &RunHistoryEntry) -> Vec<Strin
             lines.extend(result_lines);
             lines
         }
-        ActionRunRecord::Failed { error } => vec![error.clone()],
+        ActionRunRecord::Failed { error } => vec![error.to_string()],
     };
     capped_lines(lines)
 }
@@ -561,18 +561,17 @@ mod tests {
     #[test]
     fn history_marker_distinguishes_running_success_and_failure() {
         let running = RunHistoryEntry {
-            request_label: "Task finish".into(),
-            status: "running".into(),
-            success: true,
+            id: ActionRunId::new(1),
+            request_label: ActionRunLabel::new("Task finish"),
+            status: ActionRunStatus::Running,
             record: ActionRunRecord::running(),
         };
         let success = RunHistoryEntry {
-            status: "exit 0".into(),
+            status: ActionRunStatus::Succeeded,
             ..running.clone()
         };
         let failure = RunHistoryEntry {
-            status: "exit 1".into(),
-            success: false,
+            status: ActionRunStatus::Failed,
             ..running.clone()
         };
 
@@ -584,7 +583,8 @@ mod tests {
     #[test]
     fn history_output_lines_explain_running_capture() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
-        app.history.start_running("Task finish".into());
+        app.history
+            .start_running(ActionRunId::new(1), ActionRunLabel::new("Task finish"));
 
         let lines = history_output_lines(&app);
 
@@ -608,10 +608,10 @@ mod tests {
     fn history_output_lines_render_failed_record_error() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.history.push(RunHistoryEntry {
-            request_label: "Doctor".into(),
-            status: "error".into(),
-            success: false,
-            record: ActionRunRecord::failed("boom".into()),
+            id: ActionRunId::new(1),
+            request_label: ActionRunLabel::new("Doctor"),
+            status: ActionRunStatus::Failed,
+            record: ActionRunRecord::failed(ActionRunErrorMessage::new("boom")),
         });
 
         let lines = history_output_lines(&app);

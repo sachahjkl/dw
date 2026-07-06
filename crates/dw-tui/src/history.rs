@@ -1,11 +1,74 @@
 use dw_app::DwActionResult;
 use dw_core::DwActionEvent;
+use std::fmt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ActionRunId(u64);
+
+impl ActionRunId {
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionRunLabel(String);
+
+impl ActionRunLabel {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+}
+
+impl fmt::Display for ActionRunLabel {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionRunErrorMessage(String);
+
+impl ActionRunErrorMessage {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+}
+
+impl fmt::Display for ActionRunErrorMessage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionRunStatus {
+    Running,
+    Succeeded,
+    Failed,
+}
+
+impl ActionRunStatus {
+    pub fn is_running(self) -> bool {
+        self == Self::Running
+    }
+}
+
+impl fmt::Display for ActionRunStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Running => formatter.write_str("running"),
+            Self::Succeeded => formatter.write_str("ok"),
+            Self::Failed => formatter.write_str("error"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunHistoryEntry {
-    pub request_label: String,
-    pub status: String,
-    pub success: bool,
+    pub id: ActionRunId,
+    pub request_label: ActionRunLabel,
+    pub status: ActionRunStatus,
     pub record: ActionRunRecord,
 }
 
@@ -19,7 +82,7 @@ pub enum ActionRunRecord {
         result: Box<DwActionResult>,
     },
     Failed {
-        error: String,
+        error: ActionRunErrorMessage,
     },
 }
 
@@ -36,7 +99,7 @@ impl ActionRunRecord {
         Self::Running { events: Vec::new() }
     }
 
-    pub fn failed(error: String) -> Self {
+    pub fn failed(error: ActionRunErrorMessage) -> Self {
         Self::Failed { error }
     }
 
@@ -65,21 +128,21 @@ impl HistoryState {
         self.selected_entry = self.entries.len().saturating_sub(1);
     }
 
-    pub fn start_running(&mut self, request_label: String) {
+    pub fn start_running(&mut self, id: ActionRunId, request_label: ActionRunLabel) {
         self.push(RunHistoryEntry {
+            id,
             request_label,
-            status: "running".into(),
-            success: true,
+            status: ActionRunStatus::Running,
             record: ActionRunRecord::running(),
         });
     }
 
-    pub fn append_running_event(&mut self, request_label: &str, event: DwActionEvent) {
+    pub fn append_running_event(&mut self, id: ActionRunId, event: DwActionEvent) {
         let Some(entry) = self
             .entries
             .iter_mut()
             .rev()
-            .find(|entry| entry.request_label == request_label && entry.status == "running")
+            .find(|entry| entry.id == id && entry.status.is_running())
         else {
             return;
         };
@@ -91,21 +154,19 @@ impl HistoryState {
 
     pub fn finish_running(
         &mut self,
-        request_label: &str,
-        status: String,
-        success: bool,
+        id: ActionRunId,
+        status: ActionRunStatus,
         record: ActionRunRecord,
     ) -> bool {
         let Some(entry) = self
             .entries
             .iter_mut()
             .rev()
-            .find(|entry| entry.request_label == request_label && entry.status == "running")
+            .find(|entry| entry.id == id && entry.status.is_running())
         else {
             return false;
         };
         entry.status = status;
-        entry.success = success;
         entry.record = record;
         true
     }
@@ -241,9 +302,9 @@ mod tests {
 
         for index in 0..22 {
             history.push(RunHistoryEntry {
-                request_label: format!("Doctor {index}"),
-                status: "exit 0".into(),
-                success: true,
+                id: ActionRunId::new(index),
+                request_label: ActionRunLabel::new(format!("Doctor {index}")),
+                status: ActionRunStatus::Succeeded,
                 record: ActionRunRecord::Running {
                     events: vec![
                         DwActionEvent::Started {
@@ -283,31 +344,31 @@ mod tests {
     }
 
     #[test]
-    fn running_history_entry_streams_and_finishes() {
+    fn running_history_entry_streams_and_finishes_by_run_id() {
         let mut history = HistoryState::default();
+        let id = ActionRunId::new(1);
 
-        history.start_running("Task finish".into());
+        history.start_running(id, ActionRunLabel::new("Task finish"));
         history.append_running_event(
-            "Task finish",
+            id,
             DwActionEvent::Started {
                 action_id: "prepare".into(),
             },
         );
         history.append_running_event(
-            "Task finish",
+            id,
             DwActionEvent::Started {
                 action_id: "push-front".into(),
             },
         );
 
         let entry = history.selected_entry().expect("entry");
-        assert_eq!(entry.status, "running");
+        assert_eq!(entry.status, ActionRunStatus::Running);
         assert_eq!(entry.record.events().len(), 2);
 
         assert!(history.finish_running(
-            "Task finish",
-            "exit 0".into(),
-            true,
+            id,
+            ActionRunStatus::Succeeded,
             ActionRunRecord::Completed {
                 events: entry.record.events().to_vec(),
                 result: Box::new(DwActionResult::App(dw_app::AppActionResult::Version {
@@ -316,8 +377,7 @@ mod tests {
             }
         ));
         let entry = history.selected_entry().expect("entry");
-        assert_eq!(entry.status, "exit 0");
-        assert!(entry.success);
+        assert_eq!(entry.status, ActionRunStatus::Succeeded);
         assert!(matches!(entry.record, ActionRunRecord::Completed { .. }));
     }
 }

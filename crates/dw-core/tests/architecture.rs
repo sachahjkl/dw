@@ -266,6 +266,39 @@ fn tui_history_and_detail_store_typed_action_records_not_rendered_output() {
             );
         }
     }
+
+    let history =
+        fs::read_to_string(repo.join("crates/dw-tui/src/history.rs")).expect("read TUI history");
+    for forbidden in [
+        "pub request_label: String",
+        "pub status: String",
+        "pub success: bool",
+        "entry.request_label == request_label",
+        "entry.status == \"running\"",
+        "finish_running(&label",
+        "append_running_event(&label",
+    ] {
+        assert!(
+            !history.contains(forbidden),
+            "TUI history contains forbidden stringly run token `{forbidden}`"
+        );
+    }
+    for required in [
+        "pub struct ActionRunId",
+        "pub struct ActionRunLabel",
+        "pub struct ActionRunErrorMessage",
+        "pub enum ActionRunStatus",
+        "pub id: ActionRunId",
+        "pub request_label: ActionRunLabel",
+        "pub status: ActionRunStatus",
+        "pub fn append_running_event(&mut self, id: ActionRunId",
+        "pub fn finish_running(\n        &mut self,\n        id: ActionRunId",
+    ] {
+        assert!(
+            history.contains(required),
+            "TUI history missing typed run contract `{required}`"
+        );
+    }
 }
 
 #[test]

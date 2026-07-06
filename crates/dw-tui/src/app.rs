@@ -10,7 +10,10 @@ use crate::actions::{
 };
 use crate::background::{ActionStart, BackgroundJobs, BackgroundKind, BackgroundResult};
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
-use crate::history::{ActionRunRecord, HistoryState, RunHistoryEntry};
+use crate::history::{
+    ActionRunErrorMessage, ActionRunId, ActionRunLabel, ActionRunRecord, ActionRunStatus,
+    HistoryState, RunHistoryEntry,
+};
 use crate::model::{
     ActionEffect, ActionRisk, AdoAssignedProject, CockpitItem, CockpitSeverity, DetailPanel,
     TuiAction, TuiActionRequest, TuiPullRequest, TuiSnapshot, View, WorkspaceAction,
@@ -229,15 +232,16 @@ impl App {
                 }
                 BackgroundResult::ActionEvent {
                     generation,
-                    label,
+                    run_id,
                     event,
                 } => {
                     if self.background.accepts_action_output(generation) {
-                        self.history.append_running_event(&label, event);
+                        self.history.append_running_event(run_id, event);
                     }
                 }
                 BackgroundResult::Action {
                     generation,
+                    run_id,
                     label,
                     refresh_after_success,
                     open_after_success,
@@ -248,6 +252,7 @@ impl App {
                         continue;
                     }
                     self.accept_action_result(
+                        run_id,
                         label,
                         refresh_after_success,
                         open_after_success,
@@ -1543,8 +1548,9 @@ impl App {
     ) -> Result<()> {
         if !action.runs_attached_in_tui() {
             match self.background.start_action(action) {
-                ActionStart::Started { label } => {
-                    self.history.start_running(label.clone());
+                ActionStart::Started { run_id, label } => {
+                    self.history
+                        .start_running(run_id, ActionRunLabel::new(label.clone()));
                     self.messages.push(format!("Background launch: {label}"));
                 }
                 ActionStart::Queued { label, position } => {
@@ -1559,10 +1565,12 @@ impl App {
         let result = runner::run_attached(&action)?;
         terminal.clear()?;
         self.history.push(RunHistoryEntry {
-            request_label: result.display_label.clone(),
-            status: result.status_label.clone(),
-            success: result.success,
-            record: ActionRunRecord::failed("External launch completed.".into()),
+            id: ActionRunId::new(0),
+            request_label: ActionRunLabel::new(result.display_label.clone()),
+            status: ActionRunStatus::Succeeded,
+            record: ActionRunRecord::failed(ActionRunErrorMessage::new(
+                "External launch completed.",
+            )),
         });
         self.messages.push(format!(
             "Last launch: {} -> {}",
@@ -1577,6 +1585,7 @@ impl App {
 
     fn accept_action_result(
         &mut self,
+        run_id: ActionRunId,
         label: String,
         refresh_after_success: bool,
         open_after_success: bool,
@@ -1589,16 +1598,14 @@ impl App {
                     events: result.events.clone(),
                     result: Box::new(result.result.clone()),
                 };
-                if !self.history.finish_running(
-                    &result.display_label,
-                    result.status_label.clone(),
-                    result.success,
-                    record.clone(),
-                ) {
+                if !self
+                    .history
+                    .finish_running(run_id, ActionRunStatus::Succeeded, record.clone())
+                {
                     self.history.push(RunHistoryEntry {
-                        request_label: result.display_label.clone(),
-                        status: result.status_label.clone(),
-                        success: result.success,
+                        id: run_id,
+                        request_label: ActionRunLabel::new(result.display_label.clone()),
+                        status: ActionRunStatus::Succeeded,
                         record: record.clone(),
                     });
                 }
@@ -1622,15 +1629,15 @@ impl App {
                 self.continue_action_queue();
             }
             Err(error) => {
-                let record = ActionRunRecord::failed(error.clone());
+                let record = ActionRunRecord::failed(ActionRunErrorMessage::new(error.clone()));
                 if !self
                     .history
-                    .finish_running(&label, "error".into(), false, record.clone())
+                    .finish_running(run_id, ActionRunStatus::Failed, record.clone())
                 {
                     self.history.push(RunHistoryEntry {
-                        request_label: label.clone(),
-                        status: "error".into(),
-                        success: false,
+                        id: run_id,
+                        request_label: ActionRunLabel::new(label.clone()),
+                        status: ActionRunStatus::Failed,
                         record,
                     });
                 }
@@ -1676,8 +1683,9 @@ impl App {
     }
 
     fn continue_action_queue(&mut self) {
-        if let Some(label) = self.background.start_next_action() {
-            self.history.start_running(label.clone());
+        if let Some((run_id, label)) = self.background.start_next_action() {
+            self.history
+                .start_running(run_id, ActionRunLabel::new(label.clone()));
             self.messages
                 .push(format!("Next background launch: {label}"));
         } else if self.reload_after_action_queue {
@@ -3015,9 +3023,9 @@ mod tests {
     fn history_output_modal_opens_scrolls_and_closes() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.history.push(RunHistoryEntry {
-            request_label: "Doctor".into(),
-            status: "exit 0".into(),
-            success: true,
+            id: ActionRunId::new(1),
+            request_label: ActionRunLabel::new("Doctor"),
+            status: ActionRunStatus::Succeeded,
             record: ActionRunRecord::Running {
                 events: vec![
                     dw_core::DwActionEvent::Started {
@@ -3033,9 +3041,9 @@ mod tests {
             },
         });
         app.history.push(RunHistoryEntry {
-            request_label: "Version".into(),
-            status: "exit 0".into(),
-            success: true,
+            id: ActionRunId::new(2),
+            request_label: ActionRunLabel::new("Version"),
+            status: ActionRunStatus::Succeeded,
             record: ActionRunRecord::Completed {
                 events: Vec::new(),
                 result: Box::new(DwActionResult::App(AppActionResult::Version {
@@ -3139,15 +3147,18 @@ mod tests {
     #[test]
     fn action_result_finishes_streaming_history_entry() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
-        app.history.start_running("Version".into());
+        let run_id = ActionRunId::new(1);
+        app.history
+            .start_running(run_id, ActionRunLabel::new("Version"));
         app.history.append_running_event(
-            "Version",
+            run_id,
             dw_core::DwActionEvent::Task(dw_core::TaskActionEvent::ResolvingPullRequestWorkItems {
                 pull_request_id: dw_core::PullRequestId::from("42"),
             }),
         );
 
         app.accept_action_result(
+            run_id,
             "Version".into(),
             false,
             false,
@@ -3159,7 +3170,7 @@ mod tests {
 
         assert_eq!(app.history.entries.len(), 1);
         let entry = app.history.selected_entry().expect("entry");
-        assert_eq!(entry.status, "exit 0");
+        assert_eq!(entry.status, ActionRunStatus::Succeeded);
         assert_eq!(
             crate::history::preview_lines(&crate::ui_text::history_entry_rendered_lines(entry)),
             [
@@ -3172,9 +3183,12 @@ mod tests {
     #[test]
     fn report_action_result_opens_detail_panel_and_keeps_run_log() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
-        app.history.start_running("My work items · ha".into());
+        let run_id = ActionRunId::new(1);
+        app.history
+            .start_running(run_id, ActionRunLabel::new("My work items · ha"));
 
         app.accept_action_result(
+            run_id,
             "My work items · ha".into(),
             false,
             true,
@@ -3192,7 +3206,7 @@ mod tests {
             dw_tui_adapter::render::action_result_lines(&result, &dw_ui::TerminalTheme::plain());
         assert!(lines.iter().any(|line| line.contains("#55264")));
         let entry = app.history.selected_entry().expect("entry");
-        assert_eq!(entry.request_label, "My work items · ha");
+        assert_eq!(entry.request_label.to_string(), "My work items · ha");
         assert!(
             crate::ui_text::history_entry_rendered_lines(entry)
                 .iter()
@@ -3205,6 +3219,7 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         app.accept_action_result(
+            ActionRunId::new(1),
             "Color · always".into(),
             true,
             false,
@@ -3225,6 +3240,7 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         app.accept_action_result(
+            ActionRunId::new(1),
             "Default agent · codex".into(),
             true,
             false,
@@ -3245,6 +3261,7 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         app.accept_action_result(
+            ActionRunId::new(1),
             "Default agent · CODEX-CLI".into(),
             true,
             false,
@@ -3268,6 +3285,7 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         app.accept_action_result(
+            ActionRunId::new(1),
             "Root · /tmp/new-root".into(),
             true,
             false,
@@ -3289,6 +3307,7 @@ mod tests {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
         app.accept_action_result(
+            ActionRunId::new(1),
             "Task sync · /tmp/ws".into(),
             true,
             false,
