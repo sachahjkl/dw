@@ -1042,7 +1042,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             let mut report = dw_ado_commands::commands::work_item::report_with_events(
                 dw_ado_commands::commands::work_item::WorkItemArgs {
                     ids: WorkItemId::parse_many(&id),
-                    root,
+                    root: root.map(DevWorkflowRoot::from),
                     project: project.map(ProjectKey::from),
                 },
                 |event| {
@@ -1073,7 +1073,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             let mut report = dw_ado_commands::commands::context::context_report_with_events(
                 dw_ado_commands::commands::context::ContextArgs {
                     ids: WorkItemId::parse_many(&id),
-                    root,
+                    root: root.map(DevWorkflowRoot::from),
                     project: project.map(ProjectKey::from),
                     summary,
                     comments,
@@ -1111,7 +1111,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
         } => {
             let report = dw_ado_commands::commands::context::ai_context_report_with_events(
                 dw_ado_commands::commands::context::AiContextArgs {
-                    root,
+                    root: root.map(DevWorkflowRoot::from),
                     organization,
                     project: project.map(ProjectKey::from),
                     ids: WorkItemId::parse_many(&id),

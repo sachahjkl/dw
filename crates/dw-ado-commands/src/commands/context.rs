@@ -5,14 +5,14 @@ use anyhow::{Context, Result};
 use dw_ado::auth::{AdoToken, require_token};
 use dw_ado::{get_ai_context, get_work_item_expanded};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{AdoActionEvent, ProjectKey, WorkItemId};
+use dw_core::{AdoActionEvent, DevWorkflowRoot, ProjectKey, WorkItemId};
 use serde::Serialize;
 use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct ContextArgs {
     pub ids: Vec<WorkItemId>,
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub project: Option<ProjectKey>,
     pub summary: bool,
     pub comments: i32,
@@ -27,7 +27,7 @@ pub enum ContextMode {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ContextReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub project: ProjectKey,
     #[serde(rename = "requestedIds")]
     pub requested_ids: Vec<WorkItemId>,
@@ -40,7 +40,7 @@ pub struct ContextReport {
 
 #[derive(Debug, Clone)]
 pub struct AiContextArgs {
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub organization: Option<String>,
     pub project: Option<ProjectKey>,
     pub ids: Vec<WorkItemId>,
@@ -51,7 +51,7 @@ pub struct AiContextArgs {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct AiContextReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     #[serde(rename = "requestedIds")]
     pub requested_ids: Vec<WorkItemId>,
     pub summary: bool,
@@ -78,11 +78,11 @@ pub async fn context_report_with_events(
         comments,
         mode,
     } = args;
-    let root = resolve_root(root.as_deref());
+    let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
         project.ok_or_else(|| anyhow::anyhow!("ado context requiert un projet configuré."))?;
-    let projects = load_projects_config(&root);
-    let workflow = load_workflow_config(&root);
+    let projects = load_projects_config(root.as_str());
+    let workflow = load_workflow_config(root.as_str());
     let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
     let mut events = Vec::new();
     push_event(
@@ -92,7 +92,7 @@ pub async fn context_report_with_events(
             project: Some(project_key.clone()),
         },
     );
-    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
     if ids.is_empty() {
         return Err(anyhow::anyhow!("Au moins un work item est requis."));
     }
@@ -158,15 +158,15 @@ pub async fn ai_context_report_with_events(
         comments,
         include_comments,
     } = args;
-    let root = resolve_root(root.as_deref());
-    let options = resolve_cli_ado_options(&root, organization, project)?;
+    let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
+    let options = resolve_cli_ado_options(root.as_str(), organization, project)?;
     let mut events = Vec::new();
     push_event(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating { project: None },
     );
-    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
     if ids.is_empty() {
         return Err(anyhow::anyhow!("Au moins un work item est requis."));
     }

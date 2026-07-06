@@ -3,19 +3,19 @@ use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{WorkItemSnapshot, query_work_item_snapshots};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{AdoActionEvent, ProjectKey, WorkItemId};
+use dw_core::{AdoActionEvent, DevWorkflowRoot, ProjectKey, WorkItemId};
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
 pub struct WorkItemArgs {
     pub ids: Vec<WorkItemId>,
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub project: Option<ProjectKey>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct WorkItemReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub project: ProjectKey,
     #[serde(rename = "requestedIds")]
     pub requested_ids: Vec<WorkItemId>,
@@ -32,11 +32,11 @@ pub async fn report_with_events(
     mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<WorkItemReport> {
     let WorkItemArgs { ids, root, project } = args;
-    let root = resolve_root(root.as_deref());
+    let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
         project.ok_or_else(|| anyhow::anyhow!("ado work-item requiert un projet configuré."))?;
-    let projects = load_projects_config(&root);
-    let workflow = load_workflow_config(&root);
+    let projects = load_projects_config(root.as_str());
+    let workflow = load_workflow_config(root.as_str());
     let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
     let mut events = Vec::new();
     push_event(
@@ -46,7 +46,7 @@ pub async fn report_with_events(
             project: Some(project_key.clone()),
         },
     );
-    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
     if ids.is_empty() {
         return Err(anyhow::anyhow!("Au moins un work item est requis."));
     }

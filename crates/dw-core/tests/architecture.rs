@@ -620,7 +620,12 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
         ),
         (
             "crates/dw-ado-commands/src/commands/context.rs",
-            &["pub id: String", "parse_work_item_ids_as_strings"],
+            &[
+                "pub id: String",
+                "pub root: Option<String>",
+                "pub root: String",
+                "parse_work_item_ids_as_strings",
+            ],
         ),
         (
             "crates/dw-ado-commands/src/commands/set_state.rs",
@@ -639,6 +644,8 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             "crates/dw-ado-commands/src/commands/work_item.rs",
             &[
                 "pub id: String",
+                "pub root: Option<String>",
+                "pub root: String",
                 "parse_work_item_ids_as_strings",
                 "parse_id_set",
             ],
@@ -717,6 +724,52 @@ fn ado_prs_contract_uses_typed_root_and_repositories() {
             changelog.contains(required),
             "changelog repository resolver should expose typed token `{required}`"
         );
+    }
+}
+
+#[test]
+fn ado_work_item_and_context_contracts_use_typed_roots() {
+    let repo = repo_root();
+    let checked: &[(&str, &[&str])] = &[
+        (
+            "crates/dw-ado-commands/src/commands/work_item.rs",
+            &[
+                "DevWorkflowRoot",
+                "ProjectKey",
+                "WorkItemId",
+                "pub root: Option<DevWorkflowRoot>",
+                "pub root: DevWorkflowRoot",
+                "pub project: Option<ProjectKey>",
+                "pub project: ProjectKey",
+                "pub requested_ids: Vec<WorkItemId>",
+            ],
+        ),
+        (
+            "crates/dw-ado-commands/src/commands/context.rs",
+            &[
+                "DevWorkflowRoot",
+                "ProjectKey",
+                "WorkItemId",
+                "pub root: Option<DevWorkflowRoot>",
+                "pub root: DevWorkflowRoot",
+                "pub project: Option<ProjectKey>",
+                "pub project: ProjectKey",
+                "pub requested_ids: Vec<WorkItemId>",
+            ],
+        ),
+    ];
+
+    for (relative, required_tokens) in checked {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read ADO source");
+        for required in *required_tokens {
+            assert!(
+                text.contains(required),
+                "{} should expose typed ADO work-item/context contract token `{}`",
+                path.display(),
+                required
+            );
+        }
     }
 }
 

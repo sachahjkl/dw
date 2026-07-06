@@ -285,7 +285,7 @@ pub fn selected_ado_action(
         AdoItemAction::Context => {
             TuiActionRequest::AdoContext(dw_ado_commands::commands::context::ContextArgs {
                 ids: vec![dw_core::WorkItemId::from(item.id.clone())],
-                root: Some(snapshot.root.clone()),
+                root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
                 project: Some(dw_core::ProjectKey::from(project.key.clone())),
                 summary: false,
                 comments: 200,
@@ -295,7 +295,7 @@ pub fn selected_ado_action(
         AdoItemAction::WorkItem => {
             TuiActionRequest::AdoWorkItem(dw_ado_commands::commands::work_item::WorkItemArgs {
                 ids: vec![dw_core::WorkItemId::from(item.id.clone())],
-                root: Some(snapshot.root.clone()),
+                root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
                 project: Some(dw_core::ProjectKey::from(project.key.clone())),
             })
         }
