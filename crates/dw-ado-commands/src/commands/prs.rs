@@ -6,38 +6,40 @@ use dw_ado::{
     list_active_pull_requests_authenticated,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::ProjectKey;
+use dw_core::{AdoRepositoryName, DevWorkflowRoot, ProjectKey};
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
 pub struct PrsArgs {
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub project: ProjectKey,
-    pub repo: Option<String>,
+    pub repo: Option<AdoRepositoryName>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PrsReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub project: ProjectKey,
-    pub repositories: Vec<String>,
+    pub repositories: Vec<AdoRepositoryName>,
     pub items: Vec<PullRequestListItem>,
 }
 
 pub async fn report(args: PrsArgs) -> Result<PrsReport> {
-    let root = resolve_root(args.root.as_deref());
-    let projects = load_projects_config(&root);
-    let workflow = load_workflow_config(&root);
+    let root = DevWorkflowRoot::from(resolve_root(
+        args.root.as_ref().map(DevWorkflowRoot::as_str),
+    ));
+    let projects = load_projects_config(root.as_str());
+    let workflow = load_workflow_config(root.as_str());
     let options = resolve_ado_options(&projects, &workflow, args.project.as_str())?;
     let project_config = resolve_project(&projects, args.project.as_str());
-    let repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_deref());
+    let repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_ref());
     if repositories.is_empty() {
         return Err(anyhow::anyhow!(
             "ado prs requiert un repository explicite, ou un projet avec des azureDevOpsRepository configurés."
         ));
     }
 
-    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
     let mut items = load_prs_for_repositories(&options, &token, repositories.clone()).await?;
     sort_prs(&mut items);
 
@@ -52,14 +54,14 @@ pub async fn report(args: PrsArgs) -> Result<PrsReport> {
 async fn load_prs_for_repositories(
     options: &AzureDevOpsOptions,
     token: &AdoToken,
-    repositories: Vec<String>,
+    repositories: Vec<AdoRepositoryName>,
 ) -> Result<Vec<PullRequestListItem>> {
     let mut jobs = tokio::task::JoinSet::new();
     for repository in repositories {
         let options = options.clone();
         let token = token.clone();
         jobs.spawn_blocking(move || {
-            list_active_pull_requests_authenticated(&options, &repository, &token)
+            list_active_pull_requests_authenticated(&options, repository.as_str(), &token)
         });
     }
 

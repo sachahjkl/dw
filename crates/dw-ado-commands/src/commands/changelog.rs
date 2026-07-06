@@ -16,7 +16,7 @@ pub struct ChangelogArgs {
     pub source: ChangelogSource,
     pub root: Option<String>,
     pub project: Option<ProjectKey>,
-    pub repo: Option<String>,
+    pub repo: Option<AdoRepositoryName>,
     pub group_by_parent: bool,
     pub format: Option<String>,
     pub table: bool,
@@ -119,24 +119,24 @@ pub async fn report_with_events(
         }
         ChangelogSource::PullRequests(pull_request_ids) => {
             let project_config = resolve_project(&projects, project_key.as_str());
-            let repositories = resolve_ado_repositories(project_config.as_ref(), repo.as_deref());
+            let repositories = resolve_ado_repositories(project_config.as_ref(), repo.as_ref());
             push_event(
                 &mut events,
                 &mut emit,
                 AdoActionEvent::ResolvingPullRequestWorkItems {
-                    repositories: repositories
-                        .iter()
-                        .cloned()
-                        .map(AdoRepositoryName::from)
-                        .collect(),
+                    repositories: repositories.clone(),
                 },
             );
             let options = options.clone();
             let token = token.clone();
+            let ado_repositories = repositories
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
             tokio::task::spawn_blocking(move || {
                 get_work_item_ids_from_pull_requests(
                     &options,
-                    &repositories,
+                    &ado_repositories,
                     &pull_request_ids,
                     &token,
                 )
@@ -279,23 +279,21 @@ fn push_event(
 
 pub fn resolve_ado_repositories(
     project_config: Option<&dw_config::ProjectConfig>,
-    repository: Option<&str>,
-) -> Vec<String> {
-    if let Some(repository) = repository.filter(|value| !value.trim().is_empty()) {
-        return repository
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(|repo| resolve_ado_repository(project_config, repo))
-            .fold(Vec::new(), |mut repos, repo| {
+    repository: Option<&AdoRepositoryName>,
+) -> Vec<AdoRepositoryName> {
+    if let Some(repository) = repository {
+        return std::iter::once(resolve_ado_repository(project_config, repository.as_str())).fold(
+            Vec::<AdoRepositoryName>::new(),
+            |mut repos, repo| {
                 if !repos
                     .iter()
-                    .any(|existing| existing.eq_ignore_ascii_case(&repo))
+                    .any(|existing| existing.as_str().eq_ignore_ascii_case(repo.as_str()))
                 {
                     repos.push(repo);
                 }
                 repos
-            });
+            },
+        );
     }
 
     project_config
@@ -306,10 +304,11 @@ pub fn resolve_ado_repositories(
                 .filter_map(|key| dw_config::repository_config(project, key))
                 .filter_map(|repo| repo.azure_dev_ops_repository)
                 .filter(|repo| !repo.trim().is_empty())
-                .fold(Vec::new(), |mut repos, repo| {
+                .map(AdoRepositoryName::from)
+                .fold(Vec::<AdoRepositoryName>::new(), |mut repos, repo| {
                     if !repos
                         .iter()
-                        .any(|existing: &String| existing.eq_ignore_ascii_case(&repo))
+                        .any(|existing| existing.as_str().eq_ignore_ascii_case(repo.as_str()))
                     {
                         repos.push(repo);
                     }
@@ -322,12 +321,14 @@ pub fn resolve_ado_repositories(
 pub fn resolve_ado_repository(
     project_config: Option<&dw_config::ProjectConfig>,
     repository: &str,
-) -> String {
-    project_config
-        .and_then(|project| dw_config::repository_config(project, repository))
-        .and_then(|repo| repo.azure_dev_ops_repository)
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| repository.to_string())
+) -> AdoRepositoryName {
+    AdoRepositoryName::from(
+        project_config
+            .and_then(|project| dw_config::repository_config(project, repository))
+            .and_then(|repo| repo.azure_dev_ops_repository)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| repository.to_string()),
+    )
 }
 
 fn extract_work_item_ids_from_git_range(from: &str, to: Option<&str>) -> Result<Vec<String>> {

@@ -602,8 +602,21 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             ],
         ),
         (
+            "crates/dw-ado-commands/src/commands/prs.rs",
+            &[
+                "pub root: Option<String>",
+                "pub root: String",
+                "pub repo: Option<String>",
+                "pub repositories: Vec<String>",
+            ],
+        ),
+        (
             "crates/dw-ado-commands/src/commands/changelog.rs",
-            &["pub ids: String", "pub git_to: Option<String>"],
+            &[
+                "pub ids: String",
+                "pub git_to: Option<String>",
+                "pub repo: Option<String>",
+            ],
         ),
         (
             "crates/dw-ado-commands/src/commands/context.rs",
@@ -666,6 +679,43 @@ fn ado_assigned_contract_uses_typed_root_project_and_suggested_ids() {
             "{} should expose typed ADO assigned contract token `{}`",
             path.display(),
             required
+        );
+    }
+}
+
+#[test]
+fn ado_prs_contract_uses_typed_root_and_repositories() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-ado-commands/src/commands/prs.rs");
+    let text = fs::read_to_string(&path).expect("read prs source");
+    for required in [
+        "AdoRepositoryName",
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub root: DevWorkflowRoot",
+        "pub repo: Option<AdoRepositoryName>",
+        "pub repositories: Vec<AdoRepositoryName>",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed ADO PR contract token `{}`",
+            path.display(),
+            required
+        );
+    }
+
+    let changelog =
+        fs::read_to_string(repo.join("crates/dw-ado-commands/src/commands/changelog.rs"))
+            .expect("read changelog source");
+    for required in [
+        "pub repo: Option<AdoRepositoryName>",
+        "repository: Option<&AdoRepositoryName>",
+        "-> Vec<AdoRepositoryName>",
+    ] {
+        assert!(
+            changelog.contains(required),
+            "changelog repository resolver should expose typed token `{required}`"
         );
     }
 }

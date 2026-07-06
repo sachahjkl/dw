@@ -426,7 +426,9 @@ pub fn selected_pull_request_action(
                 ]),
                 root: Some(snapshot.root.clone()),
                 project: Some(dw_core::ProjectKey::from(item.project.clone())),
-                repo: Some(item.ado_repository.clone()),
+                repo: Some(dw_core::AdoRepositoryName::from(
+                    item.ado_repository.clone(),
+                )),
                 group_by_parent: false,
                 format: None,
                 table: false,

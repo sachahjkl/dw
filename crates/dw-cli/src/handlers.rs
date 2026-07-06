@@ -7,7 +7,7 @@ use dw_cli_adapter::{
     repositories_prompt_spec,
 };
 use dw_core::{
-    AdoActionEvent, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
+    AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
     EnvironmentVariableName, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
     PullRequestId, SecretKey, TaskId, TaskSlug, WorkItemId, WorkItemTypeName, WorkspacePath,
     WorkspaceRepositoryName,
@@ -936,9 +936,9 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
         } => {
             let report =
                 dw_ado_commands::commands::prs::report(dw_ado_commands::commands::prs::PrsArgs {
-                    root,
+                    root: root.map(DevWorkflowRoot::from),
                     project: ProjectKey::from(project),
-                    repo,
+                    repo: repo.map(AdoRepositoryName::from),
                 })
                 .await?;
             if json {
@@ -979,7 +979,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                     source,
                     root,
                     project: project.map(ProjectKey::from),
-                    repo,
+                    repo: repo.map(AdoRepositoryName::from),
                     group_by_parent,
                     format,
                     table,
