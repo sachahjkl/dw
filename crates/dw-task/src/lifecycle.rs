@@ -110,13 +110,9 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
     let requested_ids_for_fetch = requested_ids.clone();
     let token_for_fetch = token.clone();
     let snapshots = run_blocking_ado(move || {
-        let requested_id_values = requested_ids_for_fetch
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>();
         get_work_item_snapshots_authenticated(
             &options_for_fetch,
-            &requested_id_values,
+            &requested_ids_for_fetch,
             &token_for_fetch,
         )
     })
@@ -180,7 +176,7 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let task_title = WorkItemTitle::from(child_task_title(args.repo.as_str(), args.title.as_str()));
     let parent_snapshot = WorkItemSnapshot {
-        id: parent.id.to_string(),
+        id: parent.id.clone(),
         kind: parent.kind.as_ref().map(ToString::to_string),
         state: parent.state.as_ref().map(ToString::to_string),
         title: parent.title.as_ref().map(ToString::to_string),

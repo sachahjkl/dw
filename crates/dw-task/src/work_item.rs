@@ -101,10 +101,10 @@ pub async fn add_work_item_choices_report(
     let items = query_assigned_work_items(&options, 50, &token).await?;
     let choices = items
         .into_iter()
-        .filter(|item| !manifest.matches_work_item(&item.id))
+        .filter(|item| !manifest.matches_work_item(item.id.as_str()))
         .filter(|item| !dw_workspace::is_final_state(item.kind.as_deref(), item.state.as_deref()))
         .map(|item| WorkspaceWorkItem {
-            id: WorkItemId::from(item.id),
+            id: item.id,
             kind: item.kind.map(WorkItemTypeName::from),
             title: item.title.map(WorkItemTitle::from),
             state: item.state.map(WorkItemState::from),
@@ -188,7 +188,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
         }
         let token = require_token(load_auth_options(Some(&root))?).await?;
         let options = options.clone();
-        let missing_ids_for_fetch = work_item_id_values(&missing_ids);
+        let missing_ids_for_fetch = missing_ids.clone();
         let token = token.clone();
         let snapshots = run_blocking_ado(move || {
             get_work_item_snapshots_authenticated(&options, &missing_ids_for_fetch, &token)
@@ -310,11 +310,7 @@ fn ensure_all_snapshots_resolved(
         .collect::<Vec<_>>();
     let unresolved = requested
         .iter()
-        .filter(|id| {
-            !found
-                .iter()
-                .any(|found_id| found_id.eq_ignore_ascii_case(id.as_str()))
-        })
+        .filter(|id| !found.iter().any(|found_id| found_id == *id))
         .cloned()
         .collect::<Vec<_>>();
     Err(anyhow::anyhow!(
@@ -351,10 +347,6 @@ fn ensure_no_final_snapshots(snapshots: &[WorkItemSnapshot]) -> Result<()> {
         "Impossible d'ajouter des work items en état final: {}",
         labels.join(", ")
     ))
-}
-
-fn work_item_id_values(ids: &[WorkItemId]) -> Vec<String> {
-    ids.iter().map(ToString::to_string).collect()
 }
 
 #[cfg(test)]

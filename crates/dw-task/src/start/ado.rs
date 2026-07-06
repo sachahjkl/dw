@@ -15,16 +15,12 @@ pub fn load_start_work_items(
     with_active_children: bool,
     token: &AdoToken,
 ) -> Result<Vec<dw_workspace::WorkspaceWorkItem>> {
-    let selected_ids = selected_ids
-        .iter()
-        .map(|id| id.as_str().to_owned())
-        .collect::<Vec<_>>();
-    let snapshots = get_work_item_snapshots_authenticated(options, &selected_ids, token)?;
+    let snapshots = get_work_item_snapshots_authenticated(options, selected_ids, token)?;
     if snapshots.is_empty() {
         return Ok(selected_ids
-            .into_iter()
+            .iter()
             .map(|id| dw_workspace::WorkspaceWorkItem {
-                id: WorkItemId::from(id),
+                id: id.clone(),
                 kind: None,
                 title: None,
                 state: None,
@@ -52,7 +48,7 @@ pub fn create_start_child_tasks(
         return Ok(Vec::new());
     };
     let parent_snapshot = WorkItemSnapshot {
-        id: parent.id.to_string(),
+        id: parent.id.clone(),
         kind: parent.kind.as_ref().map(ToString::to_string),
         state: parent.state.as_ref().map(ToString::to_string),
         title: parent.title.as_ref().map(ToString::to_string),
@@ -78,7 +74,7 @@ pub fn create_start_child_tasks(
         )?;
         created.push(WorkspaceChildTask {
             repository: repository.clone(),
-            id: WorkItemId::from(result.id),
+            id: result.id,
             title: Some(WorkItemTitle::from(result.title)),
         });
     }
@@ -89,18 +85,19 @@ fn active_child_ids(
     options: &AzureDevOpsOptions,
     snapshots: &[WorkItemSnapshot],
     token: &AdoToken,
-) -> Result<Vec<String>> {
+) -> Result<Vec<WorkItemId>> {
     let mut child_ids = Vec::new();
     for snapshot in snapshots {
-        for child_id in
-            get_related_work_item_ids(options, &snapshot.id, RELATION_HIERARCHY_FORWARD, token)?
-        {
-            if snapshots
-                .iter()
-                .all(|existing| !existing.id.eq_ignore_ascii_case(&child_id))
+        for child_id in get_related_work_item_ids(
+            options,
+            snapshot.id.as_str(),
+            RELATION_HIERARCHY_FORWARD,
+            token,
+        )? {
+            if snapshots.iter().all(|existing| existing.id != child_id)
                 && child_ids
                     .iter()
-                    .all(|existing: &String| !existing.eq_ignore_ascii_case(&child_id))
+                    .all(|existing: &WorkItemId| existing != &child_id)
             {
                 child_ids.push(child_id);
             }
@@ -117,10 +114,7 @@ pub fn merge_start_snapshots(
         if is_final_state(child.kind.as_deref(), child.state.as_deref()) {
             continue;
         }
-        if snapshots
-            .iter()
-            .any(|existing| existing.id.eq_ignore_ascii_case(&child.id))
-        {
+        if snapshots.iter().any(|existing| existing.id == child.id) {
             continue;
         }
         snapshots.push(child);
@@ -128,7 +122,7 @@ pub fn merge_start_snapshots(
     snapshots
         .into_iter()
         .map(|snapshot| dw_workspace::WorkspaceWorkItem {
-            id: WorkItemId::from(snapshot.id),
+            id: snapshot.id,
             kind: snapshot.kind.map(WorkItemTypeName::from),
             title: snapshot.title.map(WorkItemTitle::from),
             state: snapshot.state.map(WorkItemState::from),

@@ -272,11 +272,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
         resolve_workspace_repositories(project_config.as_ref(), &args.repositories);
 
     let start = start_plan(StartArgs {
-        work_item_ids: work_item_ids
-            .iter()
-            .cloned()
-            .map(WorkItemId::from)
-            .collect(),
+        work_item_ids: work_item_ids.clone(),
         root: Some(root.clone()),
         project: Some(args.project.clone()),
         task: None,
@@ -299,7 +295,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
             .into_iter()
             .map(AdoRepositoryName::from)
             .collect(),
-        work_item_ids: work_item_ids.into_iter().map(WorkItemId::from).collect(),
+        work_item_ids,
         start,
     })
 }

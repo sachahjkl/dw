@@ -1054,7 +1054,7 @@ async fn load_assigned_project(
 impl From<dw_ado::WorkItemSnapshot> for AdoAssignedItem {
     fn from(value: dw_ado::WorkItemSnapshot) -> Self {
         Self {
-            id: WorkItemId::from(value.id),
+            id: value.id,
             kind: value.kind.unwrap_or_else(|| "-".into()),
             state: WorkItemState::from(value.state.unwrap_or_else(|| "-".into())),
             title: value.title.unwrap_or_default(),
@@ -1232,7 +1232,7 @@ fn load_pull_request_target(
                     pull_request_id: Some(PullRequestId::from(pr.pull_request_id.to_string())),
                     title: pr.title,
                     is_draft: pr.is_draft,
-                    work_item_ids: pr.work_item_ids.into_iter().map(WorkItemId::from).collect(),
+                    work_item_ids: pr.work_item_ids,
                     url: Some(dw_ado::pull_request_web_url(
                         options,
                         target.ado_repository.as_str(),

@@ -422,12 +422,7 @@ pub async fn execute_finish_with_events(
                 &handoff_summary,
             ),
             is_draft: !plan.ready,
-            work_item_ids: plan
-                .manifest
-                .all_known_work_item_ids()
-                .into_iter()
-                .map(|id| id.to_string())
-                .collect(),
+            work_item_ids: plan.manifest.all_known_work_item_ids(),
         };
         let options_for_create = options.clone();
         let token_for_create = token.clone();
@@ -499,7 +494,7 @@ pub async fn execute_finish_with_events(
             let label = work_item_label(&item);
             let Some(state) = state else {
                 work_item_updates.push(FinishWorkItemStateUpdate {
-                    id: WorkItemId::from(item.id),
+                    id: item.id.clone(),
                     label,
                     kind: item.kind.clone(),
                     current_state,
@@ -515,7 +510,7 @@ pub async fn execute_finish_with_events(
                 .is_some_and(|current| current.eq_ignore_ascii_case(state.as_str()))
             {
                 work_item_updates.push(FinishWorkItemStateUpdate {
-                    id: WorkItemId::from(item.id),
+                    id: item.id.clone(),
                     label,
                     kind: item.kind.clone(),
                     current_state,
@@ -540,7 +535,7 @@ pub async fn execute_finish_with_events(
             })
             .await?;
             work_item_updates.push(FinishWorkItemStateUpdate {
-                id: WorkItemId::from(item.id),
+                id: item.id.clone(),
                 label,
                 kind: item.kind.clone(),
                 current_state,

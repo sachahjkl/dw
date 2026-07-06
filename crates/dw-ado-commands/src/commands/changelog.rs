@@ -178,9 +178,6 @@ pub async fn report_with_events(
                 },
             );
             extract_work_item_ids_from_git_range(&range)?
-                .into_iter()
-                .map(WorkItemId::from)
-                .collect()
         }
         ChangelogSource::PullRequests(pull_request_ids) => {
             let project_config = resolve_project(&projects, project_key.as_str());
@@ -209,7 +206,6 @@ pub async fn report_with_events(
             .await
             .context("resolving work items from pull requests was interrupted")??
             .into_iter()
-            .map(WorkItemId::from)
             .collect()
         }
     };
@@ -264,15 +260,10 @@ pub async fn report_with_events(
     let mut items = {
         let options = options.clone();
         let token = token.clone();
-        let work_item_id_values = work_item_ids
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>();
-        tokio::task::spawn_blocking(move || {
-            load_changelog_items(&options, &work_item_id_values, &token)
-        })
-        .await
-        .context("loading changelog work items was interrupted")??
+        let work_item_ids = work_item_ids.clone();
+        tokio::task::spawn_blocking(move || load_changelog_items(&options, &work_item_ids, &token))
+            .await
+            .context("loading changelog work items was interrupted")??
     };
     if items.is_empty() {
         return Ok(ChangelogReport {
@@ -396,7 +387,7 @@ pub fn resolve_ado_repository(
     )
 }
 
-fn extract_work_item_ids_from_git_range(range: &GitRevisionRange) -> Result<Vec<String>> {
+fn extract_work_item_ids_from_git_range(range: &GitRevisionRange) -> Result<Vec<WorkItemId>> {
     let messages = commit_messages_in_range(range)?;
     Ok(extract_work_item_ids_from_commit_messages(
         messages.as_str(),

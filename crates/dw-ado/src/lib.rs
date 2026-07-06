@@ -11,6 +11,7 @@ mod wiql;
 use crate::auth::{AdoAuthScheme, AdoToken};
 use azure_core::credentials::{AccessToken, TokenCredential, TokenRequestOptions};
 use dw_contracts::{AdoAiContextComment, AdoAiContextItem};
+use dw_core::WorkItemId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -89,7 +90,7 @@ where
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkItemSnapshot {
-    pub id: String,
+    pub id: WorkItemId,
     #[serde(rename = "type")]
     pub kind: Option<String>,
     pub state: Option<String>,
@@ -100,7 +101,7 @@ pub struct WorkItemSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceChildTaskCreateResult {
     pub repository: String,
-    pub id: String,
+    pub id: WorkItemId,
     pub title: String,
 }
 
@@ -130,7 +131,7 @@ pub struct PullRequestListItem {
     #[serde(rename = "webUrl")]
     pub web_url: Option<String>,
     #[serde(rename = "workItemIds")]
-    pub work_item_ids: Vec<String>,
+    pub work_item_ids: Vec<WorkItemId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -152,7 +153,7 @@ pub struct CreatePullRequestInput {
     #[serde(rename = "isDraft")]
     pub is_draft: bool,
     #[serde(rename = "workItemIds")]
-    pub work_item_ids: Vec<String>,
+    pub work_item_ids: Vec<WorkItemId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -277,12 +278,12 @@ pub fn get_work_item_snapshot(
 
 pub fn get_work_item_snapshots(
     options: &AzureDevOpsOptions,
-    work_item_ids: &[String],
+    work_item_ids: &[WorkItemId],
     token: &str,
 ) -> Result<Vec<WorkItemSnapshot>, AdoError> {
     let ids = work_item_ids
         .iter()
-        .filter_map(|id| id.parse::<u64>().ok())
+        .filter_map(|id| id.as_str().parse::<u64>().ok())
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(vec![]);
@@ -317,12 +318,12 @@ pub fn get_work_item_snapshot_authenticated(
 
 pub fn get_work_item_snapshots_authenticated(
     options: &AzureDevOpsOptions,
-    work_item_ids: &[String],
+    work_item_ids: &[WorkItemId],
     token: &AdoToken,
 ) -> Result<Vec<WorkItemSnapshot>, AdoError> {
     let ids = work_item_ids
         .iter()
-        .filter_map(|id| id.parse::<u64>().ok())
+        .filter_map(|id| id.as_str().parse::<u64>().ok())
         .collect::<Vec<_>>();
     if ids.is_empty() {
         return Ok(vec![]);
@@ -351,7 +352,7 @@ pub fn get_related_work_item_ids(
     work_item_id: &str,
     relation: &str,
     token: &AdoToken,
-) -> Result<Vec<String>, AdoError> {
+) -> Result<Vec<WorkItemId>, AdoError> {
     let root = get_work_item_expanded(options, work_item_id, token)?;
     Ok(root
         .get("relations")
@@ -368,6 +369,7 @@ pub fn get_related_work_item_ids(
             item.get("url")
                 .and_then(Value::as_str)
                 .and_then(work_item_id_from_relation_url)
+                .map(WorkItemId::from)
         })
         .collect())
 }
@@ -377,7 +379,7 @@ pub fn try_get_pull_request_work_item_ids(
     repository: &str,
     pull_request_id: i64,
     token: &AdoToken,
-) -> Result<Option<Vec<String>>, AdoError> {
+) -> Result<Option<Vec<WorkItemId>>, AdoError> {
     let Some(root) = get_json_authenticated_optional_404(
         &pull_request_work_items_url(options, repository, pull_request_id),
         token,
@@ -392,6 +394,7 @@ pub fn try_get_pull_request_work_item_ids(
             .unwrap_or_default()
             .into_iter()
             .filter_map(|item| element_text(item.get("id")))
+            .map(WorkItemId::from)
             .collect(),
     ))
 }
@@ -546,7 +549,7 @@ fn create_child_task_body(
             "/relations/-",
             serde_json::json!({
                 "rel": "System.LinkTypes.Hierarchy-Reverse",
-                "url": work_item_api_url(options, &parent.id),
+                "url": work_item_api_url(options, parent.id.as_str()),
                 "attributes": { "comment": format!("creation {source}") }
             }),
         ),
@@ -561,7 +564,7 @@ fn child_task_result_from_root(
 ) -> WorkspaceChildTaskCreateResult {
     WorkspaceChildTaskCreateResult {
         repository: repository.into(),
-        id: element_text(root.get("id")).unwrap_or_default(),
+        id: WorkItemId::from(element_text(root.get("id")).unwrap_or_default()),
         title: title.into(),
     }
 }
@@ -701,7 +704,7 @@ pub fn create_pull_request(
     let refs = input
         .work_item_ids
         .iter()
-        .map(|id| serde_json::json!({ "id": id }))
+        .map(|id| serde_json::json!({ "id": id.as_str() }))
         .collect::<Vec<_>>();
     let root = post_json(
         &pull_requests_url(options, &input.repository),
@@ -729,7 +732,7 @@ pub fn create_pull_request_authenticated(
     let refs = input
         .work_item_ids
         .iter()
-        .map(|id| serde_json::json!({ "id": id }))
+        .map(|id| serde_json::json!({ "id": id.as_str() }))
         .collect::<Vec<_>>();
     let root = post_json_authenticated(
         &pull_requests_url(options, &input.repository),
@@ -806,7 +809,7 @@ fn pull_request_summary_from_response(
 fn snapshot_from_value(value: &Value) -> WorkItemSnapshot {
     let fields = value.get("fields").cloned().unwrap_or(Value::Null);
     WorkItemSnapshot {
-        id: element_text(value.get("id")).unwrap_or_default(),
+        id: WorkItemId::from(element_text(value.get("id")).unwrap_or_default()),
         kind: field_text(&fields, "System.WorkItemType"),
         state: field_text(&fields, "System.State"),
         title: field_text(&fields, "System.Title"),
@@ -818,7 +821,7 @@ fn snapshot_from_sdk_work_item(
     item: &azure_devops_rust_api::wit::models::WorkItem,
 ) -> WorkItemSnapshot {
     WorkItemSnapshot {
-        id: item.id.to_string(),
+        id: WorkItemId::from(item.id.to_string()),
         kind: field_text(&item.fields, "System.WorkItemType"),
         state: field_text(&item.fields, "System.State"),
         title: field_text(&item.fields, "System.Title"),

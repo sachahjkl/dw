@@ -166,7 +166,7 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
                 .manifest
                 .parent_work_items()
                 .into_iter()
-                .map(|item| item.id.to_string())
+                .map(|item| item.id)
                 .collect::<Vec<_>>();
             let options_for_fetch = options.clone();
             let token_for_fetch = token.clone();

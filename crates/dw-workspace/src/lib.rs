@@ -1010,16 +1010,16 @@ pub fn plan_add_work_item_snapshots(
     let mut work_items = manifest.parent_work_items();
     let mut added_ids = Vec::new();
     for snapshot in snapshots {
-        if manifest.matches_work_item(&snapshot.id)
+        if manifest.matches_work_item(snapshot.id.as_str())
             || work_items
                 .iter()
-                .any(|item| item.id.as_str().eq_ignore_ascii_case(&snapshot.id))
+                .any(|item| item.id.as_str().eq_ignore_ascii_case(snapshot.id.as_str()))
         {
             continue;
         }
-        added_ids.push(WorkItemId::from(snapshot.id.clone()));
+        added_ids.push(snapshot.id.clone());
         work_items.push(WorkspaceWorkItem {
-            id: WorkItemId::from(snapshot.id.clone()),
+            id: snapshot.id.clone(),
             kind: snapshot.kind.clone().map(WorkItemTypeName::from),
             title: snapshot.title.clone().map(WorkItemTitle::from),
             state: snapshot.state.clone().map(WorkItemState::from),
@@ -1112,7 +1112,7 @@ pub fn execute_task_sync(
     let work_items = snapshots
         .iter()
         .map(|snapshot| WorkspaceWorkItem {
-            id: WorkItemId::from(snapshot.id.clone()),
+            id: snapshot.id.clone(),
             kind: snapshot.kind.clone().map(WorkItemTypeName::from),
             title: snapshot.title.clone().map(WorkItemTitle::from),
             state: snapshot.state.clone().map(WorkItemState::from),
@@ -1138,14 +1138,14 @@ pub fn execute_task_sync(
 pub fn execute_add_child_task(
     workspace: &WorkspacePath,
     repository: &str,
-    id: &str,
+    id: &WorkItemId,
     title: Option<String>,
 ) -> Result<WorkspaceManifest, WorkspaceError> {
     let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let mut child_tasks = manifest.normalized_child_tasks();
     child_tasks.push(WorkspaceChildTask {
         repository: WorkspaceRepositoryName::from(repository),
-        id: WorkItemId::from(id),
+        id: id.clone(),
         title: title.map(WorkItemTitle::from),
     });
     let updated = WorkspaceManifest {

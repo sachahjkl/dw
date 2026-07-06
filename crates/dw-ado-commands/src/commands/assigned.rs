@@ -127,13 +127,10 @@ pub fn suggested_start_ids(
     parent: &WorkItemSnapshot,
     children: &[WorkItemSnapshot],
 ) -> Vec<WorkItemId> {
-    let mut ids = vec![WorkItemId::from(parent.id.clone())];
+    let mut ids = vec![parent.id.clone()];
     for child in children {
-        if !ids
-            .iter()
-            .any(|id| id.as_str().eq_ignore_ascii_case(&child.id))
-        {
-            ids.push(WorkItemId::from(child.id.clone()));
+        if !ids.iter().any(|id| id == &child.id) {
+            ids.push(child.id.clone());
         }
     }
     ids
@@ -161,7 +158,7 @@ pub fn work_item_choice_label(item: &WorkItemSnapshot) -> String {
 pub fn assigned_work_item_prompt_spec(items: &[WorkItemSnapshot]) -> PromptSpec {
     let mut choices = items
         .iter()
-        .map(|item| PromptChoice::new(item.id.clone(), work_item_choice_label(item)))
+        .map(|item| PromptChoice::new(item.id.as_str(), work_item_choice_label(item)))
         .collect::<Vec<_>>();
     choices.push(PromptChoice::new(
         MANUAL_WORK_ITEM_PROMPT_VALUE,

@@ -347,7 +347,7 @@ pub fn ado_assigned_lines(
             "Item      : {}",
             ado_work_item_summary(item, theme)
         ));
-        let ids = [dw_core::WorkItemId::from(item.id.clone())];
+        let ids = [item.id.clone()];
         lines.push(ado_start_action_line(&ids, &report.project, theme));
         lines.push(String::new());
     }

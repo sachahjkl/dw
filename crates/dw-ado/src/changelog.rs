@@ -3,7 +3,7 @@ use crate::{
     get_work_item_snapshot_authenticated, get_work_item_snapshots_authenticated,
     try_get_pull_request_work_item_ids, work_item_web_url,
 };
-use dw_core::PullRequestId;
+use dw_core::{PullRequestId, WorkItemId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,14 +40,15 @@ pub fn parse_changelog_format(format: Option<&str>) -> Result<ChangelogFormat, A
     }
 }
 
-pub fn extract_work_item_ids_from_commit_messages(commit_log: &str) -> Vec<String> {
+pub fn extract_work_item_ids_from_commit_messages(commit_log: &str) -> Vec<WorkItemId> {
     let mut ids = Vec::new();
     for (index, _) in commit_log.match_indices('#') {
         let id = commit_log[index + 1..]
             .chars()
             .take_while(|ch| ch.is_ascii_digit())
             .collect::<String>();
-        if !id.is_empty() && !ids.iter().any(|existing| existing == &id) {
+        let id = WorkItemId::from(id);
+        if !id.as_str().is_empty() && !ids.iter().any(|existing| existing == &id) {
             ids.push(id);
         }
     }
@@ -93,21 +94,25 @@ pub fn group_work_items_by_parent(
     items: &[WorkItemSnapshot],
     token: &AdoToken,
 ) -> Result<Vec<WorkItemGroup>, AdoError> {
-    let mut groups: BTreeMap<String, Vec<WorkItemSnapshot>> = BTreeMap::new();
-    let mut parents: BTreeMap<String, WorkItemSnapshot> = BTreeMap::new();
+    let mut groups: BTreeMap<WorkItemId, Vec<WorkItemSnapshot>> = BTreeMap::new();
+    let mut parents: BTreeMap<WorkItemId, WorkItemSnapshot> = BTreeMap::new();
 
     for item in items {
-        let parent_id =
-            get_related_work_item_ids(options, &item.id, RELATION_HIERARCHY_REVERSE, token)?
-                .into_iter()
-                .next()
-                .unwrap_or_else(|| item.id.clone());
+        let parent_id = get_related_work_item_ids(
+            options,
+            item.id.as_str(),
+            RELATION_HIERARCHY_REVERSE,
+            token,
+        )?
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| item.id.clone());
         if parent_id == item.id {
             parents.insert(parent_id.clone(), item.clone());
         } else if !parents.contains_key(&parent_id) {
             parents.insert(
                 parent_id.clone(),
-                get_work_item_snapshot_authenticated(options, &parent_id, token)?,
+                get_work_item_snapshot_authenticated(options, parent_id.as_str(), token)?,
             );
         }
 
@@ -134,7 +139,7 @@ pub fn get_work_item_ids_from_pull_requests(
     repositories: &[String],
     pull_request_ids: &[PullRequestId],
     token: &AdoToken,
-) -> Result<Vec<String>, AdoError> {
+) -> Result<Vec<WorkItemId>, AdoError> {
     if repositories.is_empty() {
         return Err(AdoError::InvalidInput(
             "Le mode PR requiert un repository explicite, ou un projet avec des repositories AzureDevOpsRepository configurés.".into(),
@@ -188,7 +193,7 @@ pub fn get_work_item_ids_from_pull_requests(
 
 pub fn load_changelog_items(
     options: &AzureDevOpsOptions,
-    work_item_ids: &[String],
+    work_item_ids: &[WorkItemId],
     token: &AdoToken,
 ) -> Result<Vec<WorkItemSnapshot>, AdoError> {
     get_work_item_snapshots_authenticated(options, work_item_ids, token)
@@ -370,14 +375,18 @@ fn render_markdown_line(item: &WorkItemSnapshot, options: &AzureDevOpsOptions) -
 }
 
 fn render_markdown_link(item: &WorkItemSnapshot, options: &AzureDevOpsOptions) -> String {
-    format!("[#{}]({})", item.id, work_item_web_url(options, &item.id))
+    format!(
+        "[#{}]({})",
+        item.id,
+        work_item_web_url(options, item.id.as_str())
+    )
 }
 
 fn render_html_line(item: &WorkItemSnapshot, options: &AzureDevOpsOptions) -> String {
     let mut line = format!(
         "<a href=\"{}\">#{}</a>",
-        html_escape(&work_item_web_url(options, &item.id)),
-        html_escape(&item.id)
+        html_escape(&work_item_web_url(options, item.id.as_str())),
+        html_escape(item.id.as_str())
     );
     if let Some(kind) = item
         .kind
@@ -440,8 +449,21 @@ mod tests {
 
         let ids = extract_work_item_ids_from_commit_messages(commit_log);
 
-        assert_eq!(ids, vec!["53115", "53312", "54000"]);
-        assert_eq!(ids.join(" "), "53115 53312 54000");
+        assert_eq!(
+            ids,
+            vec![
+                WorkItemId::from("53115"),
+                WorkItemId::from("53312"),
+                WorkItemId::from("54000")
+            ]
+        );
+        assert_eq!(
+            ids.iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" "),
+            "53115 53312 54000"
+        );
     }
 
     #[test]
