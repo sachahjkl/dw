@@ -2238,7 +2238,7 @@ fn agent_check_lines(check: &AgentDoctorCheck, theme: &TerminalTheme) -> Vec<Str
     };
     let mut lines = vec![format!(
         "{:<10} {} via {}",
-        status, check.agent_name, check.command
+        status, check.agent, check.command
     )];
     if !check.available {
         lines.push(format!(

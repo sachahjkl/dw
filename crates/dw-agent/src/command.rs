@@ -1,6 +1,6 @@
-use crate::{ALL_AGENT_KINDS, AgentKind, AgentOpenRequest, build_open_launch};
+use crate::{AgentOpenRequest, build_open_launch};
 use anyhow::Result;
-use dw_core::Agent;
+use dw_core::{Agent, DevWorkflowRoot, WorkspacePath};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,24 +41,24 @@ impl AgentDoctorReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentDoctorCheck {
-    pub agent_name: String,
-    pub command: String,
+    pub agent: Agent,
+    pub command: dw_core::AgentExecutableName,
     pub available: bool,
 }
 
 pub fn agent_doctor(requested: Option<Agent>) -> Result<AgentDoctorReport> {
     let agents = if let Some(agent) = requested {
-        vec![agent_kind(agent)]
+        vec![agent]
     } else {
-        ALL_AGENT_KINDS.to_vec()
+        Agent::ALL.to_vec()
     };
     let checks = agents
         .into_iter()
         .map(|agent| {
             let launch = launch_probe(agent);
-            let available = command_available(&launch.file_name, &["--help"]);
+            let available = command_available(launch.file_name.as_str(), &["--help"]);
             AgentDoctorCheck {
-                agent_name: agent.name().into(),
+                agent,
                 command: launch.file_name,
                 available,
             }
@@ -68,26 +68,15 @@ pub fn agent_doctor(requested: Option<Agent>) -> Result<AgentDoctorReport> {
     Ok(AgentDoctorReport { checks })
 }
 
-fn agent_kind(agent: Agent) -> AgentKind {
-    match agent {
-        Agent::Opencode => AgentKind::Opencode,
-        Agent::Cursor => AgentKind::Cursor,
-        Agent::Claude => AgentKind::Claude,
-        Agent::Codex | Agent::CodexCli => AgentKind::Codex,
-        Agent::Copilot => AgentKind::Copilot,
-    }
-}
-
-fn launch_probe(agent: AgentKind) -> crate::AgentLaunch {
+fn launch_probe(agent: Agent) -> crate::AgentLaunch {
     build_open_launch(
-        Some(agent.name()),
+        Some(agent),
         &AgentOpenRequest {
-            root: ".".into(),
-            workspace: ".".into(),
+            root: DevWorkflowRoot::from("."),
+            workspace: WorkspacePath::from("."),
             r#continue: false,
         },
     )
-    .expect("known agent should build launch")
 }
 
 fn command_available(file_name: &str, arguments: &[&str]) -> bool {
@@ -119,13 +108,13 @@ mod tests {
     fn agent_report_counts_availability() {
         let checks = vec![
             AgentDoctorCheck {
-                agent_name: "codex".into(),
-                command: "codex".into(),
+                agent: Agent::Codex,
+                command: dw_core::AgentExecutableName::from("codex"),
                 available: true,
             },
             AgentDoctorCheck {
-                agent_name: "missing".into(),
-                command: "missing".into(),
+                agent: Agent::Copilot,
+                command: dw_core::AgentExecutableName::from("missing"),
                 available: false,
             },
         ];

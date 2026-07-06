@@ -233,7 +233,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 pull_request: pull_request.map(PullRequestId::from),
                 r#continue,
                 repo: repo.map(WorkspaceRepositoryName::from),
-                agent: agent.map(dw_core::AgentName::from),
+                agent: agent.map(parse_agent).transpose()?,
                 root: root.map(DevWorkflowRoot::from),
             })?;
             let launch = dw_task::open::resolve_open_launch_async(args).await?;
@@ -1239,6 +1239,12 @@ fn parse_workspace_repository_names(value: Option<&str>) -> Vec<WorkspaceReposit
         .collect()
 }
 
+fn parse_agent(value: String) -> Result<Agent> {
+    value
+        .parse::<Agent>()
+        .map_err(|error| anyhow::anyhow!(error))
+}
+
 fn parse_workspace_filter_work_item_ids(
     option: Option<&str>,
     positional: Option<&str>,
@@ -1872,7 +1878,7 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
                     pull_request: None,
                     r#continue,
                     repo: repo.map(WorkspaceRepositoryName::from),
-                    agent: agent.map(dw_core::AgentName::from),
+                    agent: agent.map(parse_agent).transpose()?,
                 },
             )?)?;
             dw_task::open::run_external_launch(&launch)?;

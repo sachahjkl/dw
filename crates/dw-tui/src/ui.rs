@@ -1148,7 +1148,7 @@ fn agent_doctor_detail_lines(report: &dw_agent::command::AgentDoctorReport) -> V
         lines.push(format!(
             "{} {:10} via {}",
             if check.available { "OK" } else { "KO" },
-            check.agent_name,
+            check.agent,
             check.command
         ));
         if !check.available {

@@ -14,4 +14,3 @@ dw-core = { path = "../dw-core" }
 dw-process = { path = "../dw-process" }
 dw-workspace = { path = "../dw-workspace" }
 serde.workspace = true
-thiserror.workspace = true

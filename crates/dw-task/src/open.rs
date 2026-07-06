@@ -4,7 +4,7 @@ use dw_ado::{auth::require_token, get_work_item_ids_from_pull_requests, run_bloc
 use dw_agent::{AgentOpenRequest, build_open_launch_plan};
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_core::{
-    AgentName, DevWorkflowRoot, ExternalLaunchPlan, ProjectKey, PullRequestId, WorkItemId,
+    Agent, DevWorkflowRoot, ExternalLaunchPlan, ProjectKey, PullRequestId, WorkItemId,
     WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_workspace::{
@@ -20,7 +20,7 @@ pub struct OpenWorkspaceArgs {
     pub pull_request: Option<PullRequestId>,
     pub r#continue: bool,
     pub repo: Option<WorkspaceRepositoryName>,
-    pub agent: Option<AgentName>,
+    pub agent: Option<Agent>,
     pub root: Option<DevWorkflowRoot>,
 }
 
@@ -105,22 +105,15 @@ pub fn resolve_open_launch(args: OpenWorkspaceArgs) -> Result<ExternalLaunchPlan
         project_config.as_ref(),
         repo.as_ref().map(WorkspaceRepositoryName::as_str),
     )?;
-    let selected_agent = agent
-        .map(|agent| agent.to_string())
-        .or_else(|| {
-            project_config
-                .as_ref()
-                .and_then(|project| project.agent.as_ref().map(|agent| agent.default.clone()))
-        })
-        .or_else(|| workflow.agent.as_ref().map(|agent| agent.default.clone()));
+    let selected_agent = resolve_selected_agent(agent, project_config.as_ref(), &workflow)?;
     Ok(build_open_launch_plan(
-        selected_agent.as_deref(),
+        selected_agent,
         &AgentOpenRequest {
-            root,
-            workspace: target,
+            root: DevWorkflowRoot::from(root),
+            workspace: WorkspacePath::from(target),
             r#continue,
         },
-    )?)
+    ))
 }
 
 pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<ExternalLaunchPlan> {
@@ -180,6 +173,29 @@ pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<Ex
     }
 
     resolve_open_launch(args)
+}
+
+fn resolve_selected_agent(
+    explicit: Option<Agent>,
+    project_config: Option<&dw_config::ProjectConfig>,
+    workflow: &dw_config::WorkflowConfig,
+) -> Result<Option<Agent>> {
+    if explicit.is_some() {
+        return Ok(explicit);
+    }
+    if let Some(agent) = project_config.and_then(|project| project.agent.as_ref()) {
+        return parse_config_agent(&agent.default).map(Some);
+    }
+    if let Some(agent) = workflow.agent.as_ref() {
+        return parse_config_agent(&agent.default).map(Some);
+    }
+    Ok(None)
+}
+
+fn parse_config_agent(value: &str) -> Result<Agent> {
+    value
+        .parse::<Agent>()
+        .map_err(|error| anyhow::anyhow!(error))
 }
 
 pub fn run_external_launch(launch: &ExternalLaunchPlan) -> Result<()> {

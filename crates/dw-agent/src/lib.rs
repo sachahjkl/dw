@@ -1,70 +1,43 @@
 pub mod command;
 
+use dw_core::{
+    Agent, AgentExecutableName, DevWorkflowRoot, ProjectKey, WorkItemId, WorkItemTitle,
+    WorkItemTypeName, WorkspacePath,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use thiserror::Error;
 
-pub const DEFAULT_AGENT: &str = "opencode";
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum AgentKind {
-    Opencode,
-    Cursor,
-    Claude,
-    Codex,
-    Copilot,
-}
-
-pub const ALL_AGENT_KINDS: [AgentKind; 5] = [
-    AgentKind::Opencode,
-    AgentKind::Cursor,
-    AgentKind::Claude,
-    AgentKind::Codex,
-    AgentKind::Copilot,
-];
-
-impl AgentKind {
-    pub fn name(self) -> &'static str {
-        match self {
-            AgentKind::Opencode => "opencode",
-            AgentKind::Cursor => "cursor",
-            AgentKind::Claude => "claude",
-            AgentKind::Codex => "codex",
-            AgentKind::Copilot => "copilot",
-        }
-    }
-}
+pub const DEFAULT_AGENT: Agent = Agent::Opencode;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentLaunch {
     #[serde(rename = "fileName")]
-    pub file_name: String,
+    pub file_name: AgentExecutableName,
     pub arguments: Vec<String>,
     pub environment: BTreeMap<String, String>,
     #[serde(rename = "workingDirectory")]
-    pub working_directory: String,
+    pub working_directory: WorkspacePath,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentOpenRequest {
-    pub root: String,
-    pub workspace: String,
+    pub root: DevWorkflowRoot,
+    pub workspace: WorkspacePath,
     pub r#continue: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentWorkspaceConfigRequest {
-    pub workspace: String,
+    pub workspace: WorkspacePath,
     pub work_items: Vec<WorkspaceWorkItemRef>,
-    pub project: String,
+    pub project: ProjectKey,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceWorkItemRef {
-    pub id: String,
-    pub kind: Option<String>,
-    pub title: Option<String>,
+    pub id: WorkItemId,
+    pub kind: Option<WorkItemTypeName>,
+    pub title: Option<WorkItemTitle>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,65 +47,40 @@ pub struct AgentWorkspaceConfigFile {
     pub content: String,
 }
 
-#[derive(Debug, Error)]
-pub enum AgentError {
-    #[error(
-        "Agent inconnu: {0}. Agents disponibles: opencode, cursor, claude, codex, codex-cli, copilot"
-    )]
-    UnknownAgent(String),
-}
-
 pub trait AgentAdapter {
     fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch;
 }
 
-pub fn parse_agent_kind(agent: Option<&str>) -> Result<AgentKind, AgentError> {
-    let name = agent
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(DEFAULT_AGENT);
-    match name.to_ascii_lowercase().as_str() {
-        "opencode" => Ok(AgentKind::Opencode),
-        "cursor" | "cursor-agent" | "agent" => Ok(AgentKind::Cursor),
-        "claude" => Ok(AgentKind::Claude),
-        "codex-cli" | "codex" => Ok(AgentKind::Codex),
-        "copilot" => Ok(AgentKind::Copilot),
-        other => Err(AgentError::UnknownAgent(other.into())),
-    }
-}
-
-pub fn build_open_launch(
-    agent: Option<&str>,
-    request: &AgentOpenRequest,
-) -> Result<AgentLaunch, AgentError> {
-    Ok(parse_agent_kind(agent)?.launch(request))
+pub fn build_open_launch(agent: Option<Agent>, request: &AgentOpenRequest) -> AgentLaunch {
+    agent.unwrap_or(DEFAULT_AGENT).launch(request)
 }
 
 pub fn build_open_launch_plan(
-    agent: Option<&str>,
+    agent: Option<Agent>,
     request: &AgentOpenRequest,
-) -> Result<dw_core::ExternalLaunchPlan, AgentError> {
-    Ok(build_open_launch(agent, request)?.into())
+) -> dw_core::ExternalLaunchPlan {
+    build_open_launch(agent, request).into()
 }
 
 impl From<AgentLaunch> for dw_core::ExternalLaunchPlan {
     fn from(launch: AgentLaunch) -> Self {
         Self {
-            program: launch.file_name,
+            program: launch.file_name.to_string(),
             arguments: launch.arguments,
             environment: launch.environment,
-            working_directory: Some(launch.working_directory),
+            working_directory: Some(launch.working_directory.to_string()),
         }
     }
 }
 
-impl AgentAdapter for AgentKind {
+impl AgentAdapter for Agent {
     fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
         match self {
-            AgentKind::Opencode => Opencode.launch(request),
-            AgentKind::Cursor => CursorAgent.launch(request),
-            AgentKind::Claude => Claude.launch(request),
-            AgentKind::Codex => Codex.launch(request),
-            AgentKind::Copilot => Copilot.launch(request),
+            Agent::Opencode => Opencode.launch(request),
+            Agent::Cursor => CursorAgent.launch(request),
+            Agent::Claude => Claude.launch(request),
+            Agent::Codex | Agent::CodexCli => Codex.launch(request),
+            Agent::Copilot => Copilot.launch(request),
         }
     }
 }
@@ -146,11 +94,11 @@ struct Copilot;
 impl AgentAdapter for Opencode {
     fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
         AgentLaunch {
-            file_name: "opencode".into(),
+            file_name: AgentExecutableName::from("opencode"),
             arguments: if request.r#continue {
-                vec!["-c".into(), request.workspace.clone()]
+                vec!["-c".into(), request.workspace.to_string()]
             } else {
-                vec![request.workspace.clone()]
+                vec![request.workspace.to_string()]
             },
             environment: BTreeMap::from([(
                 "OPENCODE_CONFIG".into(),
@@ -164,15 +112,15 @@ impl AgentAdapter for Opencode {
 impl AgentAdapter for CursorAgent {
     fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
         AgentLaunch {
-            file_name: "agent".into(),
+            file_name: AgentExecutableName::from("agent"),
             arguments: if request.r#continue {
                 vec![
                     "--workspace".into(),
-                    request.workspace.clone(),
+                    request.workspace.to_string(),
                     "--continue".into(),
                 ]
             } else {
-                vec!["--workspace".into(), request.workspace.clone()]
+                vec!["--workspace".into(), request.workspace.to_string()]
             },
             environment: BTreeMap::new(),
             working_directory: request.workspace.clone(),
@@ -183,7 +131,7 @@ impl AgentAdapter for CursorAgent {
 impl AgentAdapter for Claude {
     fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
         AgentLaunch {
-            file_name: "claude".into(),
+            file_name: AgentExecutableName::from("claude"),
             arguments: request
                 .r#continue
                 .then(|| "--continue".into())
@@ -198,16 +146,16 @@ impl AgentAdapter for Claude {
 impl AgentAdapter for Codex {
     fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
         AgentLaunch {
-            file_name: "codex".into(),
+            file_name: AgentExecutableName::from("codex"),
             arguments: if request.r#continue {
                 vec![
                     "resume".into(),
                     "--last".into(),
                     "--cd".into(),
-                    request.workspace.clone(),
+                    request.workspace.to_string(),
                 ]
             } else {
-                vec!["--cd".into(), request.workspace.clone()]
+                vec!["--cd".into(), request.workspace.to_string()]
             },
             environment: BTreeMap::new(),
             working_directory: request.workspace.clone(),
@@ -218,7 +166,7 @@ impl AgentAdapter for Codex {
 impl AgentAdapter for Copilot {
     fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
         AgentLaunch {
-            file_name: "copilot".into(),
+            file_name: AgentExecutableName::from("copilot"),
             arguments: request
                 .r#continue
                 .then(|| "--continue".into())
@@ -309,7 +257,7 @@ Règles importantes:
     )
 }
 
-fn workspace_agents_md(work_items: &[WorkspaceWorkItemRef], project: &str) -> String {
+fn workspace_agents_md(work_items: &[WorkspaceWorkItemRef], project: &ProjectKey) -> String {
     let items = work_items
         .iter()
         .map(|item| {
@@ -317,8 +265,10 @@ fn workspace_agents_md(work_items: &[WorkspaceWorkItemRef], project: &str) -> St
                 (None, None) => String::new(),
                 (kind, title) => format!(
                     " [{}] {}",
-                    kind.clone().unwrap_or_else(|| "?".into()),
-                    title.clone().unwrap_or_default()
+                    kind.as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| "?".into()),
+                    title.as_ref().map(ToString::to_string).unwrap_or_default()
                 )
                 .trim_end()
                 .to_string(),
@@ -340,14 +290,13 @@ mod tests {
     #[test]
     fn codex_continue_uses_resume_last_with_cd() {
         let launch = build_open_launch(
-            Some("codex"),
+            Some(Agent::Codex),
             &AgentOpenRequest {
-                root: "/root".into(),
-                workspace: "/workspace".into(),
+                root: DevWorkflowRoot::from("/root"),
+                workspace: WorkspacePath::from("/workspace"),
                 r#continue: true,
             },
-        )
-        .expect("launch should build");
+        );
 
         assert_eq!(
             launch.arguments,
@@ -358,16 +307,15 @@ mod tests {
     #[test]
     fn cursor_uses_workspace_flag() {
         let launch = build_open_launch(
-            Some("cursor"),
+            Some(Agent::Cursor),
             &AgentOpenRequest {
-                root: "/root".into(),
-                workspace: "/workspace".into(),
+                root: DevWorkflowRoot::from("/root"),
+                workspace: WorkspacePath::from("/workspace"),
                 r#continue: true,
             },
-        )
-        .expect("launch should build");
+        );
 
-        assert_eq!(launch.file_name, "agent");
+        assert_eq!(launch.file_name, AgentExecutableName::from("agent"));
         assert_eq!(
             launch.arguments,
             vec!["--workspace", "/workspace", "--continue"]
@@ -375,30 +323,29 @@ mod tests {
     }
 
     #[test]
-    fn codex_cli_alias_and_unknown_error_are_documented() {
-        assert_eq!(
-            parse_agent_kind(Some("codex-cli")).unwrap(),
-            AgentKind::Codex
+    fn codex_cli_agent_uses_codex_executable() {
+        let launch = build_open_launch(
+            Some(Agent::CodexCli),
+            &AgentOpenRequest {
+                root: DevWorkflowRoot::from("/root"),
+                workspace: WorkspacePath::from("/workspace"),
+                r#continue: false,
+            },
         );
 
-        let error = parse_agent_kind(Some("unknown"))
-            .expect_err("unknown agent should fail")
-            .to_string();
-
-        assert!(error.contains("codex"));
-        assert!(error.contains("codex-cli"));
+        assert_eq!(launch.file_name, AgentExecutableName::from("codex"));
     }
 
     #[test]
     fn workspace_config_files_include_expected_paths() {
         let files = workspace_config_files(&AgentWorkspaceConfigRequest {
-            workspace: "/workspace".into(),
+            workspace: WorkspacePath::from("/workspace"),
             work_items: vec![WorkspaceWorkItemRef {
-                id: "55222".into(),
+                id: WorkItemId::from("55222"),
                 kind: None,
                 title: None,
             }],
-            project: "ha".into(),
+            project: ProjectKey::from("ha"),
         });
 
         let paths = files
@@ -416,13 +363,13 @@ mod tests {
     #[test]
     fn workspace_agents_content_contains_workspace_rules() {
         let files = workspace_config_files(&AgentWorkspaceConfigRequest {
-            workspace: "/workspace".into(),
+            workspace: WorkspacePath::from("/workspace"),
             work_items: vec![WorkspaceWorkItemRef {
-                id: "11010".into(),
-                kind: Some("User Story".into()),
-                title: Some("Titre HA".into()),
+                id: WorkItemId::from("11010"),
+                kind: Some(WorkItemTypeName::from("User Story")),
+                title: Some(WorkItemTitle::from("Titre HA")),
             }],
-            project: "ha".into(),
+            project: ProjectKey::from("ha"),
         });
 
         let agents = files

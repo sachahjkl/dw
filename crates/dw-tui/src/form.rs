@@ -391,6 +391,10 @@ impl FormState {
                 max_rows: value("Max rows").and_then(|value| value.parse().ok()),
             }),
             FormTemplate::AgentOpen => {
+                let agent = value("Agent")
+                    .map(|agent| agent.parse::<dw_core::Agent>())
+                    .transpose()
+                    .ok()?;
                 TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
                     workspace: value("Workspace").map(dw_core::WorkspacePath::from),
                     root: Some(dw_core::DevWorkflowRoot::from(root)),
@@ -402,7 +406,7 @@ impl FormState {
                     pull_request: None,
                     r#continue: enabled("Continue"),
                     repo: value("Repository").map(dw_core::WorkspaceRepositoryName::from),
-                    agent: value("Agent").map(dw_core::AgentName::from),
+                    agent,
                 })
             }
             FormTemplate::Secret => {

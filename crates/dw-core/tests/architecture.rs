@@ -1302,7 +1302,7 @@ fn task_open_contract_uses_typed_workspace_filters_repositories_and_agent() {
     let path = repo.join("crates/dw-task/src/open.rs");
     let text = fs::read_to_string(&path).expect("read open source");
     for required in [
-        "AgentName",
+        "Agent",
         "DevWorkflowRoot",
         "ProjectKey",
         "PullRequestId",
@@ -1315,7 +1315,7 @@ fn task_open_contract_uses_typed_workspace_filters_repositories_and_agent() {
         "pub work_item_ids: Vec<WorkItemId>",
         "pub pull_request: Option<PullRequestId>",
         "pub repo: Option<WorkspaceRepositoryName>",
-        "pub agent: Option<AgentName>",
+        "pub agent: Option<Agent>",
         "resolve_workspace_by_work_item_ids",
     ] {
         assert!(
@@ -1324,6 +1324,103 @@ fn task_open_contract_uses_typed_workspace_filters_repositories_and_agent() {
             path.display(),
             required
         );
+    }
+    for forbidden in [
+        "AgentName",
+        "pub workspace: Option<String>",
+        "pub project: Option<String>",
+        "pub work_item_ids: Vec<String>",
+        "pub repo: Option<String>",
+        "pub agent: Option<String>",
+        "pub agent: Option<AgentName>",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains forbidden primitive open contract token `{}`",
+            path.display(),
+            forbidden
+        );
+    }
+}
+
+#[test]
+fn agent_contracts_use_core_domain_types() {
+    let repo = repo_root();
+    let checked: &[(&str, &[&str], &[&str])] = &[
+        (
+            "crates/dw-agent/src/lib.rs",
+            &[
+                "AgentExecutableName",
+                "DevWorkflowRoot",
+                "ProjectKey",
+                "WorkItemId",
+                "WorkItemTitle",
+                "WorkItemTypeName",
+                "WorkspacePath",
+                "pub const DEFAULT_AGENT: Agent",
+                "pub file_name: AgentExecutableName",
+                "pub working_directory: WorkspacePath",
+                "pub root: DevWorkflowRoot",
+                "pub workspace: WorkspacePath",
+                "pub project: ProjectKey",
+                "pub id: WorkItemId",
+                "pub kind: Option<WorkItemTypeName>",
+                "pub title: Option<WorkItemTitle>",
+                "agent: Option<Agent>",
+            ],
+            &[
+                "AgentKind",
+                "AgentName",
+                "AgentError",
+                "parse_agent_kind",
+                "ALL_AGENT_KINDS",
+                "DEFAULT_AGENT: &str",
+                "pub file_name: String",
+                "pub working_directory: String",
+                "pub root: String",
+                "pub workspace: String",
+                "pub project: String",
+                "pub id: String",
+                "pub kind: Option<String>",
+                "pub title: Option<String>",
+                "agent: Option<&str>",
+            ],
+        ),
+        (
+            "crates/dw-agent/src/command.rs",
+            &[
+                "pub agent: Agent",
+                "pub command: dw_core::AgentExecutableName",
+                "pub fn agent_doctor(requested: Option<Agent>)",
+            ],
+            &[
+                "AgentKind",
+                "AgentName",
+                "pub agent_name: String",
+                "pub command: String",
+                "pub fn agent_doctor(requested: Option<String>)",
+            ],
+        ),
+    ];
+    for (relative, required, forbidden) in checked {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read agent source");
+        for token in *required {
+            assert!(
+                text.contains(token),
+                "{} should contain typed agent contract token `{}`",
+                path.display(),
+                token
+            );
+        }
+        for token in *forbidden {
+            assert!(
+                !text.contains(token),
+                "{} contains forbidden string agent contract token `{}`",
+                path.display(),
+                token
+            );
+        }
     }
 }
 
