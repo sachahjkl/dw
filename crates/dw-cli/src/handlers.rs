@@ -21,7 +21,9 @@ use std::time::Duration;
 pub(crate) async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Version => {
-            println!("Dev Workflow {}", informational_version());
+            print_lines(&dw_cli_adapter::render::version_lines(
+                &informational_version(),
+            ));
         }
         Command::Guide => {
             print_guide(&informational_version());
@@ -1810,13 +1812,13 @@ fn resolve_query_sql(sql: Option<String>, sql_parts: Vec<String>) -> Result<Stri
 fn print_db_result(result: &dw_db::QueryResult, json: bool) -> Result<()> {
     if json {
         print_json(result)?;
-    } else if std::io::stdout().is_terminal() {
-        println!(
-            "{}",
-            dw_cli_adapter::render::db_query_table(result, &TerminalTheme::stdout_auto())
-        );
     } else {
-        println!("{}", dw_cli_adapter::render::db_query_tsv(result));
+        let output = dw_cli_adapter::render::db_query_output(
+            result,
+            std::io::stdout().is_terminal(),
+            &TerminalTheme::stdout_auto(),
+        );
+        println!("{}", output.as_str());
     }
     Ok(())
 }

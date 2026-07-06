@@ -22,6 +22,10 @@ use std::fmt::Display;
 
 const MAX_DB_CELL_WIDTH: usize = 48;
 
+pub fn version_lines(version: &str) -> Vec<String> {
+    vec![format!("Dev Workflow {version}")]
+}
+
 pub fn auth_login_lines(report: &AuthLoginReport) -> Vec<String> {
     if report.uses_environment_pat {
         return vec![
@@ -723,6 +727,32 @@ pub fn db_guard_lines(result: &SqlGuardResult, theme: &TerminalTheme) -> Vec<Str
 
 pub fn db_query_table(result: &QueryResult, theme: &TerminalTheme) -> String {
     render_query_result_table(result, theme)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DbQueryRenderedOutput {
+    Table(String),
+    Tsv(String),
+}
+
+impl DbQueryRenderedOutput {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Table(text) | Self::Tsv(text) => text,
+        }
+    }
+}
+
+pub fn db_query_output(
+    result: &QueryResult,
+    stdout_is_terminal: bool,
+    theme: &TerminalTheme,
+) -> DbQueryRenderedOutput {
+    if stdout_is_terminal {
+        DbQueryRenderedOutput::Table(db_query_table(result, theme))
+    } else {
+        DbQueryRenderedOutput::Tsv(db_query_tsv(result))
+    }
 }
 
 pub fn db_query_tsv(result: &QueryResult) -> String {
