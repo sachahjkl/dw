@@ -369,7 +369,11 @@ fn render_metrics(frame: &mut Frame<'_>, area: Rect, app: &App) {
             app.snapshot.database_count().to_string(),
             Color::Magenta,
         ),
-        metric_line("Agent", app.snapshot.default_agent(), Color::White),
+        metric_line(
+            "Agent",
+            app.snapshot.default_agent().to_string(),
+            Color::White,
+        ),
     ];
     for (line, row) in lines.iter().zip(rows.iter().skip(1)) {
         frame.render_widget(Paragraph::new(line.clone()), *row);
@@ -1909,7 +1913,7 @@ fn render_menu_section(frame: &mut Frame<'_>, area: Rect, app: &App) {
         ])
         .split(inner);
     let current_agent = app.snapshot.default_agent();
-    let current_color = app.snapshot.color_mode.as_str();
+    let current_color = app.snapshot.color_mode;
     let rows = match section {
         MenuSection::Information => vec![
             menu_row(
@@ -1942,7 +1946,7 @@ fn render_menu_section(frame: &mut Frame<'_>, area: Rect, app: &App) {
             .iter()
             .enumerate()
             .map(|(index, item)| {
-                let active = option_active(item.state, &current_agent, current_color);
+                let active = option_active(item.state, current_agent, current_color);
                 menu_row(
                     index == app.selected_option,
                     active,

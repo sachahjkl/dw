@@ -100,8 +100,8 @@ pub enum ConfigActionResult {
     Init(dw_config::InitReport),
     Refresh(dw_config::RefreshReport),
     Doctor(dw_config::ConfigDoctorReport),
-    SetColor(dw_config::command::ConfigSetReport),
-    SetRoot(dw_config::command::ConfigSetReport),
+    SetColor(dw_config::command::ConfigColorSetReport),
+    SetRoot(dw_config::command::ConfigRootSetReport),
 }
 
 #[derive(Debug, Clone)]

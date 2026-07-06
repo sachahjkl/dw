@@ -91,10 +91,11 @@ fn auth_login_mode_label(mode: AuthLoginMode) -> &'static str {
 }
 
 pub fn config_show_lines(report: &ConfigShow, theme: &TerminalTheme) -> Vec<String> {
+    let color = report.color.to_string();
     vec![
         theme.command("Configuration DevWorkflow"),
         format!("Root      : {}", theme.path(&report.root)),
-        format!("Color     : {}", theme.bold(&report.color)),
+        format!("Color     : {}", theme.bold(&color)),
         format!("Settings  : {}", theme.path(&report.settings_path)),
         String::new(),
         "Files".into(),
@@ -530,11 +531,11 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             ConfigActionResult::Doctor(report) => config_doctor_lines(report, theme),
             ConfigActionResult::SetColor(report) => vec![
                 "Configuration updated".into(),
-                format!("Color     : {}", report.value),
+                format!("Color     : {}", report.mode),
             ],
             ConfigActionResult::SetRoot(report) => vec![
                 "Configuration updated".into(),
-                format!("Root      : {}", report.value),
+                format!("Root      : {}", report.path),
             ],
         },
         DwActionResult::Agent(result) => match result {
@@ -886,9 +887,46 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
 pub fn upgrade_event_line(event: &dw_upgrade::UpgradeEvent) -> String {
     format!(
         "Upgrade [{:<18}] {}",
-        upgrade_step_label(event.step),
-        event.message
+        upgrade_step_label(event.step()),
+        upgrade_event_message(event)
     )
+}
+
+fn upgrade_event_message(event: &dw_upgrade::UpgradeEvent) -> String {
+    match event {
+        dw_upgrade::UpgradeEvent::CheckingHost => "Checking current installation".into(),
+        dw_upgrade::UpgradeEvent::ResolvingConfig => "Reading upgrade configuration".into(),
+        dw_upgrade::UpgradeEvent::FetchingRelease { owner, repository } => {
+            format!("Fetching latest release {owner}/{repository}")
+        }
+        dw_upgrade::UpgradeEvent::FetchingManifest { asset_name } => {
+            format!("Downloading manifest {asset_name}")
+        }
+        dw_upgrade::UpgradeEvent::ReleaseAvailable { version } => {
+            format!("Release available: {version}")
+        }
+        dw_upgrade::UpgradeEvent::SelectingAsset { rid } => {
+            format!("Selecting artifact {rid}")
+        }
+        dw_upgrade::UpgradeEvent::DownloadingAsset { file_name } => {
+            format!("Downloading {file_name}")
+        }
+        dw_upgrade::UpgradeEvent::VerifyingChecksum {
+            file_name,
+            expected_sha256,
+        } => {
+            format!("Verifying SHA256 for {file_name} ({expected_sha256})")
+        }
+        dw_upgrade::UpgradeEvent::PreparingExecutable { file_name, rid } => {
+            format!("Preparing {file_name} for {rid}")
+        }
+        dw_upgrade::UpgradeEvent::ReplacingExecutable { executable_path } => {
+            format!("Replacing {executable_path}")
+        }
+        dw_upgrade::UpgradeEvent::Installed { version } => {
+            format!("Installed version: {version}")
+        }
+    }
 }
 
 fn upgrade_step_label(step: dw_upgrade::UpgradeStep) -> &'static str {

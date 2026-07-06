@@ -210,7 +210,7 @@ mod tests {
             event,
             DwActionEvent::Task(dw_core::TaskActionEvent::ResolvingPullRequestWorkItems {
                 pull_request_id
-            }) if pull_request_id.as_str() == "42"
+            }) if *pull_request_id == dw_core::PullRequestId::from("42")
         )));
     }
 }

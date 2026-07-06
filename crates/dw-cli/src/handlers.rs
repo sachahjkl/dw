@@ -1942,14 +1942,14 @@ fn handle_config(command: ConfigCommand) -> Result<()> {
             let report = dw_config::command::set_root(&ConfigRootPath::from(path))?;
             print_lines(&[
                 "Configuration mise à jour".into(),
-                format!("Root      : {}", report.value),
+                format!("Root      : {}", report.path),
             ]);
         }
         ConfigCommand::SetColor { mode } => {
             let report = dw_config::command::set_color(&mode.parse::<ConfigColorMode>()?)?;
             print_lines(&[
                 "Configuration mise à jour".into(),
-                format!("Couleur   : {}", report.value),
+                format!("Couleur   : {}", report.mode),
             ]);
         }
     }

@@ -1060,6 +1060,88 @@ fn app_and_tui_core_requests_use_typed_config_agent_and_secret_values() {
 }
 
 #[test]
+fn config_color_and_set_reports_are_domain_typed() {
+    let repo = repo_root();
+    let checked: &[(&str, &[&str], &[&str])] = &[
+        (
+            "crates/dw-config/src/types.rs",
+            &[
+                "pub color: Option<dw_core::ConfigColorMode>",
+                "pub color: dw_core::ConfigColorMode",
+            ],
+            &["pub color: Option<String>", "pub color: String"],
+        ),
+        (
+            "crates/dw-config/src/command.rs",
+            &[
+                "pub struct ConfigRootSetReport",
+                "pub path: ConfigRootPath",
+                "pub struct ConfigColorSetReport",
+                "pub mode: ConfigColorMode",
+                "pub fn set_root(path: &ConfigRootPath) -> Result<ConfigRootSetReport>",
+                "pub fn set_color(mode: &ConfigColorMode) -> Result<ConfigColorSetReport>",
+            ],
+            &[
+                "pub struct ConfigSetReport",
+                "pub field: String",
+                "pub value: String",
+            ],
+        ),
+        (
+            "crates/dw-tui/src/model.rs",
+            &[
+                "pub color_mode: ConfigColorMode",
+                "ColorMode(ConfigColorMode)",
+                "DefaultAgent(Agent)",
+                "pub fn default_agent(&self) -> Agent",
+            ],
+            &[
+                "pub color_mode: String",
+                "ColorMode(String)",
+                "DefaultAgent(String)",
+                "pub fn default_agent(&self) -> String",
+            ],
+        ),
+        (
+            "crates/dw-tui/src/actions.rs",
+            &[
+                "Agent(Agent)",
+                "Color(ConfigColorMode)",
+                "QuickOptionState::Agent(Agent::Codex)",
+                "QuickOptionState::Color(ConfigColorMode::Always)",
+            ],
+            &[
+                "Agent(&'static str)",
+                "Color(&'static str)",
+                "QuickOptionState::Agent(\"codex\")",
+                "QuickOptionState::Color(\"always\")",
+            ],
+        ),
+    ];
+
+    for (path, required, forbidden) in checked {
+        let path = repo.join(path);
+        let text = fs::read_to_string(&path).expect("read source file");
+        for token in *required {
+            assert!(
+                text.contains(token),
+                "{} should expose typed config token `{}`",
+                path.display(),
+                token
+            );
+        }
+        for token in *forbidden {
+            assert!(
+                !text.contains(token),
+                "{} contains forbidden string config contract `{}`",
+                path.display(),
+                token
+            );
+        }
+    }
+}
+
+#[test]
 fn task_open_contract_uses_typed_workspace_filters_repositories_and_agent() {
     let repo = repo_root();
     let path = repo.join("crates/dw-task/src/open.rs");
@@ -1633,6 +1715,7 @@ fn domain_progress_contracts_are_structured_not_line_helpers() {
         repo.join("crates/dw-task/src/work_item.rs"),
         repo.join("crates/dw-ado-commands/src/commands/changelog.rs"),
         repo.join("crates/dw-ado-commands/src/commands/work_item.rs"),
+        repo.join("crates/dw-upgrade/src/lib.rs"),
     ];
 
     for file in checked_files {

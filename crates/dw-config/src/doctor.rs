@@ -12,8 +12,8 @@ pub fn config_show(explicit_root: Option<&str>) -> ConfigShow {
 
     ConfigShow {
         root,
-        color: crate::settings::normalize_color_mode(settings.color.as_deref())
-            .unwrap_or_else(|_| "auto".into()),
+        color: crate::settings::normalize_color_mode(settings.color)
+            .unwrap_or(dw_core::ConfigColorMode::Auto),
         settings_path: user_settings_path(),
         workflow_path: workflow_path.display().to_string(),
         projects_path: projects_path.display().to_string(),

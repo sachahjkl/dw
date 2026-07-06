@@ -5,6 +5,7 @@ use crate::history::{ActionRunRecord, RunHistoryEntry, capped_lines};
 #[cfg(test)]
 use crate::model::View;
 use crate::model::{ActionRisk, TuiAction};
+use dw_core::{Agent, ConfigColorMode};
 
 pub(crate) fn help_lines() -> Vec<&'static str> {
     vec![
@@ -226,12 +227,12 @@ pub(crate) fn history_entry_rendered_lines(entry: &RunHistoryEntry) -> Vec<Strin
 
 pub(crate) fn option_active(
     state: QuickOptionState,
-    current_agent: &str,
-    current_color: &str,
+    current_agent: Agent,
+    current_color: ConfigColorMode,
 ) -> bool {
     match state {
-        QuickOptionState::Agent(agent) => current_agent.eq_ignore_ascii_case(agent),
-        QuickOptionState::Color(color) => current_color.eq_ignore_ascii_case(color),
+        QuickOptionState::Agent(agent) => current_agent == agent,
+        QuickOptionState::Color(color) => current_color == color,
         QuickOptionState::None => false,
     }
 }
@@ -457,7 +458,7 @@ mod tests {
             "shared".into(),
             serde_json::json!({"provider": "sqlserver"}),
         );
-        app.snapshot.color_mode = "always".into();
+        app.snapshot.color_mode = dw_core::ConfigColorMode::Always;
         app.snapshot.config_doctor.passed = true;
 
         let lines = options_summary_lines(&app);
@@ -622,20 +623,24 @@ mod tests {
     #[test]
     fn option_active_matches_agent_and_color() {
         assert!(option_active(
-            QuickOptionState::Agent("codex"),
-            "codex",
-            "auto"
+            QuickOptionState::Agent(Agent::Codex),
+            Agent::Codex,
+            ConfigColorMode::Auto
         ));
         assert!(option_active(
-            QuickOptionState::Color("always"),
-            "codex",
-            "always"
+            QuickOptionState::Color(ConfigColorMode::Always),
+            Agent::Codex,
+            ConfigColorMode::Always
         ));
         assert!(!option_active(
-            QuickOptionState::Agent("opencode"),
-            "codex",
-            "auto"
+            QuickOptionState::Agent(Agent::Opencode),
+            Agent::Codex,
+            ConfigColorMode::Auto
         ));
-        assert!(!option_active(QuickOptionState::None, "codex", "auto"));
+        assert!(!option_active(
+            QuickOptionState::None,
+            Agent::Codex,
+            ConfigColorMode::Auto
+        ));
     }
 }

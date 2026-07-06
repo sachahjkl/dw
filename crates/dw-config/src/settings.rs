@@ -1,10 +1,12 @@
 use crate::base_dirs::PlatformBaseDirs;
 use crate::json::read_json;
 use crate::types::UserSettings;
+use dw_core::ConfigColorMode;
 use std::path::{Component, Path, PathBuf};
+use std::str::FromStr;
 use std::{env, fs};
 
-pub const COLOR_MODE_CHOICES: &[&str] = &["auto", "always", "never"];
+pub const COLOR_MODE_CHOICES: &[ConfigColorMode] = &ConfigColorMode::ALL;
 
 pub fn default_root() -> String {
     PlatformBaseDirs::resolve()
@@ -45,29 +47,36 @@ pub fn set_user_root(root: &str) -> std::io::Result<String> {
     Ok(root)
 }
 
-pub fn set_color_mode(mode: &str) -> std::io::Result<String> {
+pub fn set_color_mode(mode: ConfigColorMode) -> std::io::Result<ConfigColorMode> {
     let normalized = normalize_color_mode(Some(mode))
         .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
     let mut settings = load_user_settings();
-    settings.color = Some(normalized.clone());
+    settings.color = Some(normalized);
     save_user_settings(&settings)?;
     Ok(normalized)
 }
 
-pub fn normalize_color_mode(mode: Option<&str>) -> Result<String, String> {
-    let normalized = mode
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.trim().to_ascii_lowercase())
-        .unwrap_or_else(|| "auto".into());
-    if COLOR_MODE_CHOICES.contains(&normalized.as_str()) {
-        Ok(normalized)
-    } else {
-        Err(format!(
-            "Mode couleur inconnu: {}. Valeurs autorisées: {}.",
-            mode.unwrap_or_default(),
-            COLOR_MODE_CHOICES.join(", ")
-        ))
-    }
+pub fn normalize_color_mode(mode: Option<ConfigColorMode>) -> Result<ConfigColorMode, String> {
+    Ok(mode.unwrap_or(ConfigColorMode::Auto))
+}
+
+pub fn parse_color_mode(mode: Option<&str>) -> Result<ConfigColorMode, String> {
+    mode.filter(|value| !value.trim().is_empty())
+        .map(ConfigColorMode::from_str)
+        .transpose()
+        .map_err(|_| {
+            let choices = COLOR_MODE_CHOICES
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "Mode couleur inconnu: {}. Valeurs autorisées: {}.",
+                mode.unwrap_or_default(),
+                choices
+            )
+        })
+        .map(|mode| mode.unwrap_or(ConfigColorMode::Auto))
 }
 
 pub fn resolve_root(explicit_root: Option<&str>) -> String {

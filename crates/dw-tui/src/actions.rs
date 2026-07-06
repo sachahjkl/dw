@@ -43,8 +43,8 @@ pub enum QuickOptionAction {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuickOptionState {
-    Agent(&'static str),
-    Color(&'static str),
+    Agent(Agent),
+    Color(ConfigColorMode),
     None,
 }
 
@@ -65,7 +65,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "opencode",
         hint: "Set opencode as the default agent",
         action: QuickOptionAction::Agent(Agent::Opencode),
-        state: QuickOptionState::Agent("opencode"),
+        state: QuickOptionState::Agent(Agent::Opencode),
     },
     QuickOptionItem {
         key: '2',
@@ -73,7 +73,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "cursor",
         hint: "Set cursor as the default agent",
         action: QuickOptionAction::Agent(Agent::Cursor),
-        state: QuickOptionState::Agent("cursor"),
+        state: QuickOptionState::Agent(Agent::Cursor),
     },
     QuickOptionItem {
         key: '3',
@@ -81,7 +81,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "claude",
         hint: "Set claude as the default agent",
         action: QuickOptionAction::Agent(Agent::Claude),
-        state: QuickOptionState::Agent("claude"),
+        state: QuickOptionState::Agent(Agent::Claude),
     },
     QuickOptionItem {
         key: '4',
@@ -89,7 +89,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "codex",
         hint: "Set codex as the default agent",
         action: QuickOptionAction::Agent(Agent::Codex),
-        state: QuickOptionState::Agent("codex"),
+        state: QuickOptionState::Agent(Agent::Codex),
     },
     QuickOptionItem {
         key: '5',
@@ -97,7 +97,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "codex-cli",
         hint: "Set codex-cli as the default agent",
         action: QuickOptionAction::Agent(Agent::CodexCli),
-        state: QuickOptionState::Agent("codex-cli"),
+        state: QuickOptionState::Agent(Agent::CodexCli),
     },
     QuickOptionItem {
         key: '6',
@@ -105,7 +105,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "copilot",
         hint: "Set copilot as the default agent",
         action: QuickOptionAction::Agent(Agent::Copilot),
-        state: QuickOptionState::Agent("copilot"),
+        state: QuickOptionState::Agent(Agent::Copilot),
     },
     QuickOptionItem {
         key: '7',
@@ -113,7 +113,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "auto",
         hint: "Follow terminal capabilities",
         action: QuickOptionAction::Color(ConfigColorMode::Auto),
-        state: QuickOptionState::Color("auto"),
+        state: QuickOptionState::Color(ConfigColorMode::Auto),
     },
     QuickOptionItem {
         key: '8',
@@ -121,7 +121,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "always",
         hint: "Always enable colors",
         action: QuickOptionAction::Color(ConfigColorMode::Always),
-        state: QuickOptionState::Color("always"),
+        state: QuickOptionState::Color(ConfigColorMode::Always),
     },
     QuickOptionItem {
         key: '9',
@@ -129,7 +129,7 @@ pub const QUICK_OPTIONS: &[QuickOptionItem] = &[
         label: "never",
         hint: "Disable colors",
         action: QuickOptionAction::Color(ConfigColorMode::Never),
-        state: QuickOptionState::Color("never"),
+        state: QuickOptionState::Color(ConfigColorMode::Never),
     },
     QuickOptionItem {
         key: 's',
@@ -838,11 +838,13 @@ mod tests {
 
         assert!(matches!(
             show.request,
-            TuiActionRequest::ConfigShow { root: Some(ref root) } if root.as_str() == "/tmp/dw"
+            TuiActionRequest::ConfigShow { root: Some(ref root) }
+                if *root == DevWorkflowRoot::from("/tmp/dw")
         ));
         assert!(matches!(
             doctor.request,
-            TuiActionRequest::ConfigDoctor { root: Some(ref root) } if root.as_str() == "/tmp/dw"
+            TuiActionRequest::ConfigDoctor { root: Some(ref root) }
+                if *root == DevWorkflowRoot::from("/tmp/dw")
         ));
         assert!(matches!(
             refresh.request,
@@ -858,7 +860,7 @@ mod tests {
         assert!(matches!(
             agent.request,
             TuiActionRequest::AgentSetDefault { root: Some(ref root), ref agent }
-                if root.as_str() == "/tmp/dw" && *agent == Agent::Codex
+                if *root == DevWorkflowRoot::from("/tmp/dw") && *agent == Agent::Codex
         ));
         assert!(matches!(
             color.request,
@@ -1004,7 +1006,7 @@ mod tests {
             pull_requests_loaded: false,
             prune_candidates: 0,
             actions: Vec::new(),
-            color_mode: "auto".into(),
+            color_mode: ConfigColorMode::Auto,
         }
     }
 

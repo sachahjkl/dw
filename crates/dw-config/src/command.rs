@@ -22,9 +22,13 @@ pub struct RefreshCommandArgs {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConfigSetReport {
-    pub field: String,
-    pub value: String,
+pub struct ConfigRootSetReport {
+    pub path: ConfigRootPath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigColorSetReport {
+    pub mode: ConfigColorMode,
 }
 
 pub fn show(root: Option<&DevWorkflowRoot>) -> crate::ConfigShow {
@@ -35,17 +39,15 @@ pub fn doctor(root: Option<&DevWorkflowRoot>) -> crate::ConfigDoctorReport {
     config_doctor(root.map(DevWorkflowRoot::as_str))
 }
 
-pub fn set_root(path: &ConfigRootPath) -> Result<ConfigSetReport> {
-    Ok(ConfigSetReport {
-        field: "root".into(),
-        value: set_user_root(path.as_str())?,
+pub fn set_root(path: &ConfigRootPath) -> Result<ConfigRootSetReport> {
+    Ok(ConfigRootSetReport {
+        path: ConfigRootPath::from(set_user_root(path.as_str())?),
     })
 }
 
-pub fn set_color(mode: &ConfigColorMode) -> Result<ConfigSetReport> {
-    Ok(ConfigSetReport {
-        field: "color".into(),
-        value: set_color_mode(mode.as_str())?,
+pub fn set_color(mode: &ConfigColorMode) -> Result<ConfigColorSetReport> {
+    Ok(ConfigColorSetReport {
+        mode: set_color_mode(*mode)?,
     })
 }
 

@@ -1633,20 +1633,17 @@ impl App {
     fn apply_successful_action_effect(&mut self, effect: Option<ActionEffect>) {
         match effect {
             Some(ActionEffect::ColorMode(mode)) => {
-                self.snapshot.color_mode = mode.clone();
+                self.snapshot.color_mode = mode;
                 self.messages
                     .push(format!("Cockpit option applied: color {mode}"));
             }
             Some(ActionEffect::DefaultAgent(agent)) => {
-                let agent = dw_config::normalize_default_agent(&agent)
-                    .unwrap_or(agent.as_str())
-                    .to_string();
                 let agent_options = self
                     .snapshot
                     .workflow
                     .agent
                     .get_or_insert_with(dw_config::AgentOptions::default);
-                agent_options.default = agent.clone();
+                agent_options.default = agent.to_string();
                 self.messages
                     .push(format!("Cockpit option applied: agent {agent}"));
             }
@@ -3200,11 +3197,11 @@ mod tests {
             "Color · always".into(),
             true,
             false,
-            Some(ActionEffect::ColorMode("always".into())),
+            Some(ActionEffect::ColorMode(dw_core::ConfigColorMode::Always)),
             Ok(captured_version_result("Color · always", "exit 0")),
         );
 
-        assert_eq!(app.snapshot.color_mode, "always");
+        assert_eq!(app.snapshot.color_mode, dw_core::ConfigColorMode::Always);
         assert!(
             app.messages
                 .iter()
@@ -3220,11 +3217,11 @@ mod tests {
             "Default agent · codex".into(),
             true,
             false,
-            Some(ActionEffect::DefaultAgent("codex".into())),
+            Some(ActionEffect::DefaultAgent(dw_core::Agent::Codex)),
             Ok(captured_version_result("Default agent · codex", "exit 0")),
         );
 
-        assert_eq!(app.snapshot.default_agent(), "codex");
+        assert_eq!(app.snapshot.default_agent(), dw_core::Agent::Codex);
         assert!(
             app.messages
                 .iter()
@@ -3240,14 +3237,14 @@ mod tests {
             "Default agent · CODEX-CLI".into(),
             true,
             false,
-            Some(ActionEffect::DefaultAgent("CODEX-CLI".into())),
+            Some(ActionEffect::DefaultAgent(dw_core::Agent::CodexCli)),
             Ok(captured_version_result(
                 "Default agent · CODEX-CLI",
                 "exit 0",
             )),
         );
 
-        assert_eq!(app.snapshot.default_agent(), "codex-cli");
+        assert_eq!(app.snapshot.default_agent(), dw_core::Agent::CodexCli);
         assert!(
             app.messages
                 .iter()

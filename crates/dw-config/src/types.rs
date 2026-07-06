@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct UserSettings {
     pub root: Option<String>,
-    pub color: Option<String>,
+    pub color: Option<dw_core::ConfigColorMode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -121,7 +121,7 @@ impl Default for DatabasesConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigShow {
     pub root: String,
-    pub color: String,
+    pub color: dw_core::ConfigColorMode,
     #[serde(rename = "settingsPath")]
     pub settings_path: String,
     #[serde(rename = "workflowPath")]

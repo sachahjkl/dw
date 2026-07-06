@@ -84,10 +84,11 @@ fn auth_login_mode_label(mode: AuthLoginMode) -> &'static str {
 }
 
 pub fn config_show_lines(report: &ConfigShow, theme: &TerminalTheme) -> Vec<String> {
+    let color = report.color.to_string();
     vec![
         theme.command("Configuration DevWorkflow"),
         format!("Root      : {}", theme.path(&report.root)),
-        format!("Couleur   : {}", theme.bold(&report.color)),
+        format!("Couleur   : {}", theme.bold(&color)),
         format!("Réglages  : {}", theme.path(&report.settings_path)),
         String::new(),
         "Fichiers".into(),
@@ -692,9 +693,48 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
 pub fn upgrade_event_line(event: &dw_upgrade::UpgradeEvent) -> String {
     format!(
         "Upgrade [{:<18}] {}",
-        upgrade_step_label(event.step),
-        event.message
+        upgrade_step_label(event.step()),
+        upgrade_event_message(event)
     )
+}
+
+fn upgrade_event_message(event: &dw_upgrade::UpgradeEvent) -> String {
+    match event {
+        dw_upgrade::UpgradeEvent::CheckingHost => "Vérification de l'installation courante".into(),
+        dw_upgrade::UpgradeEvent::ResolvingConfig => {
+            "Lecture de la configuration de mise à jour".into()
+        }
+        dw_upgrade::UpgradeEvent::FetchingRelease { owner, repository } => {
+            format!("Recherche de la dernière release {owner}/{repository}")
+        }
+        dw_upgrade::UpgradeEvent::FetchingManifest { asset_name } => {
+            format!("Téléchargement du manifeste {asset_name}")
+        }
+        dw_upgrade::UpgradeEvent::ReleaseAvailable { version } => {
+            format!("Release disponible: {version}")
+        }
+        dw_upgrade::UpgradeEvent::SelectingAsset { rid } => {
+            format!("Sélection de l'artefact {rid}")
+        }
+        dw_upgrade::UpgradeEvent::DownloadingAsset { file_name } => {
+            format!("Téléchargement de {file_name}")
+        }
+        dw_upgrade::UpgradeEvent::VerifyingChecksum {
+            file_name,
+            expected_sha256,
+        } => {
+            format!("Vérification SHA256 de {file_name} ({expected_sha256})")
+        }
+        dw_upgrade::UpgradeEvent::PreparingExecutable { file_name, rid } => {
+            format!("Préparation de {file_name} pour {rid}")
+        }
+        dw_upgrade::UpgradeEvent::ReplacingExecutable { executable_path } => {
+            format!("Remplacement de {executable_path}")
+        }
+        dw_upgrade::UpgradeEvent::Installed { version } => {
+            format!("Version installée: {version}")
+        }
+    }
 }
 
 fn upgrade_step_label(step: dw_upgrade::UpgradeStep) -> &'static str {
@@ -2215,9 +2255,8 @@ mod tests {
 
     #[test]
     fn upgrade_event_line_renders_one_step_per_action() {
-        let line = upgrade_event_line(&dw_upgrade::UpgradeEvent {
-            step: dw_upgrade::UpgradeStep::DownloadAsset,
-            message: "Téléchargement de dw-linux-x64.tar.gz".into(),
+        let line = upgrade_event_line(&dw_upgrade::UpgradeEvent::DownloadingAsset {
+            file_name: "dw-linux-x64.tar.gz".into(),
         });
 
         assert!(line.contains("Upgrade [download"));

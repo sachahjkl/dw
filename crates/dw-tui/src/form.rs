@@ -985,7 +985,7 @@ mod tests {
             pull_requests_loaded: false,
             prune_candidates: 0,
             actions: Vec::new(),
-            color_mode: "auto".into(),
+            color_mode: dw_core::ConfigColorMode::Auto,
         }
     }
 
@@ -1256,7 +1256,8 @@ mod tests {
 
         assert!(matches!(
             action.request,
-            TuiActionRequest::SecretDelete { ref key } if key.as_str() == "db/password"
+            TuiActionRequest::SecretDelete { ref key }
+                if *key == dw_core::SecretKey::from("db/password")
         ));
         assert!(matches!(action.kind, ActionRisk::Destructive));
     }
@@ -1281,7 +1282,8 @@ mod tests {
         assert!(matches!(
             action.request,
             TuiActionRequest::SecretSetFromEnv { ref key, ref env }
-                if key.as_str() == "db/password" && env.as_str() == "DW_DB_PASSWORD"
+                if *key == dw_core::SecretKey::from("db/password")
+                    && *env == dw_core::EnvironmentVariableName::from("DW_DB_PASSWORD")
         ));
         assert!(matches!(action.kind, ActionRisk::Safe));
     }

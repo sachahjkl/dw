@@ -172,8 +172,8 @@ pub enum CockpitSeverity {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionEffect {
-    ColorMode(String),
-    DefaultAgent(String),
+    ColorMode(ConfigColorMode),
+    DefaultAgent(Agent),
     Root(String),
     InitializedRoot(String),
 }
@@ -562,11 +562,9 @@ impl TuiAction {
 
     pub fn successful_effect(&self) -> Option<ActionEffect> {
         match &self.request {
-            TuiActionRequest::ConfigSetColor { mode } => {
-                Some(ActionEffect::ColorMode(mode.to_string()))
-            }
+            TuiActionRequest::ConfigSetColor { mode } => Some(ActionEffect::ColorMode(*mode)),
             TuiActionRequest::AgentSetDefault { agent, .. } => {
-                Some(ActionEffect::DefaultAgent(agent.to_string()))
+                Some(ActionEffect::DefaultAgent(*agent))
             }
             TuiActionRequest::ConfigSetRoot { path } => Some(ActionEffect::Root(path.to_string())),
             TuiActionRequest::ConfigInit(args) => Some(ActionEffect::InitializedRoot(
@@ -679,7 +677,7 @@ pub struct TuiSnapshot {
     pub pull_requests_loaded: bool,
     pub prune_candidates: usize,
     pub actions: Vec<TuiAction>,
-    pub color_mode: String,
+    pub color_mode: ConfigColorMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -744,10 +742,7 @@ impl TuiSnapshot {
             passed: false,
         };
         let actions = build_actions(&root, &projects, &databases, &[]);
-        let color_mode = load_user_settings()
-            .color
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "auto".into());
+        let color_mode = load_user_settings().color.unwrap_or(ConfigColorMode::Auto);
         Self {
             root,
             needs_init,
@@ -778,10 +773,7 @@ impl TuiSnapshot {
         let workspaces = task_list(&root, None, None);
         let prune_candidates = plan_task_prune(&root, None, None).len();
         let actions = build_actions(&root, &projects, &databases, &workspaces);
-        let color_mode = load_user_settings()
-            .color
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "auto".into());
+        let color_mode = load_user_settings().color.unwrap_or(ConfigColorMode::Auto);
         Self {
             root,
             needs_init,
@@ -853,13 +845,14 @@ impl TuiSnapshot {
         self.workspace_for_work_item(&project.key, &item.id)
     }
 
-    pub fn default_agent(&self) -> String {
+    pub fn default_agent(&self) -> Agent {
         self.workflow
             .agent
             .as_ref()
             .map(|agent| agent.default.clone())
             .filter(|agent| !agent.trim().is_empty())
-            .unwrap_or_else(|| "opencode".into())
+            .and_then(|agent| agent.parse::<Agent>().ok())
+            .unwrap_or(Agent::Opencode)
     }
 
     pub fn assigned_count(&self) -> usize {
@@ -1832,7 +1825,7 @@ mod tests {
         };
         assert_eq!(
             color.successful_effect(),
-            Some(ActionEffect::ColorMode("always".into()))
+            Some(ActionEffect::ColorMode(dw_core::ConfigColorMode::Always))
         );
     }
 

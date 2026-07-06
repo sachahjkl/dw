@@ -15,8 +15,9 @@ pub use doctor::{config_doctor, config_show, root_status};
 pub use init::{InitReport, InitRequest, RefreshReport, RefreshRequest, init_root, refresh_root};
 pub use projects::{load_projects_config, project_choices, repository_config, resolve_project};
 pub use settings::{
-    COLOR_MODE_CHOICES, default_root, load_user_settings, normalize_color_mode, resolve_root,
-    save_user_settings, set_color_mode, set_user_root, user_config_directory, user_settings_path,
+    COLOR_MODE_CHOICES, default_root, load_user_settings, normalize_color_mode, parse_color_mode,
+    resolve_root, save_user_settings, set_color_mode, set_user_root, user_config_directory,
+    user_settings_path,
 };
 pub use store::{
     AGENT_DEFAULT_CHOICES, default_agent, load_databases_config, load_workflow_config,
@@ -216,17 +217,18 @@ mod tests {
             std::env::set_var("XDG_CONFIG_HOME", temp.path().join("xdg"));
         }
 
-        let result = set_color_mode("Always").expect("color should be saved");
+        let result =
+            set_color_mode(dw_core::ConfigColorMode::Always).expect("color should be saved");
         let settings = load_user_settings();
 
         restore_env("XDG_CONFIG_HOME", previous);
-        assert_eq!(result, "always");
-        assert_eq!(settings.color.as_deref(), Some("always"));
+        assert_eq!(result, dw_core::ConfigColorMode::Always);
+        assert_eq!(settings.color, Some(dw_core::ConfigColorMode::Always));
     }
 
     #[test]
     fn set_color_rejects_unknown_mode() {
-        let error = normalize_color_mode(Some("rainbow")).expect_err("color should fail");
+        let error = parse_color_mode(Some("rainbow")).expect_err("color should fail");
         assert!(error.contains("Mode couleur inconnu"));
     }
 
