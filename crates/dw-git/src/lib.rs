@@ -1,7 +1,8 @@
 use anyhow::{Result, anyhow};
 use dw_core::{
     BranchName, GitAnchorName, GitReferenceName, GitRemoteUrl, GitRevision, ProjectRootPath,
-    RepositoryPath, SecretValue, WorkspaceRepositoryName,
+    RepositoryPath, SecretValue, TaskSlug, TaskSubjectName, WorkItemId, WorkItemTypeName,
+    WorkspaceRepositoryName,
 };
 use git2::{
     Cred, FetchOptions, IndexAddOption, ObjectType, PushOptions, RebaseOptions, RemoteCallbacks,
@@ -265,44 +266,58 @@ pub fn normalize_slug(value: &str) -> String {
     output.trim_matches('-').to_string()
 }
 
-pub fn slug_from_phrase_or_fallback(value: Option<&str>, fallback: &str) -> String {
+pub fn slug_from_phrase_or_fallback(value: Option<&str>, fallback: &str) -> TaskSlug {
     let normalized = normalize_slug(value.unwrap_or_default());
     if normalized.is_empty() {
-        normalize_slug(fallback)
+        TaskSlug::from(normalize_slug(fallback))
     } else {
-        normalized
+        TaskSlug::from(normalized)
     }
 }
 
-pub fn build_branch_name(type_name: &str, work_item_ids: &[String], slug: &str) -> String {
-    let clean_type = if type_name.trim().is_empty() {
+pub fn build_branch_name(
+    type_name: &WorkItemTypeName,
+    work_item_ids: &[WorkItemId],
+    slug: &TaskSlug,
+) -> BranchName {
+    let clean_type = if type_name.as_str().trim().is_empty() {
         "feat"
     } else {
-        type_name.trim()
+        type_name.as_str().trim()
     }
     .to_ascii_lowercase();
     let id_part = distinct_non_empty(work_item_ids).join("-");
-    format!("{clean_type}/{id_part}-{}", normalize_slug(slug))
+    BranchName::from(format!(
+        "{clean_type}/{id_part}-{}",
+        normalize_slug(slug.as_str())
+    ))
 }
 
-pub fn build_subject_name(type_name: &str, work_item_ids: &[String], slug: &str) -> String {
-    let clean_type = if type_name.trim().is_empty() {
+pub fn build_subject_name(
+    type_name: &WorkItemTypeName,
+    work_item_ids: &[WorkItemId],
+    slug: &TaskSlug,
+) -> TaskSubjectName {
+    let clean_type = if type_name.as_str().trim().is_empty() {
         "feat"
     } else {
-        type_name.trim()
+        type_name.as_str().trim()
     }
     .to_ascii_lowercase();
     let id_part = distinct_non_empty(work_item_ids).join("-");
-    format!("{clean_type}-{id_part}-{}", normalize_slug(slug))
+    TaskSubjectName::from(format!(
+        "{clean_type}-{id_part}-{}",
+        normalize_slug(slug.as_str())
+    ))
 }
 
-pub fn resolve_remote_source_branch(default_branch: &str) -> String {
-    format!("origin/{default_branch}")
+pub fn resolve_remote_source_branch(default_branch: &BranchName) -> GitReferenceName {
+    GitReferenceName::from(format!("origin/{default_branch}"))
 }
 
 pub fn update_repository(
     repository_path: &str,
-    default_branch: &str,
+    default_branch: &BranchName,
     credential: Option<&GitCredential>,
 ) -> Result<()> {
     let mut repository = Repository::open(repository_path).map_err(git2_command_error)?;
@@ -653,10 +668,10 @@ fn repository_has_changes(repository: &Repository) -> std::result::Result<bool, 
 
 fn rebase_current_branch(
     repository: &Repository,
-    upstream_ref: &str,
+    upstream_ref: &GitReferenceName,
 ) -> std::result::Result<(), GitError> {
     let upstream = repository
-        .revparse_single(upstream_ref)
+        .revparse_single(upstream_ref.as_str())
         .map_err(git2_command_error)?;
     let head = repository
         .revparse_single("HEAD")
@@ -867,18 +882,18 @@ fn auth_remediation(kind: GitAuthFailureKind) -> GitAuthRemediation {
     }
 }
 
-fn distinct_non_empty(values: &[String]) -> Vec<String> {
+fn distinct_non_empty(values: &[WorkItemId]) -> Vec<String> {
     let mut result = Vec::new();
     for value in values {
-        if value.trim().is_empty() {
+        if value.as_str().trim().is_empty() {
             continue;
         }
 
         if !result
             .iter()
-            .any(|item: &String| item.eq_ignore_ascii_case(value))
+            .any(|item: &String| item.eq_ignore_ascii_case(value.as_str()))
         {
-            result.push(value.clone());
+            result.push(value.to_string());
         }
     }
     result
@@ -906,7 +921,7 @@ mod tests {
     fn from_phrase_or_fallback_uses_fallback_when_phrase_becomes_empty() {
         assert_eq!(
             slug_from_phrase_or_fallback(Some("!!!"), "work item 55222"),
-            "work-item-55222"
+            TaskSlug::from("work-item-55222")
         );
     }
 
@@ -914,27 +929,35 @@ mod tests {
     fn build_uses_work_item_and_task_when_task_exists() {
         assert_eq!(
             build_branch_name(
-                "feat",
-                &["27485".into(), "55201".into()],
-                "descriptif cours"
+                &WorkItemTypeName::from("feat"),
+                &[WorkItemId::from("27485"), WorkItemId::from("55201")],
+                &TaskSlug::from("descriptif cours")
             ),
-            "feat/27485-55201-descriptif-cours"
+            BranchName::from("feat/27485-55201-descriptif-cours")
         );
     }
 
     #[test]
     fn build_omits_task_when_absent() {
         assert_eq!(
-            build_branch_name("bug", &["53020".into()], "ouverture dossier recherche"),
-            "bug/53020-ouverture-dossier-recherche"
+            build_branch_name(
+                &WorkItemTypeName::from("bug"),
+                &[WorkItemId::from("53020")],
+                &TaskSlug::from("ouverture dossier recherche")
+            ),
+            BranchName::from("bug/53020-ouverture-dossier-recherche")
         );
     }
 
     #[test]
     fn build_subject_name_uses_folder_format() {
         assert_eq!(
-            build_subject_name("fix", &["53635".into()], "reprendre numéro HE"),
-            "fix-53635-reprendre-numero-he"
+            build_subject_name(
+                &WorkItemTypeName::from("fix"),
+                &[WorkItemId::from("53635")],
+                &TaskSlug::from("reprendre numéro HE")
+            ),
+            TaskSubjectName::from("fix-53635-reprendre-numero-he")
         );
     }
 
@@ -942,16 +965,23 @@ mod tests {
     fn build_uses_all_work_item_ids() {
         assert_eq!(
             build_branch_name(
-                "feat",
-                &["11010".into(), "55206".into(), "55207".into()],
-                "descriptif cours"
+                &WorkItemTypeName::from("feat"),
+                &[
+                    WorkItemId::from("11010"),
+                    WorkItemId::from("55206"),
+                    WorkItemId::from("55207"),
+                ],
+                &TaskSlug::from("descriptif cours")
             ),
-            "feat/11010-55206-55207-descriptif-cours"
+            BranchName::from("feat/11010-55206-55207-descriptif-cours")
         );
     }
 
     #[test]
     fn resolve_remote_source_branch_returns_origin_default_branch() {
-        assert_eq!(resolve_remote_source_branch("develop"), "origin/develop");
+        assert_eq!(
+            resolve_remote_source_branch(&BranchName::from("develop")),
+            GitReferenceName::from("origin/develop")
+        );
     }
 }

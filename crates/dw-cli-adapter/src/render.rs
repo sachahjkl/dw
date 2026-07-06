@@ -3887,7 +3887,7 @@ mod tests {
                 kind: dw_core::WorkItemTypeName::from("feat"),
                 slug: dw_core::TaskSlug::from("titre"),
                 branch_name: dw_core::BranchName::from("feat/42-titre"),
-                subject_name: "42-titre".into(),
+                subject_name: dw_core::TaskSubjectName::from("42-titre"),
                 workspace: dw_core::WorkspacePath::from("/tmp/dw/ha/42-titre"),
                 repositories: vec![
                     dw_core::WorkspaceRepositoryName::from("front"),

@@ -167,7 +167,7 @@ pub fn execute_repo_latest(plan: &RepoLatestPlanReport) -> Result<RepoLatestExec
             .map_err(|message| anyhow!(message.to_string()))?;
         update_repository(
             target.repository_path.as_str(),
-            target.default_branch.as_str(),
+            &target.default_branch,
             credential.as_ref(),
         )?;
         updated.push(RepoLatestUpdate {
