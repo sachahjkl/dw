@@ -9,7 +9,8 @@ use dw_app::{
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
 use dw_contracts::{
     TaskHandoffValidationItem, TaskHandoffValidationReport, TaskHandoffValidationStatus,
-    TaskPreflightReport, TaskPreflightSeverity,
+    TaskPreflightIssue, TaskPreflightIssueCode, TaskPreflightIssueDetail, TaskPreflightReport,
+    TaskPreflightSeverity, TaskPreflightStaleReason,
 };
 use dw_core::{
     AdoActionEvent, AgentActionEvent, ConfigActionEvent, DbActionEvent, DwActionEvent,
@@ -2068,9 +2069,9 @@ fn push_preflight_issue_group(
             severity_label(&issue.severity),
             issue.work_item_id,
             issue.code,
-            issue.message
+            preflight_issue_message(issue)
         ));
-        if let Some(details) = &issue.details {
+        if let Some(details) = preflight_issue_detail(issue) {
             lines.push(format!("  Detail : {details}"));
         }
         if !issue.related_ids.is_empty() {
@@ -2086,6 +2087,50 @@ fn push_preflight_issue_group(
         }
     }
     lines.push(String::new());
+}
+
+fn preflight_issue_message(issue: &TaskPreflightIssue) -> String {
+    match issue.code {
+        TaskPreflightIssueCode::WorkspaceAdoContextStale => {
+            format!("Local ADO context looks stale for #{}.", issue.work_item_id)
+        }
+        TaskPreflightIssueCode::AdoAttachmentsPresent => format!(
+            "Work item #{} has attachments that should be treated as factual source material.",
+            issue.work_item_id
+        ),
+    }
+}
+
+fn preflight_issue_detail(issue: &TaskPreflightIssue) -> Option<String> {
+    match &issue.detail {
+        TaskPreflightIssueDetail::WorkspaceAdoContextStale { reasons } => (!reasons.is_empty())
+            .then(|| {
+                reasons
+                    .iter()
+                    .map(preflight_stale_reason_label)
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            }),
+        TaskPreflightIssueDetail::AdoAttachmentsPresent {
+            directory_hint,
+            names,
+        } => Some(if names.is_empty() {
+            format!("Attachments present. Expected directory: {directory_hint}")
+        } else {
+            format!(
+                "Attachments present: {}. Expected directory: {directory_hint}",
+                names.join(", ")
+            )
+        }),
+    }
+}
+
+fn preflight_stale_reason_label(reason: &TaskPreflightStaleReason) -> &'static str {
+    match reason {
+        TaskPreflightStaleReason::Title => "local title differs from ADO",
+        TaskPreflightStaleReason::State => "local state differs from ADO",
+        TaskPreflightStaleReason::Kind => "local type differs from ADO",
+    }
 }
 
 fn push_handoff_group(
@@ -2534,7 +2579,7 @@ mod tests {
     use super::*;
     use dw_contracts::{
         HANDOFF_VALIDATION_VERSION, PREFLIGHT_VERSION, TaskHandoffValidationItem,
-        TaskPreflightIssue,
+        TaskPreflightIssue, TaskPreflightIssueCode, TaskPreflightIssueDetail,
     };
 
     #[test]
@@ -2919,11 +2964,13 @@ mod tests {
             work_item_ids: vec![dw_core::WorkItemId::from("42")],
             has_blocking_issues: true,
             issues: vec![TaskPreflightIssue {
-                code: "missing_attachment".into(),
+                code: TaskPreflightIssueCode::AdoAttachmentsPresent,
                 severity: TaskPreflightSeverity::Blocking,
                 work_item_id: dw_core::WorkItemId::from("42"),
-                message: "Piece jointe manquante".into(),
-                details: Some("screenshot absent".into()),
+                detail: TaskPreflightIssueDetail::AdoAttachmentsPresent {
+                    directory_hint: "attachments/ado/42".into(),
+                    names: vec!["screenshot.png".into()],
+                },
                 related_ids: vec![],
             }],
         };
@@ -2933,9 +2980,11 @@ mod tests {
         assert_eq!(lines[0], "Task preflight");
         assert!(lines.contains(&"Status    : ✕ Needs fixes".into()));
         assert!(lines.contains(&"Blockers  : 1".into()));
-        assert!(
-            lines.contains(&"✕ [blocker] #42 missing_attachment - Piece jointe manquante".into())
-        );
+        assert!(lines.contains(&"✕ [blocker] #42 ado.attachments.present - Work item #42 has attachments that should be treated as factual source material.".into()));
+        assert!(lines.contains(
+            &"  Detail : Attachments present: screenshot.png. Expected directory: attachments/ado/42"
+                .into()
+        ));
     }
 
     #[test]

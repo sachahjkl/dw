@@ -5,7 +5,8 @@ use dw_config::{
 use dw_contracts::{
     AdoAiContextItem, HANDOFF_PREFIX, HANDOFF_VALIDATION_VERSION, MARKDOWN_EXTENSION,
     PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport,
-    TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightReport, TaskPreflightSeverity,
+    TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightIssueCode,
+    TaskPreflightIssueDetail, TaskPreflightReport, TaskPreflightSeverity, TaskPreflightStaleReason,
 };
 use dw_core::{
     AiContextFilePath, BranchName, GitAnchorName, ProjectKey, ProjectRootPath, RepositoryPath,
@@ -2524,31 +2525,29 @@ fn build_stale_context_issues(
     if manifest_item.title.as_ref().map(WorkItemTitle::as_str)
         != ai_context.work_item.title.as_deref()
     {
-        stale_reasons.push("titre local différent d'ADO".to_string());
+        stale_reasons.push(TaskPreflightStaleReason::Title);
     }
     if manifest_item.state.as_ref().map(WorkItemState::as_str)
         != ai_context.work_item.state.as_deref()
     {
-        stale_reasons.push("état local différent d'ADO".to_string());
+        stale_reasons.push(TaskPreflightStaleReason::State);
     }
     if manifest_item.kind.as_ref().map(WorkItemTypeName::as_str)
         != ai_context.work_item.kind.as_deref()
     {
-        stale_reasons.push("type local différent d'ADO".to_string());
+        stale_reasons.push(TaskPreflightStaleReason::Kind);
     }
     if stale_reasons.is_empty() {
         return vec![];
     }
 
     vec![TaskPreflightIssue {
-        code: "workspace.ado-context.stale".into(),
+        code: TaskPreflightIssueCode::WorkspaceAdoContextStale,
         severity: TaskPreflightSeverity::Warning,
         work_item_id: ai_context.work_item.id.clone(),
-        message: format!(
-            "Le contexte ADO local du workspace semble stale pour #{}.",
-            ai_context.work_item.id
-        ),
-        details: Some(stale_reasons.join("; ")),
+        detail: TaskPreflightIssueDetail::WorkspaceAdoContextStale {
+            reasons: stale_reasons,
+        },
         related_ids: vec![ai_context.work_item.id.clone()],
     }]
 }
@@ -2566,25 +2565,13 @@ fn build_attachment_issues(ai_context: &AdoAiContextItem) -> Vec<TaskPreflightIs
         .collect::<Vec<_>>();
 
     vec![TaskPreflightIssue {
-        code: "ado.attachments.present".into(),
+        code: TaskPreflightIssueCode::AdoAttachmentsPresent,
         severity: TaskPreflightSeverity::Warning,
         work_item_id: ai_context.work_item.id.clone(),
-        message: format!(
-            "Le work item #{} a des pièces jointes à traiter comme source factuelle.",
-            ai_context.work_item.id
-        ),
-        details: Some(if names.is_empty() {
-            format!(
-                "Pièces jointes présentes. Dossier attendu: {}",
-                ai_context.attachments.directory_hint
-            )
-        } else {
-            format!(
-                "Pièces jointes présentes: {}. Dossier attendu: {}",
-                names.join(", "),
-                ai_context.attachments.directory_hint
-            )
-        }),
+        detail: TaskPreflightIssueDetail::AdoAttachmentsPresent {
+            directory_hint: ai_context.attachments.directory_hint.clone(),
+            names,
+        },
         related_ids: vec![ai_context.work_item.id.clone()],
     }]
 }
@@ -3476,13 +3463,13 @@ artifacts:
             report
                 .issues
                 .iter()
-                .any(|issue| issue.code == "workspace.ado-context.stale")
+                .any(|issue| issue.code == TaskPreflightIssueCode::WorkspaceAdoContextStale)
         );
         assert!(
             report
                 .issues
                 .iter()
-                .any(|issue| issue.code == "ado.attachments.present")
+                .any(|issue| issue.code == TaskPreflightIssueCode::AdoAttachmentsPresent)
         );
     }
 

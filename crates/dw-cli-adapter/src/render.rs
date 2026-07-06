@@ -5,7 +5,8 @@ use dw_agent::command::{AgentDoctorCheck, AgentDoctorReport};
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
 use dw_contracts::{
     TaskHandoffValidationItem, TaskHandoffValidationReport, TaskHandoffValidationStatus,
-    TaskPreflightReport, TaskPreflightSeverity,
+    TaskPreflightIssue, TaskPreflightIssueCode, TaskPreflightIssueDetail, TaskPreflightReport,
+    TaskPreflightSeverity, TaskPreflightStaleReason,
 };
 use dw_core::{AdoActionEvent, GitOperation, TaskActionEvent};
 use dw_db::{QueryResult, SqlGuardResult};
@@ -1865,9 +1866,9 @@ fn push_preflight_issue_group(
             severity_label(&issue.severity),
             issue.work_item_id,
             issue.code,
-            issue.message
+            preflight_issue_message(issue)
         ));
-        if let Some(details) = &issue.details {
+        if let Some(details) = preflight_issue_detail(issue) {
             lines.push(format!("  Détail : {details}"));
         }
         if !issue.related_ids.is_empty() {
@@ -1883,6 +1884,51 @@ fn push_preflight_issue_group(
         }
     }
     lines.push(String::new());
+}
+
+fn preflight_issue_message(issue: &TaskPreflightIssue) -> String {
+    match issue.code {
+        TaskPreflightIssueCode::WorkspaceAdoContextStale => format!(
+            "Le contexte ADO local du workspace semble stale pour #{}.",
+            issue.work_item_id
+        ),
+        TaskPreflightIssueCode::AdoAttachmentsPresent => format!(
+            "Le work item #{} a des pièces jointes à traiter comme source factuelle.",
+            issue.work_item_id
+        ),
+    }
+}
+
+fn preflight_issue_detail(issue: &TaskPreflightIssue) -> Option<String> {
+    match &issue.detail {
+        TaskPreflightIssueDetail::WorkspaceAdoContextStale { reasons } => (!reasons.is_empty())
+            .then(|| {
+                reasons
+                    .iter()
+                    .map(preflight_stale_reason_label)
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            }),
+        TaskPreflightIssueDetail::AdoAttachmentsPresent {
+            directory_hint,
+            names,
+        } => Some(if names.is_empty() {
+            format!("Pièces jointes présentes. Dossier attendu: {directory_hint}")
+        } else {
+            format!(
+                "Pièces jointes présentes: {}. Dossier attendu: {directory_hint}",
+                names.join(", ")
+            )
+        }),
+    }
+}
+
+fn preflight_stale_reason_label(reason: &TaskPreflightStaleReason) -> &'static str {
+    match reason {
+        TaskPreflightStaleReason::Title => "titre local différent d'ADO",
+        TaskPreflightStaleReason::State => "état local différent d'ADO",
+        TaskPreflightStaleReason::Kind => "type local différent d'ADO",
+    }
 }
 
 fn push_handoff_group(
@@ -2343,7 +2389,7 @@ mod tests {
     use super::*;
     use dw_contracts::{
         HANDOFF_VALIDATION_VERSION, PREFLIGHT_VERSION, TaskHandoffValidationItem,
-        TaskPreflightIssue,
+        TaskPreflightIssue, TaskPreflightIssueCode, TaskPreflightIssueDetail,
     };
 
     #[test]
@@ -2742,11 +2788,13 @@ mod tests {
             work_item_ids: vec![dw_core::WorkItemId::from("42")],
             has_blocking_issues: true,
             issues: vec![TaskPreflightIssue {
-                code: "missing_attachment".into(),
+                code: TaskPreflightIssueCode::AdoAttachmentsPresent,
                 severity: TaskPreflightSeverity::Blocking,
                 work_item_id: dw_core::WorkItemId::from("42"),
-                message: "Piece jointe manquante".into(),
-                details: Some("screenshot absent".into()),
+                detail: TaskPreflightIssueDetail::AdoAttachmentsPresent {
+                    directory_hint: "attachments/ado/42".into(),
+                    names: vec!["screenshot.png".into()],
+                },
                 related_ids: vec![],
             }],
         };
@@ -2756,9 +2804,8 @@ mod tests {
         assert_eq!(lines[0], "Préflight task");
         assert!(lines.contains(&"Statut    : ✕ À corriger".into()));
         assert!(lines.contains(&"Blocages  : 1".into()));
-        assert!(
-            lines.contains(&"✕ [blocage] #42 missing_attachment - Piece jointe manquante".into())
-        );
+        assert!(lines.contains(&"✕ [blocage] #42 ado.attachments.present - Le work item #42 a des pièces jointes à traiter comme source factuelle.".into()));
+        assert!(lines.contains(&"  Détail : Pièces jointes présentes: screenshot.png. Dossier attendu: attachments/ado/42".into()));
     }
 
     #[test]

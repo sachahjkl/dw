@@ -207,14 +207,60 @@ pub struct TaskPreflightReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskPreflightIssue {
-    pub code: String,
+    pub code: TaskPreflightIssueCode,
     pub severity: TaskPreflightSeverity,
     #[serde(rename = "workItemId")]
     pub work_item_id: WorkItemId,
-    pub message: String,
-    pub details: Option<String>,
+    pub detail: TaskPreflightIssueDetail,
     #[serde(rename = "relatedIds")]
     pub related_ids: Vec<WorkItemId>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskPreflightIssueCode {
+    WorkspaceAdoContextStale,
+    AdoAttachmentsPresent,
+}
+
+impl fmt::Display for TaskPreflightIssueCode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::WorkspaceAdoContextStale => "workspace.ado-context.stale",
+            Self::AdoAttachmentsPresent => "ado.attachments.present",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum TaskPreflightIssueDetail {
+    WorkspaceAdoContextStale {
+        reasons: Vec<TaskPreflightStaleReason>,
+    },
+    AdoAttachmentsPresent {
+        #[serde(rename = "directoryHint")]
+        directory_hint: String,
+        names: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskPreflightStaleReason {
+    Title,
+    State,
+    Kind,
+}
+
+impl fmt::Display for TaskPreflightStaleReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Title => "title",
+            Self::State => "state",
+            Self::Kind => "kind",
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

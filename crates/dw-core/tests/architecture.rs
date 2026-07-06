@@ -432,6 +432,9 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
         "pub work_item_ids: Vec<String>",
         "pub work_item_id: String",
         "pub related_ids: Vec<String>",
+        "pub struct TaskPreflightIssue {\n    pub code: String",
+        "pub struct TaskPreflightIssue {\n    pub code: TaskPreflightIssueCode,\n    pub severity: TaskPreflightSeverity,\n    #[serde(rename = \"workItemId\")]\n    pub work_item_id: WorkItemId,\n    pub message: String",
+        "pub struct TaskPreflightIssue {\n    pub code: TaskPreflightIssueCode,\n    pub severity: TaskPreflightSeverity,\n    #[serde(rename = \"workItemId\")]\n    pub work_item_id: WorkItemId,\n    pub detail: TaskPreflightIssueDetail,\n    pub details: Option<String>",
         "pub severity: String",
         "pub repository: String",
         "pub status: String",
@@ -450,6 +453,9 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
         "WorkspaceRepositoryName",
         "TaskHandoffValidationStatus",
         "TaskPreflightSeverity",
+        "TaskPreflightIssueCode",
+        "TaskPreflightIssueDetail",
+        "TaskPreflightStaleReason",
     ] {
         assert!(
             text.contains(required),
