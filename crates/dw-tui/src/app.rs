@@ -524,7 +524,15 @@ impl App {
             ) {
                 items.push(CockpitItem {
                     section: "In progress",
-                    title: format!("Preflight {}", workspace.display_work_items),
+                    title: format!(
+                        "Preflight {}",
+                        workspace
+                            .work_items
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
                     subtitle: workspace.path.to_string(),
                     status: workspace.kind.to_string(),
                     severity: CockpitSeverity::Normal,
@@ -3421,7 +3429,12 @@ mod tests {
             path: path.into(),
             project: "ha".into(),
             work_item_id: "42".into(),
-            display_work_items: "#42 Demo".into(),
+            work_items: vec![dw_workspace::WorkspaceWorkItem {
+                id: "42".into(),
+                kind: Some("User Story".into()),
+                title: Some("Demo".into()),
+                state: Some("Active".into()),
+            }],
             task_id: None,
             all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),

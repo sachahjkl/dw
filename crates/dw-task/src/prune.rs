@@ -6,9 +6,9 @@ use dw_config::{load_projects_config, load_workflow_config, resolve_root};
 use dw_core::{DevWorkflowRoot, ProjectKey, WorkItemId, WorkspacePath};
 use dw_git::{worktree_prune, worktree_remove};
 use dw_workspace::{
-    WorkspaceSummary, WorkspaceWorkItem, display_work_items, execute_task_sync,
-    execute_task_teardown, filter_workspaces_by_work_item_ids, find_workspaces,
-    plan_task_prune_by_work_item_ids, plan_task_teardown,
+    WorkspaceSummary, WorkspaceWorkItem, execute_task_sync, execute_task_teardown,
+    filter_workspaces_by_work_item_ids, find_workspaces, plan_task_prune_by_work_item_ids,
+    plan_task_teardown,
 };
 use serde::Serialize;
 
@@ -196,7 +196,13 @@ pub fn prune_candidate_label(candidate: &WorkspaceSummary) -> String {
     format!(
         "{} / {}",
         candidate.manifest.project,
-        display_work_items(&candidate.manifest.parent_work_items(), true)
+        candidate
+            .manifest
+            .parent_work_items()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
     )
 }
 

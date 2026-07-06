@@ -1524,7 +1524,14 @@ fn resolve_open_args_interactively(
             (
                 format!(
                     "{} / {} / {} / {}",
-                    item.project, item.display_work_items, item.kind, item.path
+                    item.project,
+                    item.work_items
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    item.kind,
+                    item.path
                 ),
                 item.path,
             )

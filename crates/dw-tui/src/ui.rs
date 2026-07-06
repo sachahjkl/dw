@@ -765,7 +765,7 @@ fn render_workspace_summary(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 ),
                 Span::raw(" "),
                 Span::styled(
-                    &workspace.display_work_items,
+                    workspace_work_items_label(workspace),
                     Style::default().fg(Color::White),
                 ),
                 Span::raw(" "),
@@ -810,7 +810,7 @@ fn render_workspaces(frame: &mut Frame<'_>, area: Rect, app: &App) {
             };
             Row::new([
                 workspace.project.to_string(),
-                workspace.display_work_items.clone(),
+                workspace_work_items_label(workspace),
                 workspace.kind.to_string(),
                 workspace.slug.to_string(),
                 workspace
@@ -847,6 +847,15 @@ fn workspace_table_constraints() -> [Constraint; 5] {
     ]
 }
 
+fn workspace_work_items_label(workspace: &dw_workspace::TaskListItem) -> String {
+    workspace
+        .work_items
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn render_workspace_actions(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let block = Block::default()
         .title("Workspace selection")
@@ -866,7 +875,9 @@ fn selected_workspace_target_lines(app: &App) -> Vec<Line<'static>> {
             "Target",
             format!(
                 "{} · {} · {}",
-                workspace.project, workspace.display_work_items, workspace.slug
+                workspace.project,
+                workspace_work_items_label(workspace),
+                workspace.slug
             ),
         ),
         target_line(
@@ -2489,7 +2500,7 @@ mod tests {
             .map(|span| span.content.as_ref())
             .collect::<String>();
 
-        assert!(target_text.contains("ha · #42 Demo · demo"));
+        assert!(target_text.contains("ha · #42 Demo [Active] · demo"));
         assert!(buttons.iter().any(|button| button.label == "Check"));
         assert!(buttons.iter().any(|button| button.label == "Finish"));
         assert!(buttons.iter().any(|button| button.label == "Remove"));
@@ -2633,7 +2644,12 @@ mod tests {
             path: path.into(),
             project: "ha".into(),
             work_item_id: "42".into(),
-            display_work_items: "#42 Demo".into(),
+            work_items: vec![dw_workspace::WorkspaceWorkItem {
+                id: "42".into(),
+                kind: Some("User Story".into()),
+                title: Some("Demo".into()),
+                state: Some("Active".into()),
+            }],
             task_id: None,
             all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),

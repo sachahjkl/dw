@@ -1182,7 +1182,7 @@ mod tests {
         ])));
 
         assert_eq!(workspace_values, vec![workspace.display().to_string()]);
-        assert_eq!(work_item_values, vec!["#42 Demo", "#43 Child"]);
+        assert_eq!(work_item_values, vec!["42", "43"]);
         assert_eq!(repository_values, vec!["front", "back"]);
     }
 

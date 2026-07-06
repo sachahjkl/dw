@@ -42,11 +42,9 @@ pub fn work_item_values(root: &str, project: Option<&str>) -> Vec<String> {
     let values = task_list(root, project, None)
         .into_iter()
         .flat_map(|item| {
-            item.display_work_items
-                .split(',')
-                .map(str::trim)
-                .map(str::to_string)
-                .collect::<Vec<_>>()
+            item.all_known_work_item_ids
+                .into_iter()
+                .map(|id| id.to_string())
         })
         .collect::<Vec<_>>();
     dedup_preserving_order(values)

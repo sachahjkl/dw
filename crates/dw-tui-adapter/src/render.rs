@@ -983,7 +983,9 @@ pub fn task_status_lines(report: &TaskStatusReport) -> Vec<String> {
     for item in &report.items {
         lines.push(format!(
             "- {} {} {}",
-            item.project, item.kind, item.display_work_items
+            item.project,
+            item.kind,
+            format_current_work_items(&item.work_items)
         ));
         lines.push(format!("  Branch      : {}", item.branch_name));
         if !item.repositories.is_empty() {
@@ -1009,7 +1011,7 @@ pub fn task_list_lines(report: &TaskListReport) -> Vec<String> {
             item.project,
             created_date(&item.created_at),
             item.kind,
-            item.display_work_items
+            format_current_work_items(&item.work_items)
         ));
         lines.push(format!("  Branch: {}", item.branch_name));
         if !item.repositories.is_empty() {
@@ -2606,7 +2608,12 @@ mod tests {
                 path: "/tmp/ws".into(),
                 project: "ha".into(),
                 work_item_id: "42".into(),
-                display_work_items: "#42 Titre [Actif]".into(),
+                work_items: vec![dw_workspace::WorkspaceWorkItem {
+                    id: "42".into(),
+                    kind: Some("User Story".into()),
+                    title: Some("Titre".into()),
+                    state: Some("Actif".into()),
+                }],
                 task_id: None,
                 all_known_work_item_ids: vec!["42".into()],
                 kind: "feat".into(),

@@ -99,6 +99,20 @@ pub struct WorkspaceWorkItem {
     pub state: Option<WorkItemState>,
 }
 
+impl fmt::Display for WorkspaceWorkItem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let title = self
+            .title
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "(sans titre)".into());
+        match &self.state {
+            Some(state) => write!(formatter, "#{} {} [{}]", self.id, title, state),
+            None => write!(formatter, "#{} {}", self.id, title),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceChildTask {
     pub repository: WorkspaceRepositoryName,
@@ -118,8 +132,8 @@ pub struct TaskListItem {
     pub project: ProjectKey,
     #[serde(rename = "workItemId")]
     pub work_item_id: WorkItemId,
-    #[serde(rename = "displayWorkItems")]
-    pub display_work_items: String,
+    #[serde(rename = "workItems")]
+    pub work_items: Vec<WorkspaceWorkItem>,
     #[serde(rename = "taskId")]
     pub task_id: Option<TaskId>,
     #[serde(rename = "allKnownWorkItemIds")]
@@ -643,7 +657,7 @@ pub fn task_list(root: &str, project: Option<&str>, work_item: Option<&str>) -> 
             path: workspace.path,
             project: workspace.manifest.project.clone(),
             work_item_id: workspace.manifest.primary_work_item_id(),
-            display_work_items: workspace.manifest.display_work_items(),
+            work_items: workspace.manifest.parent_work_items(),
             task_id: workspace.manifest.task_id.clone(),
             all_known_work_item_ids: workspace
                 .manifest
@@ -695,32 +709,6 @@ fn plan_task_prune_by_requested_ids(
             })
         })
         .collect()
-}
-
-pub fn display_work_item(item: &WorkspaceWorkItem, include_state: bool) -> String {
-    let title = item
-        .title
-        .as_ref()
-        .map(ToString::to_string)
-        .unwrap_or_else(|| "(sans titre)".into());
-    if include_state {
-        let state = item
-            .state
-            .as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "?".into());
-        format!("#{} {} [{}]", item.id, title, state)
-    } else {
-        format!("#{} {}", item.id, title)
-    }
-}
-
-pub fn display_work_items(items: &[WorkspaceWorkItem], include_state: bool) -> String {
-    items
-        .iter()
-        .map(|item| display_work_item(item, include_state))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 pub fn is_final_state(work_item_type: Option<&str>, state: Option<&str>) -> bool {
@@ -1874,14 +1862,6 @@ impl WorkspaceManifest {
             .join(", ")
     }
 
-    pub fn display_work_items(&self) -> String {
-        self.parent_work_items()
-            .into_iter()
-            .map(|item| format_work_item(&item))
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-
     pub fn normalized_child_tasks(&self) -> Vec<WorkspaceChildTask> {
         let mut normalized = self
             .child_tasks
@@ -2149,10 +2129,6 @@ fn distinct_repositories(repositories: &[WorkspaceRepositoryName]) -> Vec<Worksp
         }
     }
     result
-}
-
-fn format_work_item(item: &WorkspaceWorkItem) -> String {
-    display_work_item(item, false)
 }
 
 fn resolve_work_item_ids(
@@ -2605,6 +2581,13 @@ mod tests {
         WorkspacePath::from(path.display().to_string())
     }
 
+    fn git_is_available() -> bool {
+        Command::new("git")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+    }
+
     fn run_git(cwd: &Path, args: &[&str]) {
         let output = Command::new("git")
             .current_dir(cwd)
@@ -2799,7 +2782,14 @@ artifacts:
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].project.as_str(), "ha");
         assert_eq!(result[0].work_item_id.as_str(), "123");
-        assert_eq!(result[0].display_work_items, "#123 Titre HA");
+        assert_eq!(
+            result[0]
+                .work_items
+                .iter()
+                .map(|item| item.id.clone())
+                .collect::<Vec<_>>(),
+            vec![WorkItemId::from("123")]
+        );
         assert_eq!(result[0].branch_name.as_str(), "feat/123-demo");
     }
 
@@ -3204,6 +3194,10 @@ artifacts:
 
     #[test]
     fn execute_task_start_prepares_bare_repository_and_worktree() {
+        if !git_is_available() {
+            return;
+        }
+
         let temp = tempdir().expect("tempdir should be created");
         let source = temp.path().join("source-front");
         fs::create_dir_all(&source).expect("source should exist");
@@ -3930,44 +3924,16 @@ artifacts:
     }
 
     #[test]
-    fn display_work_item_includes_title_and_state_when_requested() {
-        let text = display_work_item(
-            &WorkspaceWorkItem {
-                id: "55206".into(),
-                kind: Some("Bug".into()),
-                title: Some("Heures PSFs incoherentes affichees".into()),
-                state: Some("Valide".into()),
-            },
-            true,
-        );
+    fn workspace_work_item_display_includes_title_and_state() {
+        let text = WorkspaceWorkItem {
+            id: "55206".into(),
+            kind: Some("Bug".into()),
+            title: Some("Heures PSFs incoherentes affichees".into()),
+            state: Some("Valide".into()),
+        }
+        .to_string();
 
         assert_eq!(text, "#55206 Heures PSFs incoherentes affichees [Valide]");
-    }
-
-    #[test]
-    fn display_work_items_joins_multiple_items_with_titles() {
-        let text = display_work_items(
-            &[
-                WorkspaceWorkItem {
-                    id: "26999".into(),
-                    kind: Some("User Story".into()),
-                    title: Some("Edition de la demande de transport".into()),
-                    state: Some("En realisation".into()),
-                },
-                WorkspaceWorkItem {
-                    id: "55264".into(),
-                    kind: Some("Task".into()),
-                    title: Some("Transmission automatique du dossier".into()),
-                    state: Some("En realisation".into()),
-                },
-            ],
-            true,
-        );
-
-        assert_eq!(
-            text,
-            "#26999 Edition de la demande de transport [En realisation], #55264 Transmission automatique du dossier [En realisation]"
-        );
     }
 
     #[test]

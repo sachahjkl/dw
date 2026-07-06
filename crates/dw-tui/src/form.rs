@@ -1413,7 +1413,12 @@ mod tests {
             path: "/tmp/ws".into(),
             project: "ha".into(),
             work_item_id: "42".into(),
-            display_work_items: "#42 Demo".into(),
+            work_items: vec![dw_workspace::WorkspaceWorkItem {
+                id: "42".into(),
+                kind: Some("User Story".into()),
+                title: Some("Demo".into()),
+                state: Some("Active".into()),
+            }],
             task_id: None,
             all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
