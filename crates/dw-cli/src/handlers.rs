@@ -324,13 +324,18 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             positional_work_item,
         } => {
             let report = dw_task::validate::preflight_report(dw_task::validate::PreflightArgs {
-                workspace,
-                root,
-                project,
-                work_item,
+                workspace: workspace.map(WorkspacePath::from),
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 r#continue,
-                ai_context_file,
-                positional_work_item,
+                ai_context_files: ai_context_file
+                    .into_iter()
+                    .map(dw_core::AiContextFilePath::from)
+                    .collect(),
             })?;
             if json {
                 print_json(&report)?;
@@ -349,12 +354,14 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
         } => {
             let report = dw_task::validate::handoff_validation_report(
                 dw_task::validate::HandoffValidateArgs {
-                    workspace,
-                    root,
-                    project,
-                    work_item,
+                    workspace: workspace.map(WorkspacePath::from),
+                    root: root.map(DevWorkflowRoot::from),
+                    project: project.map(ProjectKey::from),
+                    work_item_ids: parse_workspace_filter_work_item_ids(
+                        work_item.as_deref(),
+                        positional_work_item.as_deref(),
+                    )?,
                     r#continue,
-                    positional_work_item,
                 },
             )?;
             if json {
@@ -1199,6 +1206,21 @@ fn parse_workspace_repository_names(value: Option<&str>) -> Vec<WorkspaceReposit
         .filter(|value| !value.is_empty())
         .map(WorkspaceRepositoryName::from)
         .collect()
+}
+
+fn parse_workspace_filter_work_item_ids(
+    option: Option<&str>,
+    positional: Option<&str>,
+) -> Result<Vec<WorkItemId>> {
+    let option = option.filter(|value| !value.trim().is_empty());
+    let positional = positional.filter(|value| !value.trim().is_empty());
+    if option.is_some() && positional.is_some() {
+        anyhow::bail!("Work item fourni à la fois en option et en positionnel.");
+    }
+    Ok(option
+        .or(positional)
+        .map(WorkItemId::parse_many)
+        .unwrap_or_default())
 }
 
 fn should_prompt_finish_mode(

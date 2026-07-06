@@ -8,8 +8,8 @@ use dw_contracts::{
     TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightReport, TaskPreflightSeverity,
 };
 use dw_core::{
-    BranchName, ProjectKey, ProjectRootPath, RepositoryPath, WorkItemId, WorkspacePath,
-    WorkspaceRepositoryName,
+    AiContextFilePath, BranchName, ProjectKey, ProjectRootPath, RepositoryPath, WorkItemId,
+    WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
@@ -1334,16 +1334,16 @@ pub fn start_plan_with_child_tasks(
 
 pub fn build_preflight_report_from_ai_context_files(
     workspace: &str,
-    ai_context_files: &[String],
+    ai_context_files: &[AiContextFilePath],
 ) -> Result<TaskPreflightReport, WorkspaceError> {
     let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
     let mut issues = Vec::new();
 
     for file in ai_context_files {
-        let text =
-            fs::read_to_string(file).map_err(|_| WorkspaceError::MissingAiContext(file.clone()))?;
+        let text = fs::read_to_string(file.as_str())
+            .map_err(|_| WorkspaceError::MissingAiContext(file.to_string()))?;
         let ai_context: AdoAiContextItem = serde_json::from_str(&text)
-            .map_err(|_| WorkspaceError::MissingAiContext(file.clone()))?;
+            .map_err(|_| WorkspaceError::MissingAiContext(file.to_string()))?;
         issues.extend(build_stale_context_issues(&ai_context, &manifest));
         issues.extend(build_attachment_issues(&ai_context));
     }
@@ -3088,7 +3088,9 @@ artifacts:
 
         let report = build_preflight_report_from_ai_context_files(
             workspace.to_str().expect("utf8 path"),
-            &[ai_context_path.display().to_string()],
+            &[AiContextFilePath::from(
+                ai_context_path.display().to_string(),
+            )],
         )
         .expect("report should build");
 

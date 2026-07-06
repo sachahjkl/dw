@@ -1,31 +1,30 @@
 use anyhow::Result;
 use dw_config::resolve_root;
 use dw_contracts::{TaskHandoffValidationReport, TaskPreflightReport};
+use dw_core::{AiContextFilePath, DevWorkflowRoot, ProjectKey, WorkItemId, WorkspacePath};
 use dw_workspace::{
     build_handoff_validation_report, build_preflight_report_from_ai_context_files,
-    resolve_workspace,
+    resolve_workspace_by_work_item_ids,
 };
 use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct PreflightArgs {
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
-    pub ai_context_file: Vec<String>,
-    pub positional_work_item: Option<String>,
+    pub ai_context_files: Vec<AiContextFilePath>,
 }
 
 #[derive(Debug, Clone)]
 pub struct HandoffValidateArgs {
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
-    pub positional_work_item: Option<String>,
 }
 
 pub fn preflight_report(args: PreflightArgs) -> Result<TaskPreflightReport> {
@@ -33,24 +32,22 @@ pub fn preflight_report(args: PreflightArgs) -> Result<TaskPreflightReport> {
         workspace,
         root,
         project,
-        work_item,
+        work_item_ids,
         r#continue,
-        ai_context_file,
-        positional_work_item,
+        ai_context_files,
     } = args;
-    let root = resolve_root(root.as_deref());
-    let workspace = resolve_workspace(
+    let root = resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
+    let workspace = resolve_workspace_by_work_item_ids(
         &root,
-        workspace.as_deref(),
-        project.as_deref(),
-        work_item.as_deref(),
-        positional_work_item.as_deref(),
+        workspace.as_ref().map(WorkspacePath::as_str),
+        project.as_ref().map(ProjectKey::as_str),
+        &work_item_ids,
         r#continue,
     )?;
-    let files = if ai_context_file.is_empty() {
+    let files = if ai_context_files.is_empty() {
         discover_ai_context_files(&workspace)
     } else {
-        ai_context_file
+        ai_context_files
     };
 
     if files.is_empty() {
@@ -69,30 +66,28 @@ pub fn handoff_validation_report(args: HandoffValidateArgs) -> Result<TaskHandof
         workspace,
         root,
         project,
-        work_item,
+        work_item_ids,
         r#continue,
-        positional_work_item,
     } = args;
-    let root = resolve_root(root.as_deref());
-    let workspace = resolve_workspace(
+    let root = resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
+    let workspace = resolve_workspace_by_work_item_ids(
         &root,
-        workspace.as_deref(),
-        project.as_deref(),
-        work_item.as_deref(),
-        positional_work_item.as_deref(),
+        workspace.as_ref().map(WorkspacePath::as_str),
+        project.as_ref().map(ProjectKey::as_str),
+        &work_item_ids,
         r#continue,
     )?;
     Ok(build_handoff_validation_report(&workspace)?)
 }
 
-fn discover_ai_context_files(workspace: &str) -> Vec<String> {
+fn discover_ai_context_files(workspace: &str) -> Vec<AiContextFilePath> {
     let mut files = Vec::new();
     collect_ai_context_files(Path::new(workspace), &mut files);
     files.sort();
     files
 }
 
-fn collect_ai_context_files(root: &Path, files: &mut Vec<String>) {
+fn collect_ai_context_files(root: &Path, files: &mut Vec<AiContextFilePath>) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };
@@ -108,7 +103,7 @@ fn collect_ai_context_files(root: &Path, files: &mut Vec<String>) {
             continue;
         };
         if name.starts_with("ai-context") && name.ends_with(".json") {
-            files.push(path.display().to_string());
+            files.push(AiContextFilePath::from(path.display().to_string()));
         }
     }
 }

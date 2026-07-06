@@ -513,6 +513,19 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             ],
         ),
         (
+            "crates/dw-task/src/validate.rs",
+            &[
+                "pub workspace: Option<String>",
+                "pub root: Option<String>",
+                "pub project: Option<String>",
+                "pub work_item: Option<String>",
+                "pub ai_context_file: Vec<String>",
+                "pub ai_context_files: Vec<String>",
+                "pub positional_work_item",
+                "resolve_workspace(",
+            ],
+        ),
+        (
             "crates/dw-task/src/repo.rs",
             &[
                 "pub workspace: Option<String>",
@@ -589,6 +602,33 @@ fn task_repo_contract_uses_typed_paths_repositories_and_branches() {
         assert!(
             text.contains(required),
             "{} should expose typed repo contract token `{}`",
+            path.display(),
+            required
+        );
+    }
+}
+
+#[test]
+fn task_validate_contract_uses_typed_workspace_filters_and_ai_context_paths() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-task/src/validate.rs");
+    let text = fs::read_to_string(&path).expect("read validate source");
+    for required in [
+        "AiContextFilePath",
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "WorkItemId",
+        "WorkspacePath",
+        "pub workspace: Option<WorkspacePath>",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub project: Option<ProjectKey>",
+        "pub work_item_ids: Vec<WorkItemId>",
+        "pub ai_context_files: Vec<AiContextFilePath>",
+        "resolve_workspace_by_work_item_ids",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed validate contract token `{}`",
             path.display(),
             required
         );

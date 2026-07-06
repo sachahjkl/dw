@@ -349,12 +349,16 @@ impl DetailPanelContent {
 impl TuiAction {
     pub fn with_root(mut self, root: String) -> Self {
         match &mut self.request {
-            TuiActionRequest::TaskPreflight(args) => args.root = Some(root),
+            TuiActionRequest::TaskPreflight(args) => {
+                args.root = Some(dw_core::DevWorkflowRoot::from(root))
+            }
             TuiActionRequest::TaskSync(args) => args.root = Some(root),
             TuiActionRequest::TaskRepoLatest(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
-            TuiActionRequest::TaskHandoffValidate(args) => args.root = Some(root),
+            TuiActionRequest::TaskHandoffValidate(args) => {
+                args.root = Some(dw_core::DevWorkflowRoot::from(root))
+            }
             TuiActionRequest::TaskCommit(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
@@ -582,8 +586,12 @@ impl TuiAction {
     pub fn workspace_path(&self) -> Option<&str> {
         match &self.request {
             TuiActionRequest::AgentOpen(args) => args.workspace.as_deref(),
-            TuiActionRequest::TaskPreflight(args) => args.workspace.as_deref(),
-            TuiActionRequest::TaskHandoffValidate(args) => args.workspace.as_deref(),
+            TuiActionRequest::TaskPreflight(args) => {
+                args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
+            }
+            TuiActionRequest::TaskHandoffValidate(args) => {
+                args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
+            }
             TuiActionRequest::TaskSync(args) => args.workspace.as_deref(),
             TuiActionRequest::TaskRename(args) => args.workspace.as_deref(),
             TuiActionRequest::TaskRepoLatest(args) => {
@@ -1351,13 +1359,12 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::Preflight => TuiAction {
             label: "Check workspace".into(),
             request: TuiActionRequest::TaskPreflight(dw_task::validate::PreflightArgs {
-                workspace: Some(workspace_arg),
+                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
                 root: None,
                 project: None,
-                work_item: None,
+                work_item_ids: Vec::new(),
                 r#continue: false,
-                ai_context_file: Vec::new(),
-                positional_work_item: None,
+                ai_context_files: Vec::new(),
             }),
             description: workspace.path.clone(),
             kind: ActionRisk::Safe,
@@ -1390,12 +1397,11 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             label: "Validate handoff".into(),
             request: TuiActionRequest::TaskHandoffValidate(
                 dw_task::validate::HandoffValidateArgs {
-                    workspace: Some(workspace_arg),
+                    workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
                     root: None,
                     project: None,
-                    work_item: None,
+                    work_item_ids: Vec::new(),
                     r#continue: false,
-                    positional_work_item: None,
                 },
             ),
             description: "Validate handoffs".into(),
@@ -1648,7 +1654,7 @@ mod tests {
         assert!(actions.iter().any(|action| matches!(
             &action.request,
             TuiActionRequest::TaskPreflight(args)
-                if args.workspace.as_deref() == Some("/tmp/ws")
+                if args.workspace.as_ref().map(dw_core::WorkspacePath::as_str) == Some("/tmp/ws")
         )));
         assert!(
             actions
