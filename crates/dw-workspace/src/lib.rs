@@ -4,10 +4,10 @@ use dw_config::{
 };
 use dw_contracts::{
     AdoAiContextItem, HANDOFF_PREFIX, HANDOFF_VALIDATION_VERSION, MARKDOWN_EXTENSION,
-    PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightIssue,
-    TaskPreflightReport,
+    PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport,
+    TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightReport, TaskPreflightSeverity,
 };
-use dw_core::{ProjectKey, WorkItemId, WorkspaceRepositoryName};
+use dw_core::{ProjectKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName};
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
     slug_from_phrase_or_fallback,
@@ -313,9 +313,9 @@ pub fn build_handoff_validation_report(
         let path = workspace_path.join(format!("{HANDOFF_PREFIX}{repository}{MARKDOWN_EXTENSION}"));
         if !path.exists() {
             items.push(TaskHandoffValidationItem {
-                repository,
+                repository: WorkspaceRepositoryName::from(repository),
                 path: path.display().to_string(),
-                status: "missing".into(),
+                status: TaskHandoffValidationStatus::Missing,
                 valid: false,
                 message: "Fichier handoff manquant.".into(),
                 done_count: 0,
@@ -336,9 +336,9 @@ pub fn build_handoff_validation_report(
                     .any(|status| status.eq_ignore_ascii_case(&summary.status))
                 {
                     items.push(TaskHandoffValidationItem {
-                        repository,
+                        repository: WorkspaceRepositoryName::from(repository),
                         path: path.display().to_string(),
-                        status: "invalid".into(),
+                        status: TaskHandoffValidationStatus::Invalid,
                         valid: false,
                         message: format!(
                             "Status handoff invalide: {}. Attendus: {}.",
@@ -356,12 +356,16 @@ pub fn build_handoff_validation_report(
 
                 let valid = summary.status.eq_ignore_ascii_case("done");
                 let status = if valid {
-                    "valid".to_string()
+                    TaskHandoffValidationStatus::Valid
+                } else if summary.status.eq_ignore_ascii_case("blocked") {
+                    TaskHandoffValidationStatus::Blocked
+                } else if summary.status.eq_ignore_ascii_case("in_progress") {
+                    TaskHandoffValidationStatus::InProgress
                 } else {
-                    summary.status.to_lowercase()
+                    TaskHandoffValidationStatus::Todo
                 };
                 items.push(TaskHandoffValidationItem {
-                    repository,
+                    repository: WorkspaceRepositoryName::from(repository),
                     path: path.display().to_string(),
                     status,
                     valid,
@@ -381,9 +385,9 @@ pub fn build_handoff_validation_report(
                 });
             }
             Err(error) => items.push(TaskHandoffValidationItem {
-                repository,
+                repository: WorkspaceRepositoryName::from(repository),
                 path: path.display().to_string(),
-                status: "invalid".into(),
+                status: TaskHandoffValidationStatus::Invalid,
                 valid: false,
                 message: error,
                 done_count: 0,
@@ -398,7 +402,7 @@ pub fn build_handoff_validation_report(
     let is_valid = items.iter().all(|item| item.valid);
     Ok(TaskHandoffValidationReport {
         schema_version: HANDOFF_VALIDATION_VERSION.into(),
-        workspace: workspace.to_string(),
+        workspace: WorkspacePath::from(workspace),
         project: ProjectKey::from(manifest.project),
         items,
         is_valid,
@@ -1303,10 +1307,10 @@ pub fn build_preflight_report_from_ai_context_files(
         issues.extend(build_attachment_issues(&ai_context));
     }
 
-    let has_blocking_issues = issues.iter().any(|issue| issue.severity == "blocking");
+    let has_blocking_issues = issues.iter().any(|issue| issue.severity.is_blocking());
     Ok(TaskPreflightReport {
         schema_version: PREFLIGHT_VERSION.into(),
-        workspace: workspace.into(),
+        workspace: WorkspacePath::from(workspace),
         project: ProjectKey::from(manifest.project.clone()),
         work_item_ids: manifest
             .parent_work_items()
@@ -2163,7 +2167,7 @@ fn build_stale_context_issues(
 
     vec![TaskPreflightIssue {
         code: "workspace.ado-context.stale".into(),
-        severity: "warning".into(),
+        severity: TaskPreflightSeverity::Warning,
         work_item_id: ai_context.work_item.id.clone(),
         message: format!(
             "Le contexte ADO local du workspace semble stale pour #{}.",
@@ -2188,7 +2192,7 @@ fn build_attachment_issues(ai_context: &AdoAiContextItem) -> Vec<TaskPreflightIs
 
     vec![TaskPreflightIssue {
         code: "ado.attachments.present".into(),
-        severity: "warning".into(),
+        severity: TaskPreflightSeverity::Warning,
         work_item_id: ai_context.work_item.id.clone(),
         message: format!(
             "Le work item #{} a des pièces jointes à traiter comme source factuelle.",
@@ -2481,7 +2485,12 @@ artifacts:
             .expect("report should be built");
 
         assert!(!report.is_valid);
-        assert!(report.items.iter().any(|item| item.status == "todo"));
+        assert!(
+            report
+                .items
+                .iter()
+                .any(|item| item.status == TaskHandoffValidationStatus::Todo)
+        );
     }
 
     #[test]
@@ -2511,7 +2520,7 @@ artifacts:
 
         assert!(!report.is_valid);
         assert_eq!(report.items.len(), 1);
-        assert_eq!(report.items[0].status, "missing");
+        assert_eq!(report.items[0].status, TaskHandoffValidationStatus::Missing);
     }
 
     #[test]
@@ -3049,7 +3058,7 @@ artifacts:
             report
                 .issues
                 .iter()
-                .any(|issue| issue.severity == "warning")
+                .any(|issue| issue.severity == TaskPreflightSeverity::Warning)
         );
         assert!(
             report

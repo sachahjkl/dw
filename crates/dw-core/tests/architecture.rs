@@ -386,6 +386,7 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
     let text = fs::read_to_string(&contracts).expect("read contracts lib");
     for forbidden in [
         "pub struct TaskHandoffValidationReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String,\n    pub project: String",
+        "pub struct TaskHandoffValidationReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String",
         "pub struct AdoAiContextWorkItem {\n    pub id: String",
         "pub parent_ids: Vec<String>",
         "pub child_ids: Vec<String>",
@@ -393,9 +394,13 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
         "pub successor_ids: Vec<String>",
         "pub work_item_id: Option<String>",
         "pub struct TaskPreflightReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String,\n    pub project: String",
+        "pub struct TaskPreflightReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String",
         "pub work_item_ids: Vec<String>",
         "pub work_item_id: String",
         "pub related_ids: Vec<String>",
+        "pub severity: String",
+        "pub repository: String",
+        "pub status: String",
     ] {
         assert!(
             !text.contains(forbidden),
@@ -404,7 +409,14 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
             forbidden
         );
     }
-    for required in ["ProjectKey", "WorkItemId"] {
+    for required in [
+        "ProjectKey",
+        "WorkItemId",
+        "WorkspacePath",
+        "WorkspaceRepositoryName",
+        "TaskHandoffValidationStatus",
+        "TaskPreflightSeverity",
+    ] {
         assert!(
             text.contains(required),
             "{} should expose contract domain type `{}`",

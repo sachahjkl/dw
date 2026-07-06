@@ -7,7 +7,10 @@ use dw_app::{
     DwActionResult, SecretActionResult, TaskActionResult,
 };
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
-use dw_contracts::{TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightReport};
+use dw_contracts::{
+    TaskHandoffValidationItem, TaskHandoffValidationReport, TaskHandoffValidationStatus,
+    TaskPreflightReport, TaskPreflightSeverity,
+};
 use dw_core::{
     AdoActionEvent, AgentActionEvent, ConfigActionEvent, DbActionEvent, DwActionEvent,
     GitOperation, SecretActionEvent, TaskActionEvent, UpgradeActionEvent,
@@ -994,12 +997,12 @@ pub fn task_preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     let blocking_count = report
         .issues
         .iter()
-        .filter(|issue| is_blocking_severity(&issue.severity))
+        .filter(|issue| issue.severity.is_blocking())
         .count();
     let warning_count = report
         .issues
         .iter()
-        .filter(|issue| is_warning_severity(&issue.severity))
+        .filter(|issue| issue.severity.is_warning())
         .count();
     let other_count = report
         .issues
@@ -1009,10 +1012,14 @@ pub fn task_preflight_lines(report: &TaskPreflightReport) -> Vec<String> {
     lines.push(format!("Warnings  : {warning_count}"));
     lines.push(format!("Infos     : {other_count}"));
     lines.push(String::new());
-    push_preflight_issue_group(&mut lines, "Blockers", report, is_blocking_severity);
-    push_preflight_issue_group(&mut lines, "Warnings", report, is_warning_severity);
+    push_preflight_issue_group(&mut lines, "Blockers", report, |severity| {
+        severity.is_blocking()
+    });
+    push_preflight_issue_group(&mut lines, "Warnings", report, |severity| {
+        severity.is_warning()
+    });
     push_preflight_issue_group(&mut lines, "Infos", report, |severity| {
-        !is_blocking_severity(severity) && !is_warning_severity(severity)
+        !severity.is_blocking() && !severity.is_warning()
     });
 
     if report.has_blocking_issues {
@@ -1936,12 +1943,12 @@ fn push_preflight_issue_group(
     lines: &mut Vec<String>,
     title: &str,
     report: &TaskPreflightReport,
-    predicate: impl Fn(&str) -> bool,
+    predicate: impl Fn(TaskPreflightSeverity) -> bool,
 ) {
     let issues = report
         .issues
         .iter()
-        .filter(|issue| predicate(&issue.severity))
+        .filter(|issue| predicate(issue.severity))
         .collect::<Vec<_>>();
     if issues.is_empty() {
         return;
@@ -2020,54 +2027,43 @@ fn validation_status_label(valid: bool) -> &'static str {
     if valid { "✓ OK" } else { "✕ Needs fixes" }
 }
 
-fn severity_icon(severity: &str) -> &'static str {
-    if is_blocking_severity(severity) {
-        "✕"
-    } else if is_warning_severity(severity) {
-        "!"
-    } else {
-        "-"
+fn severity_icon(severity: &TaskPreflightSeverity) -> &'static str {
+    match severity {
+        TaskPreflightSeverity::Blocking => "✕",
+        TaskPreflightSeverity::Warning => "!",
+        TaskPreflightSeverity::Info => "-",
     }
 }
 
-fn severity_label(severity: &str) -> &'static str {
-    if is_blocking_severity(severity) {
-        "[blocker]"
-    } else if is_warning_severity(severity) {
-        "[warning]"
-    } else {
-        "[info]"
+fn severity_label(severity: &TaskPreflightSeverity) -> &'static str {
+    match severity {
+        TaskPreflightSeverity::Blocking => "[blocker]",
+        TaskPreflightSeverity::Warning => "[warning]",
+        TaskPreflightSeverity::Info => "[info]",
     }
 }
 
-fn handoff_status_label(status: &str) -> &str {
+fn handoff_status_label(status: &TaskHandoffValidationStatus) -> &'static str {
     match status {
-        "missing" => "missing",
-        "invalid" => "invalid",
-        "blocked" => "blocked",
-        "todo" => "todo",
-        "in_progress" => "in_progress",
-        "done" => "done",
-        other => other,
+        TaskHandoffValidationStatus::Missing => "missing",
+        TaskHandoffValidationStatus::Invalid => "invalid",
+        TaskHandoffValidationStatus::Blocked => "blocked",
+        TaskHandoffValidationStatus::Todo => "todo",
+        TaskHandoffValidationStatus::InProgress => "in_progress",
+        TaskHandoffValidationStatus::Valid => "valid",
     }
 }
 
-fn is_blocking_severity(severity: &str) -> bool {
-    matches!(severity.to_ascii_lowercase().as_str(), "blocking" | "error")
-}
-
-fn is_warning_severity(severity: &str) -> bool {
-    matches!(severity.to_ascii_lowercase().as_str(), "warning" | "warn")
-}
-
-fn handoff_status_icon(status: &str, valid: bool) -> &'static str {
+fn handoff_status_icon(status: &TaskHandoffValidationStatus, valid: bool) -> &'static str {
     if valid {
         return "✓";
     }
-    match status.to_ascii_lowercase().as_str() {
-        "missing" | "invalid" | "blocked" => "✕",
-        "todo" | "in_progress" => "!",
-        _ => "-",
+    match status {
+        TaskHandoffValidationStatus::Missing
+        | TaskHandoffValidationStatus::Invalid
+        | TaskHandoffValidationStatus::Blocked => "✕",
+        TaskHandoffValidationStatus::Todo | TaskHandoffValidationStatus::InProgress => "!",
+        TaskHandoffValidationStatus::Valid => "-",
     }
 }
 
@@ -2770,7 +2766,7 @@ mod tests {
             has_blocking_issues: true,
             issues: vec![TaskPreflightIssue {
                 code: "missing_attachment".into(),
-                severity: "blocking".into(),
+                severity: TaskPreflightSeverity::Blocking,
                 work_item_id: dw_core::WorkItemId::from("42"),
                 message: "Piece jointe manquante".into(),
                 details: Some("screenshot absent".into()),
@@ -2798,7 +2794,7 @@ mod tests {
             items: vec![TaskHandoffValidationItem {
                 repository: "front".into(),
                 path: "/tmp/ws/front/handoff-front.md".into(),
-                status: "done".into(),
+                status: TaskHandoffValidationStatus::Valid,
                 valid: true,
                 message: "OK".into(),
                 done_count: 2,
@@ -2814,7 +2810,7 @@ mod tests {
         assert_eq!(lines[0], "Validation handoff");
         assert!(lines.contains(&"Status    : ✕ Needs fixes".into()));
         assert!(lines.contains(&"Handoffs  : 1/1 valid".into()));
-        assert!(lines.contains(&"✓ front [done]".into()));
+        assert!(lines.contains(&"✓ front [valid]".into()));
         assert!(
             lines.contains(&"  Summary : done=2 decisions=1 risks=0 blockers=0 follow_up=1".into())
         );
@@ -2918,7 +2914,7 @@ mod tests {
                 items: vec![TaskHandoffValidationItem {
                     repository: "front".into(),
                     path: "/tmp/ws/handoff-front.md".into(),
-                    status: "done".into(),
+                    status: TaskHandoffValidationStatus::Valid,
                     valid: true,
                     message: "OK".into(),
                     done_count: 1,
@@ -2956,7 +2952,7 @@ mod tests {
 
         assert_eq!(lines[0], "Workspace finish");
         assert!(lines.contains(&"Status    : OK".into()));
-        assert!(lines.contains(&"- [done] front - OK".into()));
+        assert!(lines.contains(&"- [valid] front - OK".into()));
         assert!(lines.contains(&"Commit to create".into()));
         assert!(lines.contains(&"Message   : feat(42): demo".into()));
         assert!(lines.contains(&"Handoff front".into()));

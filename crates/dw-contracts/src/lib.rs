@@ -1,5 +1,6 @@
-use dw_core::{ProjectKey, WorkItemId};
+use dw_core::{ProjectKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 pub mod completion {
     #[derive(Clone, Copy)]
@@ -37,7 +38,7 @@ pub struct StructuredEnvelope<T> {
 pub struct TaskHandoffValidationReport {
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
-    pub workspace: String,
+    pub workspace: WorkspacePath,
     pub project: ProjectKey,
     pub items: Vec<TaskHandoffValidationItem>,
     #[serde(rename = "isValid")]
@@ -46,9 +47,9 @@ pub struct TaskHandoffValidationReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskHandoffValidationItem {
-    pub repository: String,
+    pub repository: WorkspaceRepositoryName,
     pub path: String,
-    pub status: String,
+    pub status: TaskHandoffValidationStatus,
     pub valid: bool,
     pub message: String,
     #[serde(rename = "doneCount")]
@@ -61,6 +62,30 @@ pub struct TaskHandoffValidationItem {
     pub blocker_count: usize,
     #[serde(rename = "followUpCount")]
     pub follow_up_count: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskHandoffValidationStatus {
+    Missing,
+    Invalid,
+    Blocked,
+    Todo,
+    InProgress,
+    Valid,
+}
+
+impl fmt::Display for TaskHandoffValidationStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Missing => "missing",
+            Self::Invalid => "invalid",
+            Self::Blocked => "blocked",
+            Self::Todo => "todo",
+            Self::InProgress => "in_progress",
+            Self::Valid => "valid",
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -171,7 +196,7 @@ pub struct AdoAiContextComment {
 pub struct TaskPreflightReport {
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
-    pub workspace: String,
+    pub workspace: WorkspacePath,
     pub project: ProjectKey,
     #[serde(rename = "workItemIds")]
     pub work_item_ids: Vec<WorkItemId>,
@@ -183,11 +208,39 @@ pub struct TaskPreflightReport {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskPreflightIssue {
     pub code: String,
-    pub severity: String,
+    pub severity: TaskPreflightSeverity,
     #[serde(rename = "workItemId")]
     pub work_item_id: WorkItemId,
     pub message: String,
     pub details: Option<String>,
     #[serde(rename = "relatedIds")]
     pub related_ids: Vec<WorkItemId>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskPreflightSeverity {
+    Blocking,
+    Warning,
+    Info,
+}
+
+impl TaskPreflightSeverity {
+    pub fn is_blocking(self) -> bool {
+        matches!(self, Self::Blocking)
+    }
+
+    pub fn is_warning(self) -> bool {
+        matches!(self, Self::Warning)
+    }
+}
+
+impl fmt::Display for TaskPreflightSeverity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Blocking => "blocking",
+            Self::Warning => "warning",
+            Self::Info => "info",
+        })
+    }
 }
