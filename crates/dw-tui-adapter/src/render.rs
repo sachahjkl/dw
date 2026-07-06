@@ -1,5 +1,5 @@
 use dw_ado_commands::auth::{
-    AuthLoginMode, AuthLoginReport, AuthLogoutReport, AuthStatusReport, expiration_line,
+    AuthLoginMode, AuthLoginReport, AuthLogoutReport, AuthStatusReport, AuthTokenExpiration,
 };
 use dw_agent::command::{AgentDoctorCheck, AgentDoctorReport};
 use dw_app::{
@@ -97,6 +97,15 @@ fn auth_login_mode_label(mode: AuthLoginMode) -> &'static str {
         AuthLoginMode::DeviceCode => "device code",
         AuthLoginMode::EnvironmentPat => "environment PAT",
     }
+}
+
+fn expiration_line(expires_on: Option<&AuthTokenExpiration>) -> String {
+    format!(
+        "Expiration: {}",
+        expires_on
+            .map(AuthTokenExpiration::as_str)
+            .unwrap_or("unknown expiration")
+    )
 }
 
 pub fn config_show_lines(report: &ConfigShow, theme: &TerminalTheme) -> Vec<String> {

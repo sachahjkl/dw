@@ -187,15 +187,6 @@ impl From<AdoAuthStatus> for AuthStatusReport {
     }
 }
 
-pub fn expiration_line(expires_on: Option<&AuthTokenExpiration>) -> String {
-    format!(
-        "Expiration: {}",
-        expires_on
-            .map(AuthTokenExpiration::as_str)
-            .unwrap_or("expiration inconnue")
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,10 +233,5 @@ mod tests {
 
         assert!(!report.connected);
         assert!(report.source.is_none());
-    }
-
-    #[test]
-    fn expiration_line_uses_unknown_fallback() {
-        assert_eq!(expiration_line(None), "Expiration: expiration inconnue");
     }
 }

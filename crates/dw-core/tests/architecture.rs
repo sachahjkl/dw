@@ -1290,7 +1290,6 @@ fn ado_auth_contracts_use_typed_root_source_and_expiration() {
         "root: Option<DevWorkflowRoot>",
         "pub async fn status_report(root: Option<DevWorkflowRoot>)",
         "pub fn logout_report(root: Option<DevWorkflowRoot>)",
-        "pub fn expiration_line(expires_on: Option<&AuthTokenExpiration>)",
     ] {
         assert!(
             text.contains(required),
@@ -1305,6 +1304,7 @@ fn ado_auth_contracts_use_typed_root_source_and_expiration() {
         "root: Option<String>",
         "status_report(root: Option<String>)",
         "logout_report(root: Option<String>)",
+        "pub fn expiration_line",
         "expiration_line(expires_on: Option<&str>)",
         "source: Some(token.source)",
         "expires_on: token.expires_on,",
@@ -1314,6 +1314,19 @@ fn ado_auth_contracts_use_typed_root_source_and_expiration() {
             "{} contains forbidden string auth contract token `{}`",
             path.display(),
             forbidden
+        );
+    }
+
+    for relative in [
+        "crates/dw-cli-adapter/src/render.rs",
+        "crates/dw-tui-adapter/src/render.rs",
+    ] {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read auth adapter source");
+        assert!(
+            text.contains("fn expiration_line(expires_on: Option<&AuthTokenExpiration>)"),
+            "{} should own auth expiration rendering",
+            path.display()
         );
     }
 }
