@@ -1149,6 +1149,8 @@ string_newtype!(SemanticVersion);
 string_newtype!(UpgradeReleaseTag);
 string_newtype!(GitCommitSha);
 string_newtype!(AgentExecutableName);
+string_newtype!(ExternalProgramName);
+string_newtype!(ExternalLaunchArgument);
 string_newtype!(AdoDeviceVerificationUri);
 string_newtype!(AdoDeviceUserCode);
 
@@ -1658,16 +1660,27 @@ pub struct ActionSummary {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalLaunchPlan {
-    pub program: String,
-    pub arguments: Vec<String>,
+    pub program: ExternalProgramName,
+    pub arguments: Vec<ExternalLaunchArgument>,
     pub environment: BTreeMap<String, String>,
     pub working_directory: Option<String>,
 }
 
 impl ExternalLaunchPlan {
+    pub fn program_as_str(&self) -> &str {
+        self.program.as_str()
+    }
+
+    pub fn argument_strings(&self) -> Vec<&str> {
+        self.arguments
+            .iter()
+            .map(ExternalLaunchArgument::as_str)
+            .collect()
+    }
+
     pub fn display_command(&self) -> String {
         std::iter::once(self.program.as_str())
-            .chain(self.arguments.iter().map(String::as_str))
+            .chain(self.arguments.iter().map(ExternalLaunchArgument::as_str))
             .collect::<Vec<_>>()
             .join(" ")
     }

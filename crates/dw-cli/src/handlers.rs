@@ -116,8 +116,8 @@ fn print_cli_action_event(event: &DwActionEvent) {
 
 fn run_external_launch_plan(launch: &ExternalLaunchPlan) -> Result<()> {
     let status = dw_process::status(
-        &launch.program,
-        &launch.arguments,
+        launch.program_as_str(),
+        launch.argument_strings(),
         launch.working_directory.as_deref(),
         launch
             .environment

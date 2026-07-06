@@ -217,8 +217,8 @@ async fn external_launch_plan(action: &TuiAction) -> Result<ExternalLaunchPlan> 
 
 fn run_external_launch_plan(launch: &ExternalLaunchPlan) -> Result<()> {
     let status = dw_process::status(
-        &launch.program,
-        &launch.arguments,
+        launch.program_as_str(),
+        launch.argument_strings(),
         launch.working_directory.as_deref(),
         launch
             .environment

@@ -1,8 +1,8 @@
 pub mod command;
 
 use dw_core::{
-    Agent, AgentExecutableName, DevWorkflowRoot, ProjectKey, WorkItemId, WorkItemTitle,
-    WorkItemTypeName, WorkspacePath,
+    Agent, AgentExecutableName, DevWorkflowRoot, ExternalLaunchArgument, ExternalProgramName,
+    ProjectKey, WorkItemId, WorkItemTitle, WorkItemTypeName, WorkspacePath,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -13,7 +13,7 @@ pub const DEFAULT_AGENT: Agent = Agent::Opencode;
 pub struct AgentLaunch {
     #[serde(rename = "fileName")]
     pub file_name: AgentExecutableName,
-    pub arguments: Vec<String>,
+    pub arguments: Vec<ExternalLaunchArgument>,
     pub environment: BTreeMap<String, String>,
     #[serde(rename = "workingDirectory")]
     pub working_directory: WorkspacePath,
@@ -70,7 +70,7 @@ pub fn build_open_launch_plan(
 impl From<AgentLaunch> for dw_core::ExternalLaunchPlan {
     fn from(launch: AgentLaunch) -> Self {
         Self {
-            program: launch.file_name.to_string(),
+            program: ExternalProgramName::from(launch.file_name.to_string()),
             arguments: launch.arguments,
             environment: launch.environment,
             working_directory: Some(launch.working_directory.to_string()),
@@ -96,14 +96,18 @@ struct Claude;
 struct Codex;
 struct Copilot;
 
+fn arg(value: impl Into<String>) -> ExternalLaunchArgument {
+    ExternalLaunchArgument::from(value.into())
+}
+
 impl AgentAdapter for Opencode {
     fn launch(&self, request: &AgentOpenRequest) -> AgentLaunch {
         AgentLaunch {
             file_name: AgentExecutableName::from("opencode"),
             arguments: if request.r#continue {
-                vec!["-c".into(), request.workspace.to_string()]
+                vec![arg("-c"), arg(request.workspace.to_string())]
             } else {
-                vec![request.workspace.to_string()]
+                vec![arg(request.workspace.to_string())]
             },
             environment: BTreeMap::from([(
                 "OPENCODE_CONFIG".into(),
@@ -120,12 +124,12 @@ impl AgentAdapter for CursorAgent {
             file_name: AgentExecutableName::from("agent"),
             arguments: if request.r#continue {
                 vec![
-                    "--workspace".into(),
-                    request.workspace.to_string(),
-                    "--continue".into(),
+                    arg("--workspace"),
+                    arg(request.workspace.to_string()),
+                    arg("--continue"),
                 ]
             } else {
-                vec!["--workspace".into(), request.workspace.to_string()]
+                vec![arg("--workspace"), arg(request.workspace.to_string())]
             },
             environment: BTreeMap::new(),
             working_directory: request.workspace.clone(),
@@ -139,7 +143,7 @@ impl AgentAdapter for Claude {
             file_name: AgentExecutableName::from("claude"),
             arguments: request
                 .r#continue
-                .then(|| "--continue".into())
+                .then(|| arg("--continue"))
                 .into_iter()
                 .collect(),
             environment: BTreeMap::new(),
@@ -154,13 +158,13 @@ impl AgentAdapter for Codex {
             file_name: AgentExecutableName::from("codex"),
             arguments: if request.r#continue {
                 vec![
-                    "resume".into(),
-                    "--last".into(),
-                    "--cd".into(),
-                    request.workspace.to_string(),
+                    arg("resume"),
+                    arg("--last"),
+                    arg("--cd"),
+                    arg(request.workspace.to_string()),
                 ]
             } else {
-                vec!["--cd".into(), request.workspace.to_string()]
+                vec![arg("--cd"), arg(request.workspace.to_string())]
             },
             environment: BTreeMap::new(),
             working_directory: request.workspace.clone(),
@@ -174,7 +178,7 @@ impl AgentAdapter for Copilot {
             file_name: AgentExecutableName::from("copilot"),
             arguments: request
                 .r#continue
-                .then(|| "--continue".into())
+                .then(|| arg("--continue"))
                 .into_iter()
                 .collect(),
             environment: BTreeMap::new(),
@@ -264,7 +268,7 @@ mod tests {
 
         assert_eq!(
             launch.arguments,
-            vec!["resume", "--last", "--cd", "/workspace"]
+            vec![arg("resume"), arg("--last"), arg("--cd"), arg("/workspace")]
         );
     }
 
@@ -282,7 +286,7 @@ mod tests {
         assert_eq!(launch.file_name, AgentExecutableName::from("agent"));
         assert_eq!(
             launch.arguments,
-            vec!["--workspace", "/workspace", "--continue"]
+            vec![arg("--workspace"), arg("/workspace"), arg("--continue")]
         );
     }
 
