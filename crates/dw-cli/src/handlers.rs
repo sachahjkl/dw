@@ -7,9 +7,9 @@ use dw_cli_adapter::{
 };
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
-    DwActionEvent, EnvironmentVariableName, ExecutionMode, ExternalLaunchPlan, ProjectKey,
-    PromptChoiceValue, PromptKind, PromptSpec, PullRequestId, SecretKey, SecretValue, TaskId,
-    TaskSlug, WorkItemId, WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
+    DwActionEvent, EnvironmentVariableName, ExecutionMode, ExternalLaunchPlan, GitRevision,
+    ProjectKey, PromptChoiceValue, PromptKind, PromptSpec, PullRequestId, SecretKey, SecretValue,
+    TaskId, TaskSlug, WorkItemId, WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
@@ -1216,10 +1216,15 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             git_to,
         } => {
             let source = if from_git {
-                dw_ado_commands::commands::changelog::ChangelogSource::GitRange {
-                    from: ids,
-                    to: git_to,
-                }
+                let git_to = git_to.ok_or_else(|| {
+                    anyhow::anyhow!("ado changelog --from-git requiert --git-to.")
+                })?;
+                dw_ado_commands::commands::changelog::ChangelogSource::GitRange(
+                    dw_git::GitRevisionRange::new(
+                        GitRevision::from(ids),
+                        GitRevision::from(git_to),
+                    ),
+                )
             } else if from_pr {
                 dw_ado_commands::commands::changelog::ChangelogSource::PullRequests(
                     PullRequestId::parse_many(&ids),

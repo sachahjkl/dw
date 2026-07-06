@@ -20,6 +20,7 @@ dw-config = { path = "../dw-config" }
 dw-core = { path = "../dw-core" }
 dw-db = { path = "../dw-db" }
 dw-doctor = { path = "../dw-doctor" }
+dw-git = { path = "../dw-git" }
 dw-process = { path = "../dw-process" }
 dw-secret = { path = "../dw-secret" }
 dw-task = { path = "../dw-task" }

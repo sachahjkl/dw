@@ -9,9 +9,9 @@ use dw_config::{load_projects_config, load_workflow_config, resolve_project, res
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, DevWorkflowRoot, ProjectKey, PullRequestId, WorkItemId,
 };
+use dw_git::{GitRevisionRange, commit_messages_in_range};
 use serde::Serialize;
 use std::fmt;
-use std::process::Command as ProcessCommand;
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]
@@ -30,7 +30,7 @@ pub struct ChangelogArgs {
 pub enum ChangelogSource {
     WorkItems(Vec<WorkItemId>),
     PullRequests(Vec<PullRequestId>),
-    GitRange { from: String, to: Option<String> },
+    GitRange(GitRevisionRange),
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -139,7 +139,7 @@ pub async fn report_with_events(
         ids_only,
     } = args;
     let from_pr = matches!(source, ChangelogSource::PullRequests(_));
-    let from_git = matches!(source, ChangelogSource::GitRange { .. });
+    let from_git = matches!(source, ChangelogSource::GitRange(_));
     if table && format != ChangelogOutputFormat::Markdown {
         return Err(anyhow::anyhow!(
             "Table output is only available with markdown format."
@@ -169,13 +169,15 @@ pub async fn report_with_events(
 
     let work_item_ids = match source {
         ChangelogSource::WorkItems(ids) => ids,
-        ChangelogSource::GitRange { from, to } => {
+        ChangelogSource::GitRange(range) => {
             push_event(
                 &mut events,
                 &mut emit,
-                AdoActionEvent::ExtractingGitWorkItems { git_to: to.clone() },
+                AdoActionEvent::ExtractingGitWorkItems {
+                    git_to: range.to.clone(),
+                },
             );
-            extract_work_item_ids_from_git_range(&from, to.as_deref())?
+            extract_work_item_ids_from_git_range(&range)?
                 .into_iter()
                 .map(WorkItemId::from)
                 .collect()
@@ -394,23 +396,9 @@ pub fn resolve_ado_repository(
     )
 }
 
-fn extract_work_item_ids_from_git_range(from: &str, to: Option<&str>) -> Result<Vec<String>> {
-    let to = to
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("Git mode expects 2 git refs: source and target."))?;
-    let output = ProcessCommand::new("git")
-        .args(["log", "--format=%B%x1e", &format!("{from}..{to}")])
-        .output()?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let message = [stderr.trim(), stdout.trim()]
-            .into_iter()
-            .find(|value| !value.is_empty())
-            .unwrap_or("unknown error");
-        return Err(anyhow::anyhow!("git log failed: {message}"));
-    }
+fn extract_work_item_ids_from_git_range(range: &GitRevisionRange) -> Result<Vec<String>> {
+    let messages = commit_messages_in_range(range)?;
     Ok(extract_work_item_ids_from_commit_messages(
-        &String::from_utf8_lossy(&output.stdout),
+        messages.as_str(),
     ))
 }

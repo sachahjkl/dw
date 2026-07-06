@@ -1,8 +1,8 @@
 use anyhow::{Result, anyhow};
-use dw_core::SecretValue;
+use dw_core::{GitRevision, RepositoryPath, SecretValue};
 use git2::{
     Cred, FetchOptions, IndexAddOption, ObjectType, PushOptions, RebaseOptions, RemoteCallbacks,
-    Repository, StashFlags, StatusOptions, WorktreeAddOptions, build::RepoBuilder,
+    Repository, Sort, StashFlags, StatusOptions, WorktreeAddOptions, build::RepoBuilder,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -28,6 +28,32 @@ pub struct RepositoryStatus {
     #[serde(rename = "hasUnpushed")]
     pub has_unpushed: bool,
     pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitRevisionRange {
+    pub from: GitRevision,
+    pub to: GitRevision,
+}
+
+impl GitRevisionRange {
+    pub fn new(from: GitRevision, to: GitRevision) -> Self {
+        Self { from, to }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct GitCommitMessages(String);
+
+impl GitCommitMessages {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -81,6 +107,7 @@ impl fmt::Debug for GitCredential {
 pub enum GitOperation {
     OpenRepository,
     Status,
+    Log,
     Fetch,
     Rebase,
     Commit,
@@ -361,6 +388,45 @@ pub fn repository_status(repository_path: &str) -> RepositoryStatus {
             String::new()
         },
     }
+}
+
+pub fn has_commits_ahead_of(repository_path: &RepositoryPath, base: &GitRevision) -> Result<bool> {
+    let repository = Repository::open(repository_path.as_str()).map_err(git2_command_error)?;
+    let head = repository
+        .revparse_single("HEAD")
+        .map_err(git2_command_error)?;
+    let base = repository
+        .revparse_single(base.as_str())
+        .map_err(git2_command_error)?;
+    let (ahead, _behind) = repository
+        .graph_ahead_behind(head.id(), base.id())
+        .map_err(git2_command_error)?;
+    Ok(ahead > 0)
+}
+
+pub fn commit_messages_in_range(range: &GitRevisionRange) -> Result<GitCommitMessages> {
+    let repository = Repository::discover(".").map_err(git2_command_error)?;
+    let from = repository
+        .revparse_single(range.from.as_str())
+        .map_err(git2_command_error)?;
+    let to = repository
+        .revparse_single(range.to.as_str())
+        .map_err(git2_command_error)?;
+    let mut walk = repository.revwalk().map_err(git2_command_error)?;
+    walk.push(to.id()).map_err(git2_command_error)?;
+    walk.hide(from.id()).map_err(git2_command_error)?;
+    walk.set_sorting(Sort::TIME).map_err(git2_command_error)?;
+
+    let mut messages = String::new();
+    for oid in walk {
+        let oid = oid.map_err(git2_command_error)?;
+        let commit = repository.find_commit(oid).map_err(git2_command_error)?;
+        let message = commit.message().map_err(git2_command_error)?;
+        messages.push_str(message);
+        messages.push('\u{1e}');
+        messages.push('\n');
+    }
+    Ok(GitCommitMessages::new(messages))
 }
 
 pub fn commit_repository(repository_path: &str, message: &str) -> Result<()> {

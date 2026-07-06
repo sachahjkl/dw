@@ -12,6 +12,7 @@ dw-ado = { path = "../dw-ado" }
 dw-config = { path = "../dw-config" }
 dw-contracts = { path = "../dw-contracts" }
 dw-core = { path = "../dw-core" }
+dw-git = { path = "../dw-git" }
 dw-workspace = { path = "../dw-workspace" }
 serde.workspace = true
 serde_json.workspace = true

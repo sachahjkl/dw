@@ -761,10 +761,9 @@ pub fn ado_action_event_line(event: &AdoActionEvent) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        AdoActionEvent::ExtractingGitWorkItems { git_to } => match git_to {
-            Some(git_to) => format!("ADO extraction git: jusqu'à {git_to}"),
-            None => "ADO extraction git".into(),
-        },
+        AdoActionEvent::ExtractingGitWorkItems { git_to } => {
+            format!("ADO extraction git: jusqu'à {git_to}")
+        }
         AdoActionEvent::LoadingWorkItem { id } => format!("ADO work item: #{id}"),
         AdoActionEvent::LoadingWorkItems { ids } => {
             format!("ADO work items: {}", join_display(ids))

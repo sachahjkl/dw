@@ -694,7 +694,6 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             "crates/dw-ado-commands/src/commands/changelog.rs",
             &[
                 "pub ids: String",
-                "pub git_to: Option<String>",
                 "pub root: Option<String>",
                 "pub root: String",
                 "pub repo: Option<String>",

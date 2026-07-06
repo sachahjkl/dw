@@ -1,9 +1,9 @@
 use dw_config::{ProjectConfig, RepositoryConfig, WorkflowConfig, repository_config};
 use dw_core::{
-    AdoRepositoryName, BranchName, HandoffFilePath, HandoffParseError, RepositoryPath,
+    AdoRepositoryName, BranchName, GitRevision, HandoffFilePath, HandoffParseError, RepositoryPath,
     WorkItemState, WorkspaceRepositoryName,
 };
-use dw_git::RepositoryStatus;
+use dw_git::{RepositoryStatus, has_commits_ahead_of};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -315,21 +315,8 @@ fn has_reviewable_commits(
         .as_ref()
         .map(|repo| target_branch(Some(repo)))
         .unwrap_or_else(|| BranchName::from("main"));
-    let comparison = format!("origin/{target}..HEAD");
-    let Ok(output) = Command::new("git")
-        .args(["rev-list", "--count", &comparison])
-        .current_dir(path)
-        .output()
-    else {
-        return false;
-    };
-    if !output.status.success() {
-        return false;
-    }
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u32>()
-        .is_ok_and(|ahead| ahead > 0)
+    let base = GitRevision::from(format!("origin/{target}"));
+    has_commits_ahead_of(&RepositoryPath::from(path), &base).unwrap_or(false)
 }
 
 fn target_branch(repo: Option<&RepositoryConfig>) -> BranchName {

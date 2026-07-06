@@ -833,10 +833,9 @@ fn ado_action_event_line(event: &AdoActionEvent) -> String {
                     .join(", ")
             )
         }
-        AdoActionEvent::ExtractingGitWorkItems { git_to } => match git_to {
-            Some(git_to) => format!("ADO [extract-git-work-items] to={git_to}"),
-            None => "ADO [extract-git-work-items]".into(),
-        },
+        AdoActionEvent::ExtractingGitWorkItems { git_to } => {
+            format!("ADO [extract-git-work-items] to={git_to}")
+        }
         AdoActionEvent::LoadingWorkItem { id } => format!("ADO [work-item] #{id}"),
         AdoActionEvent::LoadingWorkItems { ids } => {
             format!("ADO [work-items] {}", join_display(ids))

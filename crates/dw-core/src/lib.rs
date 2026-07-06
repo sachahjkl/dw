@@ -82,6 +82,8 @@ impl fmt::Display for ByteCount {
     }
 }
 
+string_newtype!(GitRevision);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ActionRisk {
@@ -1550,7 +1552,7 @@ pub enum AdoActionEvent {
         repositories: Vec<AdoRepositoryName>,
     },
     ExtractingGitWorkItems {
-        git_to: Option<String>,
+        git_to: GitRevision,
     },
     LoadingWorkItem {
         id: WorkItemId,
