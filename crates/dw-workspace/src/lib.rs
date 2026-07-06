@@ -7,7 +7,10 @@ use dw_contracts::{
     PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport,
     TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightReport, TaskPreflightSeverity,
 };
-use dw_core::{ProjectKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName};
+use dw_core::{
+    BranchName, ProjectKey, ProjectRootPath, RepositoryPath, WorkItemId, WorkspacePath,
+    WorkspaceRepositoryName,
+};
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
     slug_from_phrase_or_fallback,
@@ -188,16 +191,16 @@ pub struct TaskRenamePlan {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskRepoLatestTarget {
-    pub repository: String,
-    pub repository_path: String,
+    pub repository: WorkspaceRepositoryName,
+    pub repository_path: RepositoryPath,
     #[serde(rename = "defaultBranch")]
-    pub default_branch: String,
+    pub default_branch: BranchName,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskCommitTarget {
-    pub repository: String,
-    pub path: String,
+    pub repository: WorkspaceRepositoryName,
+    pub path: RepositoryPath,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -215,20 +218,20 @@ pub struct TaskWorkItemUpdatePlan {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskAddRepoPlan {
-    pub workspace: String,
-    pub repository: String,
+    pub workspace: WorkspacePath,
+    pub repository: WorkspaceRepositoryName,
     #[serde(rename = "projectRoot")]
-    pub project_root: String,
+    pub project_root: ProjectRootPath,
     #[serde(rename = "worktreePath")]
-    pub worktree_path: String,
+    pub worktree_path: RepositoryPath,
     pub url: String,
     #[serde(rename = "defaultBranch")]
-    pub default_branch: String,
+    pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
     pub anchor_name: String,
     #[serde(rename = "branchName")]
-    pub branch_name: String,
-    pub repositories: Vec<String>,
+    pub branch_name: BranchName,
+    pub repositories: Vec<WorkspaceRepositoryName>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -662,11 +665,11 @@ pub fn plan_task_repo_latest(
     root: &str,
     projects: &ProjectsConfig,
     workspace: &str,
-    only: Option<&str>,
+    requested_repositories: &[WorkspaceRepositoryName],
 ) -> Result<(WorkspaceManifest, Vec<TaskRepoLatestTarget>), WorkspaceError> {
     let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
     let project_config = resolve_project(projects, &manifest.project);
-    let repositories = resolve_workspace_repositories(&manifest, only)?;
+    let repositories = resolve_workspace_repositories(&manifest, requested_repositories)?;
     let targets = repositories
         .into_iter()
         .map(|repository| {
@@ -686,9 +689,11 @@ pub fn plan_task_repo_latest(
                 .clone()
                 .unwrap_or_else(|| repository.clone());
             TaskRepoLatestTarget {
-                repository,
-                repository_path: Path::new(workspace).join(folder).display().to_string(),
-                default_branch: repository_config.default_branch,
+                repository: WorkspaceRepositoryName::from(repository),
+                repository_path: RepositoryPath::from(
+                    Path::new(workspace).join(folder).display().to_string(),
+                ),
+                default_branch: BranchName::from(repository_config.default_branch),
             }
         })
         .collect::<Vec<_>>();
@@ -714,8 +719,8 @@ pub fn plan_task_commit(
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_else(|| repository.clone());
             TaskCommitTarget {
-                repository: repository.clone(),
-                path: Path::new(workspace).join(folder).display().to_string(),
+                repository: WorkspaceRepositoryName::from(repository.clone()),
+                path: RepositoryPath::from(Path::new(workspace).join(folder).display().to_string()),
             }
         })
         .collect();
@@ -970,19 +975,28 @@ pub fn plan_task_add_repo(
         return Ok((
             manifest.clone(),
             TaskAddRepoPlan {
-                workspace: workspace.into(),
-                repository: repository.clone(),
-                project_root: Path::new(root)
-                    .join("projects")
-                    .join(&manifest.project)
-                    .display()
-                    .to_string(),
-                worktree_path: Path::new(workspace).join(&repository).display().to_string(),
+                workspace: WorkspacePath::from(workspace),
+                repository: WorkspaceRepositoryName::from(repository.clone()),
+                project_root: ProjectRootPath::from(
+                    Path::new(root)
+                        .join("projects")
+                        .join(&manifest.project)
+                        .display()
+                        .to_string(),
+                ),
+                worktree_path: RepositoryPath::from(
+                    Path::new(workspace).join(&repository).display().to_string(),
+                ),
                 url: String::new(),
-                default_branch: "main".into(),
+                default_branch: BranchName::from("main"),
                 anchor_name: format!("{repository}.git"),
-                branch_name: manifest.branch_name.clone(),
-                repositories: manifest.repositories.clone(),
+                branch_name: BranchName::from(manifest.branch_name.clone()),
+                repositories: manifest
+                    .repositories
+                    .iter()
+                    .cloned()
+                    .map(WorkspaceRepositoryName::from)
+                    .collect(),
             },
         ));
     }
@@ -1008,19 +1022,26 @@ pub fn plan_task_add_repo(
     Ok((
         manifest.clone(),
         TaskAddRepoPlan {
-            workspace: workspace.into(),
-            repository: repository_key.into(),
-            project_root: Path::new(root)
-                .join("projects")
-                .join(&manifest.project)
-                .display()
-                .to_string(),
-            worktree_path: Path::new(workspace).join(folder).display().to_string(),
+            workspace: WorkspacePath::from(workspace),
+            repository: WorkspaceRepositoryName::from(repository_key),
+            project_root: ProjectRootPath::from(
+                Path::new(root)
+                    .join("projects")
+                    .join(&manifest.project)
+                    .display()
+                    .to_string(),
+            ),
+            worktree_path: RepositoryPath::from(
+                Path::new(workspace).join(folder).display().to_string(),
+            ),
             url: repository_config.url,
-            default_branch: repository_config.default_branch,
+            default_branch: BranchName::from(repository_config.default_branch),
             anchor_name,
-            branch_name: manifest.branch_name.clone(),
-            repositories,
+            branch_name: BranchName::from(manifest.branch_name.clone()),
+            repositories: repositories
+                .into_iter()
+                .map(WorkspaceRepositoryName::from)
+                .collect(),
         },
     ))
 }
@@ -1030,17 +1051,22 @@ pub fn execute_task_add_repo(
     plan: &TaskAddRepoPlan,
 ) -> Result<WorkspaceManifest, WorkspaceError> {
     let updated = WorkspaceManifest {
-        repositories: plan.repositories.clone(),
+        repositories: plan
+            .repositories
+            .iter()
+            .map(WorkspaceRepositoryName::as_str)
+            .map(ToOwned::to_owned)
+            .collect(),
         ..manifest.clone()
     };
     write_text(
-        &Path::new(&plan.workspace).join("task.json"),
+        &Path::new(plan.workspace.as_str()).join("task.json"),
         &serde_json::to_string_pretty(&updated)
-            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.clone()))?,
+            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.to_string()))?,
     )?;
     write_text(
-        &Path::new(&plan.workspace).join(format!("handoff-{}.md", plan.repository)),
-        &handoff_markdown(&updated, &plan.repository),
+        &Path::new(plan.workspace.as_str()).join(format!("handoff-{}.md", plan.repository)),
+        &handoff_markdown(&updated, plan.repository.as_str()),
     )?;
     Ok(updated)
 }
@@ -1939,31 +1965,30 @@ fn reject_workspace_conflicts(
 
 fn resolve_workspace_repositories(
     manifest: &WorkspaceManifest,
-    only: Option<&str>,
+    requested: &[WorkspaceRepositoryName],
 ) -> Result<Vec<String>, WorkspaceError> {
-    if let Some(only) = only.filter(|value| !value.trim().is_empty()) {
-        let selected = only
-            .split(',')
-            .map(|item| item.trim())
-            .filter(|item| !item.is_empty())
-            .map(ToOwned::to_owned)
-            .collect::<Vec<_>>();
-        let unknown = selected
+    if !requested.is_empty() {
+        let unknown = requested
             .iter()
             .filter(|repository| {
                 !manifest
                     .repositories
                     .iter()
-                    .any(|item| item.eq_ignore_ascii_case(repository))
+                    .any(|item| item.eq_ignore_ascii_case(repository.as_str()))
             })
-            .cloned()
+            .map(WorkspaceRepositoryName::as_str)
+            .map(ToOwned::to_owned)
             .collect::<Vec<_>>();
         if !unknown.is_empty() {
             return Err(WorkspaceError::MissingWorkspaceRepository(
                 unknown.join(", "),
             ));
         }
-        return Ok(selected);
+        return Ok(requested
+            .iter()
+            .map(WorkspaceRepositoryName::as_str)
+            .map(ToOwned::to_owned)
+            .collect());
     }
 
     Ok(manifest.repositories.clone())
@@ -3128,14 +3153,19 @@ artifacts:
             root.to_str().expect("utf8 path"),
             &projects,
             workspace.to_str().expect("utf8 path"),
-            Some("front"),
+            &[WorkspaceRepositoryName::from("front")],
         )
         .expect("plan should build");
 
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0].repository, "front");
-        assert_eq!(targets[0].default_branch, "develop");
-        assert!(targets[0].repository_path.ends_with("custom-front"));
+        assert_eq!(targets[0].repository.as_str(), "front");
+        assert_eq!(targets[0].default_branch.as_str(), "develop");
+        assert!(
+            targets[0]
+                .repository_path
+                .as_str()
+                .ends_with("custom-front")
+        );
     }
 
     #[test]
@@ -3159,12 +3189,13 @@ artifacts:
 
         assert_eq!(targets.len(), 2);
         assert!(targets.iter().any(|target| {
-            target.repository == "front" && target.path.ends_with("custom-front")
+            target.repository.as_str() == "front" && target.path.as_str().ends_with("custom-front")
         }));
         assert!(
             targets
                 .iter()
-                .any(|target| target.repository == "back" && target.path.ends_with("back"))
+                .any(|target| target.repository.as_str() == "back"
+                    && target.path.as_str().ends_with("back"))
         );
     }
 
@@ -3416,12 +3447,18 @@ artifacts:
         )
         .expect("plan should build");
 
-        assert_eq!(plan.repository, "db");
-        assert_eq!(plan.default_branch, "develop");
+        assert_eq!(plan.repository.as_str(), "db");
+        assert_eq!(plan.default_branch.as_str(), "develop");
         assert_eq!(plan.anchor_name, "database.git");
-        assert_eq!(plan.branch_name, "feat/123-demo");
-        assert!(plan.worktree_path.ends_with("database"));
-        assert_eq!(plan.repositories, vec!["front", "db"]);
+        assert_eq!(plan.branch_name.as_str(), "feat/123-demo");
+        assert!(plan.worktree_path.as_str().ends_with("database"));
+        assert_eq!(
+            plan.repositories,
+            vec![
+                WorkspaceRepositoryName::from("front"),
+                WorkspaceRepositoryName::from("db")
+            ]
+        );
     }
 
     #[test]

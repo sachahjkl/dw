@@ -1412,7 +1412,7 @@ pub fn task_start_plan_lines(report: &dw_task::start::StartPlanReport) -> Vec<St
         format!("Slug: {}", plan.slug),
         format!("Target branch: {}", plan.branch_name),
         format!("Target workspace: {}", plan.workspace),
-        format!("Repositories: {}", plan.repositories.join(", ")),
+        format!("Repositories: {}", join_display(&plan.repositories)),
         "Action    : enable execution to create the workspace.".into(),
     ]
 }
@@ -1421,7 +1421,7 @@ pub fn task_start_execution_lines(report: &dw_task::start::StartExecutionReport)
     let mut lines = vec![
         format!("Workspace created: {}", report.plan.workspace),
         format!("Target branch: {}", report.plan.branch_name),
-        format!("Repositories: {}", report.plan.repositories.join(", ")),
+        format!("Repositories: {}", join_display(&report.plan.repositories)),
     ];
     for task in &report.child_tasks {
         lines.push(format!(
@@ -1470,7 +1470,7 @@ pub fn task_finish_plan_lines(report: &dw_task::finish::FinishPlanReport) -> Vec
 
     for item in &report.targets {
         lines.extend(finish_repository_status_lines(
-            &item.target.repository,
+            item.target.repository.as_str(),
             &item.status,
         ));
     }
@@ -2860,13 +2860,13 @@ mod tests {
     #[test]
     fn task_commit_plan_lines_render_statuses_and_execute_hint() {
         let report = dw_task::repo::CommitPlanReport {
-            workspace: "/tmp/ws".into(),
-            branch_name: "feat/42-demo".into(),
+            workspace: dw_core::WorkspacePath::from("/tmp/ws"),
+            branch_name: dw_core::BranchName::from("feat/42-demo"),
             message: "feat(42): demo".into(),
             targets: vec![dw_task::repo::CommitTargetStatus {
                 target: dw_workspace::TaskCommitTarget {
-                    repository: "front".into(),
-                    path: "/tmp/ws/front".into(),
+                    repository: dw_core::WorkspaceRepositoryName::from("front"),
+                    path: dw_core::RepositoryPath::from("/tmp/ws/front"),
                 },
                 status: dw_git::RepositoryStatus {
                     path: "/tmp/ws/front".into(),
@@ -2966,15 +2966,15 @@ mod tests {
     fn task_add_repo_plan_lines_include_anchor() {
         let report = dw_task::repo::AddRepoPlanReport {
             plan: dw_workspace::TaskAddRepoPlan {
-                workspace: "/tmp/ws".into(),
-                repository: "front".into(),
-                project_root: "/tmp/project".into(),
-                worktree_path: "/tmp/ws/front".into(),
+                workspace: dw_core::WorkspacePath::from("/tmp/ws"),
+                repository: dw_core::WorkspaceRepositoryName::from("front"),
+                project_root: dw_core::ProjectRootPath::from("/tmp/project"),
+                worktree_path: dw_core::RepositoryPath::from("/tmp/ws/front"),
                 url: "https://example.invalid/front.git".into(),
-                default_branch: "main".into(),
+                default_branch: dw_core::BranchName::from("main"),
                 anchor_name: "front-anchor".into(),
-                branch_name: "feat/42-demo".into(),
-                repositories: vec!["front".into()],
+                branch_name: dw_core::BranchName::from("feat/42-demo"),
+                repositories: vec![dw_core::WorkspaceRepositoryName::from("front")],
             },
         };
 
@@ -2988,7 +2988,7 @@ mod tests {
     #[test]
     fn task_teardown_plan_lines_switch_title_for_execute() {
         let report = dw_task::repo::TeardownPlanReport {
-            workspace: Some("/tmp/ws".into()),
+            workspace: Some(dw_core::WorkspacePath::from("/tmp/ws")),
             steps: vec![dw_workspace::WorkspaceTeardownStep {
                 repository: "front".into(),
                 action: "remove-worktree".into(),

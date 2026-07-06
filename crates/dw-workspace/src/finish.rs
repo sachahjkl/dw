@@ -1,4 +1,5 @@
 use dw_config::{ProjectConfig, RepositoryConfig, WorkflowConfig, repository_config};
+use dw_core::WorkspaceRepositoryName;
 use dw_git::RepositoryStatus;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -91,12 +92,12 @@ pub fn finish_state(work_item_type: Option<&str>, options: &TaskFinishOptions) -
 
 pub fn select_pull_request_candidates(
     statuses: &[(&TaskCommitTarget, RepositoryStatus)],
-    actionable_repositories: &[String],
+    actionable_repositories: &[WorkspaceRepositoryName],
     project_config: Option<&ProjectConfig>,
 ) -> Vec<PullRequestCandidate> {
     let actionable = actionable_repositories
         .iter()
-        .filter_map(|repository| candidate_for(statuses, repository, project_config))
+        .filter_map(|repository| candidate_for(statuses, repository.as_str(), project_config))
         .collect::<Vec<_>>();
     if !actionable.is_empty() {
         return actionable;
@@ -106,7 +107,11 @@ pub fn select_pull_request_candidates(
         .iter()
         .filter(|(_, status)| status.is_git_repository)
         .filter(|(target, _)| {
-            has_reviewable_commits(&target.path, project_config, &target.repository)
+            has_reviewable_commits(
+                target.path.as_str(),
+                project_config,
+                target.repository.as_str(),
+            )
         })
         .filter_map(|(target, _)| candidate_from_target(target, project_config))
         .collect()
@@ -228,7 +233,7 @@ fn candidate_for(
 ) -> Option<PullRequestCandidate> {
     statuses
         .iter()
-        .find(|(target, _)| target.repository.eq_ignore_ascii_case(repository))
+        .find(|(target, _)| target.repository.as_str().eq_ignore_ascii_case(repository))
         .and_then(|(target, _)| candidate_from_target(target, project_config))
 }
 
@@ -237,14 +242,14 @@ fn candidate_from_target(
     project_config: Option<&ProjectConfig>,
 ) -> Option<PullRequestCandidate> {
     let repo_config =
-        project_config.and_then(|project| repository_config(project, &target.repository));
+        project_config.and_then(|project| repository_config(project, target.repository.as_str()));
     let ado_repository = repo_config
         .as_ref()
         .and_then(|repo| repo.azure_dev_ops_repository.clone())
         .filter(|value| !value.trim().is_empty());
     Some(PullRequestCandidate {
-        repository: target.repository.clone(),
-        path: target.path.clone(),
+        repository: target.repository.as_str().to_owned(),
+        path: target.path.as_str().to_owned(),
         ado_repository,
         target_branch: target_branch(repo_config.as_ref()),
     })

@@ -266,8 +266,8 @@ impl FormState {
             }),
             FormTemplate::TaskTeardown => {
                 TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
-                    workspace: value("Workspace"),
-                    root: Some(root.into()),
+                    workspace: value("Workspace").map(dw_core::WorkspacePath::from),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: value("Project"),
                     work_item: value("Work item"),
                     r#continue: enabled("Continue"),
@@ -323,9 +323,9 @@ impl FormState {
             }
             FormTemplate::TaskAddRepo => {
                 TuiActionRequest::TaskAddRepo(dw_task::repo::AddRepoArgs {
-                    repo: value("Repository")?,
-                    workspace: value("Workspace"),
-                    root: Some(root.into()),
+                    repo: dw_core::WorkspaceRepositoryName::from(value("Repository")?),
+                    workspace: value("Workspace").map(dw_core::WorkspacePath::from),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 })
             }

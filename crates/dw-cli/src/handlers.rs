@@ -8,7 +8,7 @@ use dw_cli_adapter::{
 };
 use dw_core::{
     AdoActionEvent, DevWorkflowRoot, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind,
-    PromptSpec, PullRequestId, WorkItemId, WorkspaceRepositoryName,
+    PromptSpec, PullRequestId, WorkItemId, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
@@ -419,10 +419,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
         } => {
             let report = dw_task::repo::repo_latest_plan(dw_task::repo::RepoLatestArgs {
-                workspace,
+                workspace: workspace.map(WorkspacePath::from),
                 r#continue,
-                only,
-                root,
+                repositories: parse_workspace_repository_names(only.as_deref()),
+                root: root.map(DevWorkflowRoot::from),
             })?;
             if json {
                 print_json(&report)?;
@@ -445,9 +445,9 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
         } => {
             let report = dw_task::repo::commit_plan(dw_task::repo::CommitArgs {
-                workspace,
+                workspace: workspace.map(WorkspacePath::from),
                 r#continue,
-                root,
+                root: root.map(DevWorkflowRoot::from),
                 mode: dw_core::ExecutionMode::Preview,
                 message,
             })?;
@@ -481,8 +481,8 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             let repo = resolve_add_repo_selection(repo, workspace.clone(), root.clone())?;
             let report = dw_task::repo::add_repo_plan(dw_task::repo::AddRepoArgs {
                 repo,
-                workspace,
-                root,
+                workspace: workspace.map(WorkspacePath::from),
+                root: root.map(DevWorkflowRoot::from),
                 mode: dw_core::ExecutionMode::Preview,
             })?;
             if execute {
@@ -513,8 +513,8 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
         } => {
             let report = dw_task::repo::teardown_plan(dw_task::repo::TeardownArgs {
-                workspace,
-                root,
+                workspace: workspace.map(WorkspacePath::from),
+                root: root.map(DevWorkflowRoot::from),
                 project,
                 work_item,
                 r#continue,
@@ -542,7 +542,14 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 }
                 return Ok(());
             }
-            if !confirm_teardown(yes, report.workspace.as_deref().unwrap_or_default())? {
+            if !confirm_teardown(
+                yes,
+                report
+                    .workspace
+                    .as_ref()
+                    .map(WorkspacePath::as_str)
+                    .unwrap_or_default(),
+            )? {
                 if !json {
                     print_lines(&["Suppression annulée.".into()]);
                 }
@@ -1325,16 +1332,18 @@ fn resolve_add_repo_selection(
     repo: Option<String>,
     workspace: Option<String>,
     root: Option<String>,
-) -> Result<String> {
+) -> Result<WorkspaceRepositoryName> {
     if let Some(repo) = repo.filter(|value| !value.trim().is_empty()) {
-        return Ok(repo);
+        return Ok(WorkspaceRepositoryName::from(repo));
     }
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("Repository manquant. Fournir `dw task add-repo <repo>`.");
     }
 
-    let report =
-        dw_task::repo::add_repo_choices(dw_task::repo::AddRepoChoicesArgs { workspace, root })?;
+    let report = dw_task::repo::add_repo_choices(dw_task::repo::AddRepoChoicesArgs {
+        workspace: workspace.map(WorkspacePath::from),
+        root: root.map(DevWorkflowRoot::from),
+    })?;
     let selected = Select::new("Repository à ajouter", report.choices)
         .prompt_skippable()?
         .ok_or_else(|| anyhow::anyhow!("Aucun repository configuré à ajouter."))?;

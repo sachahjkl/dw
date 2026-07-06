@@ -513,6 +513,22 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             ],
         ),
         (
+            "crates/dw-task/src/repo.rs",
+            &[
+                "pub workspace: Option<String>",
+                "pub workspace: String",
+                "pub root: Option<String>",
+                "pub repo: String",
+                "pub repository: String",
+                "pub path: String",
+                "pub branch_name: String",
+                "pub default_branch: String",
+                "pub only: Option<String>",
+                "pub choices: Vec<String>",
+                "pub committed: Vec<String>",
+            ],
+        ),
+        (
             "crates/dw-ado-commands/src/commands/changelog.rs",
             &["pub ids: String", "pub git_to: Option<String>"],
         ),
@@ -549,6 +565,33 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn task_repo_contract_uses_typed_paths_repositories_and_branches() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-task/src/repo.rs");
+    let text = fs::read_to_string(&path).expect("read repo source");
+    for required in [
+        "DevWorkflowRoot",
+        "WorkspacePath",
+        "WorkspaceRepositoryName",
+        "RepositoryPath",
+        "BranchName",
+        "pub workspace: Option<WorkspacePath>",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub repo: WorkspaceRepositoryName",
+        "pub repositories: Vec<WorkspaceRepositoryName>",
+        "pub branch_name: BranchName",
+        "pub committed: Vec<WorkspaceRepositoryName>",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed repo contract token `{}`",
+            path.display(),
+            required
+        );
     }
 }
 

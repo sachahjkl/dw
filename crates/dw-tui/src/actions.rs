@@ -406,9 +406,9 @@ pub fn selected_pull_request_action(
             })
         }
         PullRequestAction::DiffPreview => TuiActionRequest::TaskCommit(dw_task::repo::CommitArgs {
-            workspace: Some(item.workspace.clone()?),
+            workspace: Some(dw_core::WorkspacePath::from(item.workspace.clone()?)),
             r#continue: false,
-            root: Some(snapshot.root.clone()),
+            root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
             mode: dw_core::ExecutionMode::Preview,
             message: None,
         }),
@@ -905,7 +905,10 @@ mod tests {
         assert_eq!(finish.workspace_path(), Some("/tmp/ws"));
         match &teardown.request {
             TuiActionRequest::TaskTeardown(args) => {
-                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws"));
+                assert_eq!(
+                    args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
+                    Some("/tmp/ws")
+                );
                 assert!(args.mode.executes());
                 assert!(args.yes);
             }

@@ -8,7 +8,7 @@ use dw_ado::{
     update_work_item_state_authenticated,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::{GitOperation, TaskActionEvent, WorkItemId};
+use dw_core::{GitOperation, RepositoryPath, TaskActionEvent, WorkItemId, WorkspaceRepositoryName};
 use dw_git::{RepositoryStatus, commit_repository, push_repository, repository_status};
 use dw_workspace::{
     WorkspaceHandoffSummary, WorkspaceManifest, build_commit_message, ensure_verification_passed,
@@ -50,11 +50,11 @@ pub struct FinishPlanReport {
     #[serde(rename = "skipAdo")]
     pub skip_ado: bool,
     #[serde(rename = "changedRepositories")]
-    pub changed_repositories: Vec<String>,
+    pub changed_repositories: Vec<WorkspaceRepositoryName>,
     #[serde(rename = "unpushedRepositories")]
-    pub unpushed_repositories: Vec<String>,
+    pub unpushed_repositories: Vec<WorkspaceRepositoryName>,
     #[serde(rename = "actionableRepositories")]
-    pub actionable_repositories: Vec<String>,
+    pub actionable_repositories: Vec<WorkspaceRepositoryName>,
     #[serde(rename = "pullRequestCandidates")]
     pub pull_request_candidates: Vec<dw_workspace::PullRequestCandidate>,
 }
@@ -81,9 +81,9 @@ pub struct FinishExecutionReport {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct FinishGitAction {
-    pub repository: String,
+    pub repository: WorkspaceRepositoryName,
     pub operation: GitOperation,
-    pub path: String,
+    pub path: RepositoryPath,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -146,14 +146,14 @@ pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
     let targets = targets
         .into_iter()
         .map(|target| {
-            let status = repository_status(&target.path);
+            let status = repository_status(target.path.as_str());
             FinishTargetStatus { target, status }
         })
         .collect::<Vec<_>>();
     let handoff_summaries = targets
         .iter()
         .filter_map(|target| {
-            read_handoff_summary(Path::new(&workspace), &target.target.repository).ok()
+            read_handoff_summary(Path::new(&workspace), target.target.repository.as_str()).ok()
         })
         .collect::<Vec<WorkspaceHandoffSummary>>();
     let changed_repositories = targets
@@ -266,12 +266,12 @@ pub async fn execute_finish_with_events(
                 &mut events,
                 &mut emit,
                 TaskActionEvent::RunningRepositoryGitOperation {
-                    repository: target.target.repository.clone().into(),
+                    repository: target.target.repository.clone(),
                     operation: GitOperation::CommitAndPush,
                 },
             );
-            commit_repository(&target.target.path, &plan.commit_message)?;
-            push_repository(&target.target.path, &plan.manifest.branch_name)?;
+            commit_repository(target.target.path.as_str(), &plan.commit_message)?;
+            push_repository(target.target.path.as_str(), &plan.manifest.branch_name)?;
             git_actions.push(FinishGitAction {
                 repository: target.target.repository.clone(),
                 operation: GitOperation::CommitAndPush,
@@ -299,11 +299,11 @@ pub async fn execute_finish_with_events(
                 &mut events,
                 &mut emit,
                 TaskActionEvent::RunningRepositoryGitOperation {
-                    repository: target.target.repository.clone().into(),
+                    repository: target.target.repository.clone(),
                     operation: GitOperation::Push,
                 },
             );
-            push_repository(&target.target.path, &plan.manifest.branch_name)?;
+            push_repository(target.target.path.as_str(), &plan.manifest.branch_name)?;
             git_actions.push(FinishGitAction {
                 repository: target.target.repository.clone(),
                 operation: GitOperation::Push,

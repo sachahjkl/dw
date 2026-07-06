@@ -475,7 +475,7 @@ mod tests {
         let action = TuiAction {
             label: "Teardown execute".into(),
             request: crate::model::TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
-                workspace: Some("/tmp/ws".into()),
+                workspace: Some(dw_core::WorkspacePath::from("/tmp/ws")),
                 root: None,
                 project: None,
                 work_item: None,
