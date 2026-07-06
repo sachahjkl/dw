@@ -1,6 +1,8 @@
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+use dw_core::{DatabaseKey, ProjectKey};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseDefaults {
     pub readonly: bool,
@@ -42,8 +44,8 @@ pub struct ResolvedDatabase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseSelection<'a> {
-    pub project: &'a str,
-    pub database: &'a str,
+    pub project: &'a ProjectKey,
+    pub database: &'a DatabaseKey,
 }
 
 pub fn resolve_connection(
@@ -71,18 +73,18 @@ pub fn resolve_connection(
 
 pub fn try_resolve_connection(
     config: &dw_config::DatabasesConfig,
-    project: &str,
-    database: &str,
+    project: &ProjectKey,
+    database: &DatabaseKey,
 ) -> Option<DatabaseConnectionConfig> {
     config
         .projects
-        .get(project)
+        .get(project.as_str())
         .and_then(parse_project_databases)
-        .and_then(|project| project.databases.get(database).cloned())
+        .and_then(|project| project.databases.get(database.as_str()).cloned())
         .or_else(|| {
             config
                 .globals
-                .get(database)
+                .get(database.as_str())
                 .and_then(parse_database_connection)
         })
 }
@@ -171,8 +173,8 @@ mod tests {
         let resolved = resolve_connection(
             &config,
             DatabaseSelection {
-                project: "ha",
-                database: "shared",
+                project: &ProjectKey::from("ha"),
+                database: &DatabaseKey::from("shared"),
             },
         )
         .expect("connection should resolve");
@@ -199,8 +201,8 @@ mod tests {
         let resolved = resolve_connection(
             &config,
             DatabaseSelection {
-                project: "ha",
-                database: "shared",
+                project: &ProjectKey::from("ha"),
+                database: &DatabaseKey::from("shared"),
             },
         )
         .expect("connection should resolve");
@@ -227,8 +229,8 @@ mod tests {
         let error = resolve_connection(
             &config,
             DatabaseSelection {
-                project: "ha",
-                database: "dev",
+                project: &ProjectKey::from("ha"),
+                database: &DatabaseKey::from("dev"),
             },
         )
         .expect_err("non readonly should fail");

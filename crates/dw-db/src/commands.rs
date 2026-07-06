@@ -4,33 +4,34 @@ use crate::{
 };
 use anyhow::Result;
 use dw_config::{load_databases_config, resolve_root};
+use dw_core::{DatabaseEnvironmentName, DatabaseKey, DatabaseTableName, ProjectKey, SqlQuery};
 
 #[derive(Debug, Clone)]
 pub struct GuardArgs {
-    pub sql: String,
+    pub sql: SqlQuery,
 }
 
 #[derive(Debug, Clone)]
 pub struct SchemaArgs {
-    pub project: Option<String>,
-    pub database: Option<String>,
-    pub env: Option<String>,
+    pub project: Option<ProjectKey>,
+    pub database: Option<DatabaseKey>,
+    pub env: Option<DatabaseEnvironmentName>,
 }
 
 #[derive(Debug, Clone)]
 pub struct DescribeArgs {
-    pub table: Option<String>,
-    pub project: Option<String>,
-    pub database: Option<String>,
-    pub env: Option<String>,
+    pub table: Option<DatabaseTableName>,
+    pub project: Option<ProjectKey>,
+    pub database: Option<DatabaseKey>,
+    pub env: Option<DatabaseEnvironmentName>,
 }
 
 #[derive(Debug, Clone)]
 pub struct QueryArgs {
-    pub sql: String,
-    pub project: Option<String>,
-    pub database: Option<String>,
-    pub env: Option<String>,
+    pub sql: SqlQuery,
+    pub project: Option<ProjectKey>,
+    pub database: Option<DatabaseKey>,
+    pub env: Option<DatabaseEnvironmentName>,
     pub max_rows: Option<usize>,
 }
 
@@ -52,14 +53,14 @@ impl DbQueryKind {
 }
 
 pub fn guard(args: GuardArgs) -> crate::SqlGuardResult {
-    validate_read_only_sql(&args.sql)
+    validate_read_only_sql(args.sql.as_str())
 }
 
 pub async fn schema(args: SchemaArgs) -> Result<QueryResult> {
     execute_db_query(
-        args.project.as_deref(),
-        args.database.as_deref(),
-        args.env.as_deref(),
+        args.project.as_ref(),
+        args.database.as_ref(),
+        args.env.as_ref(),
         schema_sql(),
         Some(0),
         DbQueryKind::Schema,
@@ -70,20 +71,20 @@ pub async fn schema(args: SchemaArgs) -> Result<QueryResult> {
 pub async fn describe(args: DescribeArgs) -> Result<Option<QueryResult>> {
     let Some(table) = resolve_describe_table(
         args.table,
-        args.project.as_deref(),
-        args.database.as_deref(),
-        args.env.as_deref(),
+        args.project.as_ref(),
+        args.database.as_ref(),
+        args.env.as_ref(),
     )
     .await?
     else {
         return Ok(None);
     };
-    let sql = describe_table_sql(&table);
+    let sql = describe_table_sql(table.as_str());
     Ok(Some(
         execute_db_query(
-            args.project.as_deref(),
-            args.database.as_deref(),
-            args.env.as_deref(),
+            args.project.as_ref(),
+            args.database.as_ref(),
+            args.env.as_ref(),
             &sql,
             Some(0),
             DbQueryKind::Describe,
@@ -94,10 +95,10 @@ pub async fn describe(args: DescribeArgs) -> Result<Option<QueryResult>> {
 
 pub async fn query(args: QueryArgs) -> Result<QueryResult> {
     execute_db_query(
-        args.project.as_deref(),
-        args.database.as_deref(),
-        args.env.as_deref(),
-        &args.sql,
+        args.project.as_ref(),
+        args.database.as_ref(),
+        args.env.as_ref(),
+        args.sql.as_str(),
         args.max_rows,
         DbQueryKind::Query,
     )
@@ -105,9 +106,9 @@ pub async fn query(args: QueryArgs) -> Result<QueryResult> {
 }
 
 async fn execute_db_query(
-    project: Option<&str>,
-    database: Option<&str>,
-    env: Option<&str>,
+    project: Option<&ProjectKey>,
+    database: Option<&DatabaseKey>,
+    env: Option<&DatabaseEnvironmentName>,
     sql: &str,
     max_rows_override: Option<usize>,
     kind: DbQueryKind,
@@ -122,7 +123,9 @@ async fn execute_db_query(
 
     let root = resolve_root(None);
     let config = load_databases_config(&root);
-    let (project, database) = resolve_database_selection(&config, project, database.or(env))?;
+    let env_database = env.map(|value| DatabaseKey::from(value.as_str()));
+    let (project, database) =
+        resolve_database_selection(&config, project, database.or(env_database.as_ref()))?;
     let resolved = resolve_connection(
         &config,
         DatabaseSelection {
@@ -143,12 +146,12 @@ async fn execute_db_query(
 }
 
 async fn resolve_describe_table(
-    table: Option<String>,
-    project: Option<&str>,
-    database: Option<&str>,
-    env: Option<&str>,
-) -> Result<Option<String>> {
-    if let Some(table) = table.filter(|value| !value.trim().is_empty()) {
+    table: Option<DatabaseTableName>,
+    project: Option<&ProjectKey>,
+    database: Option<&DatabaseKey>,
+    env: Option<&DatabaseEnvironmentName>,
+) -> Result<Option<DatabaseTableName>> {
+    if let Some(table) = table.filter(|value| !value.as_str().trim().is_empty()) {
         return Ok(Some(table));
     }
     let _ = (project, database, env);
@@ -159,16 +162,16 @@ async fn resolve_describe_table(
 
 fn resolve_database_selection(
     _config: &dw_config::DatabasesConfig,
-    project: Option<&str>,
-    database: Option<&str>,
-) -> Result<(String, String)> {
+    project: Option<&ProjectKey>,
+    database: Option<&DatabaseKey>,
+) -> Result<(ProjectKey, DatabaseKey)> {
     let project = match project {
-        Some(project) => project.to_string(),
-        None => "default".into(),
+        Some(project) => project.clone(),
+        None => ProjectKey::from("default"),
     };
     let database = match database {
-        Some(database) => database.to_string(),
-        None => "dev".into(),
+        Some(database) => database.clone(),
+        None => DatabaseKey::from("dev"),
     };
 
     Ok((project, database))
@@ -181,13 +184,13 @@ mod tests {
     #[test]
     fn describe_args_build_describe_sql() {
         let args = DescribeArgs {
-            table: Some("audit.Events".into()),
+            table: Some(DatabaseTableName::from("audit.Events")),
             project: None,
             database: None,
             env: None,
         };
 
-        let sql = describe_table_sql(args.table.as_deref().expect("table"));
+        let sql = describe_table_sql(args.table.as_ref().expect("table").as_str());
 
         assert!(sql.contains("TABLE_SCHEMA = 'audit'"));
         assert!(sql.contains("TABLE_NAME = 'Events'"));

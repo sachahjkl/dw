@@ -655,6 +655,19 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 "parse_id_set",
             ],
         ),
+        (
+            "crates/dw-db/src/commands.rs",
+            &[
+                "pub sql: String",
+                "pub project: Option<String>",
+                "pub database: Option<String>",
+                "pub env: Option<String>",
+                "pub table: Option<String>",
+                "project: Option<&str>",
+                "database: Option<&str>",
+                "env: Option<&str>",
+            ],
+        ),
     ];
 
     for (relative, forbidden_tokens) in checked {
@@ -668,6 +681,46 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn db_command_contracts_use_typed_query_connection_and_table_values() {
+    let repo = repo_root();
+    let commands = repo.join("crates/dw-db/src/commands.rs");
+    let text = fs::read_to_string(&commands).expect("read db commands");
+    for required in [
+        "SqlQuery",
+        "DatabaseKey",
+        "DatabaseEnvironmentName",
+        "DatabaseTableName",
+        "ProjectKey",
+        "pub sql: SqlQuery",
+        "pub project: Option<ProjectKey>",
+        "pub database: Option<DatabaseKey>",
+        "pub env: Option<DatabaseEnvironmentName>",
+        "pub table: Option<DatabaseTableName>",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed DB command token `{}`",
+            commands.display(),
+            required
+        );
+    }
+
+    let config =
+        fs::read_to_string(repo.join("crates/dw-db/src/config.rs")).expect("read db config source");
+    for required in [
+        "pub project: &'a ProjectKey",
+        "pub database: &'a DatabaseKey",
+        "project: &ProjectKey",
+        "database: &DatabaseKey",
+    ] {
+        assert!(
+            config.contains(required),
+            "dw-db config should expose typed selection token `{required}`"
+        );
     }
 }
 

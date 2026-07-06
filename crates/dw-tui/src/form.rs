@@ -371,22 +371,22 @@ impl FormState {
                 })
             }
             FormTemplate::DbSchema => TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
-                project: value("Project"),
-                database: value("Database"),
+                project: value("Project").map(dw_core::ProjectKey::from),
+                database: value("Database").map(dw_core::DatabaseKey::from),
                 env: None,
             }),
             FormTemplate::DbDescribe => {
                 TuiActionRequest::DbDescribe(dw_db::commands::DescribeArgs {
-                    table: value("Table"),
-                    project: value("Project"),
-                    database: value("Database"),
+                    table: value("Table").map(dw_core::DatabaseTableName::from),
+                    project: value("Project").map(dw_core::ProjectKey::from),
+                    database: value("Database").map(dw_core::DatabaseKey::from),
                     env: None,
                 })
             }
             FormTemplate::DbQuery => TuiActionRequest::DbQuery(dw_db::commands::QueryArgs {
-                sql: value("SQL")?,
-                project: value("Project"),
-                database: value("Database"),
+                sql: dw_core::SqlQuery::from(value("SQL")?),
+                project: value("Project").map(dw_core::ProjectKey::from),
+                database: value("Database").map(dw_core::DatabaseKey::from),
                 env: None,
                 max_rows: value("Max rows").and_then(|value| value.parse().ok()),
             }),
@@ -1122,8 +1122,8 @@ mod tests {
         assert!(matches!(
             action.request,
             TuiActionRequest::DbSchema(ref args)
-                if args.project.as_deref() == Some("ha")
-                    && args.database.as_deref() == Some("ha-dev")
+                if args.project.as_ref().map(dw_core::ProjectKey::as_str) == Some("ha")
+                    && args.database.as_ref().map(dw_core::DatabaseKey::as_str) == Some("ha-dev")
         ));
         assert!(matches!(action.kind, ActionRisk::Safe));
     }
@@ -1151,8 +1151,8 @@ mod tests {
         assert!(matches!(
             action.request,
             TuiActionRequest::DbDescribe(ref args)
-                if args.table.as_deref() == Some("dbo.Customer")
-                    && args.database.as_deref() == Some("shared")
+                if args.table.as_ref().map(dw_core::DatabaseTableName::as_str) == Some("dbo.Customer")
+                    && args.database.as_ref().map(dw_core::DatabaseKey::as_str) == Some("shared")
         ));
         assert!(matches!(action.kind, ActionRisk::Safe));
     }

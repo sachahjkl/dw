@@ -1707,7 +1707,9 @@ fn prompt_choice_value_from_label(spec: &PromptSpec, selected: &str) -> Result<P
 async fn handle_db(command: DbCommand) -> Result<()> {
     match command {
         DbCommand::Guard { sql } => {
-            let result = dw_db::commands::guard(dw_db::commands::GuardArgs { sql });
+            let result = dw_db::commands::guard(dw_db::commands::GuardArgs {
+                sql: dw_core::SqlQuery::from(sql),
+            });
             print_lines(&dw_cli_adapter::render::db_guard_lines(
                 &result,
                 &TerminalTheme::stdout_auto(),
@@ -1720,9 +1722,9 @@ async fn handle_db(command: DbCommand) -> Result<()> {
             json,
         } => {
             let result = dw_db::commands::schema(dw_db::commands::SchemaArgs {
-                project,
-                database,
-                env,
+                project: project.map(dw_core::ProjectKey::from),
+                database: database.map(dw_core::DatabaseKey::from),
+                env: env.map(dw_core::DatabaseEnvironmentName::from),
             })
             .await?;
             print_db_result(&result, json)?;
@@ -1735,10 +1737,10 @@ async fn handle_db(command: DbCommand) -> Result<()> {
             json,
         } => {
             let result = dw_db::commands::describe(dw_db::commands::DescribeArgs {
-                table,
-                project,
-                database,
-                env,
+                table: table.map(dw_core::DatabaseTableName::from),
+                project: project.map(dw_core::ProjectKey::from),
+                database: database.map(dw_core::DatabaseKey::from),
+                env: env.map(dw_core::DatabaseEnvironmentName::from),
             })
             .await?;
             if let Some(result) = result {
@@ -1755,10 +1757,10 @@ async fn handle_db(command: DbCommand) -> Result<()> {
             sql_parts,
         } => {
             let result = dw_db::commands::query(dw_db::commands::QueryArgs {
-                sql: resolve_query_sql(sql, sql_parts)?,
-                project,
-                database,
-                env,
+                sql: dw_core::SqlQuery::from(resolve_query_sql(sql, sql_parts)?),
+                project: project.map(dw_core::ProjectKey::from),
+                database: database.map(dw_core::DatabaseKey::from),
+                env: env.map(dw_core::DatabaseEnvironmentName::from),
                 max_rows,
             })
             .await?;

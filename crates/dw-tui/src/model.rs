@@ -1343,7 +1343,7 @@ pub fn build_actions(
         TuiAction {
             label: "Test read-only SQL".into(),
             request: TuiActionRequest::DbGuard(dw_db::commands::GuardArgs {
-                sql: "select 1".into(),
+                sql: dw_core::SqlQuery::from("select 1"),
             }),
             description: "Test the read-only SQL guard".into(),
             kind: ActionRisk::Safe,
@@ -1538,7 +1538,7 @@ fn database_actions(databases: &DatabasesConfig) -> Vec<TuiAction> {
             label: format!("Explore schema · {key}"),
             request: TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
                 project: None,
-                database: Some(key.clone()),
+                database: Some(dw_core::DatabaseKey::from(key.clone())),
                 env: None,
             }),
             description: "Global database".into(),
@@ -1556,8 +1556,8 @@ fn database_actions(databases: &DatabasesConfig) -> Vec<TuiAction> {
             actions.push(TuiAction {
                 label: format!("Explore schema · {project}/{key}"),
                 request: TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
-                    project: Some(project.clone()),
-                    database: Some(key.clone()),
+                    project: Some(dw_core::ProjectKey::from(project.clone())),
+                    database: Some(dw_core::DatabaseKey::from(key.clone())),
                     env: None,
                 }),
                 description: "Project database".into(),
@@ -1618,7 +1618,8 @@ mod tests {
         assert!(matches!(
             db_schema.request,
             TuiActionRequest::DbSchema(ref args)
-                if args.project.is_none() && args.database.as_deref() == Some("shared")
+                if args.project.is_none()
+                    && args.database.as_ref().map(dw_core::DatabaseKey::as_str) == Some("shared")
         ));
     }
 

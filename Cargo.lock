@@ -1109,6 +1109,7 @@ dependencies = [
  "anyhow",
  "dw-config",
  "dw-contracts",
+ "dw-core",
  "dw-secret",
  "serde",
  "serde_json",

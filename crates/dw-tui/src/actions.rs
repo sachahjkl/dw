@@ -485,8 +485,8 @@ pub fn database_action(database: &TuiDatabase, action: DatabaseAction) -> TuiAct
     TuiAction {
         label,
         request: TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
-            project: database.project.clone(),
-            database: Some(database.key.clone()),
+            project: database.project.clone().map(dw_core::ProjectKey::from),
+            database: Some(dw_core::DatabaseKey::from(database.key.clone())),
             env: None,
         }),
         description: match action {
@@ -920,13 +920,14 @@ mod tests {
         assert!(matches!(
             global.request,
             TuiActionRequest::DbSchema(ref args)
-                if args.project.is_none() && args.database.as_deref() == Some("shared")
+                if args.project.is_none()
+                    && args.database.as_ref().map(dw_core::DatabaseKey::as_str) == Some("shared")
         ));
         assert!(matches!(
             schema.request,
             TuiActionRequest::DbSchema(ref args)
-                if args.project.as_deref() == Some("ha")
-                    && args.database.as_deref() == Some("ha-dev")
+                if args.project.as_ref().map(dw_core::ProjectKey::as_str) == Some("ha")
+                    && args.database.as_ref().map(dw_core::DatabaseKey::as_str) == Some("ha-dev")
         ));
     }
 
