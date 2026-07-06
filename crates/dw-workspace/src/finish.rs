@@ -1,5 +1,5 @@
 use dw_config::{ProjectConfig, RepositoryConfig, WorkflowConfig, repository_config};
-use dw_core::WorkspaceRepositoryName;
+use dw_core::{WorkItemState, WorkspaceRepositoryName};
 use dw_git::RepositoryStatus;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -52,8 +52,8 @@ pub struct PullRequestCandidate {
 pub struct TaskFinishOptions {
     pub run_verification: bool,
     pub update_work_item_state: bool,
-    pub bug_state: String,
-    pub task_state: String,
+    pub bug_state: WorkItemState,
+    pub task_state: WorkItemState,
     pub verification_commands: BTreeMap<String, Vec<String>>,
 }
 
@@ -62,8 +62,8 @@ impl Default for TaskFinishOptions {
         Self {
             run_verification: true,
             update_work_item_state: true,
-            bug_state: "PR en attente".into(),
-            task_state: "PR en attente".into(),
+            bug_state: WorkItemState::from("PR en attente"),
+            task_state: WorkItemState::from("PR en attente"),
             verification_commands: BTreeMap::new(),
         }
     }
@@ -78,19 +78,21 @@ pub fn task_finish_options(workflow: &WorkflowConfig) -> TaskFinishOptions {
     options.run_verification = bool_property(value, "runVerification", options.run_verification);
     options.update_work_item_state =
         bool_property(value, "updateWorkItemState", options.update_work_item_state);
-    options.bug_state = string_property(value, "bugState").unwrap_or(options.bug_state);
-    options.task_state = string_property(value, "taskState").unwrap_or(options.task_state);
+    options.bug_state = state_property(value, "bugState").unwrap_or(options.bug_state);
+    options.task_state = state_property(value, "taskState").unwrap_or(options.task_state);
     options.verification_commands = verification_commands(value);
     options
 }
 
-pub fn finish_state(work_item_type: Option<&str>, options: &TaskFinishOptions) -> Option<String> {
+pub fn finish_state(
+    work_item_type: Option<&str>,
+    options: &TaskFinishOptions,
+) -> Option<WorkItemState> {
     match normalize_work_item_type(work_item_type).as_str() {
         "bug" => Some(options.bug_state.clone()),
         "task" | "tache" | "tâche" => Some(options.task_state.clone()),
         _ => None,
     }
-    .filter(|state| !state.trim().is_empty())
 }
 
 pub fn select_pull_request_candidates(
@@ -330,13 +332,13 @@ fn bool_property(value: &Value, key: &str, default: bool) -> bool {
     value.get(key).and_then(Value::as_bool).unwrap_or(default)
 }
 
-fn string_property(value: &Value, key: &str) -> Option<String> {
+fn state_property(value: &Value, key: &str) -> Option<WorkItemState> {
     value
         .get(key)
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+        .map(WorkItemState::from)
 }
 
 fn verification_commands(value: &Value) -> BTreeMap<String, Vec<String>> {
@@ -425,16 +427,16 @@ mod tests {
         assert_eq!(finish_state(Some("User Story"), &options), None);
         assert_eq!(finish_state(Some("Anomalie"), &options), None);
         assert_eq!(
-            finish_state(Some("Bug"), &options).as_deref(),
-            Some("PR en attente")
+            finish_state(Some("Bug"), &options),
+            Some(WorkItemState::from("PR en attente"))
         );
         assert_eq!(
-            finish_state(Some("Task"), &options).as_deref(),
-            Some("PR en attente")
+            finish_state(Some("Task"), &options),
+            Some(WorkItemState::from("PR en attente"))
         );
         assert_eq!(
-            finish_state(Some("Tâche"), &options).as_deref(),
-            Some("PR en attente")
+            finish_state(Some("Tâche"), &options),
+            Some(WorkItemState::from("PR en attente"))
         );
     }
 
@@ -458,8 +460,8 @@ mod tests {
 
         assert!(!options.run_verification);
         assert!(!options.update_work_item_state);
-        assert_eq!(options.bug_state, "Review");
-        assert_eq!(options.task_state, "Done");
+        assert_eq!(options.bug_state, WorkItemState::from("Review"));
+        assert_eq!(options.task_state, WorkItemState::from("Done"));
         assert_eq!(
             options.verification_commands["front"],
             vec!["npm test".to_string()]

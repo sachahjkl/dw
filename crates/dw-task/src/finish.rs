@@ -9,8 +9,8 @@ use dw_ado::{
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
 use dw_core::{
-    DevWorkflowRoot, GitOperation, RepositoryPath, TaskActionEvent, WorkItemId, WorkspacePath,
-    WorkspaceRepositoryName,
+    DevWorkflowRoot, GitOperation, RepositoryPath, TaskActionEvent, WorkItemId, WorkItemState,
+    WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{RepositoryStatus, commit_repository, push_repository, repository_status};
 use dw_workspace::{
@@ -120,9 +120,9 @@ pub struct FinishWorkItemStateUpdate {
     pub label: String,
     pub kind: Option<String>,
     #[serde(rename = "currentState")]
-    pub current_state: Option<String>,
+    pub current_state: Option<WorkItemState>,
     #[serde(rename = "targetState")]
-    pub target_state: Option<String>,
+    pub target_state: Option<WorkItemState>,
     pub changed: bool,
     pub outcome: FinishWorkItemStateOutcome,
 }
@@ -491,6 +491,7 @@ pub async fn execute_finish_with_events(
                 )
             })
             .await?;
+            let current_state = item.state.clone().map(WorkItemState::from);
             let state = finish_state(
                 item.kind.as_deref().or(plan
                     .manifest
@@ -505,7 +506,7 @@ pub async fn execute_finish_with_events(
                     id: WorkItemId::from(item.id),
                     label,
                     kind: item.kind.clone(),
-                    current_state: item.state,
+                    current_state,
                     target_state: None,
                     changed: false,
                     outcome: FinishWorkItemStateOutcome::UnsupportedWorkItemType,
@@ -515,13 +516,13 @@ pub async fn execute_finish_with_events(
             if item
                 .state
                 .as_deref()
-                .is_some_and(|current| current.eq_ignore_ascii_case(&state))
+                .is_some_and(|current| current.eq_ignore_ascii_case(state.as_str()))
             {
                 work_item_updates.push(FinishWorkItemStateUpdate {
                     id: WorkItemId::from(item.id),
                     label,
                     kind: item.kind.clone(),
-                    current_state: item.state,
+                    current_state,
                     target_state: Some(state.clone()),
                     changed: false,
                     outcome: FinishWorkItemStateOutcome::AlreadyInTargetState,
@@ -536,7 +537,7 @@ pub async fn execute_finish_with_events(
                 update_work_item_state_authenticated(
                     &options_for_update,
                     id_for_update.as_str(),
-                    &state_for_update,
+                    state_for_update.as_str(),
                     "task finish: PR ouverte",
                     &token_for_update,
                 )
@@ -546,7 +547,7 @@ pub async fn execute_finish_with_events(
                 id: WorkItemId::from(item.id),
                 label,
                 kind: item.kind.clone(),
-                current_state: item.state,
+                current_state,
                 target_state: Some(state.clone()),
                 changed: true,
                 outcome: FinishWorkItemStateOutcome::Updated,

@@ -979,18 +979,34 @@ fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
     let repo = repo_root();
     let path = repo.join("crates/dw-task/src/finish.rs");
     let text = fs::read_to_string(&path).expect("read finish source");
+    for forbidden in [
+        "pub current_state: Option<String>",
+        "pub target_state: Option<String>",
+        "state_for_update,",
+        "current.eq_ignore_ascii_case(&state)",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains primitive finish state contract token `{}`",
+            path.display(),
+            forbidden
+        );
+    }
     for required in [
         "DevWorkflowRoot",
         "WorkItemId",
         "WorkspacePath",
         "WorkspaceRepositoryName",
         "RepositoryPath",
+        "WorkItemState",
         "pub workspace: Option<WorkspacePath>",
         "pub root: Option<DevWorkflowRoot>",
         "pub root: DevWorkflowRoot",
         "pub workspace: WorkspacePath",
         "pub repository: WorkspaceRepositoryName",
         "pub id: WorkItemId",
+        "pub current_state: Option<WorkItemState>",
+        "pub target_state: Option<WorkItemState>",
         "pub changed_repositories: Vec<WorkspaceRepositoryName>",
     ] {
         assert!(
@@ -1822,6 +1838,7 @@ fn task_start_contracts_parse_repository_selection_at_boundaries() {
                 ".split(',')",
                 "only: workspace_repositories.join",
                 "only: args.repo.clone()",
+                "pub target_state: String",
             ],
             &[
                 "DevWorkflowRoot",
@@ -1841,6 +1858,24 @@ fn task_start_contracts_parse_repository_selection_at_boundaries() {
             ],
         ),
         (
+            "crates/dw-workspace/src/start.rs",
+            &[
+                "pub user_story_state: String",
+                "pub anomaly_state: String",
+                "pub bug_state: String",
+                "pub task_state: String",
+                "pub fn start_state(\n    work_item_type: Option<&str>,\n    options: &TaskStartOptions,\n) -> Option<String>",
+            ],
+            &[
+                "WorkItemState",
+                "pub user_story_state: WorkItemState",
+                "pub anomaly_state: WorkItemState",
+                "pub bug_state: WorkItemState",
+                "pub task_state: WorkItemState",
+                ") -> Option<WorkItemState>",
+            ],
+        ),
+        (
             "crates/dw-workspace/src/lib.rs",
             &[
                 "pub project: Option<&'a str>",
@@ -1850,6 +1885,7 @@ fn task_start_contracts_parse_repository_selection_at_boundaries() {
                 "pub struct TaskStartPlan {\n    #[serde(rename = \"workItemIds\")]\n    pub work_item_ids: Vec<WorkItemId>,\n    #[serde(rename = \"primaryWorkItemId\")]\n    pub primary_work_item_id: String",
                 "pub struct TaskStartRepositoryPlan {\n    pub repository: String",
                 "pub struct TaskStartRepositoryPlan {\n    pub repository: WorkspaceRepositoryName,\n    #[serde(rename = \"projectRoot\")]\n    pub project_root: String",
+                "WorkItemState::from(state)",
             ],
             &[
                 "GitAnchorName",

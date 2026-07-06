@@ -338,7 +338,6 @@ fn ado_start_state(
 ) -> Option<WorkItemState> {
     let options = dw_workspace::task_start_options(&snapshot.workflow);
     dw_workspace::start_state(Some(&item.kind), &options)
-        .and_then(|state| WorkItemState::parse(state).ok())
 }
 
 pub fn selected_workspace_action(

@@ -391,12 +391,12 @@ fn ado_state_values(root: &str) -> Vec<String> {
     let start = dw_workspace::task_start_options(&workflow);
     let finish = dw_workspace::task_finish_options(&workflow);
     let mut values = vec![
-        start.user_story_state,
-        start.anomaly_state,
-        start.bug_state,
-        start.task_state,
-        finish.bug_state,
-        finish.task_state,
+        start.user_story_state.to_string(),
+        start.anomaly_state.to_string(),
+        start.bug_state.to_string(),
+        start.task_state.to_string(),
+        finish.bug_state.to_string(),
+        finish.task_state.to_string(),
         "Nouveau".into(),
         "Actif".into(),
         "En cours".into(),

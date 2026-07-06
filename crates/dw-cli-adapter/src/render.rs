@@ -1492,12 +1492,20 @@ fn finish_work_item_update_line(update: &dw_task::finish::FinishWorkItemStateUpd
         dw_task::finish::FinishWorkItemStateOutcome::AlreadyInTargetState => format!(
             "ADO item {}: déjà en état {}",
             update.label,
-            update.target_state.as_deref().unwrap_or("cible")
+            update
+                .target_state
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "cible".into())
         ),
         dw_task::finish::FinishWorkItemStateOutcome::Updated => format!(
             "ADO item {}: état -> {}",
             update.label,
-            update.target_state.as_deref().unwrap_or("cible")
+            update
+                .target_state
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "cible".into())
         ),
     }
 }

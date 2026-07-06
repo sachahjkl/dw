@@ -442,7 +442,7 @@ async fn update_start_states(
             .state
             .as_ref()
             .map(WorkItemState::as_str)
-            .is_some_and(|current| current.eq_ignore_ascii_case(&state));
+            .is_some_and(|current| current.eq_ignore_ascii_case(state.as_str()));
         if changed {
             let options_for_update = options.clone();
             let token_for_update = token.clone();
@@ -452,7 +452,7 @@ async fn update_start_states(
                 update_work_item_state_authenticated(
                     &options_for_update,
                     id_for_update.as_str(),
-                    &state_for_update,
+                    state_for_update.as_str(),
                     "task start",
                     &token_for_update,
                 )
@@ -462,7 +462,7 @@ async fn update_start_states(
         updates.push(StartStateUpdate {
             id: item.id.clone(),
             label,
-            target_state: WorkItemState::from(state),
+            target_state: state,
             changed,
         });
     }

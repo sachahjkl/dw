@@ -1,14 +1,15 @@
 use dw_config::WorkflowConfig;
+use dw_core::WorkItemState;
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskStartOptions {
     pub update_work_item_state: bool,
     pub create_child_tasks: bool,
-    pub user_story_state: String,
-    pub anomaly_state: String,
-    pub bug_state: String,
-    pub task_state: String,
+    pub user_story_state: WorkItemState,
+    pub anomaly_state: WorkItemState,
+    pub bug_state: WorkItemState,
+    pub task_state: WorkItemState,
 }
 
 impl Default for TaskStartOptions {
@@ -16,10 +17,10 @@ impl Default for TaskStartOptions {
         Self {
             update_work_item_state: true,
             create_child_tasks: false,
-            user_story_state: "En réalisation".into(),
-            anomaly_state: "En réalisation".into(),
-            bug_state: "En développement".into(),
-            task_state: "En développement".into(),
+            user_story_state: WorkItemState::from("En réalisation"),
+            anomaly_state: WorkItemState::from("En réalisation"),
+            bug_state: WorkItemState::from("En développement"),
+            task_state: WorkItemState::from("En développement"),
         }
     }
 }
@@ -35,14 +36,17 @@ pub fn task_start_options(workflow: &WorkflowConfig) -> TaskStartOptions {
     options.create_child_tasks =
         bool_property(value, "createChildTasks", options.create_child_tasks);
     options.user_story_state =
-        string_property(value, "userStoryState").unwrap_or(options.user_story_state);
-    options.anomaly_state = string_property(value, "anomalyState").unwrap_or(options.anomaly_state);
-    options.bug_state = string_property(value, "bugState").unwrap_or(options.bug_state);
-    options.task_state = string_property(value, "taskState").unwrap_or(options.task_state);
+        state_property(value, "userStoryState").unwrap_or(options.user_story_state);
+    options.anomaly_state = state_property(value, "anomalyState").unwrap_or(options.anomaly_state);
+    options.bug_state = state_property(value, "bugState").unwrap_or(options.bug_state);
+    options.task_state = state_property(value, "taskState").unwrap_or(options.task_state);
     options
 }
 
-pub fn start_state(work_item_type: Option<&str>, options: &TaskStartOptions) -> Option<String> {
+pub fn start_state(
+    work_item_type: Option<&str>,
+    options: &TaskStartOptions,
+) -> Option<WorkItemState> {
     match normalize_work_item_type(work_item_type).as_str() {
         "user story" => Some(options.user_story_state.clone()),
         "anomalie" => Some(options.anomaly_state.clone()),
@@ -50,20 +54,19 @@ pub fn start_state(work_item_type: Option<&str>, options: &TaskStartOptions) -> 
         "task" | "tache" | "tâche" => Some(options.task_state.clone()),
         _ => None,
     }
-    .filter(|state| !state.trim().is_empty())
 }
 
 fn bool_property(value: &Value, key: &str, default: bool) -> bool {
     value.get(key).and_then(Value::as_bool).unwrap_or(default)
 }
 
-fn string_property(value: &Value, key: &str) -> Option<String> {
+fn state_property(value: &Value, key: &str) -> Option<WorkItemState> {
     value
         .get(key)
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+        .map(WorkItemState::from)
 }
 
 fn normalize_work_item_type(value: Option<&str>) -> String {
@@ -83,20 +86,20 @@ mod tests {
         let options = TaskStartOptions::default();
 
         assert_eq!(
-            start_state(Some("User Story"), &options).as_deref(),
-            Some("En réalisation")
+            start_state(Some("User Story"), &options),
+            Some(WorkItemState::from("En réalisation"))
         );
         assert_eq!(
-            start_state(Some("Anomalie"), &options).as_deref(),
-            Some("En réalisation")
+            start_state(Some("Anomalie"), &options),
+            Some(WorkItemState::from("En réalisation"))
         );
         assert_eq!(
-            start_state(Some("Bug"), &options).as_deref(),
-            Some("En développement")
+            start_state(Some("Bug"), &options),
+            Some(WorkItemState::from("En développement"))
         );
         assert_eq!(
-            start_state(Some("Tâche"), &options).as_deref(),
-            Some("En développement")
+            start_state(Some("Tâche"), &options),
+            Some(WorkItemState::from("En développement"))
         );
         assert_eq!(start_state(Some("Epic"), &options), None);
     }
@@ -119,9 +122,9 @@ mod tests {
 
         assert!(!options.update_work_item_state);
         assert!(options.create_child_tasks);
-        assert_eq!(options.user_story_state, "Ready");
-        assert_eq!(options.anomaly_state, "Analyse");
-        assert_eq!(options.bug_state, "Dev");
-        assert_eq!(options.task_state, "Todo");
+        assert_eq!(options.user_story_state, WorkItemState::from("Ready"));
+        assert_eq!(options.anomaly_state, WorkItemState::from("Analyse"));
+        assert_eq!(options.bug_state, WorkItemState::from("Dev"));
+        assert_eq!(options.task_state, WorkItemState::from("Todo"));
     }
 }
