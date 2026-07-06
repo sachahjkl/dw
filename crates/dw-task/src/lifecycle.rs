@@ -6,7 +6,7 @@ use dw_ado::{
     get_work_item_snapshots_authenticated, run_blocking_ado,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::WorkItemId;
+use dw_core::{WorkItemId, WorkspacePath, WorkspaceRepositoryName};
 use dw_workspace::{
     WorkspaceManifest, execute_add_child_task, execute_task_rename, execute_task_sync,
     plan_task_rename, read_manifest_path, requires_child_tasks, resolve_workspace,
@@ -37,7 +37,7 @@ pub struct RenameArgs {
 
 #[derive(Debug, Clone)]
 pub struct CreateChildTaskArgs {
-    pub repo: String,
+    pub repo: WorkspaceRepositoryName,
     pub title: String,
     pub workspace: Option<String>,
     pub root: Option<String>,
@@ -49,7 +49,7 @@ pub struct CreateChildTaskArgs {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SyncReport {
-    pub workspace: String,
+    pub workspace: WorkspacePath,
     #[serde(rename = "requestedIds")]
     pub requested_ids: Vec<WorkItemId>,
     pub snapshots: Vec<WorkItemSnapshot>,
@@ -69,8 +69,8 @@ pub struct RenameExecutionReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CreateChildTaskReport {
-    pub workspace: String,
-    pub repository: String,
+    pub workspace: WorkspacePath,
+    pub repository: WorkspaceRepositoryName,
     pub parent: dw_workspace::WorkspaceWorkItem,
     #[serde(rename = "requestedTitle")]
     pub requested_title: String,
@@ -121,7 +121,7 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
     let updated = execute_task_sync(&workspace, &snapshots)?;
 
     Ok(SyncReport {
-        workspace,
+        workspace: WorkspacePath::from(workspace),
         requested_ids: requested_ids.into_iter().map(WorkItemId::from).collect(),
         snapshots,
         manifest: updated,
@@ -177,7 +177,7 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
         options.project = manifest.project.clone();
     }
     let token = require_token(load_auth_options(Some(&root))?).await?;
-    let task_title = child_task_title(&args.repo, &args.title);
+    let task_title = child_task_title(args.repo.as_str(), &args.title);
     let parent_snapshot = WorkItemSnapshot {
         id: parent.id.clone(),
         kind: parent.kind.clone(),
@@ -193,7 +193,7 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
         ado_create_child_task(
             &options_for_create,
             &parent_snapshot,
-            &repo_for_create,
+            repo_for_create.as_str(),
             &task_title_for_create,
             "task create-child-task",
             &token_for_create,
@@ -202,13 +202,13 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
     .await?;
     let updated = execute_add_child_task(
         &workspace,
-        &args.repo,
+        args.repo.as_str(),
         &created.id,
         Some(created.title.clone()),
     )?;
 
     Ok(CreateChildTaskReport {
-        workspace,
+        workspace: WorkspacePath::from(workspace),
         repository: args.repo,
         parent,
         requested_title: task_title,

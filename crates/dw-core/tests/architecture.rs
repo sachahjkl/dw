@@ -493,6 +493,14 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             ],
         ),
         (
+            "crates/dw-task/src/lifecycle.rs",
+            &[
+                "pub repo: String",
+                "pub workspace: String",
+                "pub repository: String",
+            ],
+        ),
+        (
             "crates/dw-ado-commands/src/commands/changelog.rs",
             &["pub ids: String", "pub git_to: Option<String>"],
         ),

@@ -628,7 +628,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
         } => {
             let report = dw_task::lifecycle::create_child_task_report(
                 dw_task::lifecycle::CreateChildTaskArgs {
-                    repo,
+                    repo: dw_core::WorkspaceRepositoryName::from(repo),
                     title,
                     workspace,
                     root,
