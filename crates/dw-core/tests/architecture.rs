@@ -423,6 +423,7 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
         "pub struct TaskHandoffValidationReport {\n    #[serde(rename = \"schemaVersion\")]\n    pub schema_version: String,\n    pub workspace: String",
         "pub struct TaskHandoffValidationItem {\n    pub repository: WorkspaceRepositoryName,\n    pub path: String",
         "pub struct TaskHandoffValidationItem {\n    pub repository: WorkspaceRepositoryName,\n    pub path: HandoffFilePath,\n    pub status: TaskHandoffValidationStatus,\n    pub valid: bool,\n    pub message: String",
+        "InvalidFile { reason: String }",
         "pub struct AdoAiContextWorkItem {\n    pub id: String",
         "pub parent_ids: Vec<String>",
         "pub child_ids: Vec<String>",
@@ -454,6 +455,7 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
         "WorkspacePath",
         "WorkspaceRepositoryName",
         "HandoffFilePath",
+        "HandoffParseError",
         "TaskHandoffValidationStatus",
         "TaskHandoffValidationDetail",
         "TaskPreflightSeverity",
@@ -1036,6 +1038,8 @@ fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
         "pub path: String",
         "pub ado_repository: Option<String>",
         "pub target_branch: String",
+        "MissingHandoff { repository: String, path: String }",
+        "repository: String,\n        error: String,\n        path: String",
         "pub verification_commands: BTreeMap<String, Vec<String>>",
         "fn verification_commands(value: &Value) -> BTreeMap<String, Vec<String>>",
     ] {
@@ -1054,6 +1058,8 @@ fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
         "pub ado_repository: Option<AdoRepositoryName>",
         "pub target_branch: BranchName",
         "pub struct VerificationCommand",
+        "MissingHandoff {\n        repository: WorkspaceRepositoryName,\n        path: HandoffFilePath",
+        "error: HandoffParseError",
         "pub verification_commands: BTreeMap<WorkspaceRepositoryName, Vec<VerificationCommand>>",
     ] {
         assert!(

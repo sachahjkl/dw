@@ -10,9 +10,9 @@ use dw_contracts::{
     TaskPreflightStaleReason,
 };
 use dw_core::{
-    AiContextFilePath, BranchName, GitAnchorName, HandoffFilePath, ProjectKey, ProjectRootPath,
-    RepositoryPath, TaskId, TaskSlug, WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName,
-    WorkspacePath, WorkspaceRepositoryName,
+    AiContextFilePath, BranchName, GitAnchorName, HandoffFilePath, HandoffParseError, ProjectKey,
+    ProjectRootPath, RepositoryPath, TaskId, TaskSlug, WorkItemId, WorkItemState, WorkItemTitle,
+    WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
@@ -360,18 +360,18 @@ pub enum WorkspaceHandoffStatus {
 impl WorkspaceHandoffStatus {
     pub const ALL: [Self; 4] = [Self::Todo, Self::InProgress, Self::Done, Self::Blocked];
 
-    pub fn parse(value: &str) -> Result<Self, String> {
+    pub fn parse(value: &str) -> Result<Self, HandoffParseError> {
         let normalized = value.trim().to_ascii_lowercase().replace('-', "_");
         match normalized.as_str() {
             "todo" => Ok(Self::Todo),
             "in_progress" => Ok(Self::InProgress),
             "done" => Ok(Self::Done),
             "blocked" => Ok(Self::Blocked),
-            _ => Err(format!(
+            _ => Err(HandoffParseError::from(format!(
                 "status handoff invalide: {}. Attendus: {}.",
                 value,
                 Self::allowed_values()
-            )),
+            ))),
         }
     }
 
@@ -1954,20 +1954,20 @@ impl WorkspaceManifest {
 pub fn try_parse_summary(
     text: &str,
     expected_repository: &str,
-) -> Result<WorkspaceHandoffSummary, String> {
+) -> Result<WorkspaceHandoffSummary, HandoffParseError> {
     let normalized = text.replace("\r\n", "\n");
     let lines: Vec<&str> = normalized.split('\n').collect();
     let start = lines
         .iter()
         .position(|line| line.trim().eq_ignore_ascii_case("```yaml"))
-        .ok_or_else(|| "bloc ```yaml absent".to_string())?;
+        .ok_or_else(|| HandoffParseError::from("bloc ```yaml absent"))?;
     let end = lines
         .iter()
         .enumerate()
         .skip(start + 1)
         .find(|(_, line)| line.trim() == "```")
         .map(|(index, _)| index)
-        .ok_or_else(|| "fin du bloc yaml absente".to_string())?;
+        .ok_or_else(|| HandoffParseError::from("fin du bloc yaml absente"))?;
 
     let mut status = String::new();
     let mut repository = String::new();
@@ -2001,17 +2001,21 @@ pub fn try_parse_summary(
 
         if indent == 2 {
             let Some(section) = current_section.clone() else {
-                return Err(format!("section inconnue autour de '{trimmed}'"));
+                return Err(HandoffParseError::from(format!(
+                    "section inconnue autour de '{trimmed}'"
+                )));
             };
             let Some((key, value)) = split_key_value(trimmed) else {
-                return Err(format!("cle inconnue dans {section}: '{trimmed}'"));
+                return Err(HandoffParseError::from(format!(
+                    "cle inconnue dans {section}: '{trimmed}'"
+                )));
             };
-            let bucket = sections
-                .get_mut(&section)
-                .ok_or_else(|| format!("section inconnue autour de '{trimmed}'"))?;
-            let list = bucket
-                .get_mut(&key)
-                .ok_or_else(|| format!("cle inconnue dans {section}: '{trimmed}'"))?;
+            let bucket = sections.get_mut(&section).ok_or_else(|| {
+                HandoffParseError::from(format!("section inconnue autour de '{trimmed}'"))
+            })?;
+            let list = bucket.get_mut(&key).ok_or_else(|| {
+                HandoffParseError::from(format!("cle inconnue dans {section}: '{trimmed}'"))
+            })?;
             current_key = Some(key);
             if value != "[]" && !trim_scalar(&value).is_empty() {
                 list.push(trim_scalar(&value));
@@ -2021,35 +2025,43 @@ pub fn try_parse_summary(
 
         if indent >= 4 && trimmed.starts_with("- ") {
             let Some(section) = current_section.clone() else {
-                return Err(format!("element de liste hors section: '{trimmed}'"));
+                return Err(HandoffParseError::from(format!(
+                    "element de liste hors section: '{trimmed}'"
+                )));
             };
             let Some(key) = current_key.clone() else {
-                return Err(format!("element de liste hors section: '{trimmed}'"));
+                return Err(HandoffParseError::from(format!(
+                    "element de liste hors section: '{trimmed}'"
+                )));
             };
             sections
                 .get_mut(&section)
                 .and_then(|bucket| bucket.get_mut(&key))
-                .ok_or_else(|| format!("element de liste hors section: '{trimmed}'"))?
+                .ok_or_else(|| {
+                    HandoffParseError::from(format!("element de liste hors section: '{trimmed}'"))
+                })?
                 .push(trim_scalar(trimmed.trim_start_matches("- ")));
             continue;
         }
 
-        return Err(format!("ligne handoff non supportée: '{trimmed}'"));
+        return Err(HandoffParseError::from(format!(
+            "ligne handoff non supportée: '{trimmed}'"
+        )));
     }
 
     if status.trim().is_empty() {
-        return Err("status absent".into());
+        return Err(HandoffParseError::from("status absent"));
     }
 
     if repository.trim().is_empty() {
-        return Err("repository absent".into());
+        return Err(HandoffParseError::from("repository absent"));
     }
 
     if !repository.eq_ignore_ascii_case(expected_repository) {
-        return Err(format!(
+        return Err(HandoffParseError::from(format!(
             "repository attendu '{}', trouvé '{}'",
             expected_repository, repository
-        ));
+        )));
     }
 
     Ok(WorkspaceHandoffSummary {
@@ -2660,7 +2672,7 @@ artifacts:
 "#;
 
         let error = try_parse_summary(text, "front").expect_err("repository mismatch should fail");
-        assert!(error.contains("repository attendu 'front'"));
+        assert!(error.to_string().contains("repository attendu 'front'"));
     }
 
     #[test]
@@ -2688,7 +2700,7 @@ artifacts:
 "#;
 
         let error = try_parse_summary(text, "front").expect_err("unsupported line should fail");
-        assert!(error.contains("ligne handoff non supportée"));
+        assert!(error.to_string().contains("ligne handoff non supportée"));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use dw_config::{ProjectConfig, RepositoryConfig, WorkflowConfig, repository_config};
 use dw_core::{
-    AdoRepositoryName, BranchName, RepositoryPath, WorkItemState, WorkspaceRepositoryName,
+    AdoRepositoryName, BranchName, HandoffFilePath, HandoffParseError, RepositoryPath,
+    WorkItemState, WorkspaceRepositoryName,
 };
 use dw_git::RepositoryStatus;
 use serde::{Deserialize, Serialize};
@@ -22,12 +23,15 @@ pub enum TaskFinishError {
     #[error("task finish bloqué: vérification échouée.")]
     VerificationFailed,
     #[error("Handoff manquant pour {repository}: {path}")]
-    MissingHandoff { repository: String, path: String },
+    MissingHandoff {
+        repository: WorkspaceRepositoryName,
+        path: HandoffFilePath,
+    },
     #[error("Handoff invalide pour {repository}: {error}. Fichier: {path}")]
     InvalidHandoff {
-        repository: String,
-        error: String,
-        path: String,
+        repository: WorkspaceRepositoryName,
+        error: HandoffParseError,
+        path: HandoffFilePath,
     },
 }
 
@@ -251,18 +255,18 @@ pub fn read_plan(workspace: &Path) -> String {
 
 pub fn read_handoff_summary(
     workspace: &Path,
-    repository: &str,
+    repository: &WorkspaceRepositoryName,
 ) -> Result<WorkspaceHandoffSummary, TaskFinishError> {
-    let path = workspace.join(format!("handoff-{repository}.md"));
-    let path_text = path.display().to_string();
-    let text = fs::read_to_string(&path).map_err(|_| TaskFinishError::MissingHandoff {
-        repository: repository.into(),
-        path: path_text.clone(),
+    let path_buf = workspace.join(format!("handoff-{repository}.md"));
+    let path = HandoffFilePath::from(path_buf.display().to_string());
+    let text = fs::read_to_string(&path_buf).map_err(|_| TaskFinishError::MissingHandoff {
+        repository: repository.clone(),
+        path: path.clone(),
     })?;
-    try_parse_summary(&text, repository).map_err(|error| TaskFinishError::InvalidHandoff {
-        repository: repository.into(),
+    try_parse_summary(&text, repository.as_str()).map_err(|error| TaskFinishError::InvalidHandoff {
+        repository: repository.clone(),
         error,
-        path: path_text,
+        path,
     })
 }
 

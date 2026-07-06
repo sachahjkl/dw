@@ -156,11 +156,7 @@ pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
     let handoff_summaries = targets
         .iter()
         .filter_map(|target| {
-            read_handoff_summary(
-                Path::new(workspace.as_str()),
-                target.target.repository.as_str(),
-            )
-            .ok()
+            read_handoff_summary(Path::new(workspace.as_str()), &target.target.repository).ok()
         })
         .collect::<Vec<WorkspaceHandoffSummary>>();
     let changed_repositories = targets
@@ -411,10 +407,8 @@ pub async fn execute_finish_with_events(
                 repository: candidate.repository.clone(),
             },
         );
-        let handoff_summary = read_handoff_summary(
-            Path::new(plan.workspace.as_str()),
-            candidate.repository.as_str(),
-        )?;
+        let handoff_summary =
+            read_handoff_summary(Path::new(plan.workspace.as_str()), &candidate.repository)?;
         let input = CreatePullRequestInput {
             repository: ado_repository.to_string(),
             source_ref_name: source_ref.clone(),

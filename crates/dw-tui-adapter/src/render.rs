@@ -2184,7 +2184,7 @@ fn handoff_validation_message(item: &TaskHandoffValidationItem) -> String {
             "Handoff is parseable but not ready for finish (status: {}).",
             item.status
         ),
-        TaskHandoffValidationDetail::InvalidFile { reason } => reason.clone(),
+        TaskHandoffValidationDetail::InvalidFile { reason } => reason.to_string(),
     }
 }
 

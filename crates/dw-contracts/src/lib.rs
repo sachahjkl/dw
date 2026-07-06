@@ -1,4 +1,7 @@
-use dw_core::{HandoffFilePath, ProjectKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName};
+use dw_core::{
+    HandoffFilePath, HandoffParseError, ProjectKey, WorkItemId, WorkspacePath,
+    WorkspaceRepositoryName,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -70,7 +73,7 @@ pub enum TaskHandoffValidationDetail {
     MissingFile,
     Valid,
     NotFinishReady,
-    InvalidFile { reason: String },
+    InvalidFile { reason: HandoffParseError },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
