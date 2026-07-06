@@ -3,7 +3,7 @@ use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{WorkItemSnapshot, query_work_item_snapshots};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::ActionEvent;
+use dw_core::{AdoActionEvent, WorkItemId};
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ pub struct WorkItemReport {
     #[serde(rename = "requestedIds")]
     pub requested_ids: Vec<i32>,
     pub items: Vec<WorkItemSnapshot>,
-    pub events: Vec<String>,
+    pub events: Vec<AdoActionEvent>,
 }
 
 pub async fn report(args: WorkItemArgs) -> Result<WorkItemReport> {
@@ -29,7 +29,7 @@ pub async fn report(args: WorkItemArgs) -> Result<WorkItemReport> {
 
 pub async fn report_with_events(
     args: WorkItemArgs,
-    mut emit: impl FnMut(ActionEvent),
+    mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<WorkItemReport> {
     let WorkItemArgs { id, root, project } = args;
     let root = resolve_root(root.as_deref());
@@ -42,11 +42,22 @@ pub async fn report_with_events(
     push_event(
         &mut events,
         &mut emit,
-        format!("Connexion Azure DevOps pour le projet {project_key}..."),
+        AdoActionEvent::Authenticating {
+            project: Some(project_key.clone()),
+        },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let ids = parse_work_item_ids(&id)?;
-    push_event(&mut events, &mut emit, work_item_fetch_line(ids.len()));
+    push_event(
+        &mut events,
+        &mut emit,
+        AdoActionEvent::LoadingWorkItems {
+            ids: ids
+                .iter()
+                .map(|id| WorkItemId::new(id.to_string()))
+                .collect(),
+        },
+    );
     let items = query_work_item_snapshots(&options, &ids, &token).await?;
     Ok(WorkItemReport {
         root,
@@ -57,9 +68,13 @@ pub async fn report_with_events(
     })
 }
 
-fn push_event(events: &mut Vec<String>, emit: &mut impl FnMut(ActionEvent), message: String) {
-    emit(ActionEvent::info(message.clone()));
-    events.push(message);
+fn push_event(
+    events: &mut Vec<AdoActionEvent>,
+    emit: &mut impl FnMut(AdoActionEvent),
+    event: AdoActionEvent,
+) {
+    emit(event.clone());
+    events.push(event);
 }
 
 pub(super) fn parse_work_item_ids(raw: &str) -> Result<Vec<i32>> {

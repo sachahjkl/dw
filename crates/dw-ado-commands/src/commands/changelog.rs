@@ -7,7 +7,7 @@ use dw_ado::{
     parse_changelog_format,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::ActionEvent;
+use dw_core::{AdoActionEvent, AdoRepositoryName, WorkItemId};
 use serde::Serialize;
 use std::process::Command as ProcessCommand;
 
@@ -49,7 +49,7 @@ pub struct ChangelogReport {
     pub source_empty: bool,
     #[serde(rename = "resolvedEmpty")]
     pub resolved_empty: bool,
-    pub events: Vec<String>,
+    pub events: Vec<AdoActionEvent>,
 }
 
 pub async fn report(args: ChangelogArgs) -> Result<ChangelogReport> {
@@ -58,7 +58,7 @@ pub async fn report(args: ChangelogArgs) -> Result<ChangelogReport> {
 
 pub async fn report_with_events(
     args: ChangelogArgs,
-    mut emit: impl FnMut(ActionEvent),
+    mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<ChangelogReport> {
     let ChangelogArgs {
         ids,
@@ -100,7 +100,9 @@ pub async fn report_with_events(
     push_event(
         &mut events,
         &mut emit,
-        format!("Connecting to Azure DevOps for project {project_key}..."),
+        AdoActionEvent::Authenticating {
+            project: Some(project_key.clone()),
+        },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
 
@@ -108,7 +110,9 @@ pub async fn report_with_events(
         push_event(
             &mut events,
             &mut emit,
-            changelog_git_extract_line(git_to.as_deref()),
+            AdoActionEvent::ExtractingGitWorkItems {
+                git_to: git_to.clone(),
+            },
         );
         extract_work_item_ids_from_git_range(&ids, git_to.as_deref())?
     } else {
@@ -117,7 +121,13 @@ pub async fn report_with_events(
         push_event(
             &mut events,
             &mut emit,
-            changelog_pr_fetch_line(&repositories),
+            AdoActionEvent::ResolvingPullRequestWorkItems {
+                repositories: repositories
+                    .iter()
+                    .cloned()
+                    .map(AdoRepositoryName::from)
+                    .collect(),
+            },
         );
         let options = options.clone();
         let token = token.clone();
@@ -171,7 +181,13 @@ pub async fn report_with_events(
     push_event(
         &mut events,
         &mut emit,
-        changelog_items_fetch_line(work_item_ids.len()),
+        AdoActionEvent::LoadingChangelogItems {
+            ids: work_item_ids
+                .iter()
+                .cloned()
+                .map(WorkItemId::from)
+                .collect(),
+        },
     );
     let mut items = {
         let options = options.clone();
@@ -202,7 +218,13 @@ pub async fn report_with_events(
     }
 
     let groups = if group_by_parent {
-        push_event(&mut events, &mut emit, "Grouping by ADO parent...".into());
+        push_event(
+            &mut events,
+            &mut emit,
+            AdoActionEvent::GroupingAssignedWorkItems {
+                project: project_key.clone(),
+            },
+        );
         let options = options.clone();
         let token = token.clone();
         let items_for_grouping = items.clone();
@@ -234,9 +256,13 @@ pub async fn report_with_events(
     })
 }
 
-fn push_event(events: &mut Vec<String>, emit: &mut impl FnMut(ActionEvent), message: String) {
-    emit(ActionEvent::info(message.clone()));
-    events.push(message);
+fn push_event(
+    events: &mut Vec<AdoActionEvent>,
+    emit: &mut impl FnMut(AdoActionEvent),
+    event: AdoActionEvent,
+) {
+    emit(event.clone());
+    events.push(event);
 }
 
 pub fn changelog_git_extract_line(git_to: Option<&str>) -> String {

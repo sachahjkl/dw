@@ -252,7 +252,7 @@ impl App {
                         refresh_after_success,
                         open_after_success,
                         effect,
-                        result,
+                        *result,
                     );
                 }
             }
@@ -1575,14 +1575,28 @@ impl App {
     ) {
         match result {
             Ok(result) => {
+                let rendered_output_lines = dw_tui_adapter::render::action_result_lines(
+                    &result.result,
+                    &dw_ui::TerminalTheme::plain(),
+                );
+                let mut rendered_lines = result
+                    .events
+                    .iter()
+                    .map(dw_tui_adapter::render::action_event_line)
+                    .collect::<Vec<_>>();
+                if !rendered_lines.is_empty() && !rendered_output_lines.is_empty() {
+                    rendered_lines.push(String::new());
+                }
+                rendered_lines.extend(rendered_output_lines);
+                let output = rendered_lines.join("\n");
                 if !self.history.finish_running(
                     &result.display_label,
                     result.status_label.clone(),
                     result.success,
-                    &result.output,
+                    &output,
                 ) {
-                    let output_preview = output_preview(&result.output);
-                    let output_lines = output_lines(&result.output);
+                    let output_preview = output_preview(&output);
+                    let output_lines = output_lines(&output);
                     self.history.push(RunHistoryEntry {
                         request_label: result.display_label.clone(),
                         status: result.status_label.clone(),
@@ -1598,7 +1612,7 @@ impl App {
                 if open_after_success {
                     self.open_detail_panel(DetailPanel::operation_result(
                         format!("Result · {}", result.display_label),
-                        &result.output,
+                        &output,
                     ));
                     self.history.close_output();
                     self.sync_closed_modal(ModalKind::History);
@@ -2241,6 +2255,8 @@ fn snapshot_reload_summary(snapshot: &TuiSnapshot) -> String {
 mod tests {
     use super::*;
     use crate::model::AdoAssignedProject;
+    use dw_app::{AdoActionResult, AppActionResult, DwActionResult};
+    use dw_core::{DwActionEvent, PullRequestId, TaskActionEvent};
     use std::fs;
 
     fn initialized_root() -> tempfile::TempDir {
@@ -2251,6 +2267,59 @@ mod tests {
         fs::write(config_dir.join("workflow.json"), "{}").expect("workflow config");
         fs::write(config_dir.join("databases.json"), "{}").expect("databases config");
         temp
+    }
+
+    fn captured_version_result(label: &str, status: &str) -> runner::CapturedActionRunResult {
+        runner::CapturedActionRunResult {
+            display_label: label.into(),
+            status_label: status.into(),
+            success: true,
+            events: Vec::new(),
+            result: DwActionResult::App(AppActionResult::Version {
+                version: "2026.07.04".into(),
+            }),
+        }
+    }
+
+    fn captured_version_result_with_event(
+        label: &str,
+        status: &str,
+        pull_request_id: &str,
+    ) -> runner::CapturedActionRunResult {
+        let mut result = captured_version_result(label, status);
+        result.events.push(DwActionEvent::Task(
+            TaskActionEvent::ResolvingPullRequestWorkItems {
+                pull_request_id: PullRequestId::from(pull_request_id),
+            },
+        ));
+        result
+    }
+
+    fn captured_assigned_result(label: &str) -> runner::CapturedActionRunResult {
+        runner::CapturedActionRunResult {
+            display_label: label.into(),
+            status_label: "ok".into(),
+            success: true,
+            events: Vec::new(),
+            result: DwActionResult::Ado(AdoActionResult::Assigned(
+                dw_ado_commands::commands::assigned::AssignedReport {
+                    root: "/tmp/dw".into(),
+                    project: "ha".into(),
+                    top: 20,
+                    include_final_states: false,
+                    group_by_parent: false,
+                    items: vec![dw_ado::WorkItemSnapshot {
+                        id: "55264".into(),
+                        kind: Some("Task".into()),
+                        state: Some("Active".into()),
+                        title: Some("Transmission automatique".into()),
+                        url: None,
+                    }],
+                    groups: Vec::new(),
+                    events: Vec::new(),
+                },
+            )),
+        }
     }
 
     #[test]
@@ -3057,12 +3126,9 @@ mod tests {
             false,
             false,
             None,
-            Ok(runner::CapturedActionRunResult {
-                display_label: "Version".into(),
-                status_label: "exit 0".into(),
-                success: true,
-                output: "Loading...\nDev Workflow 2026.07.04".into(),
-            }),
+            Ok(captured_version_result_with_event(
+                "Version", "exit 0", "42",
+            )),
         );
 
         assert_eq!(app.history.entries.len(), 1);
@@ -3070,7 +3136,10 @@ mod tests {
         assert_eq!(entry.status, "exit 0");
         assert_eq!(
             entry.output_preview,
-            ["Loading...", "Dev Workflow 2026.07.04"]
+            [
+                "Task [resolve-pr-work-items] PR #42",
+                "Dev Workflow 2026.07.04"
+            ]
         );
     }
 
@@ -3084,12 +3153,7 @@ mod tests {
             false,
             true,
             None,
-            Ok(runner::CapturedActionRunResult {
-                display_label: "My work items · ha".into(),
-                status_label: "ok".into(),
-                success: true,
-                output: "Assigned work items\n#55264 Transmission automatique".into(),
-            }),
+            Ok(captured_assigned_result("My work items · ha")),
         );
 
         assert!(!app.history.output_open);
@@ -3118,12 +3182,7 @@ mod tests {
             true,
             false,
             Some(ActionEffect::ColorMode("always".into())),
-            Ok(runner::CapturedActionRunResult {
-                display_label: "Color · always".into(),
-                status_label: "exit 0".into(),
-                success: true,
-                output: "Color     : always".into(),
-            }),
+            Ok(captured_version_result("Color · always", "exit 0")),
         );
 
         assert_eq!(app.snapshot.color_mode, "always");
@@ -3143,12 +3202,7 @@ mod tests {
             true,
             false,
             Some(ActionEffect::DefaultAgent("codex".into())),
-            Ok(runner::CapturedActionRunResult {
-                display_label: "Default agent · codex".into(),
-                status_label: "exit 0".into(),
-                success: true,
-                output: "Default agent: codex".into(),
-            }),
+            Ok(captured_version_result("Default agent · codex", "exit 0")),
         );
 
         assert_eq!(app.snapshot.default_agent(), "codex");
@@ -3168,12 +3222,10 @@ mod tests {
             true,
             false,
             Some(ActionEffect::DefaultAgent("CODEX-CLI".into())),
-            Ok(runner::CapturedActionRunResult {
-                display_label: "Default agent · CODEX-CLI".into(),
-                status_label: "exit 0".into(),
-                success: true,
-                output: "Default agent: codex-cli".into(),
-            }),
+            Ok(captured_version_result(
+                "Default agent · CODEX-CLI",
+                "exit 0",
+            )),
         );
 
         assert_eq!(app.snapshot.default_agent(), "codex-cli");
@@ -3193,12 +3245,7 @@ mod tests {
             true,
             false,
             Some(ActionEffect::Root("/tmp/new-root".into())),
-            Ok(runner::CapturedActionRunResult {
-                display_label: "Root · /tmp/new-root".into(),
-                status_label: "exit 0".into(),
-                success: true,
-                output: "Root      : /tmp/new-root".into(),
-            }),
+            Ok(captured_version_result("Root · /tmp/new-root", "exit 0")),
         );
 
         assert_eq!(app.root_override.as_deref(), Some("/tmp/new-root"));
@@ -3219,12 +3266,7 @@ mod tests {
             true,
             false,
             None,
-            Ok(runner::CapturedActionRunResult {
-                display_label: "Task sync · /tmp/ws".into(),
-                status_label: "exit 0".into(),
-                success: true,
-                output: "Workspace synchronized.".into(),
-            }),
+            Ok(captured_version_result("Task sync · /tmp/ws", "exit 0")),
         );
 
         assert!(app.messages.iter().any(

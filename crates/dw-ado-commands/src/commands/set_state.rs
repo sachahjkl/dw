@@ -3,7 +3,7 @@ use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::{auth::require_token, run_blocking_ado, update_work_item_state_authenticated};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::ActionEvent;
+use dw_core::{AdoActionEvent, WorkItemId};
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub struct SetStatePlanReport {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SetStateExecutionReport {
     pub plan: SetStatePlanReport,
-    pub events: Vec<String>,
+    pub events: Vec<AdoActionEvent>,
     pub updated: Vec<SetStateUpdate>,
 }
 
@@ -71,7 +71,7 @@ pub async fn execute(plan: SetStatePlanReport) -> Result<SetStateExecutionReport
 
 pub async fn execute_with_events(
     plan: SetStatePlanReport,
-    mut emit: impl FnMut(ActionEvent),
+    mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<SetStateExecutionReport> {
     let projects = load_projects_config(&plan.root);
     let workflow = load_workflow_config(&plan.root);
@@ -80,13 +80,18 @@ pub async fn execute_with_events(
     push_event(
         &mut events,
         &mut emit,
-        format!("Connexion Azure DevOps pour le projet {}...", plan.project),
+        AdoActionEvent::Authenticating {
+            project: Some(plan.project.clone()),
+        },
     );
     let token = require_token(load_auth_options(Some(&plan.root))?).await?;
     push_event(
         &mut events,
         &mut emit,
-        set_state_progress_line(plan.ids.len(), &plan.state),
+        AdoActionEvent::UpdatingWorkItemState {
+            ids: plan.ids.iter().cloned().map(WorkItemId::from).collect(),
+            state: plan.state.clone(),
+        },
     );
     let mut updated = Vec::new();
     for id in &plan.ids {
@@ -102,7 +107,10 @@ pub async fn execute_with_events(
         push_event(
             &mut events,
             &mut emit,
-            format!("ADO item #{id}: état -> {}", plan.state),
+            AdoActionEvent::UpdatedWorkItemState {
+                id: WorkItemId::from(id.clone()),
+                state: plan.state.clone(),
+            },
         );
         updated.push(SetStateUpdate {
             id: id.clone(),
@@ -117,9 +125,13 @@ pub async fn execute_with_events(
     })
 }
 
-fn push_event(events: &mut Vec<String>, emit: &mut impl FnMut(ActionEvent), message: String) {
-    emit(ActionEvent::info(message.clone()));
-    events.push(message);
+fn push_event(
+    events: &mut Vec<AdoActionEvent>,
+    emit: &mut impl FnMut(AdoActionEvent),
+    event: AdoActionEvent,
+) {
+    emit(event.clone());
+    events.push(event);
 }
 
 pub fn set_state_confirmation_prompt(ids: &[String], project: &str, state: &str) -> String {

@@ -210,6 +210,114 @@ fn tui_does_not_relaunch_current_dw_for_internal_actions() {
 }
 
 #[test]
+fn tui_runner_returns_typed_action_results_not_rendered_strings() {
+    let repo = repo_root();
+    let runner = repo.join("crates/dw-tui/src/runner.rs");
+    let text = fs::read_to_string(&runner).expect("read TUI runner");
+    for forbidden in [
+        "dispatch_internal_action",
+        "Result<String>",
+        "pub output: String",
+        "output: String",
+        ".join(\"\\n\")",
+        "render::",
+        "TerminalTheme",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains forbidden string-rendered action token `{}`",
+            runner.display(),
+            forbidden
+        );
+    }
+    assert!(
+        text.contains("DwActionResult"),
+        "{} should carry typed action results",
+        runner.display()
+    );
+}
+
+#[test]
+fn action_stream_protocol_does_not_use_generic_progress_strings() {
+    let repo = repo_root();
+    let checked_roots = [
+        repo.join("crates/dw-core/src"),
+        repo.join("crates/dw-app/src"),
+        repo.join("crates/dw-tui/src"),
+        repo.join("crates/dw-tui-adapter/src"),
+        repo.join("crates/dw-cli-adapter/src"),
+    ];
+
+    for root in checked_roots {
+        for file in rust_files(&root) {
+            let text = fs::read_to_string(&file).expect("read source file");
+            for forbidden in [
+                "DwActionEvent::Progress",
+                "core_event_to_dw",
+                "Progress {",
+                "phase: String",
+            ] {
+                assert!(
+                    !text.contains(forbidden),
+                    "{} contains forbidden generic action event token `{}`",
+                    file.display(),
+                    forbidden
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn ado_usecase_streams_structured_domain_events_not_actionevent_text() {
+    let repo = repo_root();
+    let ado_commands = repo.join("crates/dw-ado-commands/src");
+    for file in rust_files(&ado_commands) {
+        let text = fs::read_to_string(&file).expect("read source file");
+        for forbidden in [
+            "use dw_core::ActionEvent",
+            "FnMut(ActionEvent)",
+            "ActionEvent::info",
+            "events: Vec<String>",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "{} contains forbidden ADO string event token `{}`",
+                file.display(),
+                forbidden
+            );
+        }
+    }
+}
+
+#[test]
+fn action_events_use_domain_id_types_not_primitive_id_strings() {
+    let repo = repo_root();
+    let core = repo.join("crates/dw-core/src/lib.rs");
+    let text = fs::read_to_string(&core).expect("read core lib");
+    for forbidden in [
+        "pull_request_id: String",
+        "work_item_ids: Vec<String>",
+        "ids: Vec<String>",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains primitive ID field `{}` in action event contracts",
+            core.display(),
+            forbidden
+        );
+    }
+    for required in ["WorkItemId", "PullRequestId", "AdoRepositoryName"] {
+        assert!(
+            text.contains(required),
+            "{} should expose domain ID type `{}`",
+            core.display(),
+            required
+        );
+    }
+}
+
+#[test]
 fn tui_and_ui_layers_do_not_embed_cli_command_hints() {
     let repo = repo_root();
     let checked_roots = [

@@ -989,6 +989,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dw-app"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "dw-ado-commands",
+ "dw-agent",
+ "dw-config",
+ "dw-contracts",
+ "dw-core",
+ "dw-db",
+ "dw-doctor",
+ "dw-secret",
+ "dw-task",
+ "dw-upgrade",
+ "tokio",
+]
+
+[[package]]
 name = "dw-cli"
 version = "0.1.1"
 dependencies = [
@@ -1161,6 +1179,7 @@ dependencies = [
  "dw-ado",
  "dw-ado-commands",
  "dw-agent",
+ "dw-app",
  "dw-config",
  "dw-core",
  "dw-db",
@@ -1185,6 +1204,7 @@ dependencies = [
  "dw-ado",
  "dw-ado-commands",
  "dw-agent",
+ "dw-app",
  "dw-config",
  "dw-contracts",
  "dw-core",

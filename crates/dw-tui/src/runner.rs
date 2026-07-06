@@ -4,13 +4,11 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use dw_core::{ActionEvent, ExternalLaunchPlan};
-use dw_tui_adapter::render;
-use dw_ui::TerminalTheme;
+use dw_app::{DwActionRequest, DwActionResult};
+use dw_core::{DwActionEvent, ExternalLaunchPlan};
 use std::io;
 
 use crate::model::{TuiAction, TuiActionRequest};
-use crate::ui_text::guide_detail_lines;
 
 #[derive(Debug, Clone)]
 pub struct ActionRunResult {
@@ -19,12 +17,13 @@ pub struct ActionRunResult {
     pub success: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct CapturedActionRunResult {
     pub display_label: String,
     pub status_label: String,
     pub success: bool,
-    pub output: String,
+    pub events: Vec<DwActionEvent>,
+    pub result: DwActionResult,
 }
 
 pub fn install_terminal() -> Result<()> {
@@ -56,300 +55,102 @@ pub fn run_attached(action: &TuiAction) -> Result<ActionRunResult> {
 
 pub async fn run_captured_streaming<F>(
     action: &TuiAction,
-    mut on_output: F,
+    mut on_event: F,
 ) -> Result<CapturedActionRunResult>
 where
-    F: FnMut(String),
+    F: FnMut(DwActionEvent),
 {
-    let text = dispatch_internal_action(action, |event| on_output(event.message)).await?;
+    let mut events = Vec::new();
+    let request = action_request(action)?;
+    let result = dw_app::run_action(request, |event| {
+        on_event(event.clone());
+        events.push(event);
+    })
+    .await?;
 
     Ok(CapturedActionRunResult {
         display_label: action.display_label(),
         status_label: "ok".into(),
         success: true,
-        output: text,
+        events,
+        result,
     })
 }
 
-async fn dispatch_internal_action(
-    action: &TuiAction,
-    mut emit: impl FnMut(ActionEvent),
-) -> Result<String> {
-    let theme = TerminalTheme::plain();
+fn action_request(action: &TuiAction) -> Result<DwActionRequest> {
     match &action.request {
-        TuiActionRequest::Version => Ok(format!("Dev Workflow {}", env!("CARGO_PKG_VERSION"))),
-        TuiActionRequest::Doctor => {
-            let report = dw_doctor::run_doctor(false)?;
-            Ok(render::doctor_report_lines(&report, &theme).join("\n"))
-        }
-        TuiActionRequest::Guide => Ok(guide_detail_lines().join("\n")),
-        TuiActionRequest::Refresh(args) => {
-            let report = dw_config::command::refresh(args.clone())?;
-            Ok(render::refresh_report_lines(&report).join("\n"))
-        }
+        TuiActionRequest::Version => Ok(DwActionRequest::Version),
+        TuiActionRequest::Doctor => Ok(DwActionRequest::Doctor),
+        TuiActionRequest::Guide => Ok(DwActionRequest::Guide),
+        TuiActionRequest::Refresh(args) => Ok(DwActionRequest::Refresh(args.clone())),
         TuiActionRequest::ConfigShow { root } => {
-            let report = dw_config::command::show(root.as_deref());
-            Ok(render::config_show_lines(&report, &theme).join("\n"))
+            Ok(DwActionRequest::ConfigShow { root: root.clone() })
         }
-        TuiActionRequest::ConfigInit(args) => {
-            let report = dw_config::command::init(args.clone())?;
-            Ok(render::init_report_lines(&report).join("\n"))
-        }
+        TuiActionRequest::ConfigInit(args) => Ok(DwActionRequest::ConfigInit(args.clone())),
         TuiActionRequest::ConfigDoctor { root } => {
-            let report = dw_config::command::doctor(root.as_deref());
-            Ok(render::config_doctor_lines(&report, &theme).join("\n"))
+            Ok(DwActionRequest::ConfigDoctor { root: root.clone() })
         }
         TuiActionRequest::ConfigSetColor { mode } => {
-            let report = dw_config::command::set_color(mode)?;
-            Ok([
-                "Configuration updated".into(),
-                format!("Color     : {}", report.value),
-            ]
-            .join("\n"))
+            Ok(DwActionRequest::ConfigSetColor { mode: mode.clone() })
         }
         TuiActionRequest::ConfigSetRoot { path } => {
-            let report = dw_config::command::set_root(path)?;
-            Ok([
-                "Configuration updated".into(),
-                format!("Root      : {}", report.value),
-            ]
-            .join("\n"))
+            Ok(DwActionRequest::ConfigSetRoot { path: path.clone() })
         }
         TuiActionRequest::AgentConfig { root } => {
-            let root = dw_config::resolve_root(root.as_deref());
-            let agent = dw_config::default_agent(&root);
-            Ok(render::agent_config_lines(&root, &agent, &theme).join("\n"))
+            Ok(DwActionRequest::AgentConfig { root: root.clone() })
         }
-        TuiActionRequest::AgentSetDefault { root, agent } => {
-            let root = dw_config::resolve_root(root.as_deref());
-            let agent = dw_config::set_default_agent(&root, agent)?;
-            Ok(render::agent_config_updated_lines(&root, &agent, &theme).join("\n"))
-        }
-        TuiActionRequest::AgentDoctor { agent } => {
-            let report = dw_agent::command::agent_doctor(agent.as_deref())?;
-            Ok(render::agent_doctor_lines(&report, &theme).join("\n"))
-        }
+        TuiActionRequest::AgentSetDefault { root, agent } => Ok(DwActionRequest::AgentSetDefault {
+            root: root.clone(),
+            agent: agent.clone(),
+        }),
+        TuiActionRequest::AgentDoctor { agent } => Ok(DwActionRequest::AgentDoctor {
+            agent: agent.clone(),
+        }),
         TuiActionRequest::AgentOpen(_) => {
             anyhow::bail!("External action executed by run_attached.")
         }
-        TuiActionRequest::DbGuard(args) => {
-            Ok(render::db_guard_lines(&dw_db::commands::guard(args.clone()), &theme).join("\n"))
+        TuiActionRequest::DbGuard(args) => Ok(DwActionRequest::DbGuard(args.clone())),
+        TuiActionRequest::DbSchema(args) => Ok(DwActionRequest::DbSchema(args.clone())),
+        TuiActionRequest::DbDescribe(args) => Ok(DwActionRequest::DbDescribe(args.clone())),
+        TuiActionRequest::DbQuery(args) => Ok(DwActionRequest::DbQuery(args.clone())),
+        TuiActionRequest::AdoAssigned(args) => Ok(DwActionRequest::AdoAssigned(args.clone())),
+        TuiActionRequest::AdoPrs(args) => Ok(DwActionRequest::AdoPrs(args.clone())),
+        TuiActionRequest::AdoChangelog(args) => Ok(DwActionRequest::AdoChangelog(args.clone())),
+        TuiActionRequest::AdoContext(args) => Ok(DwActionRequest::AdoContext(args.clone())),
+        TuiActionRequest::AdoAiContext(args) => Ok(DwActionRequest::AdoAiContext(args.clone())),
+        TuiActionRequest::AdoWorkItem(args) => Ok(DwActionRequest::AdoWorkItem(args.clone())),
+        TuiActionRequest::AdoSetState(args) => Ok(DwActionRequest::AdoSetState(args.clone())),
+        TuiActionRequest::TaskStart(args) => Ok(DwActionRequest::TaskStart(args.clone())),
+        TuiActionRequest::TaskStartPr(args) => Ok(DwActionRequest::TaskStartPr(args.clone())),
+        TuiActionRequest::TaskPreflight(args) => Ok(DwActionRequest::TaskPreflight(args.clone())),
+        TuiActionRequest::TaskHandoffValidate(args) => {
+            Ok(DwActionRequest::TaskHandoffValidate(args.clone()))
         }
-        TuiActionRequest::DbSchema(args) => Ok(render::db_query_table(
-            &dw_db::commands::schema(args.clone()).await?,
-            &theme,
-        )),
-        TuiActionRequest::DbDescribe(args) => Ok(dw_db::commands::describe(args.clone())
-            .await?
-            .map(|result| render::db_query_table(&result, &theme))
-            .unwrap_or_default()),
-        TuiActionRequest::DbQuery(args) => Ok(render::db_query_table(
-            &dw_db::commands::query(args.clone()).await?,
-            &theme,
-        )),
-        TuiActionRequest::AdoAssigned(args) => {
-            let report =
-                dw_ado_commands::commands::assigned::report_with_events(args.clone(), &mut emit)
-                    .await?;
-            Ok(render::ado_assigned_lines(&report, &theme).join("\n"))
+        TuiActionRequest::TaskSync(args) => Ok(DwActionRequest::TaskSync(args.clone())),
+        TuiActionRequest::TaskRename(args) => Ok(DwActionRequest::TaskRename(args.clone())),
+        TuiActionRequest::TaskRepoLatest(args) => Ok(DwActionRequest::TaskRepoLatest(args.clone())),
+        TuiActionRequest::TaskCommit(args) => Ok(DwActionRequest::TaskCommit(args.clone())),
+        TuiActionRequest::TaskAddRepo(args) => Ok(DwActionRequest::TaskAddRepo(args.clone())),
+        TuiActionRequest::TaskTeardown(args) => Ok(DwActionRequest::TaskTeardown(args.clone())),
+        TuiActionRequest::TaskFinish(args) => Ok(DwActionRequest::TaskFinish(args.clone())),
+        TuiActionRequest::TaskPrune(args) => Ok(DwActionRequest::TaskPrune(args.clone())),
+        TuiActionRequest::TaskCreateChildTask(args) => {
+            Ok(DwActionRequest::TaskCreateChildTask(args.clone()))
         }
-        TuiActionRequest::AdoPrs(args) => Ok(render::ado_prs_lines(
-            &dw_ado_commands::commands::prs::report(args.clone()).await?,
-        )
-        .join("\n")),
-        TuiActionRequest::AdoChangelog(args) => {
-            let report =
-                dw_ado_commands::commands::changelog::report_with_events(args.clone(), &mut emit)
-                    .await?;
-            Ok(render::ado_changelog_lines(&report, &theme).join("\n"))
-        }
-        TuiActionRequest::AdoContext(args) => {
-            let report = dw_ado_commands::commands::context::context_report_with_events(
-                args.clone(),
-                &mut emit,
-            )
-            .await?;
-            Ok(render::ado_context_lines(&report, &theme).join("\n"))
-        }
-        TuiActionRequest::AdoAiContext(args) => {
-            let report = dw_ado_commands::commands::context::ai_context_report_with_events(
-                args.clone(),
-                &mut emit,
-            )
-            .await?;
-            Ok(serde_json::to_string_pretty(&report.items)?)
-        }
-        TuiActionRequest::AdoWorkItem(args) => {
-            let report =
-                dw_ado_commands::commands::work_item::report_with_events(args.clone(), &mut emit)
-                    .await?;
-            Ok(render::ado_work_item_lines(&report, &theme).join("\n"))
-        }
-        TuiActionRequest::AdoSetState(args) => {
-            let plan = dw_ado_commands::commands::set_state::plan(args.clone())?;
-            let execution =
-                dw_ado_commands::commands::set_state::execute_with_events(plan, &mut emit).await?;
-            Ok(render::ado_set_state_execution_lines(&execution).join("\n"))
-        }
-        TuiActionRequest::TaskStart(args) => {
-            let report = dw_task::start::start_plan(args.clone()).await?;
-            if args.mode.executes() {
-                Ok(render::task_start_execution_lines(
-                    &dw_task::start::execute_start(report, args).await?,
-                )
-                .join("\n"))
-            } else {
-                Ok(render::task_start_plan_lines(&report).join("\n"))
-            }
-        }
-        TuiActionRequest::TaskStartPr(args) => {
-            emit(ActionEvent::info(dw_task::start::start_pr_fetch_line(
-                &args.pull_request_id,
-                &[],
-            )));
-            let report = dw_task::start::start_pr_plan(args.clone()).await?;
-            emit(ActionEvent::info(dw_task::start::start_pr_resolved_line(
-                &report.work_item_ids,
-            )));
-            if args.mode.executes() {
-                Ok(render::task_start_execution_lines(
-                    &dw_task::start::execute_start_pr(report, args).await?,
-                )
-                .join("\n"))
-            } else {
-                Ok(render::task_start_pr_plan_lines(&report).join("\n"))
-            }
-        }
-        TuiActionRequest::TaskPreflight(args) => Ok(render::task_preflight_lines(
-            &dw_task::validate::preflight_report(args.clone())?,
-        )
-        .join("\n")),
-        TuiActionRequest::TaskHandoffValidate(args) => Ok(render::task_handoff_validation_lines(
-            &dw_task::validate::handoff_validation_report(args.clone())?,
-        )
-        .join("\n")),
-        TuiActionRequest::TaskSync(args) => Ok(render::task_sync_lines(
-            &dw_task::lifecycle::sync_report(args.clone()).await?,
-        )
-        .join("\n")),
-        TuiActionRequest::TaskRename(args) => {
-            let plan = dw_task::lifecycle::rename_plan(args.clone())?;
-            if args.mode.executes() {
-                Ok(
-                    render::task_rename_execution_lines(&dw_task::lifecycle::execute_rename(
-                        &plan,
-                    )?)
-                    .join("\n"),
-                )
-            } else {
-                Ok(render::task_rename_plan_lines(&plan).join("\n"))
-            }
-        }
-        TuiActionRequest::TaskRepoLatest(args) => {
-            let plan = dw_task::repo::repo_latest_plan(args.clone())?;
-            let mut lines = render::task_repo_latest_plan_lines(&plan);
-            lines.extend(render::task_repo_latest_execution_lines(
-                &dw_task::repo::execute_repo_latest(&plan)?,
-            ));
-            Ok(lines.join("\n"))
-        }
-        TuiActionRequest::TaskCommit(args) => {
-            let plan = dw_task::repo::commit_plan(args.clone())?;
-            if args.mode.executes() {
-                let mut lines = render::task_commit_plan_lines(&plan, true);
-                lines.extend(render::task_commit_execution_lines(
-                    &dw_task::repo::execute_commit(&plan)?,
-                ));
-                Ok(lines.join("\n"))
-            } else {
-                Ok(render::task_commit_plan_lines(&plan, false).join("\n"))
-            }
-        }
-        TuiActionRequest::TaskAddRepo(args) => {
-            let plan = dw_task::repo::add_repo_plan(args.clone())?;
-            if args.mode.executes() {
-                let mut lines = render::task_add_repo_plan_lines(&plan);
-                lines.extend(render::task_add_repo_execution_lines(
-                    &dw_task::repo::execute_add_repo(&plan)?,
-                ));
-                Ok(lines.join("\n"))
-            } else {
-                Ok(render::task_add_repo_plan_lines(&plan).join("\n"))
-            }
-        }
-        TuiActionRequest::TaskTeardown(args) => {
-            let plan = dw_task::repo::teardown_plan(args.clone())?;
-            if args.mode.executes() && plan.workspace.is_some() {
-                Ok(
-                    render::task_teardown_execution_lines(&dw_task::repo::execute_teardown(&plan)?)
-                        .join("\n"),
-                )
-            } else {
-                Ok(render::task_teardown_plan_lines(&plan, args.mode.executes()).join("\n"))
-            }
-        }
-        TuiActionRequest::TaskFinish(args) => {
-            let plan = dw_task::finish::finish_plan(args.clone())?;
-            if args.mode.executes() {
-                Ok(render::task_finish_execution_lines(
-                    &dw_task::finish::execute_finish(plan, args).await?,
-                )
-                .join("\n"))
-            } else {
-                Ok(render::task_finish_plan_lines(&plan).join("\n"))
-            }
-        }
-        TuiActionRequest::TaskPrune(args) => {
-            let plan = dw_task::prune::plan(args.clone()).await?;
-            if args.mode.executes() {
-                Ok(render::task_prune_execution_lines(&dw_task::prune::execute(
-                    &plan.root,
-                    plan.candidates.clone(),
-                )?)
-                .join("\n"))
-            } else {
-                Ok(render::task_prune_plan_lines(&plan).join("\n"))
-            }
-        }
-        TuiActionRequest::TaskCreateChildTask(args) => Ok(render::task_child_task_lines(
-            &dw_task::lifecycle::create_child_task_report(args.clone()).await?,
-        )
-        .join("\n")),
         TuiActionRequest::TaskAddWorkItem(args) => {
-            let plan = dw_task::work_item::add_plan(args.clone()).await?;
-            if args.mode.executes() {
-                let mut lines = render::task_work_item_plan_lines(&plan);
-                if let Some(execution) = dw_task::work_item::execute_update(&plan)? {
-                    lines.extend(render::task_work_item_execution_lines(&execution));
-                }
-                Ok(lines.join("\n"))
-            } else {
-                Ok(render::task_work_item_plan_lines(&plan).join("\n"))
-            }
+            Ok(DwActionRequest::TaskAddWorkItem(args.clone()))
         }
         TuiActionRequest::TaskRemoveWorkItem(args) => {
-            let plan = dw_task::work_item::remove_plan(args.clone())?;
-            if args.mode.executes() {
-                let mut lines = render::task_work_item_plan_lines(&plan);
-                if let Some(execution) = dw_task::work_item::execute_update(&plan)? {
-                    lines.extend(render::task_work_item_execution_lines(&execution));
-                }
-                Ok(lines.join("\n"))
-            } else {
-                Ok(render::task_work_item_plan_lines(&plan).join("\n"))
-            }
+            Ok(DwActionRequest::TaskRemoveWorkItem(args.clone()))
         }
-        TuiActionRequest::SecretGet { key } => {
-            Ok(render::secret_get_lines(&dw_secret::command::get_secret(key)?).join("\n"))
+        TuiActionRequest::SecretGet { key } => Ok(DwActionRequest::SecretGet { key: key.clone() }),
+        TuiActionRequest::SecretSetFromEnv { key, env } => Ok(DwActionRequest::SecretSetFromEnv {
+            key: key.clone(),
+            env: env.clone(),
+        }),
+        TuiActionRequest::SecretDelete { key } => {
+            Ok(DwActionRequest::SecretDelete { key: key.clone() })
         }
-        TuiActionRequest::SecretSetFromEnv { key, env } => {
-            let secret = dw_secret::secret_from_env(env)?;
-            Ok(render::secret_set_lines(&dw_secret::command::set_secret(key, &secret)?).join("\n"))
-        }
-        TuiActionRequest::SecretDelete { key } => Ok(render::secret_delete_lines(
-            &dw_secret::command::delete_secret_key(key)?,
-        )
-        .join("\n")),
     }
 }
 
@@ -402,13 +203,14 @@ mod tests {
         };
         let mut output = Vec::new();
 
-        let result = run_captured_streaming(&action, |line| output.push(line)).await;
+        let result = run_captured_streaming(&action, |event| output.push(event)).await;
 
         assert!(result.is_err());
-        assert!(
-            output
-                .iter()
-                .any(|line| line == "Resolving work items linked to PR #42...")
-        );
+        assert!(output.iter().any(|event| matches!(
+            event,
+            DwActionEvent::Task(dw_core::TaskActionEvent::ResolvingPullRequestWorkItems {
+                pull_request_id
+            }) if pull_request_id.as_str() == "42"
+        )));
     }
 }

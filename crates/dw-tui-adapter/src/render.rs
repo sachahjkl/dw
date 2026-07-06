@@ -2,8 +2,16 @@ use dw_ado_commands::auth::{
     AuthLoginMode, AuthLoginReport, AuthLogoutReport, AuthStatusReport, expiration_line,
 };
 use dw_agent::command::{AgentDoctorCheck, AgentDoctorReport};
+use dw_app::{
+    AdoActionResult, AgentActionResult, AppActionResult, ConfigActionResult, DbActionResult,
+    DwActionResult, SecretActionResult, TaskActionResult,
+};
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
 use dw_contracts::{TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightReport};
+use dw_core::{
+    AdoActionEvent, AgentActionEvent, ConfigActionEvent, DbActionEvent, DwActionEvent,
+    SecretActionEvent, TaskActionEvent, UpgradeActionEvent,
+};
 use dw_db::{QueryResult, SqlGuardResult};
 use dw_doctor::{DoctorCheck, DoctorReport};
 use dw_secret::command::{SecretDeleteReport, SecretGetReport, SecretSetReport};
@@ -314,7 +322,12 @@ pub fn ado_set_state_execution_lines(
     if !report.events.is_empty() {
         lines.push(String::new());
         lines.push("Events".into());
-        lines.extend(report.events.iter().map(|event| format!("- {event}")));
+        lines.extend(
+            report
+                .events
+                .iter()
+                .map(|event| format!("- {}", ado_action_event_line(event))),
+        );
     }
     lines
 }
@@ -486,6 +499,285 @@ pub fn db_guard_lines(result: &SqlGuardResult, theme: &TerminalTheme) -> Vec<Str
 
 pub fn db_query_table(result: &QueryResult, theme: &TerminalTheme) -> String {
     render_query_result_table(result, theme)
+}
+
+pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Vec<String> {
+    match result {
+        DwActionResult::App(AppActionResult::Version { version }) => {
+            vec![format!("Dev Workflow {version}")]
+        }
+        DwActionResult::App(AppActionResult::Guide { .. }) => {
+            vec!["Guide DevWorkflow".into()]
+        }
+        DwActionResult::Doctor(report) => doctor_report_lines(report, theme),
+        DwActionResult::Config(result) => match result {
+            ConfigActionResult::Show(report) => config_show_lines(report, theme),
+            ConfigActionResult::Init(report) => init_report_lines(report),
+            ConfigActionResult::Refresh(report) => refresh_report_lines(report),
+            ConfigActionResult::Doctor(report) => config_doctor_lines(report, theme),
+            ConfigActionResult::SetColor(report) => vec![
+                "Configuration updated".into(),
+                format!("Color     : {}", report.value),
+            ],
+            ConfigActionResult::SetRoot(report) => vec![
+                "Configuration updated".into(),
+                format!("Root      : {}", report.value),
+            ],
+        },
+        DwActionResult::Agent(result) => match result {
+            AgentActionResult::Config { root, agent } => agent_config_lines(root, agent, theme),
+            AgentActionResult::SetDefault { root, agent } => {
+                agent_config_updated_lines(root, agent, theme)
+            }
+            AgentActionResult::Doctor(report) => agent_doctor_lines(report, theme),
+        },
+        DwActionResult::Db(result) => match result {
+            DbActionResult::Guard(report) => db_guard_lines(report, theme),
+            DbActionResult::Schema(report) | DbActionResult::Query(report) => {
+                db_query_table(report, theme)
+                    .lines()
+                    .map(str::to_owned)
+                    .collect()
+            }
+            DbActionResult::Describe(Some(report)) => db_query_table(report, theme)
+                .lines()
+                .map(str::to_owned)
+                .collect(),
+            DbActionResult::Describe(None) => Vec::new(),
+        },
+        DwActionResult::Ado(result) => match result {
+            AdoActionResult::Assigned(report) => ado_assigned_lines(report, theme),
+            AdoActionResult::Prs(report) => ado_prs_lines(report),
+            AdoActionResult::Changelog(report) => ado_changelog_lines(report, theme),
+            AdoActionResult::Context(report) => ado_context_lines(report, theme),
+            AdoActionResult::AiContext(report) => serde_json::to_string_pretty(&report.items)
+                .map(|json| json.lines().map(str::to_owned).collect())
+                .unwrap_or_else(|error| vec![format!("JSON render error: {error}")]),
+            AdoActionResult::WorkItem(report) => ado_work_item_lines(report, theme),
+            AdoActionResult::SetState(report) => ado_set_state_execution_lines(report),
+        },
+        DwActionResult::Task(result) => match result.as_ref() {
+            TaskActionResult::StartPlan(report) => task_start_plan_lines(report),
+            TaskActionResult::StartExecution(report) => task_start_execution_lines(report),
+            TaskActionResult::StartPrPlan(report) => task_start_pr_plan_lines(report),
+            TaskActionResult::Preflight(report) => task_preflight_lines(report),
+            TaskActionResult::HandoffValidate(report) => task_handoff_validation_lines(report),
+            TaskActionResult::Sync(report) => task_sync_lines(report),
+            TaskActionResult::RenamePlan(report) => task_rename_plan_lines(report),
+            TaskActionResult::RenameExecution(report) => task_rename_execution_lines(report),
+            TaskActionResult::RepoLatest { plan, execution } => {
+                let mut lines = task_repo_latest_plan_lines(plan);
+                lines.extend(task_repo_latest_execution_lines(execution));
+                lines
+            }
+            TaskActionResult::CommitPlan(report) => task_commit_plan_lines(report, false),
+            TaskActionResult::CommitExecution { plan, execution } => {
+                let mut lines = task_commit_plan_lines(plan, true);
+                lines.extend(task_commit_execution_lines(execution));
+                lines
+            }
+            TaskActionResult::AddRepoPlan(report) => task_add_repo_plan_lines(report),
+            TaskActionResult::AddRepoExecution { plan, execution } => {
+                let mut lines = task_add_repo_plan_lines(plan);
+                lines.extend(task_add_repo_execution_lines(execution));
+                lines
+            }
+            TaskActionResult::TeardownPlan {
+                plan,
+                execute_requested,
+            } => task_teardown_plan_lines(plan, *execute_requested),
+            TaskActionResult::TeardownExecution(report) => task_teardown_execution_lines(report),
+            TaskActionResult::FinishPlan(report) => task_finish_plan_lines(report),
+            TaskActionResult::FinishExecution(report) => task_finish_execution_lines(report),
+            TaskActionResult::PrunePlan(report) => task_prune_plan_lines(report),
+            TaskActionResult::PruneExecution(report) => task_prune_execution_lines(report),
+            TaskActionResult::CreateChildTask(report) => task_child_task_lines(report),
+            TaskActionResult::WorkItemPlan(report) => task_work_item_plan_lines(report),
+            TaskActionResult::WorkItemExecution { plan, execution } => {
+                let mut lines = task_work_item_plan_lines(plan);
+                if let Some(execution) = execution {
+                    lines.extend(task_work_item_execution_lines(execution));
+                }
+                lines
+            }
+        },
+        DwActionResult::Secret(result) => match result {
+            SecretActionResult::Get(report) => secret_get_lines(report),
+            SecretActionResult::Set(report) => secret_set_lines(report),
+            SecretActionResult::Delete(report) => secret_delete_lines(report),
+        },
+    }
+}
+
+pub fn action_event_line(event: &DwActionEvent) -> String {
+    match event {
+        DwActionEvent::Started { action_id } => format!("Started: {action_id}"),
+        DwActionEvent::Task(event) => task_action_event_line(event),
+        DwActionEvent::Ado(event) => ado_action_event_line(event),
+        DwActionEvent::Config(event) => config_action_event_line(event),
+        DwActionEvent::Agent(event) => agent_action_event_line(event),
+        DwActionEvent::Db(event) => db_action_event_line(event),
+        DwActionEvent::Secret(event) => secret_action_event_line(event),
+        DwActionEvent::Upgrade(event) => upgrade_action_event_line(event),
+        DwActionEvent::NeedsInput { request } => format!("Input required: {request:?}"),
+        DwActionEvent::ExternalLaunch { plan } => {
+            format!("External launch: {}", plan.display_command())
+        }
+        DwActionEvent::Completed { summary } => {
+            format!("Completed: {} ({})", summary.title, summary.status)
+        }
+    }
+}
+
+fn task_action_event_line(event: &TaskActionEvent) -> String {
+    match event {
+        TaskActionEvent::ResolvingPullRequestWorkItems { pull_request_id } => {
+            format!("Task [resolve-pr-work-items] PR #{pull_request_id}")
+        }
+        TaskActionEvent::ResolvedPullRequestWorkItems { work_item_ids } => {
+            let ids = if work_item_ids.is_empty() {
+                "none".into()
+            } else {
+                work_item_ids
+                    .iter()
+                    .map(|id| format!("#{id}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            format!("Task [resolved-work-items] {ids}")
+        }
+    }
+}
+
+fn ado_action_event_line(event: &AdoActionEvent) -> String {
+    match event {
+        AdoActionEvent::Authenticating { project } => format!(
+            "ADO [auth] {}",
+            project.as_deref().unwrap_or("default project")
+        ),
+        AdoActionEvent::LoadingAssignedWorkItems { project, top } => {
+            format!("ADO [assigned] project={project} top={top}")
+        }
+        AdoActionEvent::GroupingAssignedWorkItems { project } => {
+            format!("ADO [group-assigned] project={project}")
+        }
+        AdoActionEvent::LoadingPullRequests { project } => {
+            format!("ADO [pull-requests] project={project}")
+        }
+        AdoActionEvent::ResolvingPullRequestWorkItems { repositories } => {
+            format!(
+                "ADO [resolve-pr-work-items] repos={}",
+                repositories
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+        AdoActionEvent::ExtractingGitWorkItems { git_to } => match git_to {
+            Some(git_to) => format!("ADO [extract-git-work-items] to={git_to}"),
+            None => "ADO [extract-git-work-items]".into(),
+        },
+        AdoActionEvent::LoadingWorkItem { id } => format!("ADO [work-item] #{id}"),
+        AdoActionEvent::LoadingWorkItems { ids } => {
+            format!("ADO [work-items] {}", join_display(ids))
+        }
+        AdoActionEvent::LoadingWorkItemContext { id } => {
+            format!("ADO [work-item-context] #{id}")
+        }
+        AdoActionEvent::LoadingChangelog { ids } => {
+            format!("ADO [changelog] {}", join_display(ids))
+        }
+        AdoActionEvent::LoadingChangelogItems { ids } => {
+            format!("ADO [changelog-items] {}", join_display(ids))
+        }
+        AdoActionEvent::UpdatingWorkItemState { ids, state } => {
+            format!("ADO [set-state] {} -> {state}", join_display(ids))
+        }
+        AdoActionEvent::UpdatedWorkItemState { id, state } => {
+            format!("ADO [state-updated] #{id} -> {state}")
+        }
+    }
+}
+
+fn join_display<T: ToString>(items: &[T]) -> String {
+    items
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn config_action_event_line(event: &ConfigActionEvent) -> String {
+    match event {
+        ConfigActionEvent::Reading { root } => format!(
+            "Config [read] {}",
+            root.as_deref().unwrap_or("resolved root")
+        ),
+        ConfigActionEvent::Writing { field } => format!("Config [write] {field}"),
+        ConfigActionEvent::Validating { root } => format!(
+            "Config [validate] {}",
+            root.as_deref().unwrap_or("resolved root")
+        ),
+    }
+}
+
+fn agent_action_event_line(event: &AgentActionEvent) -> String {
+    match event {
+        AgentActionEvent::Checking { agent } => {
+            format!("Agent [check] {}", agent.as_deref().unwrap_or("all"))
+        }
+        AgentActionEvent::ResolvingDefault { root } => format!("Agent [default] root={root}"),
+    }
+}
+
+fn db_action_event_line(event: &DbActionEvent) -> String {
+    match event {
+        DbActionEvent::GuardingQuery => "DB [guard-query]".into(),
+        DbActionEvent::ResolvingConnection { database } => format!(
+            "DB [resolve-connection] {}",
+            database.as_deref().unwrap_or("default")
+        ),
+        DbActionEvent::ExecutingReadOnlyQuery { max_rows } => match max_rows {
+            Some(max_rows) => format!("DB [query] max_rows={max_rows}"),
+            None => "DB [query]".into(),
+        },
+    }
+}
+
+fn secret_action_event_line(event: &SecretActionEvent) -> String {
+    match event {
+        SecretActionEvent::Reading { key } => format!("Secret [read] {key}"),
+        SecretActionEvent::Writing { key } => format!("Secret [write] {key}"),
+        SecretActionEvent::Deleting { key } => format!("Secret [delete] {key}"),
+    }
+}
+
+fn upgrade_action_event_line(event: &UpgradeActionEvent) -> String {
+    match event {
+        UpgradeActionEvent::CheckingHost => "Upgrade [check-host]".into(),
+        UpgradeActionEvent::ResolvingConfig => "Upgrade [resolve-config]".into(),
+        UpgradeActionEvent::FetchingRelease { owner, repository } => {
+            format!("Upgrade [fetch-release] {owner}/{repository}")
+        }
+        UpgradeActionEvent::FetchingManifest { asset_name } => {
+            format!("Upgrade [fetch-manifest] {asset_name}")
+        }
+        UpgradeActionEvent::SelectingAsset { rid } => format!("Upgrade [select-asset] {rid}"),
+        UpgradeActionEvent::DownloadingAsset { file_name } => {
+            format!("Upgrade [download] {file_name}")
+        }
+        UpgradeActionEvent::VerifyingChecksum { file_name } => {
+            format!("Upgrade [checksum] {file_name}")
+        }
+        UpgradeActionEvent::PreparingExecutable { file_name } => {
+            format!("Upgrade [prepare] {file_name}")
+        }
+        UpgradeActionEvent::ReplacingExecutable { executable_path } => {
+            format!("Upgrade [replace] {executable_path}")
+        }
+        UpgradeActionEvent::Completed { version } => format!("Upgrade [complete] {version}"),
+    }
 }
 
 pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
@@ -2108,7 +2400,10 @@ mod tests {
                 state: "Actif".into(),
                 history: "tui".into(),
             },
-            events: vec!["ADO item #42: état -> Actif".into()],
+            events: vec![dw_core::AdoActionEvent::UpdatedWorkItemState {
+                id: dw_core::WorkItemId::from("42"),
+                state: "Actif".into(),
+            }],
             updated: vec![
                 dw_ado_commands::commands::set_state::SetStateUpdate {
                     id: "42".into(),

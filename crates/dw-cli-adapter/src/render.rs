@@ -4,6 +4,7 @@ use dw_ado_commands::auth::{
 use dw_agent::command::{AgentDoctorCheck, AgentDoctorReport};
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
 use dw_contracts::{TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightReport};
+use dw_core::AdoActionEvent;
 use dw_db::{QueryResult, SqlGuardResult};
 use dw_doctor::{DoctorCheck, DoctorReport};
 use dw_secret::command::{SecretDeleteReport, SecretGetReport, SecretSetReport};
@@ -313,9 +314,69 @@ pub fn ado_set_state_execution_lines(
     if !report.events.is_empty() {
         lines.push(String::new());
         lines.push("Événements".into());
-        lines.extend(report.events.iter().map(|event| format!("- {event}")));
+        lines.extend(
+            report
+                .events
+                .iter()
+                .map(|event| format!("- {}", ado_action_event_line(event))),
+        );
     }
     lines
+}
+
+pub fn ado_action_event_line(event: &AdoActionEvent) -> String {
+    match event {
+        AdoActionEvent::Authenticating { project } => format!(
+            "ADO auth: {}",
+            project.as_deref().unwrap_or("projet résolu")
+        ),
+        AdoActionEvent::LoadingAssignedWorkItems { project, top } => {
+            format!("ADO assigned: projet={project} top={top}")
+        }
+        AdoActionEvent::GroupingAssignedWorkItems { project } => {
+            format!("ADO groupement parent: projet={project}")
+        }
+        AdoActionEvent::LoadingPullRequests { project } => {
+            format!("ADO pull requests: projet={project}")
+        }
+        AdoActionEvent::ResolvingPullRequestWorkItems { repositories } => format!(
+            "ADO résolution PR: repos={}",
+            repositories
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        AdoActionEvent::ExtractingGitWorkItems { git_to } => match git_to {
+            Some(git_to) => format!("ADO extraction git: jusqu'à {git_to}"),
+            None => "ADO extraction git".into(),
+        },
+        AdoActionEvent::LoadingWorkItem { id } => format!("ADO work item: #{id}"),
+        AdoActionEvent::LoadingWorkItems { ids } => {
+            format!("ADO work items: {}", join_display(ids))
+        }
+        AdoActionEvent::LoadingWorkItemContext { id } => format!("ADO contexte: #{id}"),
+        AdoActionEvent::LoadingChangelog { ids } => {
+            format!("ADO changelog: {}", join_display(ids))
+        }
+        AdoActionEvent::LoadingChangelogItems { ids } => {
+            format!("ADO items changelog: {}", join_display(ids))
+        }
+        AdoActionEvent::UpdatingWorkItemState { ids, state } => {
+            format!("ADO changement état: {} -> {state}", join_display(ids))
+        }
+        AdoActionEvent::UpdatedWorkItemState { id, state } => {
+            format!("ADO état changé: #{id} -> {state}")
+        }
+    }
+}
+
+fn join_display<T: ToString>(items: &[T]) -> String {
+    items
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn ado_work_item_lines(
@@ -2141,7 +2202,10 @@ mod tests {
                 state: "Actif".into(),
                 history: "dw ado set-state".into(),
             },
-            events: vec!["ADO item #42: état -> Actif".into()],
+            events: vec![dw_core::AdoActionEvent::UpdatedWorkItemState {
+                id: dw_core::WorkItemId::from("42"),
+                state: "Actif".into(),
+            }],
             updated: vec![
                 dw_ado_commands::commands::set_state::SetStateUpdate {
                     id: "42".into(),

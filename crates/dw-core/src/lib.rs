@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreContext {
@@ -274,6 +275,262 @@ impl ActionEvent {
             message: message.into(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InputRequest {
+    Confirm {
+        id: String,
+        label: String,
+        help: Option<String>,
+        default: bool,
+    },
+    SelectOne {
+        id: String,
+        label: String,
+        help: Option<String>,
+        choices: Vec<PromptChoice>,
+    },
+    SelectMany {
+        id: String,
+        label: String,
+        help: Option<String>,
+        choices: Vec<PromptChoice>,
+    },
+    Text {
+        id: String,
+        label: String,
+        help: Option<String>,
+        default: Option<String>,
+    },
+    Secret {
+        id: String,
+        label: String,
+        help: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum InputResponse {
+    Confirm { accepted: bool },
+    SelectOne { value: String },
+    SelectMany { values: Vec<String> },
+    Text { value: String },
+    Secret { value: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DwActionEvent {
+    Started { action_id: String },
+    Task(TaskActionEvent),
+    Ado(AdoActionEvent),
+    Config(ConfigActionEvent),
+    Agent(AgentActionEvent),
+    Db(DbActionEvent),
+    Secret(SecretActionEvent),
+    Upgrade(UpgradeActionEvent),
+    NeedsInput { request: InputRequest },
+    ExternalLaunch { plan: ExternalLaunchPlan },
+    Completed { summary: ActionSummary },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct WorkItemId(String);
+
+impl WorkItemId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for WorkItemId {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for WorkItemId {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for WorkItemId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PullRequestId(String);
+
+impl PullRequestId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for PullRequestId {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for PullRequestId {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for PullRequestId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AdoRepositoryName(String);
+
+impl AdoRepositoryName {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for AdoRepositoryName {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for AdoRepositoryName {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for AdoRepositoryName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum TaskActionEvent {
+    ResolvingPullRequestWorkItems { pull_request_id: PullRequestId },
+    ResolvedPullRequestWorkItems { work_item_ids: Vec<WorkItemId> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum AdoActionEvent {
+    Authenticating {
+        project: Option<String>,
+    },
+    LoadingAssignedWorkItems {
+        project: String,
+        top: i32,
+    },
+    GroupingAssignedWorkItems {
+        project: String,
+    },
+    LoadingPullRequests {
+        project: String,
+    },
+    ResolvingPullRequestWorkItems {
+        repositories: Vec<AdoRepositoryName>,
+    },
+    ExtractingGitWorkItems {
+        git_to: Option<String>,
+    },
+    LoadingWorkItem {
+        id: String,
+    },
+    LoadingWorkItems {
+        ids: Vec<WorkItemId>,
+    },
+    LoadingWorkItemContext {
+        id: String,
+    },
+    LoadingChangelog {
+        ids: Vec<WorkItemId>,
+    },
+    LoadingChangelogItems {
+        ids: Vec<WorkItemId>,
+    },
+    UpdatingWorkItemState {
+        ids: Vec<WorkItemId>,
+        state: String,
+    },
+    UpdatedWorkItemState {
+        id: WorkItemId,
+        state: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum ConfigActionEvent {
+    Reading { root: Option<String> },
+    Writing { field: String },
+    Validating { root: Option<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum AgentActionEvent {
+    Checking { agent: Option<String> },
+    ResolvingDefault { root: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DbActionEvent {
+    GuardingQuery,
+    ResolvingConnection { database: Option<String> },
+    ExecutingReadOnlyQuery { max_rows: Option<usize> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum SecretActionEvent {
+    Reading { key: String },
+    Writing { key: String },
+    Deleting { key: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum UpgradeActionEvent {
+    CheckingHost,
+    ResolvingConfig,
+    FetchingRelease { owner: String, repository: String },
+    FetchingManifest { asset_name: String },
+    SelectingAsset { rid: String },
+    DownloadingAsset { file_name: String },
+    VerifyingChecksum { file_name: String },
+    PreparingExecutable { file_name: String },
+    ReplacingExecutable { executable_path: String },
+    Completed { version: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

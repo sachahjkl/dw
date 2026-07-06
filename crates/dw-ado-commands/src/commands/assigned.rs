@@ -6,7 +6,7 @@ use dw_ado::{
     query_assigned_work_items, run_blocking_ado,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{ActionEvent, PromptChoice, PromptSpec};
+use dw_core::{AdoActionEvent, PromptChoice, PromptSpec};
 use serde::Serialize;
 
 pub const MANUAL_WORK_ITEM_PROMPT_VALUE: &str = "__manual_work_item_id__";
@@ -32,7 +32,7 @@ pub struct AssignedReport {
     pub group_by_parent: bool,
     pub items: Vec<WorkItemSnapshot>,
     pub groups: Vec<WorkItemGroup>,
-    pub events: Vec<String>,
+    pub events: Vec<AdoActionEvent>,
 }
 
 pub async fn report(args: AssignedArgs) -> Result<AssignedReport> {
@@ -41,7 +41,7 @@ pub async fn report(args: AssignedArgs) -> Result<AssignedReport> {
 
 pub async fn report_with_events(
     args: AssignedArgs,
-    mut emit: impl FnMut(ActionEvent),
+    mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<AssignedReport> {
     let AssignedArgs {
         root,
@@ -60,13 +60,18 @@ pub async fn report_with_events(
     push_event(
         &mut events,
         &mut emit,
-        format!("Connexion Azure DevOps pour le projet {project_key}..."),
+        AdoActionEvent::Authenticating {
+            project: Some(project_key.clone()),
+        },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
     push_event(
         &mut events,
         &mut emit,
-        "Chargement des work items assignés...",
+        AdoActionEvent::LoadingAssignedWorkItems {
+            project: project_key.clone(),
+            top,
+        },
     );
     let items = query_assigned_work_items(&options, top.try_into().unwrap_or(20), &token).await?;
     let items = items
@@ -74,7 +79,13 @@ pub async fn report_with_events(
         .filter(|item| all || !is_final_state(item.kind.as_deref(), item.state.as_deref()))
         .collect::<Vec<_>>();
     let groups = if group_by_parent && !items.is_empty() {
-        push_event(&mut events, &mut emit, "Groupement par parent ADO...");
+        push_event(
+            &mut events,
+            &mut emit,
+            AdoActionEvent::GroupingAssignedWorkItems {
+                project: project_key.clone(),
+            },
+        );
         let options = options.clone();
         let items_for_grouping = items.clone();
         let token = token.clone();
@@ -96,13 +107,12 @@ pub async fn report_with_events(
 }
 
 fn push_event(
-    events: &mut Vec<String>,
-    emit: &mut impl FnMut(ActionEvent),
-    message: impl Into<String>,
+    events: &mut Vec<AdoActionEvent>,
+    emit: &mut impl FnMut(AdoActionEvent),
+    event: AdoActionEvent,
 ) {
-    let message = message.into();
-    emit(ActionEvent::info(message.clone()));
-    events.push(message);
+    emit(event.clone());
+    events.push(event);
 }
 
 pub fn empty_assigned_message(include_final_states: bool) -> &'static str {
@@ -216,10 +226,25 @@ mod tests {
         push_event(
             &mut final_events,
             &mut |event| streamed.push(event),
-            "Chargement",
+            AdoActionEvent::LoadingAssignedWorkItems {
+                project: "ha".into(),
+                top: 20,
+            },
         );
 
-        assert_eq!(final_events, ["Chargement"]);
-        assert_eq!(streamed[0], ActionEvent::info("Chargement"));
+        assert_eq!(
+            final_events,
+            [AdoActionEvent::LoadingAssignedWorkItems {
+                project: "ha".into(),
+                top: 20,
+            }]
+        );
+        assert_eq!(
+            streamed[0],
+            AdoActionEvent::LoadingAssignedWorkItems {
+                project: "ha".into(),
+                top: 20,
+            }
+        );
     }
 }

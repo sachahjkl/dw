@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/dw-app",
   "crates/dw-core",
   "crates/dw-cli-adapter",
   "crates/dw-tui-adapter",

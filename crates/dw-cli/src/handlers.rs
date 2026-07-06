@@ -6,7 +6,7 @@ use dw_cli_adapter::{
     PromptUi, confirm_risk_prompt_spec, print_json, print_lines, project_prompt_spec,
     repositories_prompt_spec,
 };
-use dw_core::{ActionEvent, ExecutionMode, PromptKind, PromptSpec};
+use dw_core::{AdoActionEvent, ExecutionMode, PromptKind, PromptSpec};
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
 use std::collections::HashSet;
@@ -860,7 +860,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 },
                 |event| {
                     if !json {
-                        print_action_event(event);
+                        print_ado_action_event(event);
                     }
                 },
             )
@@ -925,7 +925,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                     ids_only,
                     git_to,
                 },
-                print_action_event,
+                print_ado_action_event,
             )
             .await?;
             report.events.clear();
@@ -960,7 +960,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             let mut execution =
                 dw_ado_commands::commands::set_state::execute_with_events(plan, |event| {
                     if !json {
-                        print_action_event(event);
+                        print_ado_action_event(event);
                     }
                 })
                 .await?;
@@ -983,7 +983,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 dw_ado_commands::commands::work_item::WorkItemArgs { id, root, project },
                 |event| {
                     if !json {
-                        print_action_event(event);
+                        print_ado_action_event(event);
                     }
                 },
             )
@@ -1021,7 +1021,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 },
                 |event| {
                     if !json {
-                        print_action_event(event);
+                        print_ado_action_event(event);
                     }
                 },
             )
@@ -1064,11 +1064,8 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
     Ok(())
 }
 
-fn print_action_event(event: ActionEvent) {
-    if event.message.trim().is_empty() {
-        return;
-    }
-    print_lines(&[event.message]);
+fn print_ado_action_event(event: AdoActionEvent) {
+    print_lines(&[dw_cli_adapter::render::ado_action_event_line(&event)]);
 }
 
 fn add_work_item_choices_loading_line() -> String {

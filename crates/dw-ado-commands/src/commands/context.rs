@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use dw_ado::auth::{AdoToken, require_token};
 use dw_ado::{get_ai_context, get_work_item_expanded};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::ActionEvent;
+use dw_core::{AdoActionEvent, WorkItemId};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -35,7 +35,7 @@ pub struct ContextReport {
     pub comments: i32,
     pub expanded: Vec<Value>,
     pub items: Vec<dw_contracts::AdoAiContextItem>,
-    pub events: Vec<String>,
+    pub events: Vec<AdoActionEvent>,
 }
 
 #[derive(Debug, Clone)]
@@ -59,7 +59,7 @@ pub struct AiContextReport {
     #[serde(rename = "includeComments")]
     pub include_comments: bool,
     pub items: Vec<dw_contracts::AdoAiContextItem>,
-    pub events: Vec<String>,
+    pub events: Vec<AdoActionEvent>,
 }
 
 pub async fn context_report(args: ContextArgs) -> Result<ContextReport> {
@@ -68,7 +68,7 @@ pub async fn context_report(args: ContextArgs) -> Result<ContextReport> {
 
 pub async fn context_report_with_events(
     args: ContextArgs,
-    mut emit: impl FnMut(ActionEvent),
+    mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<ContextReport> {
     let ContextArgs {
         id,
@@ -88,14 +88,18 @@ pub async fn context_report_with_events(
     push_event(
         &mut events,
         &mut emit,
-        format!("Connexion Azure DevOps pour le projet {project_key}..."),
+        AdoActionEvent::Authenticating {
+            project: Some(project_key.clone()),
+        },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let ids = parse_work_item_ids_as_strings(&id)?;
     push_event(
         &mut events,
         &mut emit,
-        context_fetch_line(ids.len(), mode == ContextMode::AiContext, comments),
+        AdoActionEvent::LoadingWorkItems {
+            ids: ids.iter().cloned().map(WorkItemId::from).collect(),
+        },
     );
     if mode == ContextMode::Expanded {
         let options = options.clone();
@@ -142,7 +146,7 @@ pub async fn ai_context_report(args: AiContextArgs) -> Result<AiContextReport> {
 
 pub async fn ai_context_report_with_events(
     args: AiContextArgs,
-    mut emit: impl FnMut(ActionEvent),
+    mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<AiContextReport> {
     let AiContextArgs {
         root,
@@ -159,14 +163,16 @@ pub async fn ai_context_report_with_events(
     push_event(
         &mut events,
         &mut emit,
-        "Connexion Azure DevOps pour le contexte IA...".into(),
+        AdoActionEvent::Authenticating { project: None },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let ids = parse_work_item_ids_as_strings(&id)?;
     push_event(
         &mut events,
         &mut emit,
-        context_fetch_line(ids.len(), include_comments, comments),
+        AdoActionEvent::LoadingWorkItems {
+            ids: ids.iter().cloned().map(WorkItemId::from).collect(),
+        },
     );
     let context_ids = ids.clone();
     let context_comments = if include_comments { comments } else { 0 };
@@ -223,9 +229,13 @@ fn load_ai_context_items(
         .collect::<Result<Vec<_>, _>>()?)
 }
 
-fn push_event(events: &mut Vec<String>, emit: &mut impl FnMut(ActionEvent), message: String) {
-    emit(ActionEvent::info(message.clone()));
-    events.push(message);
+fn push_event(
+    events: &mut Vec<AdoActionEvent>,
+    emit: &mut impl FnMut(AdoActionEvent),
+    event: AdoActionEvent,
+) {
+    emit(event.clone());
+    events.push(event);
 }
 
 pub fn context_fetch_line(count: usize, include_comments: bool, comments: i32) -> String {

@@ -40,7 +40,7 @@ pub enum BackgroundResult {
         refresh_after_success: bool,
         open_after_success: bool,
         effect: Option<ActionEffect>,
-        result: Result<CapturedActionRunResult, String>,
+        result: Box<Result<CapturedActionRunResult, String>>,
     },
 }
 
@@ -270,11 +270,11 @@ impl BackgroundJobs {
             let output_sender = sender.clone();
             let output_label = label.clone();
             let result = match tokio::spawn(async move {
-                runner::run_captured_streaming(&action, move |line| {
+                runner::run_captured_streaming(&action, move |event| {
                     let _ = output_sender.send(BackgroundResult::ActionOutput {
                         generation,
                         label: output_label.clone(),
-                        line,
+                        line: dw_tui_adapter::render::action_event_line(&event),
                     });
                 })
                 .await
@@ -295,7 +295,7 @@ impl BackgroundJobs {
                 refresh_after_success,
                 open_after_success,
                 effect,
-                result,
+                result: Box::new(result),
             });
         });
     }
