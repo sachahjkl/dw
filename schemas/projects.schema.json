@@ -91,6 +91,10 @@
         "anchorName": {
           "type": "string"
         },
+        "gitCredentialSecret": {
+          "type": "string",
+          "minLength": 1
+        },
         "folder": {
           "type": "string"
         }

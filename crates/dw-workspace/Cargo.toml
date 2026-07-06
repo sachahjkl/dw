@@ -14,6 +14,7 @@ dw-core = { path = "../dw-core" }
 dw-contracts = { path = "../dw-contracts" }
 dw-git = { path = "../dw-git" }
 dw-process = { path = "../dw-process" }
+dw-secret = { path = "../dw-secret" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

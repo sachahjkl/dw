@@ -11,14 +11,15 @@ use dw_contracts::{
 };
 use dw_core::{
     AiContextFilePath, BranchName, CommitMessage, GitAnchorName, HandoffFilePath,
-    HandoffParseError, ProjectKey, ProjectRootPath, RepositoryPath, TaskId, TaskSlug, WorkItemId,
-    WorkItemState, WorkItemTitle, WorkItemTypeName, WorkspaceOperationError, WorkspacePath,
-    WorkspaceRepositoryName,
+    HandoffParseError, ProjectKey, ProjectRootPath, RepositoryPath, SecretKey, TaskId, TaskSlug,
+    WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName, WorkspaceOperationError,
+    WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
-    WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
+    GitCredential, WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
     slug_from_phrase_or_fallback,
 };
+use dw_secret::{KeyringSecretStore, SecretStore};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -209,6 +210,8 @@ pub struct TaskStartRepositoryPlan {
     pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
     pub anchor_name: GitAnchorName,
+    #[serde(rename = "gitCredentialSecret")]
+    pub git_credential_secret: Option<SecretKey>,
     #[serde(rename = "branchName")]
     pub branch_name: BranchName,
 }
@@ -234,6 +237,8 @@ pub struct TaskRepoLatestTarget {
     pub repository_path: RepositoryPath,
     #[serde(rename = "defaultBranch")]
     pub default_branch: BranchName,
+    #[serde(rename = "gitCredentialSecret")]
+    pub git_credential_secret: Option<SecretKey>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -268,6 +273,8 @@ pub struct TaskAddRepoPlan {
     pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
     pub anchor_name: String,
+    #[serde(rename = "gitCredentialSecret")]
+    pub git_credential_secret: Option<SecretKey>,
     #[serde(rename = "branchName")]
     pub branch_name: BranchName,
     pub repositories: Vec<WorkspaceRepositoryName>,
@@ -844,6 +851,7 @@ pub fn plan_task_repo_latest(
                     pull_request_target_branch: None,
                     azure_dev_ops_repository: None,
                     anchor_name: None,
+                    git_credential_secret: None,
                     folder: Some(repository.to_string()),
                 });
             let folder = repository_config
@@ -859,6 +867,7 @@ pub fn plan_task_repo_latest(
                         .to_string(),
                 ),
                 default_branch: BranchName::from(repository_config.default_branch),
+                git_credential_secret: repository_config.git_credential_secret,
             }
         })
         .collect::<Vec<_>>();
@@ -1176,6 +1185,7 @@ pub fn plan_task_add_repo(
                 url: String::new(),
                 default_branch: BranchName::from("main"),
                 anchor_name: format!("{repository}.git"),
+                git_credential_secret: None,
                 branch_name: manifest.branch_name.clone(),
                 repositories: manifest.repositories.clone(),
             },
@@ -1221,6 +1231,7 @@ pub fn plan_task_add_repo(
             url: repository_config.url,
             default_branch: BranchName::from(repository_config.default_branch),
             anchor_name,
+            git_credential_secret: repository_config.git_credential_secret,
             branch_name: manifest.branch_name.clone(),
             repositories,
         },
@@ -1269,6 +1280,7 @@ pub fn plan_task_teardown(
                 pull_request_target_branch: None,
                 azure_dev_ops_repository: None,
                 anchor_name: None,
+                git_credential_secret: None,
                 folder: Some(repository_key.to_string()),
             });
         let folder = repository
@@ -1425,6 +1437,12 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
         }
     } else {
         for target in &plan.repository_worktrees {
+            let credential =
+                resolve_git_credential_from_keyring(target.git_credential_secret.as_ref())
+                    .map_err(|message| WorkspaceError::WorktreePrepareFailed {
+                        repository: target.repository.clone(),
+                        message,
+                    })?;
             prepare_worktree(&WorktreePrepareRequest {
                 project_root: target.project_root.to_string(),
                 repository: target.repository.to_string(),
@@ -1433,6 +1451,7 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
                 anchor_name: target.anchor_name.to_string(),
                 branch_name: target.branch_name.to_string(),
                 worktree_path: target.worktree_path.to_string(),
+                credential,
             })
             .map_err(|error| WorkspaceError::WorktreePrepareFailed {
                 repository: target.repository.clone(),
@@ -1659,6 +1678,7 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
                     pull_request_target_branch: None,
                     azure_dev_ops_repository: None,
                     anchor_name: None,
+                    git_credential_secret: None,
                     folder: Some(repository_key.to_string()),
                 });
             let folder = repository_folders
@@ -1682,6 +1702,7 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
                 url: repository.url,
                 default_branch: BranchName::from(repository.default_branch),
                 anchor_name: GitAnchorName::from(anchor_name),
+                git_credential_secret: repository.git_credential_secret,
                 branch_name: branch_name.clone(),
             }
         })
@@ -1789,6 +1810,7 @@ pub fn resolve_open_target(
             pull_request_target_branch: None,
             azure_dev_ops_repository: None,
             anchor_name: None,
+            git_credential_secret: None,
             folder: Some(repository_key.into()),
         });
     let folder = repository.folder.unwrap_or_else(|| repository_key.into());
@@ -1929,6 +1951,24 @@ impl WorkspaceManifest {
             .iter()
             .any(|id| id.as_str().eq_ignore_ascii_case(work_item_id))
     }
+}
+
+pub fn resolve_git_credential_from_keyring(
+    secret_key: Option<&SecretKey>,
+) -> Result<Option<GitCredential>, WorkspaceOperationError> {
+    let Some(secret_key) = secret_key else {
+        return Ok(None);
+    };
+    let store = KeyringSecretStore;
+    let secret = store.get(secret_key).map_err(|error| {
+        WorkspaceOperationError::from(format!("Secret Git illisible `{secret_key}`: {error}"))
+    })?;
+    let Some(secret) = secret else {
+        return Err(WorkspaceOperationError::from(format!(
+            "Secret Git introuvable `{secret_key}`. Stocker le PAT avec `dw secret set {secret_key}` ou retirer gitCredentialSecret."
+        )));
+    };
+    Ok(Some(GitCredential::personal_access_token(secret)))
 }
 
 pub fn try_parse_summary(
@@ -3168,6 +3208,7 @@ artifacts:
                 url: temp.path().join("missing-remote.git").display().to_string(),
                 default_branch: BranchName::from("develop"),
                 anchor_name: GitAnchorName::from("front.git"),
+                git_credential_secret: None,
                 branch_name: BranchName::from("feat/123-demo"),
             }],
         };

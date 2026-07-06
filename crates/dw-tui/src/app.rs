@@ -280,7 +280,7 @@ impl App {
     }
 
     #[cfg(test)]
-    pub fn running_action_label(&self) -> Option<&str> {
+    pub fn running_action_label(&self) -> Option<&ActionRunLabel> {
         self.background.action_label()
     }
 
@@ -288,7 +288,7 @@ impl App {
         self.background.pending_action_count()
     }
 
-    pub fn pending_action_labels(&self) -> Vec<String> {
+    pub fn pending_action_labels(&self) -> Vec<ActionRunLabel> {
         self.background.pending_action_labels()
     }
 
@@ -1639,8 +1639,7 @@ impl App {
         if !action.runs_attached_in_tui() {
             match self.background.start_action(action) {
                 ActionStart::Started { run_id, label } => {
-                    self.history
-                        .start_running(run_id, ActionRunLabel::new(label.clone()));
+                    self.history.start_running(run_id, label.clone());
                     self.messages.push(format!("Background launch: {label}"));
                 }
                 ActionStart::Queued { label, position } => {
@@ -1676,7 +1675,7 @@ impl App {
     fn accept_action_result(
         &mut self,
         run_id: ActionRunId,
-        label: String,
+        label: ActionRunLabel,
         refresh_after_success: bool,
         open_after_success: bool,
         effect: Option<ActionEffect>,
@@ -1697,7 +1696,7 @@ impl App {
                 {
                     self.history.push(RunHistoryEntry {
                         id: run_id,
-                        request_label: ActionRunLabel::new(result.display_label.clone()),
+                        request_label: label.clone(),
                         status: ActionRunStatus::Succeeded,
                         record: record.clone(),
                     });
@@ -1729,7 +1728,7 @@ impl App {
                 {
                     self.history.push(RunHistoryEntry {
                         id: run_id,
-                        request_label: ActionRunLabel::new(error.display_label.clone()),
+                        request_label: label.clone(),
                         status: ActionRunStatus::Failed,
                         record,
                     });
@@ -1778,8 +1777,7 @@ impl App {
 
     fn continue_action_queue(&mut self) {
         if let Some((run_id, label)) = self.background.start_next_action() {
-            self.history
-                .start_running(run_id, ActionRunLabel::new(label.clone()));
+            self.history.start_running(run_id, label.clone());
             self.messages
                 .push(format!("Next background launch: {label}"));
         } else if self.reload_after_action_queue {
@@ -3277,7 +3275,7 @@ mod tests {
 
         app.accept_action_result(
             run_id,
-            "Version".into(),
+            ActionRunLabel::new("Version"),
             false,
             false,
             None,
@@ -3307,7 +3305,7 @@ mod tests {
 
         app.accept_action_result(
             run_id,
-            "My work items · ha".into(),
+            ActionRunLabel::new("My work items · ha"),
             false,
             true,
             None,
@@ -3338,7 +3336,7 @@ mod tests {
 
         app.accept_action_result(
             ActionRunId::new(1),
-            "Color · always".into(),
+            ActionRunLabel::new("Color · always"),
             true,
             false,
             Some(ActionEffect::ColorMode(dw_core::ConfigColorMode::Always)),
@@ -3359,7 +3357,7 @@ mod tests {
 
         app.accept_action_result(
             ActionRunId::new(1),
-            "Default agent · codex".into(),
+            ActionRunLabel::new("Default agent · codex"),
             true,
             false,
             Some(ActionEffect::DefaultAgent(dw_core::Agent::Codex)),
@@ -3380,7 +3378,7 @@ mod tests {
 
         app.accept_action_result(
             ActionRunId::new(1),
-            "Default agent · CODEX-CLI".into(),
+            ActionRunLabel::new("Default agent · CODEX-CLI"),
             true,
             false,
             Some(ActionEffect::DefaultAgent(dw_core::Agent::CodexCli)),
@@ -3404,7 +3402,7 @@ mod tests {
 
         app.accept_action_result(
             ActionRunId::new(1),
-            "Root · /tmp/new-root".into(),
+            ActionRunLabel::new("Root · /tmp/new-root"),
             true,
             false,
             Some(ActionEffect::Root("/tmp/new-root".into())),
@@ -3426,7 +3424,7 @@ mod tests {
 
         app.accept_action_result(
             ActionRunId::new(1),
-            "Task sync · /tmp/ws".into(),
+            ActionRunLabel::new("Task sync · /tmp/ws"),
             true,
             false,
             None,

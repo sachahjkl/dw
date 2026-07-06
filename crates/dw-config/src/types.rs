@@ -95,6 +95,8 @@ pub struct RepositoryConfig {
     pub azure_dev_ops_repository: Option<String>,
     #[serde(rename = "anchorName")]
     pub anchor_name: Option<String>,
+    #[serde(rename = "gitCredentialSecret")]
+    pub git_credential_secret: Option<dw_core::SecretKey>,
     pub folder: Option<String>,
 }
 

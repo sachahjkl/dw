@@ -1137,8 +1137,11 @@ name = "dw-git"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "deunicode",
+ "dw-core",
  "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1261,6 +1264,7 @@ dependencies = [
  "dw-core",
  "dw-git",
  "dw-process",
+ "dw-secret",
  "serde",
  "serde_json",
  "tempfile",

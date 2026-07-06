@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use dw_config::{load_projects_config, resolve_project, resolve_root};
 use dw_core::{
     BranchName, CommitMessage, DevWorkflowRoot, ProjectKey, RepositoryPath, WorkItemId,
@@ -11,8 +11,8 @@ use dw_git::{
 use dw_workspace::{
     WorkspaceError, WorkspaceManifest, WorkspaceTeardownStep, build_commit_message,
     execute_task_add_repo, execute_task_teardown, plan_task_add_repo, plan_task_commit,
-    plan_task_repo_latest, plan_task_teardown, resolve_workspace_by_work_item_ids,
-    resolve_workspace_for_workspace_command,
+    plan_task_repo_latest, plan_task_teardown, resolve_git_credential_from_keyring,
+    resolve_workspace_by_work_item_ids, resolve_workspace_for_workspace_command,
 };
 use serde::{Deserialize, Serialize};
 
@@ -162,9 +162,12 @@ pub fn repo_latest_plan(args: RepoLatestArgs) -> Result<RepoLatestPlanReport> {
 pub fn execute_repo_latest(plan: &RepoLatestPlanReport) -> Result<RepoLatestExecutionReport> {
     let mut updated = Vec::new();
     for target in &plan.targets {
+        let credential = resolve_git_credential_from_keyring(target.git_credential_secret.as_ref())
+            .map_err(|message| anyhow!(message.to_string()))?;
         update_repository(
             target.repository_path.as_str(),
             target.default_branch.as_str(),
+            credential.as_ref(),
         )?;
         updated.push(RepoLatestUpdate {
             repository: target.repository.clone(),
@@ -255,6 +258,8 @@ pub fn add_repo_plan(args: AddRepoArgs) -> Result<AddRepoPlanReport> {
 
 pub fn execute_add_repo(plan: &AddRepoPlanReport) -> Result<AddRepoExecutionReport> {
     let manifest = dw_workspace::read_manifest_path(&format!("{}/task.json", plan.plan.workspace))?;
+    let credential = resolve_git_credential_from_keyring(plan.plan.git_credential_secret.as_ref())
+        .map_err(|message| anyhow!(message.to_string()))?;
     let worktree = prepare_worktree(&WorktreePrepareRequest {
         project_root: plan.plan.project_root.to_string(),
         repository: plan.plan.repository.to_string(),
@@ -263,6 +268,7 @@ pub fn execute_add_repo(plan: &AddRepoPlanReport) -> Result<AddRepoExecutionRepo
         anchor_name: plan.plan.anchor_name.clone(),
         branch_name: plan.plan.branch_name.to_string(),
         worktree_path: plan.plan.worktree_path.to_string(),
+        credential,
     })?;
     let updated = execute_task_add_repo(&manifest, &plan.plan)?;
     write_workspace_agent_configs(plan.plan.workspace.as_str(), &updated)?;

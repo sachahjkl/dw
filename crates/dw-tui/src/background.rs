@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::time::{Duration, Instant};
 
-use crate::history::ActionRunId;
+use crate::history::{ActionRunId, ActionRunLabel};
 use crate::model::{
     self, ActionEffect, AdoAssignedProject, TuiAction, TuiPullRequest, TuiSnapshot,
 };
@@ -39,7 +39,7 @@ pub enum BackgroundResult {
     Action {
         generation: u64,
         run_id: ActionRunId,
-        label: String,
+        label: ActionRunLabel,
         refresh_after_success: bool,
         open_after_success: bool,
         effect: Option<ActionEffect>,
@@ -49,8 +49,14 @@ pub enum BackgroundResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionStart {
-    Started { run_id: ActionRunId, label: String },
-    Queued { label: String, position: usize },
+    Started {
+        run_id: ActionRunId,
+        label: ActionRunLabel,
+    },
+    Queued {
+        label: ActionRunLabel,
+        position: usize,
+    },
 }
 
 pub struct BackgroundJobs {
@@ -62,7 +68,7 @@ pub struct BackgroundJobs {
     assigned: Option<RunningJob>,
     pull_requests: Option<RunningJob>,
     action: Option<RunningJob>,
-    action_label: Option<String>,
+    action_label: Option<ActionRunLabel>,
     pending_actions: VecDeque<TuiAction>,
 }
 
@@ -110,18 +116,18 @@ impl BackgroundJobs {
         self.running(kind).map(|job| format_elapsed(job.elapsed()))
     }
 
-    pub fn action_label(&self) -> Option<&str> {
-        self.action_label.as_deref()
+    pub fn action_label(&self) -> Option<&ActionRunLabel> {
+        self.action_label.as_ref()
     }
 
     pub fn pending_action_count(&self) -> usize {
         self.pending_actions.len()
     }
 
-    pub fn pending_action_labels(&self) -> Vec<String> {
+    pub fn pending_action_labels(&self) -> Vec<ActionRunLabel> {
         self.pending_actions
             .iter()
-            .map(TuiAction::display_label)
+            .map(|action| ActionRunLabel::new(action.display_label()))
             .collect()
     }
 
@@ -175,7 +181,7 @@ impl BackgroundJobs {
     }
 
     pub fn start_action(&mut self, action: TuiAction) -> ActionStart {
-        let label = action.display_label();
+        let label = ActionRunLabel::new(action.display_label());
         if self.is_loading(BackgroundKind::Action) {
             self.pending_actions.push_back(action);
             return ActionStart::Queued {
@@ -233,12 +239,12 @@ impl BackgroundJobs {
             .is_some_and(|job| job.generation == generation)
     }
 
-    pub fn start_next_action(&mut self) -> Option<(ActionRunId, String)> {
+    pub fn start_next_action(&mut self) -> Option<(ActionRunId, ActionRunLabel)> {
         if self.is_loading(BackgroundKind::Action) {
             return None;
         }
         let action = self.pending_actions.pop_front()?;
-        let label = action.display_label();
+        let label = ActionRunLabel::new(action.display_label());
         let run_id = self.spawn_action(action, label.clone());
         Some((run_id, label))
     }
@@ -265,7 +271,7 @@ impl BackgroundJobs {
         generation
     }
 
-    fn spawn_action(&mut self, action: TuiAction, label: String) -> ActionRunId {
+    fn spawn_action(&mut self, action: TuiAction, label: ActionRunLabel) -> ActionRunId {
         let generation = self.start_job(BackgroundKind::Action);
         let run_id = self.next_action_run_id();
         let refresh_after_success = action.should_refresh_after_success();
@@ -274,7 +280,7 @@ impl BackgroundJobs {
         self.action_label = Some(label.clone());
         self.spawn_async(move |sender| async move {
             let output_sender = sender.clone();
-            let action_label = label.clone();
+            let action_label = label.to_string();
             let result = match tokio::spawn(async move {
                 runner::run_captured_streaming(&action, move |event| {
                     let _ = output_sender.send(BackgroundResult::ActionEvent {
@@ -412,7 +418,10 @@ mod tests {
         assert!(jobs.action_label().is_some());
         assert!(jobs.elapsed_label(BackgroundKind::Action).is_some());
         assert_eq!(jobs.pending_action_count(), 1);
-        assert_eq!(jobs.pending_action_labels(), ["Version"]);
+        assert_eq!(
+            jobs.pending_action_labels(),
+            [ActionRunLabel::new("Version")]
+        );
     }
 
     #[test]
@@ -450,14 +459,17 @@ mod tests {
             ActionStart::Queued { position: 1, .. }
         ));
         assert_eq!(jobs.pending_action_count(), 1);
-        assert_eq!(jobs.pending_action_labels(), ["Second"]);
+        assert_eq!(
+            jobs.pending_action_labels(),
+            [ActionRunLabel::new("Second")]
+        );
         assert!(jobs.accept_action(1));
 
         let (_, label) = jobs.start_next_action().expect("queued action");
 
-        assert_eq!(label, "Second");
+        assert_eq!(label, ActionRunLabel::new("Second"));
         assert_eq!(jobs.pending_action_count(), 0);
-        assert_eq!(jobs.action_label(), Some("Second"));
+        assert_eq!(jobs.action_label(), Some(&ActionRunLabel::new("Second")));
         assert!(jobs.is_loading(BackgroundKind::Action));
     }
 }

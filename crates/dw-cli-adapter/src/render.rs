@@ -3680,6 +3680,7 @@ mod tests {
                 url: "https://example.invalid/front.git".into(),
                 default_branch: dw_core::BranchName::from("main"),
                 anchor_name: "front-anchor".into(),
+                git_credential_secret: None,
                 branch_name: dw_core::BranchName::from("feat/42-demo"),
                 repositories: vec![dw_core::WorkspaceRepositoryName::from("front")],
             },
