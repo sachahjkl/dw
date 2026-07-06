@@ -1,8 +1,12 @@
-use crate::config::{DatabaseConnectionConfig, DatabaseDefaults};
+use crate::config::{DatabaseConnectionConfig, DatabaseDefaults, DatabaseProvider};
 use crate::guard::validate_read_only_sql;
-use dw_secret::{KeyringSecretStore, SecretStore};
+#[cfg(test)]
+use dw_core::DatabaseEnvironmentName;
+use dw_core::{DatabaseConnectionString, SecretKey};
+use dw_secret::{KeyringSecretStore, SecretError, SecretStore};
 use serde::Serialize;
 use std::time::Duration;
+use thiserror::Error;
 use tiberius::{Client, ColumnData, Config, Row};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -13,6 +17,26 @@ pub struct QueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Option<String>>>,
     pub truncated: bool,
+}
+
+#[derive(Debug, Error)]
+pub enum DbError {
+    #[error("Provider DB non supporté: {provider}")]
+    UnsupportedProvider { provider: DatabaseProvider },
+    #[error("Requête bloquée: {reason}")]
+    BlockedQuery { reason: String },
+    #[error(
+        "Connection string SQL introuvable. Renseigner connectionString, connectionStringEnvironmentVariable ou credentialKey."
+    )]
+    MissingConnectionString,
+    #[error("Secret SQL introuvable: {key}")]
+    MissingSecret { key: SecretKey },
+    #[error(transparent)]
+    Secret(#[from] SecretError),
+    #[error("Timeout SQL après {seconds}s.")]
+    Timeout { seconds: u64 },
+    #[error("Erreur SQL: {0}")]
+    Sql(String),
 }
 
 pub fn schema_sql() -> &'static str {
@@ -34,45 +58,47 @@ order by ORDINAL_POSITION",
     )
 }
 
-pub fn resolve_connection_string(connection: &DatabaseConnectionConfig) -> Result<String, String> {
+pub fn resolve_connection_string(
+    connection: &DatabaseConnectionConfig,
+) -> Result<DatabaseConnectionString, DbError> {
     resolve_connection_string_with_store(connection, &KeyringSecretStore)
 }
 
 pub fn resolve_connection_string_with_store(
     connection: &DatabaseConnectionConfig,
     store: &impl SecretStore,
-) -> Result<String, String> {
+) -> Result<DatabaseConnectionString, DbError> {
     if let Some(value) = connection
         .connection_string
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
+        .as_ref()
+        .filter(|value| !value.as_str().trim().is_empty())
     {
-        return Ok(value.to_string());
+        return Ok(value.clone());
     }
 
     if let Some(variable) = connection
         .connection_string_environment_variable
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        && let Ok(value) = std::env::var(variable)
+        .as_ref()
+        .filter(|value| !value.as_str().trim().is_empty())
+        && let Ok(value) = std::env::var(variable.as_str())
         && !value.trim().is_empty()
     {
-        return Ok(value);
+        return Ok(DatabaseConnectionString::from(value));
     }
 
     if let Some(key) = connection
         .credential_key
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
+        .as_ref()
+        .filter(|value| !value.as_str().trim().is_empty())
     {
         return store
-            .get(key)
-            .map_err(|error| error.to_string())?
+            .get(key.as_str())?
             .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| format!("Secret SQL introuvable: {key}"));
+            .map(DatabaseConnectionString::from)
+            .ok_or_else(|| DbError::MissingSecret { key: key.clone() });
     }
 
-    Err("Connection string SQL introuvable. Renseigner connectionString, connectionStringEnvironmentVariable ou credentialKey.".into())
+    Err(DbError::MissingConnectionString)
 }
 
 pub async fn query_sql_server(
@@ -80,16 +106,17 @@ pub async fn query_sql_server(
     defaults: &DatabaseDefaults,
     sql: &str,
     max_rows_override: Option<usize>,
-) -> Result<QueryResult, String> {
-    if !connection.provider.eq_ignore_ascii_case("sqlserver") {
-        return Err(format!("Provider DB non supporté: {}", connection.provider));
+) -> Result<QueryResult, DbError> {
+    if connection.provider != DatabaseProvider::SqlServer {
+        return Err(DbError::UnsupportedProvider {
+            provider: connection.provider.clone(),
+        });
     }
     let guard = validate_read_only_sql(sql);
     if !guard.is_allowed {
-        return Err(format!(
-            "Requête bloquée: {}",
-            guard.reason.unwrap_or_else(|| "raison inconnue".into())
-        ));
+        return Err(DbError::BlockedQuery {
+            reason: guard.reason.unwrap_or_else(|| "raison inconnue".into()),
+        });
     }
 
     let connection_string = resolve_connection_string(connection)?;
@@ -100,7 +127,7 @@ pub async fn query_sql_server(
         .timeout_seconds
         .unwrap_or(defaults.timeout_seconds)
         .max(1);
-    query_sql_server_async(&connection_string, sql, max_rows, timeout_seconds).await
+    query_sql_server_async(connection_string.as_str(), sql, max_rows, timeout_seconds).await
 }
 
 async fn query_sql_server_async(
@@ -108,31 +135,34 @@ async fn query_sql_server_async(
     sql: &str,
     max_rows: usize,
     timeout_seconds: u64,
-) -> Result<QueryResult, String> {
+) -> Result<QueryResult, DbError> {
     timeout(
         Duration::from_secs(timeout_seconds),
         query_sql_server_async_inner(connection_string, sql, max_rows),
     )
     .await
-    .map_err(|_| format!("Timeout SQL après {timeout_seconds}s."))?
+    .map_err(|_| DbError::Timeout {
+        seconds: timeout_seconds,
+    })?
 }
 
 async fn query_sql_server_async_inner(
     connection_string: &str,
     sql: &str,
     max_rows: usize,
-) -> Result<QueryResult, String> {
-    let mut config =
-        Config::from_ado_string(connection_string).map_err(|error| error.to_string())?;
+) -> Result<QueryResult, DbError> {
+    let mut config = Config::from_ado_string(connection_string)
+        .map_err(|error| DbError::Sql(error.to_string()))?;
     config.readonly(true);
     config.trust_cert();
     let tcp = TcpStream::connect(config.get_addr())
         .await
-        .map_err(|error| error.to_string())?;
-    tcp.set_nodelay(true).map_err(|error| error.to_string())?;
+        .map_err(|error| DbError::Sql(error.to_string()))?;
+    tcp.set_nodelay(true)
+        .map_err(|error| DbError::Sql(error.to_string()))?;
     let mut client = Client::connect(config, tcp.compat_write())
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| DbError::Sql(error.to_string()))?;
     read_query_result(&mut client, sql, max_rows).await
 }
 
@@ -140,14 +170,14 @@ async fn read_query_result(
     client: &mut Client<Compat<TcpStream>>,
     sql: &str,
     max_rows: usize,
-) -> Result<QueryResult, String> {
+) -> Result<QueryResult, DbError> {
     let result_sets = client
         .simple_query(sql)
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| DbError::Sql(error.to_string()))?
         .into_results()
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| DbError::Sql(error.to_string()))?;
     let first_result = result_sets.into_iter().next().unwrap_or_default();
     let columns = first_result.first().map(row_columns).unwrap_or_default();
     let mut rows = Vec::new();
@@ -243,16 +273,21 @@ mod tests {
     #[test]
     fn resolve_connection_string_prefers_inline_value() {
         let connection = DatabaseConnectionConfig {
-            provider: "sqlserver".into(),
-            connection_string: Some("inline".into()),
-            connection_string_environment_variable: Some("DW_TEST_DB".into()),
+            provider: DatabaseProvider::SqlServer,
+            connection_string: Some(DatabaseConnectionString::from("inline")),
+            connection_string_environment_variable: Some(DatabaseEnvironmentName::from(
+                "DW_TEST_DB",
+            )),
             credential_key: None,
             readonly: Some(true),
             max_rows: None,
             timeout_seconds: None,
         };
 
-        assert_eq!(resolve_connection_string(&connection).unwrap(), "inline");
+        assert_eq!(
+            resolve_connection_string(&connection).unwrap().as_str(),
+            "inline"
+        );
     }
 
     #[test]
@@ -262,17 +297,19 @@ mod tests {
             .set("db/demo", "from-secret")
             .expect("secret should be stored");
         let connection = DatabaseConnectionConfig {
-            provider: "sqlserver".into(),
+            provider: DatabaseProvider::SqlServer,
             connection_string: None,
             connection_string_environment_variable: None,
-            credential_key: Some("db/demo".into()),
+            credential_key: Some(SecretKey::from("db/demo")),
             readonly: Some(true),
             max_rows: None,
             timeout_seconds: None,
         };
 
         assert_eq!(
-            resolve_connection_string_with_store(&connection, &store).unwrap(),
+            resolve_connection_string_with_store(&connection, &store)
+                .unwrap()
+                .as_str(),
             "from-secret"
         );
     }
@@ -281,10 +318,10 @@ mod tests {
     fn resolve_connection_string_reports_missing_credential_key() {
         let store = dw_secret::MemorySecretStore::new();
         let connection = DatabaseConnectionConfig {
-            provider: "sqlserver".into(),
+            provider: DatabaseProvider::SqlServer,
             connection_string: None,
             connection_string_environment_variable: None,
-            credential_key: Some("db/missing".into()),
+            credential_key: Some(SecretKey::from("db/missing")),
             readonly: Some(true),
             max_rows: None,
             timeout_seconds: None,
@@ -292,6 +329,10 @@ mod tests {
 
         let error = resolve_connection_string_with_store(&connection, &store)
             .expect_err("missing secret should fail");
-        assert!(error.contains("Secret SQL introuvable: db/missing"));
+        assert!(
+            error
+                .to_string()
+                .contains("Secret SQL introuvable: db/missing")
+        );
     }
 }

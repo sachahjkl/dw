@@ -1,7 +1,12 @@
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::fmt;
+use std::str::FromStr;
+use thiserror::Error;
 
-use dw_core::{DatabaseKey, ProjectKey};
+use dw_core::{
+    DatabaseConnectionString, DatabaseEnvironmentName, DatabaseKey, ProjectKey, SecretKey,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseDefaults {
@@ -22,13 +27,61 @@ impl Default for DatabaseDefaults {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseConnectionConfig {
-    pub provider: String,
-    pub connection_string: Option<String>,
-    pub connection_string_environment_variable: Option<String>,
-    pub credential_key: Option<String>,
+    pub provider: DatabaseProvider,
+    pub connection_string: Option<DatabaseConnectionString>,
+    pub connection_string_environment_variable: Option<DatabaseEnvironmentName>,
+    pub credential_key: Option<SecretKey>,
     pub readonly: Option<bool>,
     pub max_rows: Option<usize>,
     pub timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DatabaseProvider {
+    SqlServer,
+    Unsupported(DatabaseProviderName),
+}
+
+impl DatabaseProvider {
+    pub fn parse(value: &str) -> Self {
+        value.parse().unwrap_or_else(Self::Unsupported)
+    }
+}
+
+impl FromStr for DatabaseProvider {
+    type Err = DatabaseProviderName;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value.trim().eq_ignore_ascii_case("sqlserver") {
+            Ok(Self::SqlServer)
+        } else {
+            Err(DatabaseProviderName::from(value.trim().to_string()))
+        }
+    }
+}
+
+impl fmt::Display for DatabaseProvider {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SqlServer => formatter.write_str("sqlserver"),
+            Self::Unsupported(provider) => write!(formatter, "{provider}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatabaseProviderName(String);
+
+impl From<String> for DatabaseProviderName {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Display for DatabaseProviderName {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -48,21 +101,30 @@ pub struct DatabaseSelection<'a> {
     pub database: &'a DatabaseKey,
 }
 
+#[derive(Debug, Error)]
+pub enum DbConfigError {
+    #[error("Base introuvable dans databases.json: {project}/{database}")]
+    MissingDatabase {
+        project: ProjectKey,
+        database: DatabaseKey,
+    },
+    #[error("Exécution SQL refusée: readonly doit rester true.")]
+    ReadOnlyRequired,
+}
+
 pub fn resolve_connection(
     config: &dw_config::DatabasesConfig,
     selection: DatabaseSelection<'_>,
-) -> Result<ResolvedDatabase, String> {
+) -> Result<ResolvedDatabase, DbConfigError> {
     let defaults = parse_defaults(config.defaults.as_ref())?;
     let connection = try_resolve_connection(config, selection.project, selection.database)
-        .ok_or_else(|| {
-            format!(
-                "Base introuvable dans databases.json: {}/{}",
-                selection.project, selection.database
-            )
+        .ok_or_else(|| DbConfigError::MissingDatabase {
+            project: selection.project.clone(),
+            database: selection.database.clone(),
         })?;
 
     if connection.readonly == Some(false) || !defaults.readonly {
-        return Err("Exécution SQL refusée: readonly doit rester true.".into());
+        return Err(DbConfigError::ReadOnlyRequired);
     }
 
     Ok(ResolvedDatabase {
@@ -89,7 +151,7 @@ pub fn try_resolve_connection(
         })
 }
 
-fn parse_defaults(value: Option<&Value>) -> Result<DatabaseDefaults, String> {
+fn parse_defaults(value: Option<&Value>) -> Result<DatabaseDefaults, DbConfigError> {
     let Some(value) = value else {
         return Ok(DatabaseDefaults::default());
     };
@@ -123,13 +185,15 @@ fn parse_project_databases(value: &Value) -> Option<ProjectDatabases> {
 
 fn parse_database_connection(value: &Value) -> Option<DatabaseConnectionConfig> {
     Some(DatabaseConnectionConfig {
-        provider: value.get("provider")?.as_str()?.to_string(),
-        connection_string: optional_string(value, "connectionString"),
+        provider: DatabaseProvider::parse(value.get("provider")?.as_str()?),
+        connection_string: optional_string(value, "connectionString")
+            .map(DatabaseConnectionString::from),
         connection_string_environment_variable: optional_string(
             value,
             "connectionStringEnvironmentVariable",
-        ),
-        credential_key: optional_string(value, "credentialKey"),
+        )
+        .map(DatabaseEnvironmentName::from),
+        credential_key: optional_string(value, "credentialKey").map(SecretKey::from),
         readonly: value.get("readonly").and_then(Value::as_bool),
         max_rows: value
             .get("maxRows")
@@ -180,7 +244,11 @@ mod tests {
         .expect("connection should resolve");
 
         assert_eq!(
-            resolved.connection.connection_string.as_deref(),
+            resolved
+                .connection
+                .connection_string
+                .as_ref()
+                .map(DatabaseConnectionString::as_str),
             Some("project")
         );
     }
@@ -208,7 +276,11 @@ mod tests {
         .expect("connection should resolve");
 
         assert_eq!(
-            resolved.connection.connection_string.as_deref(),
+            resolved
+                .connection
+                .connection_string
+                .as_ref()
+                .map(DatabaseConnectionString::as_str),
             Some("global")
         );
     }
@@ -235,6 +307,6 @@ mod tests {
         )
         .expect_err("non readonly should fail");
 
-        assert!(error.contains("readonly"));
+        assert!(error.to_string().contains("readonly"));
     }
 }

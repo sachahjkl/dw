@@ -840,6 +840,8 @@ impl fmt::Display for DatabaseTableName {
     }
 }
 
+string_newtype!(DatabaseConnectionString);
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct WorkspacePath(String);

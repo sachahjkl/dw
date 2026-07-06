@@ -747,14 +747,56 @@ fn db_command_contracts_use_typed_query_connection_and_table_values() {
     let config =
         fs::read_to_string(repo.join("crates/dw-db/src/config.rs")).expect("read db config source");
     for required in [
+        "DatabaseConnectionString",
+        "DatabaseEnvironmentName",
         "pub project: &'a ProjectKey",
         "pub database: &'a DatabaseKey",
         "project: &ProjectKey",
         "database: &DatabaseKey",
+        "pub provider: DatabaseProvider",
+        "pub connection_string: Option<DatabaseConnectionString>",
+        "pub connection_string_environment_variable: Option<DatabaseEnvironmentName>",
+        "pub credential_key: Option<SecretKey>",
+        "pub enum DbConfigError",
+        ") -> Result<ResolvedDatabase, DbConfigError>",
     ] {
         assert!(
             config.contains(required),
             "dw-db config should expose typed selection token `{required}`"
+        );
+    }
+    for forbidden in [
+        "pub provider: String",
+        "pub connection_string_environment_variable: Option<String>",
+        "pub credential_key: Option<String>",
+        ") -> Result<ResolvedDatabase, String>",
+    ] {
+        assert!(
+            !config.contains(forbidden),
+            "dw-db config contains primitive contract token `{forbidden}`"
+        );
+    }
+
+    let query =
+        fs::read_to_string(repo.join("crates/dw-db/src/query.rs")).expect("read db query source");
+    for required in [
+        "pub enum DbError",
+        "Result<DatabaseConnectionString, DbError>",
+        ") -> Result<QueryResult, DbError>",
+    ] {
+        assert!(
+            query.contains(required),
+            "dw-db query should expose typed error/connection token `{required}`"
+        );
+    }
+    for forbidden in [
+        "resolve_connection_string(connection: &DatabaseConnectionConfig) -> Result<String, String>",
+        ") -> Result<QueryResult, String>",
+        "provider.eq_ignore_ascii_case",
+    ] {
+        assert!(
+            !query.contains(forbidden),
+            "dw-db query contains primitive contract token `{forbidden}`"
         );
     }
 }

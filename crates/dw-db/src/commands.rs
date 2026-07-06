@@ -133,7 +133,7 @@ async fn execute_db_query(
             database: &database,
         },
     )
-    .map_err(anyhow::Error::msg)?;
+    .map_err(anyhow::Error::from)?;
     let _ = kind.label();
     query_sql_server(
         &resolved.connection,
@@ -142,7 +142,7 @@ async fn execute_db_query(
         max_rows_override,
     )
     .await
-    .map_err(anyhow::Error::msg)
+    .map_err(anyhow::Error::from)
 }
 
 async fn resolve_describe_table(
