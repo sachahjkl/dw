@@ -3,10 +3,10 @@ use anyhow::Result;
 use dw_ado::{auth::require_token, get_work_item_ids_from_pull_requests, run_blocking_ado};
 use dw_agent::{AgentOpenRequest, build_open_launch_plan};
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::ExternalLaunchPlan;
+use dw_core::{ExternalLaunchPlan, PullRequestId};
 use dw_workspace::{
     TaskCurrentItem, TaskListItem, read_manifest_path, resolve_open_target, resolve_workspace,
-    task_current, task_list,
+    resolve_workspace_by_work_item_ids, task_current, task_list,
 };
 
 #[derive(Debug, Clone)]
@@ -15,7 +15,7 @@ pub struct OpenWorkspaceArgs {
     pub project: Option<String>,
     pub work_item: Option<String>,
     pub positional_work_item: Option<String>,
-    pub pull_request: Option<String>,
+    pub pull_request: Option<PullRequestId>,
     pub r#continue: bool,
     pub repo: Option<String>,
     pub agent: Option<String>,
@@ -138,7 +138,12 @@ pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<Ex
             let pull_request = pull_request.clone();
             let token = token.clone();
             move || {
-                get_work_item_ids_from_pull_requests(&options, &repositories, &pull_request, &token)
+                get_work_item_ids_from_pull_requests(
+                    &options,
+                    &repositories,
+                    &[pull_request],
+                    &token,
+                )
             }
         })
         .await?;
@@ -149,9 +154,20 @@ pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<Ex
                 repositories.join(", ")
             ));
         }
+        let resolved_work_item_ids = work_item_ids
+            .into_iter()
+            .map(dw_core::WorkItemId::from)
+            .collect::<Vec<_>>();
+        args.workspace = Some(resolve_workspace_by_work_item_ids(
+            &root,
+            args.workspace.as_deref(),
+            Some(&project),
+            &resolved_work_item_ids,
+            args.r#continue,
+        )?);
         args.root = Some(root);
         args.project = Some(project);
-        args.work_item = Some(work_item_ids.join(","));
+        args.work_item = None;
         args.positional_work_item = None;
     }
 

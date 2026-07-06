@@ -4,16 +4,16 @@ use dw_ado::WorkItemSnapshot;
 use dw_ado::auth::require_token;
 use dw_ado::{get_work_item_snapshots_authenticated, query_assigned_work_items, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
+use dw_core::WorkItemId;
 use dw_workspace::{
-    WorkspaceManifest, WorkspaceWorkItem, execute_work_item_update,
-    parse_work_item_ids as parse_workspace_work_item_ids, plan_add_work_item_snapshots,
+    WorkspaceManifest, WorkspaceWorkItem, execute_work_item_update, plan_add_work_item_snapshots,
     plan_add_work_items, plan_remove_work_items, read_manifest_path, resolve_workspace,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct AddWorkItemArgs {
-    pub work_item_ids: Option<String>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub workspace: Option<String>,
     pub root: Option<String>,
     pub project: Option<String>,
@@ -29,7 +29,7 @@ pub struct AddWorkItemArgs {
 
 #[derive(Debug, Clone)]
 pub struct RemoveWorkItemArgs {
-    pub work_item_ids: Option<String>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub workspace: Option<String>,
     pub root: Option<String>,
     pub project: Option<String>,
@@ -68,9 +68,9 @@ pub struct WorkItemUpdatePlanReport {
     pub action: WorkItemUpdateAction,
     pub workspace: String,
     #[serde(rename = "requestedIds")]
-    pub requested_ids: Vec<String>,
+    pub requested_ids: Vec<WorkItemId>,
     #[serde(rename = "skippedExistingIds")]
-    pub skipped_existing_ids: Vec<String>,
+    pub skipped_existing_ids: Vec<WorkItemId>,
     pub snapshots: Vec<WorkItemSnapshot>,
     pub plan: Option<dw_workspace::TaskWorkItemUpdatePlan>,
 }
@@ -131,14 +131,13 @@ pub fn removable_work_item_choices_report(
 }
 
 pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport> {
-    let work_item_ids = args
-        .work_item_ids
-        .as_deref()
-        .filter(|ids| !ids.trim().is_empty())
-        .ok_or_else(|| {
-            anyhow::anyhow!("Work items à ajouter manquants. Fournir au moins un identifiant.")
-        })?
-        .to_owned();
+    if args.work_item_ids.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Work items à ajouter manquants. Fournir au moins un identifiant."
+        ));
+    }
+    let requested_id_values = work_item_id_values(&args.work_item_ids);
+    let work_item_selection = requested_id_values.join(",");
     let root = resolve_root(args.root.as_deref());
     let workspace = resolve_workspace(
         &root,
@@ -149,15 +148,15 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
         args.r#continue,
     )?;
     let current_manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
-    let requested_ids = parse_workspace_work_item_ids(&work_item_ids);
+    let requested_ids = args.work_item_ids.clone();
     let missing_ids = requested_ids
         .iter()
-        .filter(|id| !current_manifest.matches_work_item(id))
+        .filter(|id| !current_manifest.matches_work_item(id.as_str()))
         .cloned()
         .collect::<Vec<_>>();
     let skipped_existing_ids = requested_ids
         .iter()
-        .filter(|id| current_manifest.matches_work_item(id))
+        .filter(|id| current_manifest.matches_work_item(id.as_str()))
         .cloned()
         .collect::<Vec<_>>();
     if missing_ids.is_empty() {
@@ -175,7 +174,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
         let (_manifest, plan) = plan_add_work_items(
             &root,
             &workspace,
-            &work_item_ids,
+            &work_item_selection,
             args.type_name.as_deref(),
             args.title.as_deref(),
             args.state.as_deref(),
@@ -190,13 +189,13 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
         }
         let token = require_token(load_auth_options(Some(&root))?).await?;
         let options = options.clone();
-        let missing_ids_for_fetch = missing_ids.clone();
+        let missing_ids_for_fetch = work_item_id_values(&missing_ids);
         let token = token.clone();
         let snapshots = run_blocking_ado(move || {
             get_work_item_snapshots_authenticated(&options, &missing_ids_for_fetch, &token)
         })
         .await?;
-        ensure_all_snapshots_resolved(&missing_ids, &snapshots)?;
+        ensure_all_snapshots_resolved(&work_item_id_values(&missing_ids), &snapshots)?;
         ensure_no_final_snapshots(&snapshots)?;
         let (_manifest, plan) = plan_add_work_item_snapshots(&root, &workspace, &snapshots)?;
         (plan, snapshots)
@@ -213,14 +212,12 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
 }
 
 pub fn remove_plan(args: RemoveWorkItemArgs) -> Result<WorkItemUpdatePlanReport> {
-    let work_item_ids = args
-        .work_item_ids
-        .as_deref()
-        .filter(|ids| !ids.trim().is_empty())
-        .ok_or_else(|| {
-            anyhow::anyhow!("Work items à retirer manquants. Fournir au moins un identifiant.")
-        })?
-        .to_owned();
+    if args.work_item_ids.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Work items à retirer manquants. Fournir au moins un identifiant."
+        ));
+    }
+    let work_item_selection = work_item_id_values(&args.work_item_ids).join(",");
     let root = resolve_root(args.root.as_deref());
     let workspace = resolve_workspace(
         &root,
@@ -230,8 +227,8 @@ pub fn remove_plan(args: RemoveWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
         args.positional_work_item.as_deref(),
         args.r#continue,
     )?;
-    let requested_ids = parse_workspace_work_item_ids(&work_item_ids);
-    let (_manifest, plan) = plan_remove_work_items(&root, &workspace, &work_item_ids)?;
+    let requested_ids = args.work_item_ids.clone();
+    let (_manifest, plan) = plan_remove_work_items(&root, &workspace, &work_item_selection)?;
 
     Ok(WorkItemUpdatePlanReport {
         action: WorkItemUpdateAction::Remove,
@@ -353,6 +350,10 @@ fn ensure_no_final_snapshots(snapshots: &[WorkItemSnapshot]) -> Result<()> {
         "Impossible d'ajouter des work items en état final: {}",
         labels.join(", ")
     ))
+}
+
+fn work_item_id_values(ids: &[WorkItemId]) -> Vec<String> {
+    ids.iter().map(|id| id.to_string()).collect()
 }
 
 #[cfg(test)]

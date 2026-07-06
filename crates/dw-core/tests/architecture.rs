@@ -371,6 +371,69 @@ fn action_events_use_domain_id_types_not_primitive_id_strings() {
 }
 
 #[test]
+fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
+    let repo = repo_root();
+    let checked: &[(&str, &[&str])] = &[
+        (
+            "crates/dw-task/src/start.rs",
+            &[
+                "pub work_item_id: Option<String>",
+                "pub pull_request_id: String",
+                "work_item_ids.join(",
+            ],
+        ),
+        (
+            "crates/dw-task/src/open.rs",
+            &["pub pull_request: Option<String>", "work_item_ids.join("],
+        ),
+        (
+            "crates/dw-task/src/work_item.rs",
+            &[
+                "pub work_item_ids: Option<String>",
+                "parse_work_item_ids as parse_workspace_work_item_ids",
+            ],
+        ),
+        (
+            "crates/dw-ado-commands/src/commands/changelog.rs",
+            &["pub ids: String", "pub git_to: Option<String>"],
+        ),
+        (
+            "crates/dw-ado-commands/src/commands/context.rs",
+            &["pub id: String", "parse_work_item_ids_as_strings"],
+        ),
+        (
+            "crates/dw-ado-commands/src/commands/set_state.rs",
+            &[
+                "pub id: String",
+                "pub ids: Vec<String>",
+                "set_state_confirmation_prompt",
+            ],
+        ),
+        (
+            "crates/dw-ado-commands/src/commands/work_item.rs",
+            &[
+                "pub id: String",
+                "parse_work_item_ids_as_strings",
+                "parse_id_set",
+            ],
+        ),
+    ];
+
+    for (relative, forbidden_tokens) in checked {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read source file");
+        for forbidden in *forbidden_tokens {
+            assert!(
+                !text.contains(forbidden),
+                "{} contains forbidden structured string action token `{}`",
+                path.display(),
+                forbidden
+            );
+        }
+    }
+}
+
+#[test]
 fn tui_and_ui_layers_do_not_embed_cli_command_hints() {
     let repo = repo_root();
     let checked_roots = [

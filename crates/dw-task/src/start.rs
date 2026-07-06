@@ -8,6 +8,7 @@ use dw_ado::{
 use dw_config::{
     load_projects_config, load_workflow_config, repository_config, resolve_project, resolve_root,
 };
+use dw_core::{AdoRepositoryName, PullRequestId, WorkItemId};
 use dw_workspace::{
     TaskStartOptions, TaskStartPlan, TaskStartRequest, WorkspaceChildTask, WorkspaceManifest,
     WorkspaceWorkItem, execute_task_start, execute_task_start_with_work_items_and_child_tasks,
@@ -19,7 +20,7 @@ pub mod ado;
 
 #[derive(Debug, Clone)]
 pub struct StartArgs {
-    pub work_item_id: Option<String>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub root: Option<String>,
     pub project: Option<String>,
     pub task: Option<String>,
@@ -34,7 +35,7 @@ pub struct StartArgs {
 
 #[derive(Debug, Clone)]
 pub struct StartPrArgs {
-    pub pull_request_id: String,
+    pub pull_request_id: PullRequestId,
     pub root: Option<String>,
     pub project: String,
     pub repo: Option<String>,
@@ -68,16 +69,16 @@ pub struct StartExecutionReport {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StartPrPlanReport {
     #[serde(rename = "pullRequestId")]
-    pub pull_request_id: String,
-    pub repositories: Vec<String>,
+    pub pull_request_id: PullRequestId,
+    pub repositories: Vec<AdoRepositoryName>,
     #[serde(rename = "workItemIds")]
-    pub work_item_ids: Vec<String>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub start: StartPlanReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StartStateUpdate {
-    pub id: String,
+    pub id: WorkItemId,
     pub label: String,
     #[serde(rename = "targetState")]
     pub target_state: String,
@@ -88,14 +89,9 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
     let root = resolve_root(args.root.as_deref());
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let selected_work_item_id = args
-        .work_item_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            anyhow::anyhow!("work-item-id requis pour construire un plan de démarrage task.")
-        })?
-        .to_owned();
+    if args.work_item_ids.is_empty() {
+        anyhow::bail!("work-item-id requis pour construire un plan de démarrage task.");
+    }
     let project = args.project.as_deref();
     let ado_context = if args.skip_ado {
         None
@@ -113,12 +109,12 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
     let ado_work_items = if let Some((ado_options, token)) = ado_context.as_ref() {
         let ado_options = ado_options.clone();
         let token = token.clone();
-        let selected_work_item_id = selected_work_item_id.clone();
+        let selected_work_item_ids = args.work_item_ids.clone();
         let with_active_children = args.with_active_children;
         run_blocking_ado(move || {
             ado::load_start_work_items(
                 &ado_options,
-                &selected_work_item_id,
+                &selected_work_item_ids,
                 with_active_children,
                 &token,
             )
@@ -128,19 +124,18 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
     } else {
         Vec::new()
     };
-    let planned_work_item_id = if args.with_active_children && !ado_work_items.is_empty() {
+    let planned_work_item_ids = if args.with_active_children && !ado_work_items.is_empty() {
         ado_work_items
             .iter()
-            .map(|item| item.id.as_str())
+            .map(|item| WorkItemId::from(item.id.clone()))
             .collect::<Vec<_>>()
-            .join(",")
     } else {
-        selected_work_item_id
+        args.work_item_ids.clone()
     };
     let plan = plan_task_start(TaskStartRequest {
         root: &root,
         projects: &projects,
-        work_item_id: &planned_work_item_id,
+        work_item_ids: &planned_work_item_ids,
         project,
         task_id: args.task.as_deref(),
         type_name: args.type_name.as_deref(),
@@ -253,7 +248,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
         get_work_item_ids_from_pull_requests(
             &work_item_options,
             &work_item_repositories,
-            &pull_request_id,
+            &[pull_request_id],
             &work_item_token,
         )
     })
@@ -270,7 +265,11 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
         resolve_workspace_repositories(project_config.as_ref(), args.repo.as_deref());
 
     let start = start_plan(StartArgs {
-        work_item_id: Some(work_item_ids.join(",")),
+        work_item_ids: work_item_ids
+            .iter()
+            .cloned()
+            .map(WorkItemId::from)
+            .collect(),
         root: Some(root.clone()),
         project: Some(args.project.clone()),
         task: None,
@@ -286,8 +285,11 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
 
     Ok(StartPrPlanReport {
         pull_request_id: args.pull_request_id,
-        repositories: ado_repositories,
-        work_item_ids,
+        repositories: ado_repositories
+            .into_iter()
+            .map(AdoRepositoryName::from)
+            .collect(),
+        work_item_ids: work_item_ids.into_iter().map(WorkItemId::from).collect(),
         start,
     })
 }
@@ -299,7 +301,7 @@ pub async fn execute_start_pr(
     execute_start(
         report.start,
         &StartArgs {
-            work_item_id: Some(report.work_item_ids.join(",")),
+            work_item_ids: report.work_item_ids.clone(),
             root: args.root.clone(),
             project: Some(args.project.clone()),
             task: None,
@@ -454,7 +456,7 @@ async fn update_start_states(
             .await?;
         }
         updates.push(StartStateUpdate {
-            id: item.id.clone(),
+            id: WorkItemId::from(item.id.clone()),
             label,
             target_state: state,
             changed,

@@ -20,7 +20,7 @@ pub use ai_context::map_ai_context_item;
 pub use changelog::{
     ChangelogFormat, RELATION_HIERARCHY_FORWARD, RELATION_HIERARCHY_REVERSE, WorkItemGroup,
     extract_work_item_ids_from_commit_messages, get_work_item_ids_from_pull_requests,
-    group_work_items_by_parent, load_changelog_items, parse_changelog_format, parse_id_set,
+    group_work_items_by_parent, load_changelog_items, parse_changelog_format,
     render_flat_changelog, render_grouped_changelog,
 };
 use http::{

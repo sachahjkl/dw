@@ -226,7 +226,10 @@ impl FormState {
         let enabled = |label: &str| field_enabled(&self.fields, label);
         let request = match self.template {
             FormTemplate::TaskStart => TuiActionRequest::TaskStart(dw_task::start::StartArgs {
-                work_item_id: value("Work item"),
+                work_item_ids: value("Work item")
+                    .as_deref()
+                    .map(dw_core::WorkItemId::parse_many)
+                    .unwrap_or_default(),
                 root: Some(root.into()),
                 project: value("Project"),
                 task: None,
@@ -240,7 +243,7 @@ impl FormState {
             }),
             FormTemplate::TaskStartPr => {
                 TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
-                    pull_request_id: value("Pull request")?,
+                    pull_request_id: dw_core::PullRequestId::from(value("Pull request")?),
                     root: Some(root.into()),
                     project: value("Project")?,
                     repo: value("Repository"),
@@ -283,7 +286,10 @@ impl FormState {
             }),
             FormTemplate::TaskAddWorkItem => {
                 TuiActionRequest::TaskAddWorkItem(dw_task::work_item::AddWorkItemArgs {
-                    work_item_ids: value("Work items"),
+                    work_item_ids: value("Work items")
+                        .as_deref()
+                        .map(dw_core::WorkItemId::parse_many)
+                        .unwrap_or_default(),
                     workspace: value("Workspace"),
                     root: Some(root.into()),
                     project: value("Project"),
@@ -299,7 +305,10 @@ impl FormState {
             }
             FormTemplate::TaskRemoveWorkItem => {
                 TuiActionRequest::TaskRemoveWorkItem(dw_task::work_item::RemoveWorkItemArgs {
-                    work_item_ids: value("Work items"),
+                    work_item_ids: value("Work items")
+                        .as_deref()
+                        .map(dw_core::WorkItemId::parse_many)
+                        .unwrap_or_default(),
                     workspace: value("Workspace"),
                     root: Some(root.into()),
                     project: value("Project"),
@@ -342,7 +351,7 @@ impl FormState {
             }
             FormTemplate::AdoSetState => {
                 TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
-                    id: value("Work item IDs")?,
+                    ids: dw_core::WorkItemId::parse_many(&value("Work item IDs")?),
                     root: Some(root.into()),
                     project: value("Project"),
                     state: value("Destination state")?,
@@ -967,7 +976,7 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::TaskStart(args) => {
-                assert_eq!(args.work_item_id.as_deref(), Some("42"));
+                assert_eq!(args.work_item_ids, vec![dw_core::WorkItemId::from("42")]);
                 assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
                 assert!(!args.mode.executes());
             }
@@ -1017,7 +1026,7 @@ mod tests {
         let preview = form.build_action(&snapshot.root).expect("preview");
         match &preview.request {
             TuiActionRequest::TaskStartPr(args) => {
-                assert_eq!(args.pull_request_id, "123");
+                assert_eq!(args.pull_request_id, dw_core::PullRequestId::from("123"));
                 assert_eq!(args.project, "ha");
                 assert_eq!(args.repo.as_deref(), Some("front"));
                 assert_eq!(args.type_name.as_deref(), Some("feature"));
@@ -1160,7 +1169,13 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::AdoSetState(args) => {
-                assert_eq!(args.id, "42,43");
+                assert_eq!(
+                    args.ids,
+                    vec![
+                        dw_core::WorkItemId::from("42"),
+                        dw_core::WorkItemId::from("43")
+                    ]
+                );
                 assert_eq!(args.state, "En réalisation");
                 assert_eq!(args.project.as_deref(), Some("ha"));
                 assert_eq!(args.history.as_deref(), Some("tui"));

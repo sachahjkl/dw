@@ -1,5 +1,5 @@
 use anyhow::Result;
-use dw_core::{DwActionEvent, PullRequestId, TaskActionEvent, WorkItemId};
+use dw_core::{DwActionEvent, TaskActionEvent};
 
 #[derive(Debug, Clone)]
 pub enum DwActionRequest {
@@ -279,18 +279,13 @@ pub async fn run_action(
         DwActionRequest::TaskStartPr(args) => {
             emit(DwActionEvent::Task(
                 TaskActionEvent::ResolvingPullRequestWorkItems {
-                    pull_request_id: PullRequestId::from(args.pull_request_id.clone()),
+                    pull_request_id: args.pull_request_id.clone(),
                 },
             ));
             let report = dw_task::start::start_pr_plan(args.clone()).await?;
             emit(DwActionEvent::Task(
                 TaskActionEvent::ResolvedPullRequestWorkItems {
-                    work_item_ids: report
-                        .work_item_ids
-                        .iter()
-                        .cloned()
-                        .map(WorkItemId::from)
-                        .collect(),
+                    work_item_ids: report.work_item_ids.clone(),
                 },
             ));
             if args.mode.executes() {

@@ -190,7 +190,7 @@ mod tests {
         let action = TuiAction {
             label: "Start PR preview".into(),
             request: TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
-                pull_request_id: "42".into(),
+                pull_request_id: dw_core::PullRequestId::from("42"),
                 root: Some("/tmp/missing-dw-root".into()),
                 project: "ha".into(),
                 repo: None,

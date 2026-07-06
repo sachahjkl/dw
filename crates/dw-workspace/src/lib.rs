@@ -7,6 +7,7 @@ use dw_contracts::{
     PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightIssue,
     TaskPreflightReport,
 };
+use dw_core::WorkItemId;
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
     slug_from_phrase_or_fallback,
@@ -243,7 +244,7 @@ pub struct WorkspaceTeardownStep {
 pub struct TaskStartRequest<'a> {
     pub root: &'a str,
     pub projects: &'a ProjectsConfig,
-    pub work_item_id: &'a str,
+    pub work_item_ids: &'a [WorkItemId],
     pub project: Option<&'a str>,
     pub task_id: Option<&'a str>,
     pub type_name: Option<&'a str>,
@@ -435,6 +436,22 @@ pub fn filter_workspaces(
     work_item: Option<&str>,
 ) -> Vec<WorkspaceSummary> {
     let requested_work_items = parse_work_item_selection(work_item);
+    filter_workspaces_by_requested_ids(workspaces, project, requested_work_items.as_deref())
+}
+
+pub fn filter_workspaces_by_work_item_ids(
+    workspaces: Vec<WorkspaceSummary>,
+    project: Option<&str>,
+    work_item_ids: &[WorkItemId],
+) -> Vec<WorkspaceSummary> {
+    filter_workspaces_by_requested_ids(workspaces, project, Some(work_item_ids))
+}
+
+fn filter_workspaces_by_requested_ids(
+    workspaces: Vec<WorkspaceSummary>,
+    project: Option<&str>,
+    requested_work_items: Option<&[WorkItemId]>,
+) -> Vec<WorkspaceSummary> {
     workspaces
         .into_iter()
         .filter(|workspace| {
@@ -444,7 +461,7 @@ pub fn filter_workspaces(
             requested_work_items.as_ref().is_none_or(|work_items| {
                 work_items
                     .iter()
-                    .all(|work_item| workspace.manifest.matches_work_item(work_item))
+                    .all(|work_item| workspace.manifest.matches_work_item(work_item.as_str()))
             })
         })
         .collect()
@@ -739,16 +756,16 @@ pub fn plan_add_work_items(
     let mut work_items = manifest.parent_work_items();
     let mut added_ids = Vec::new();
     for id in parse_work_item_selection(Some(ids)).unwrap_or_default() {
-        if manifest.matches_work_item(&id)
+        if manifest.matches_work_item(id.as_str())
             || work_items
                 .iter()
-                .any(|item| item.id.eq_ignore_ascii_case(&id))
+                .any(|item| item.id.eq_ignore_ascii_case(id.as_str()))
         {
             continue;
         }
-        added_ids.push(id.clone());
+        added_ids.push(id.to_string());
         work_items.push(WorkspaceWorkItem {
-            id,
+            id: id.to_string(),
             kind: kind.map(ToOwned::to_owned),
             title: title.map(ToOwned::to_owned),
             state: state.map(ToOwned::to_owned),
@@ -796,7 +813,11 @@ pub fn plan_remove_work_items(
     let work_items = manifest
         .parent_work_items()
         .into_iter()
-        .filter(|item| !selection.iter().any(|id| id.eq_ignore_ascii_case(&item.id)))
+        .filter(|item| {
+            !selection
+                .iter()
+                .any(|id| id.as_str().eq_ignore_ascii_case(&item.id))
+        })
         .collect::<Vec<_>>();
     if work_items.is_empty() {
         return Err(WorkspaceError::EmptyWorkItemSet);
@@ -1290,7 +1311,7 @@ pub fn build_preflight_report_from_ai_context_files(
         work_item_ids: manifest
             .parent_work_items()
             .into_iter()
-            .map(|item| item.id)
+            .map(|item| WorkItemId::from(item.id))
             .collect(),
         issues,
         has_blocking_issues,
@@ -1299,7 +1320,11 @@ pub fn build_preflight_report_from_ai_context_files(
 
 pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, WorkspaceError> {
     let project = request.project.unwrap_or("default").to_string();
-    let work_item_ids = parse_work_item_selection(Some(request.work_item_id)).unwrap_or_default();
+    let work_item_ids = request
+        .work_item_ids
+        .iter()
+        .map(|id| id.as_str().to_owned())
+        .collect::<Vec<_>>();
     let primary_work_item_id = work_item_ids.first().cloned().unwrap_or_default();
     let project_config = resolve_project(request.projects, &project);
     let repositories = resolve_repositories(project_config.as_ref(), request.only);
@@ -1411,6 +1436,30 @@ pub fn resolve_workspace(
     }
 
     let workspaces = filter_workspaces(find_workspaces(root), project, work_item.as_deref());
+    if workspaces.is_empty() {
+        return Err(WorkspaceError::NoWorkspaceFound);
+    }
+
+    if r#continue || workspaces.len() == 1 {
+        return Ok(workspaces[0].path.clone());
+    }
+
+    Ok(workspaces[0].path.clone())
+}
+
+pub fn resolve_workspace_by_work_item_ids(
+    root: &str,
+    workspace: Option<&str>,
+    project: Option<&str>,
+    work_item_ids: &[WorkItemId],
+    r#continue: bool,
+) -> Result<String, WorkspaceError> {
+    if let Some(workspace) = workspace.filter(|value| !value.trim().is_empty()) {
+        return Ok(PathBuf::from(workspace).display().to_string());
+    }
+
+    let workspaces =
+        filter_workspaces_by_work_item_ids(find_workspaces(root), project, work_item_ids);
     if workspaces.is_empty() {
         return Err(WorkspaceError::NoWorkspaceFound);
     }
@@ -1800,12 +1849,16 @@ fn normalize_work_item_selection(value: Option<&str>) -> Option<String> {
 }
 
 pub fn parse_work_item_ids(value: &str) -> Vec<String> {
-    parse_work_item_selection(Some(value)).unwrap_or_default()
+    parse_work_item_selection(Some(value))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|id| id.to_string())
+        .collect()
 }
 
-fn parse_work_item_selection(value: Option<&str>) -> Option<Vec<String>> {
+fn parse_work_item_selection(value: Option<&str>) -> Option<Vec<WorkItemId>> {
     let normalized = normalize_work_item_selection(value)?;
-    Some(normalized.split(',').map(|item| item.to_string()).collect())
+    Some(normalized.split(',').map(WorkItemId::from).collect())
 }
 
 fn resolve_repositories(project_config: Option<&ProjectConfig>, only: Option<&str>) -> Vec<String> {
@@ -2619,7 +2672,7 @@ artifacts:
         let plan = plan_task_start(TaskStartRequest {
             root: root.to_str().expect("utf8 path"),
             projects: &projects,
-            work_item_id: "55222",
+            work_item_ids: &[WorkItemId::from("55222")],
             project: None,
             task_id: None,
             type_name: None,
@@ -2653,7 +2706,7 @@ artifacts:
         let error = plan_task_start(TaskStartRequest {
             root: root.to_str().expect("utf8 path"),
             projects: &projects,
-            work_item_id: "123",
+            work_item_ids: &[WorkItemId::from("123")],
             project: Some("ha"),
             task_id: None,
             type_name: Some("feat"),
@@ -2677,7 +2730,7 @@ artifacts:
         let plan = plan_task_start(TaskStartRequest {
             root: root.to_str().expect("utf8 path"),
             projects: &projects,
-            work_item_id: "123",
+            work_item_ids: &[WorkItemId::from("123")],
             project: Some("ha"),
             task_id: None,
             type_name: Some("feat"),
@@ -2782,7 +2835,7 @@ artifacts:
         let plan = plan_task_start(TaskStartRequest {
             root: root.to_str().expect("utf8 path"),
             projects: &projects,
-            work_item_id: "123",
+            work_item_ids: &[WorkItemId::from("123")],
             project: Some("ha"),
             task_id: None,
             type_name: Some("feat"),

@@ -11,6 +11,7 @@ use dw_secret::command::{SecretDeleteReport, SecretGetReport, SecretSetReport};
 use dw_task::open::{TaskListReport, TaskStatusReport};
 use dw_ui::TerminalTheme;
 use dw_workspace::TaskCurrentItem;
+use std::fmt::Display;
 
 const MAX_DB_CELL_WIDTH: usize = 48;
 
@@ -306,9 +307,12 @@ pub fn ado_set_state_execution_lines(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        dw_ado_commands::commands::set_state::set_state_done_line(
+        format!(
+            "{} work item{} passé{} en `{}`.",
             report.updated.len(),
-            &report.plan.state,
+            if report.updated.len() == 1 { "" } else { "s" },
+            if report.updated.len() == 1 { "" } else { "s" },
+            report.plan.state
         ),
     ];
     if !report.events.is_empty() {
@@ -430,12 +434,12 @@ pub fn task_action_event_line(event: &TaskActionEvent) -> String {
     }
 }
 
-fn format_ids<T: ToString>(ids: &[T]) -> String {
+fn format_ids<T: Display>(ids: &[T]) -> String {
     if ids.is_empty() {
         "aucun".into()
     } else {
         ids.iter()
-            .map(|id| format!("#{}", id.to_string()))
+            .map(|id| format!("#{id}"))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -448,12 +452,16 @@ fn git_operation_label(operation: GitOperation) -> &'static str {
     }
 }
 
-fn join_display<T: ToString>(items: &[T]) -> String {
+fn join_display<T: Display>(items: &[T]) -> String {
+    join_display_with_separator(items, ", ")
+}
+
+fn join_display_with_separator<T: Display>(items: &[T], separator: &str) -> String {
     items
         .iter()
-        .map(ToString::to_string)
+        .map(|item| format!("{item}"))
         .collect::<Vec<_>>()
-        .join(", ")
+        .join(separator)
 }
 
 pub fn ado_work_item_lines(
@@ -602,7 +610,7 @@ pub fn ado_changelog_lines(
         })];
     }
     if report.ids_only {
-        return vec![report.work_item_ids.join(" ")];
+        return vec![join_display_with_separator(&report.work_item_ids, " ")];
     }
     if report.resolved_empty {
         return vec![theme.warning("Aucun work item résolu dans Azure DevOps.")];
@@ -1199,7 +1207,7 @@ pub fn task_start_plan_lines(report: &dw_task::start::StartPlanReport) -> Vec<St
     vec![
         "Plan task start".into(),
         format!("Project: {}", plan.project),
-        format!("Work items: {}", plan.work_item_ids.join(", ")),
+        format!("Work items: {}", join_display(&plan.work_item_ids)),
         format!("Slug: {}", plan.slug),
         format!("Branche cible: {}", plan.branch_name),
         format!("Workspace cible: {}", plan.workspace),
@@ -1242,7 +1250,7 @@ pub fn task_start_pr_plan_lines(report: &dw_task::start::StartPrPlanReport) -> V
             if report.repositories.is_empty() {
                 "aucun repository".into()
             } else {
-                report.repositories.join(", ")
+                join_display(&report.repositories)
             }
         ),
         task_start_pr_resolved_line(&report.work_item_ids),
@@ -1372,7 +1380,7 @@ pub fn task_finish_execution_lines(report: &dw_task::finish::FinishExecutionRepo
     lines
 }
 
-fn task_start_pr_resolved_line(work_item_ids: &[String]) -> String {
+fn task_start_pr_resolved_line<T: Display>(work_item_ids: &[T]) -> String {
     match work_item_ids.len() {
         0 => "Aucun work item lié à la PR.".into(),
         1 => format!("PR liée au work item #{}.", work_item_ids[0]),
@@ -2338,7 +2346,10 @@ mod tests {
             plan: dw_ado_commands::commands::set_state::SetStatePlanReport {
                 root: "/tmp/dw".into(),
                 project: "ha".into(),
-                ids: vec!["42".into(), "43".into()],
+                ids: vec![
+                    dw_core::WorkItemId::from("42"),
+                    dw_core::WorkItemId::from("43"),
+                ],
                 state: "Actif".into(),
                 history: "dw ado set-state".into(),
             },
@@ -2348,11 +2359,11 @@ mod tests {
             }],
             updated: vec![
                 dw_ado_commands::commands::set_state::SetStateUpdate {
-                    id: "42".into(),
+                    id: dw_core::WorkItemId::from("42"),
                     state: "Actif".into(),
                 },
                 dw_ado_commands::commands::set_state::SetStateUpdate {
-                    id: "43".into(),
+                    id: dw_core::WorkItemId::from("43"),
                     state: "Actif".into(),
                 },
             ],
@@ -2372,7 +2383,7 @@ mod tests {
         let report = dw_ado_commands::commands::work_item::WorkItemReport {
             root: "/tmp/dw".into(),
             project: "ha".into(),
-            requested_ids: vec![7],
+            requested_ids: vec![dw_core::WorkItemId::from("7")],
             items: vec![dw_ado::WorkItemSnapshot {
                 id: "7".into(),
                 kind: None,
@@ -2398,7 +2409,7 @@ mod tests {
         let report = dw_ado_commands::commands::context::ContextReport {
             root: "/tmp/dw".into(),
             project: "ha".into(),
-            requested_ids: vec!["42".into()],
+            requested_ids: vec![dw_core::WorkItemId::from("42")],
             summary: false,
             comments: 10,
             expanded: Vec::new(),
@@ -2497,7 +2508,10 @@ mod tests {
             table: false,
             options: ado_options(),
             ids_only: true,
-            work_item_ids: vec!["42".into(), "43".into()],
+            work_item_ids: vec![
+                dw_core::WorkItemId::from("42"),
+                dw_core::WorkItemId::from("43"),
+            ],
             items: Vec::new(),
             groups: Vec::new(),
             source_empty: false,
@@ -2578,7 +2592,7 @@ mod tests {
             schema_version: PREFLIGHT_VERSION.into(),
             workspace: "/tmp/ws".into(),
             project: "ha".into(),
-            work_item_ids: vec!["42".into()],
+            work_item_ids: vec![dw_core::WorkItemId::from("42")],
             has_blocking_issues: true,
             issues: vec![TaskPreflightIssue {
                 code: "missing_attachment".into(),
@@ -2832,7 +2846,7 @@ mod tests {
     fn task_sync_lines_render_missing_ado_fields_as_unknown() {
         let report = dw_task::lifecycle::SyncReport {
             workspace: "/tmp/ws".into(),
-            requested_ids: vec!["42".into()],
+            requested_ids: vec![dw_core::WorkItemId::from("42")],
             snapshots: Vec::new(),
             manifest: workspace_manifest_with_items(vec![dw_workspace::WorkspaceWorkItem {
                 id: "42".into(),
@@ -2908,7 +2922,10 @@ mod tests {
         let report = dw_task::work_item::WorkItemUpdatePlanReport {
             action: dw_task::work_item::WorkItemUpdateAction::Add,
             workspace: "/tmp/old".into(),
-            requested_ids: vec!["1".into(), "2".into()],
+            requested_ids: vec![
+                dw_core::WorkItemId::from("1"),
+                dw_core::WorkItemId::from("2"),
+            ],
             skipped_existing_ids: Vec::new(),
             snapshots: Vec::new(),
             plan: Some(dw_workspace::TaskWorkItemUpdatePlan {

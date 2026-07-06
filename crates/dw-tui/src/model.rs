@@ -1584,7 +1584,7 @@ mod tests {
         let action = TuiAction {
             label: "Create workspace · ha #42".into(),
             request: TuiActionRequest::TaskStart(dw_task::start::StartArgs {
-                work_item_id: Some("42".into()),
+                work_item_ids: vec![dw_core::WorkItemId::from("42")],
                 root: Some("/tmp/dw".into()),
                 project: Some("ha".into()),
                 task: None,

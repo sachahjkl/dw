@@ -6,7 +6,7 @@ use dw_cli_adapter::{
     PromptUi, confirm_risk_prompt_spec, print_json, print_lines, project_prompt_spec,
     repositories_prompt_spec,
 };
-use dw_core::{AdoActionEvent, ExecutionMode, PromptKind, PromptSpec};
+use dw_core::{AdoActionEvent, ExecutionMode, PromptKind, PromptSpec, PullRequestId, WorkItemId};
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
 use std::collections::HashSet;
@@ -216,7 +216,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 project,
                 work_item,
                 positional_work_item,
-                pull_request,
+                pull_request: pull_request.map(PullRequestId::from),
                 r#continue,
                 repo,
                 agent,
@@ -244,7 +244,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             execute,
         } => {
             let args = resolve_start_args_interactively(dw_task::start::StartArgs {
-                work_item_id,
+                work_item_ids: work_item_id
+                    .as_deref()
+                    .map(WorkItemId::parse_many)
+                    .unwrap_or_default(),
                 root,
                 project,
                 task,
@@ -284,7 +287,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             execute,
         } => {
             let args = dw_task::start::StartPrArgs {
-                pull_request_id,
+                pull_request_id: PullRequestId::from(pull_request_id),
                 root,
                 project,
                 repo,
@@ -669,7 +672,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 return Ok(());
             };
             let report = dw_task::work_item::add_plan(dw_task::work_item::AddWorkItemArgs {
-                work_item_ids: Some(work_item_ids),
+                work_item_ids: WorkItemId::parse_many(&work_item_ids),
                 workspace,
                 root,
                 project,
@@ -726,7 +729,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 return Ok(());
             };
             let report = dw_task::work_item::remove_plan(dw_task::work_item::RemoveWorkItemArgs {
-                work_item_ids: Some(work_item_ids),
+                work_item_ids: WorkItemId::parse_many(&work_item_ids),
                 workspace,
                 root,
                 project,
@@ -911,19 +914,30 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             ids_only,
             git_to,
         } => {
+            let source = if from_git {
+                dw_ado_commands::commands::changelog::ChangelogSource::GitRange {
+                    from: ids,
+                    to: git_to,
+                }
+            } else if from_pr {
+                dw_ado_commands::commands::changelog::ChangelogSource::PullRequests(
+                    PullRequestId::parse_many(&ids),
+                )
+            } else {
+                dw_ado_commands::commands::changelog::ChangelogSource::WorkItems(
+                    WorkItemId::parse_many(&ids),
+                )
+            };
             let mut report = dw_ado_commands::commands::changelog::report_with_events(
                 dw_ado_commands::commands::changelog::ChangelogArgs {
-                    ids,
+                    source,
                     root,
                     project,
-                    from_pr,
-                    from_git,
                     repo,
                     group_by_parent,
                     format,
                     table,
                     ids_only,
-                    git_to,
                 },
                 print_ado_action_event,
             )
@@ -948,7 +962,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             }
             let plan = dw_ado_commands::commands::set_state::plan(
                 dw_ado_commands::commands::set_state::SetStateArgs {
-                    id,
+                    ids: WorkItemId::parse_many(&id),
                     root,
                     project,
                     state,
@@ -980,7 +994,11 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             json,
         } => {
             let mut report = dw_ado_commands::commands::work_item::report_with_events(
-                dw_ado_commands::commands::work_item::WorkItemArgs { id, root, project },
+                dw_ado_commands::commands::work_item::WorkItemArgs {
+                    ids: WorkItemId::parse_many(&id),
+                    root,
+                    project,
+                },
                 |event| {
                     if !json {
                         print_ado_action_event(event);
@@ -1008,7 +1026,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
         } => {
             let mut report = dw_ado_commands::commands::context::context_report_with_events(
                 dw_ado_commands::commands::context::ContextArgs {
-                    id,
+                    ids: WorkItemId::parse_many(&id),
                     root,
                     project,
                     summary,
@@ -1050,7 +1068,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                     root,
                     organization,
                     project,
-                    id,
+                    ids: WorkItemId::parse_many(&id),
                     summary,
                     comments,
                     include_comments,
@@ -1114,10 +1132,16 @@ fn confirm_ado_set_state(
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("Changement d'état ADO refusé: ajouter --yes avec ado set-state.");
     }
-    let prompt = dw_ado_commands::commands::set_state::set_state_confirmation_prompt(
-        &plan.ids,
-        &plan.project,
-        &plan.state,
+    let prompt = format!(
+        "Mettre {} work item(s) du projet {} en état `{}` ?\n{}",
+        plan.ids.len(),
+        plan.project,
+        plan.state,
+        plan.ids
+            .iter()
+            .map(|id| format!("#{id}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     let mut prompt_ui = InquirePrompt;
     if prompt_ui.confirm(&confirm_risk_prompt_spec("ado-set-state", prompt), false)? {
@@ -1438,17 +1462,13 @@ async fn resolve_start_args_interactively(
         }
     }
 
-    if args
-        .work_item_id
-        .as_deref()
-        .is_none_or(|value| value.trim().is_empty())
-    {
+    if args.work_item_ids.is_empty() {
         if !std::io::stdin().is_terminal() {
             anyhow::bail!(
                 "work-item-id requis en mode non interactif. Fournir `dw task start <id>`."
             );
         }
-        args.work_item_id = Some(resolve_start_work_item_id_interactively(&args).await?);
+        args.work_item_ids = vec![resolve_start_work_item_id_interactively(&args).await?];
     }
 
     if args.only.is_none() && std::io::stdin().is_terminal() {
@@ -1479,13 +1499,13 @@ async fn resolve_start_args_interactively(
 
 async fn resolve_start_work_item_id_interactively(
     args: &dw_task::start::StartArgs,
-) -> Result<String> {
+) -> Result<WorkItemId> {
     if args.skip_ado {
-        return Ok(Text::new("Work item ID").prompt()?);
+        return Ok(WorkItemId::from(Text::new("Work item ID").prompt()?));
     }
 
     let Some(project) = args.project.clone() else {
-        return Ok(Text::new("Work item ID").prompt()?);
+        return Ok(WorkItemId::from(Text::new("Work item ID").prompt()?));
     };
     print_lines(&[assigned_work_items_loading_line(&project)]);
     let report = dw_ado_commands::commands::assigned::report(
@@ -1505,19 +1525,23 @@ async fn resolve_start_work_item_id_interactively(
 fn resolve_start_work_item_id_from_report(
     report: &dw_ado_commands::commands::assigned::AssignedReport,
     prompt: &mut impl PromptUi,
-) -> Result<String> {
+) -> Result<WorkItemId> {
     if report.items.is_empty() {
         print_lines(&[dw_ado_commands::commands::assigned::empty_assigned_message(false).into()]);
-        return prompt.text_value(&PromptSpec::text("work-item-id", "Work item ID"));
+        return prompt
+            .text_value(&PromptSpec::text("work-item-id", "Work item ID"))
+            .map(WorkItemId::from);
     }
 
     let selected = prompt.select_value(
         &dw_ado_commands::commands::assigned::assigned_work_item_prompt_spec(&report.items),
     )?;
     if selected == dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE {
-        prompt.text_value(&PromptSpec::text("work-item-id", "Work item ID"))
+        prompt
+            .text_value(&PromptSpec::text("work-item-id", "Work item ID"))
+            .map(WorkItemId::from)
     } else {
-        Ok(selected)
+        Ok(WorkItemId::from(selected))
     }
 }
 
@@ -1910,7 +1934,7 @@ mod prompt_tests {
         let value = resolve_start_work_item_id_from_report(&report, &mut prompt)
             .expect("assigned select should resolve");
 
-        assert_eq!(value, "55264");
+        assert_eq!(value, WorkItemId::from("55264"));
         assert_eq!(prompt.selected_specs, ["assigned-work-item"]);
         assert!(prompt.text_specs.is_empty());
     }
@@ -1934,7 +1958,7 @@ mod prompt_tests {
         let value = resolve_start_work_item_id_from_report(&report, &mut prompt)
             .expect("manual fallback should resolve");
 
-        assert_eq!(value, "99999");
+        assert_eq!(value, WorkItemId::from("99999"));
         assert_eq!(prompt.selected_specs, ["assigned-work-item"]);
         assert_eq!(prompt.text_specs, ["work-item-id"]);
     }

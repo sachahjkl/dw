@@ -1,4 +1,4 @@
-use crate::commands::work_item::parse_work_item_ids_as_strings;
+use crate::commands::work_item::ado_work_item_id_values;
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::Result;
 use dw_ado::{auth::require_token, run_blocking_ado, update_work_item_state_authenticated};
@@ -8,7 +8,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone)]
 pub struct SetStateArgs {
-    pub id: String,
+    pub ids: Vec<WorkItemId>,
     pub root: Option<String>,
     pub project: Option<String>,
     pub state: String,
@@ -20,7 +20,7 @@ pub struct SetStateArgs {
 pub struct SetStatePlanReport {
     pub root: String,
     pub project: String,
-    pub ids: Vec<String>,
+    pub ids: Vec<WorkItemId>,
     pub state: String,
     pub history: String,
 }
@@ -34,13 +34,13 @@ pub struct SetStateExecutionReport {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SetStateUpdate {
-    pub id: String,
+    pub id: WorkItemId,
     pub state: String,
 }
 
 pub fn plan(args: SetStateArgs) -> Result<SetStatePlanReport> {
     let SetStateArgs {
-        id,
+        ids,
         root,
         project,
         state,
@@ -54,7 +54,9 @@ pub fn plan(args: SetStateArgs) -> Result<SetStatePlanReport> {
     if state.is_empty() {
         return Err(anyhow::anyhow!("ado set-state requiert un état non vide."));
     }
-    let ids = parse_work_item_ids_as_strings(&id)?;
+    if ids.is_empty() {
+        return Err(anyhow::anyhow!("Au moins un work item est requis."));
+    }
 
     Ok(SetStatePlanReport {
         root,
@@ -89,17 +91,18 @@ pub async fn execute_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::UpdatingWorkItemState {
-            ids: plan.ids.iter().cloned().map(WorkItemId::from).collect(),
+            ids: plan.ids.clone(),
             state: plan.state.clone(),
         },
     );
     let mut updated = Vec::new();
-    for id in &plan.ids {
+    let ado_ids = ado_work_item_id_values(&plan.ids);
+    for (id, ado_id) in plan.ids.iter().zip(ado_ids.iter()) {
         let options = options.clone();
         let state = plan.state.clone();
         let history = plan.history.clone();
         let token = token.clone();
-        let id_for_update = id.clone();
+        let id_for_update = ado_id.clone();
         run_blocking_ado(move || {
             update_work_item_state_authenticated(&options, &id_for_update, &state, &history, &token)
         })
@@ -108,7 +111,7 @@ pub async fn execute_with_events(
             &mut events,
             &mut emit,
             AdoActionEvent::UpdatedWorkItemState {
-                id: WorkItemId::from(id.clone()),
+                id: id.clone(),
                 state: plan.state.clone(),
             },
         );
@@ -132,52 +135,4 @@ fn push_event(
 ) {
     emit(event.clone());
     events.push(event);
-}
-
-pub fn set_state_confirmation_prompt(ids: &[String], project: &str, state: &str) -> String {
-    format!(
-        "Mettre {} work item(s) du projet {project} en état `{state}` ?\n{}",
-        ids.len(),
-        ids.iter()
-            .map(|id| format!("#{id}"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
-
-pub fn set_state_progress_line(count: usize, state: &str) -> String {
-    match count {
-        0 => format!("Mise à jour ADO: aucun work item à passer en `{state}`."),
-        1 => format!("Mise à jour ADO: passage de 1 work item en `{state}`..."),
-        count => format!("Mise à jour ADO: passage de {count} work items en `{state}`..."),
-    }
-}
-
-pub fn set_state_done_line(count: usize, state: &str) -> String {
-    match count {
-        0 => format!("Aucun work item passé en `{state}`."),
-        1 => format!("1 work item passé en `{state}`."),
-        count => format!("{count} work items passés en `{state}`."),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn set_state_messages_include_count_state_and_ids() {
-        assert_eq!(
-            set_state_progress_line(1, "En développement"),
-            "Mise à jour ADO: passage de 1 work item en `En développement`..."
-        );
-        assert_eq!(
-            set_state_done_line(2, "PR en attente"),
-            "2 work items passés en `PR en attente`."
-        );
-        assert_eq!(
-            set_state_confirmation_prompt(&["42".into(), "43".into()], "ha", "Actif"),
-            "Mettre 2 work item(s) du projet ha en état `Actif` ?\n#42, #43"
-        );
-    }
 }

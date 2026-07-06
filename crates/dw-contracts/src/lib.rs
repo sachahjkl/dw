@@ -1,3 +1,4 @@
+use dw_core::WorkItemId;
 use serde::{Deserialize, Serialize};
 
 pub mod completion {
@@ -173,7 +174,7 @@ pub struct TaskPreflightReport {
     pub workspace: String,
     pub project: String,
     #[serde(rename = "workItemIds")]
-    pub work_item_ids: Vec<String>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub issues: Vec<TaskPreflightIssue>,
     #[serde(rename = "hasBlockingIssues")]
     pub has_blocking_issues: bool,

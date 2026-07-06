@@ -3,6 +3,7 @@ use crate::{
     get_work_item_snapshot_authenticated, get_work_item_snapshots_authenticated,
     try_get_pull_request_work_item_ids, work_item_web_url,
 };
+use dw_core::PullRequestId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -51,15 +52,6 @@ pub fn extract_work_item_ids_from_commit_messages(commit_log: &str) -> Vec<Strin
         }
     }
     ids
-}
-
-pub fn parse_id_set(source: &str) -> Vec<String> {
-    source
-        .split([',', ' ', '\n', '\t', ';'])
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.trim_start_matches('#').to_string())
-        .collect()
 }
 
 pub fn render_flat_changelog(
@@ -140,7 +132,7 @@ pub fn group_work_items_by_parent(
 pub fn get_work_item_ids_from_pull_requests(
     options: &AzureDevOpsOptions,
     repositories: &[String],
-    source: &str,
+    pull_request_ids: &[PullRequestId],
     token: &AdoToken,
 ) -> Result<Vec<String>, AdoError> {
     if repositories.is_empty() {
@@ -150,8 +142,8 @@ pub fn get_work_item_ids_from_pull_requests(
     }
 
     let mut ids = Vec::new();
-    for pull_request_id in parse_id_set(source) {
-        let numeric_pull_request_id = pull_request_id.parse::<i64>().map_err(|_| {
+    for pull_request_id in pull_request_ids {
+        let numeric_pull_request_id = pull_request_id.as_str().parse::<i64>().map_err(|_| {
             AdoError::InvalidInput(format!("ID de pull request invalide: {pull_request_id}"))
         })?;
         let mut matches = Vec::new();

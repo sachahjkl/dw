@@ -254,7 +254,7 @@ pub fn selected_ado_action(
                 return None;
             }
             TuiActionRequest::TaskStart(dw_task::start::StartArgs {
-                work_item_id: Some(item.id.clone()),
+                work_item_ids: vec![dw_core::WorkItemId::from(item.id.clone())],
                 root: Some(snapshot.root.clone()),
                 project: Some(project.key.clone()),
                 task: None,
@@ -284,7 +284,7 @@ pub fn selected_ado_action(
         }
         AdoItemAction::Context => {
             TuiActionRequest::AdoContext(dw_ado_commands::commands::context::ContextArgs {
-                id: item.id.clone(),
+                ids: vec![dw_core::WorkItemId::from(item.id.clone())],
                 root: Some(snapshot.root.clone()),
                 project: Some(project.key.clone()),
                 summary: false,
@@ -294,7 +294,7 @@ pub fn selected_ado_action(
         }
         AdoItemAction::WorkItem => {
             TuiActionRequest::AdoWorkItem(dw_ado_commands::commands::work_item::WorkItemArgs {
-                id: item.id.clone(),
+                ids: vec![dw_core::WorkItemId::from(item.id.clone())],
                 root: Some(snapshot.root.clone()),
                 project: Some(project.key.clone()),
             })
@@ -302,7 +302,7 @@ pub fn selected_ado_action(
         AdoItemAction::SetStartState => {
             let state = ado_start_state(snapshot, item)?;
             TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
-                id: item.id.clone(),
+                ids: vec![dw_core::WorkItemId::from(item.id.clone())],
                 root: Some(snapshot.root.clone()),
                 project: Some(project.key.clone()),
                 state,
@@ -365,7 +365,7 @@ pub fn selected_pull_request_action(
                 return None;
             }
             TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
-                pull_request_id: pull_request_id.to_string(),
+                pull_request_id: dw_core::PullRequestId::from(pull_request_id.to_string()),
                 root: Some(snapshot.root.clone()),
                 project: item.project.clone(),
                 repo: Some(item.repository.clone()),
@@ -414,17 +414,16 @@ pub fn selected_pull_request_action(
         }),
         PullRequestAction::Changelog => {
             TuiActionRequest::AdoChangelog(dw_ado_commands::commands::changelog::ChangelogArgs {
-                ids: pull_request_id.to_string(),
+                source: dw_ado_commands::commands::changelog::ChangelogSource::PullRequests(vec![
+                    dw_core::PullRequestId::from(pull_request_id.to_string()),
+                ]),
                 root: Some(snapshot.root.clone()),
                 project: Some(item.project.clone()),
-                from_pr: true,
-                from_git: false,
                 repo: Some(item.ado_repository.clone()),
                 group_by_parent: false,
                 format: None,
                 table: false,
                 ids_only: false,
-                git_to: None,
             })
         }
     };
@@ -582,7 +581,7 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::TaskStart(args) => {
-                assert_eq!(args.work_item_id.as_deref(), Some("42"));
+                assert_eq!(args.work_item_ids, vec![dw_core::WorkItemId::from("42")]);
                 assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
                 assert_eq!(args.project.as_deref(), Some("ha"));
                 assert!(args.mode.executes());
@@ -677,7 +676,7 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::AdoSetState(args) => {
-                assert_eq!(args.id, "42");
+                assert_eq!(args.ids, vec![dw_core::WorkItemId::from("42")]);
                 assert_eq!(args.project.as_deref(), Some("ha"));
                 assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
                 assert_eq!(args.state, "En réalisation");
@@ -700,7 +699,7 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::TaskStartPr(args) => {
-                assert_eq!(args.pull_request_id, "42");
+                assert_eq!(args.pull_request_id, dw_core::PullRequestId::from("42"));
                 assert_eq!(args.repo.as_deref(), Some("front"));
                 assert!(!args.mode.executes());
             }
@@ -740,7 +739,7 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::TaskStartPr(args) => {
-                assert_eq!(args.pull_request_id, "42");
+                assert_eq!(args.pull_request_id, dw_core::PullRequestId::from("42"));
                 assert!(args.mode.executes());
             }
             _ => panic!("expected PR workspace request"),

@@ -7,23 +7,27 @@ use dw_ado::{
     parse_changelog_format,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::{AdoActionEvent, AdoRepositoryName, WorkItemId};
+use dw_core::{AdoActionEvent, AdoRepositoryName, PullRequestId, WorkItemId};
 use serde::Serialize;
 use std::process::Command as ProcessCommand;
 
 #[derive(Debug, Clone)]
 pub struct ChangelogArgs {
-    pub ids: String,
+    pub source: ChangelogSource,
     pub root: Option<String>,
     pub project: Option<String>,
-    pub from_pr: bool,
-    pub from_git: bool,
     pub repo: Option<String>,
     pub group_by_parent: bool,
     pub format: Option<String>,
     pub table: bool,
     pub ids_only: bool,
-    pub git_to: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangelogSource {
+    WorkItems(Vec<WorkItemId>),
+    PullRequests(Vec<PullRequestId>),
+    GitRange { from: String, to: Option<String> },
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -42,7 +46,7 @@ pub struct ChangelogReport {
     #[serde(rename = "idsOnly")]
     pub ids_only: bool,
     #[serde(rename = "workItemIds")]
-    pub work_item_ids: Vec<String>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub items: Vec<dw_ado::WorkItemSnapshot>,
     pub groups: Vec<dw_ado::WorkItemGroup>,
     #[serde(rename = "sourceEmpty")]
@@ -61,23 +65,17 @@ pub async fn report_with_events(
     mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<ChangelogReport> {
     let ChangelogArgs {
-        ids,
+        source,
         root,
         project,
-        from_pr,
-        from_git,
         repo,
         group_by_parent,
         format,
         table,
         ids_only,
-        git_to,
     } = args;
-    if from_pr && from_git {
-        return Err(anyhow::anyhow!(
-            "Choose either PR mode or git mode, not both."
-        ));
-    }
+    let from_pr = matches!(source, ChangelogSource::PullRequests(_));
+    let from_git = matches!(source, ChangelogSource::GitRange { .. });
     let output_format = parse_changelog_format(format.as_deref())?;
     if table && output_format != ChangelogFormat::Markdown {
         return Err(anyhow::anyhow!(
@@ -106,36 +104,49 @@ pub async fn report_with_events(
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
 
-    let work_item_ids = if from_git {
-        push_event(
-            &mut events,
-            &mut emit,
-            AdoActionEvent::ExtractingGitWorkItems {
-                git_to: git_to.clone(),
-            },
-        );
-        extract_work_item_ids_from_git_range(&ids, git_to.as_deref())?
-    } else {
-        let project_config = resolve_project(&projects, &project_key);
-        let repositories = resolve_ado_repositories(project_config.as_ref(), repo.as_deref());
-        push_event(
-            &mut events,
-            &mut emit,
-            AdoActionEvent::ResolvingPullRequestWorkItems {
-                repositories: repositories
-                    .iter()
-                    .cloned()
-                    .map(AdoRepositoryName::from)
-                    .collect(),
-            },
-        );
-        let options = options.clone();
-        let token = token.clone();
-        tokio::task::spawn_blocking(move || {
-            get_work_item_ids_from_pull_requests(&options, &repositories, &ids, &token)
-        })
-        .await
-        .context("resolving work items from pull requests was interrupted")??
+    let work_item_ids = match source {
+        ChangelogSource::WorkItems(ids) => ids,
+        ChangelogSource::GitRange { from, to } => {
+            push_event(
+                &mut events,
+                &mut emit,
+                AdoActionEvent::ExtractingGitWorkItems { git_to: to.clone() },
+            );
+            extract_work_item_ids_from_git_range(&from, to.as_deref())?
+                .into_iter()
+                .map(WorkItemId::from)
+                .collect()
+        }
+        ChangelogSource::PullRequests(pull_request_ids) => {
+            let project_config = resolve_project(&projects, &project_key);
+            let repositories = resolve_ado_repositories(project_config.as_ref(), repo.as_deref());
+            push_event(
+                &mut events,
+                &mut emit,
+                AdoActionEvent::ResolvingPullRequestWorkItems {
+                    repositories: repositories
+                        .iter()
+                        .cloned()
+                        .map(AdoRepositoryName::from)
+                        .collect(),
+                },
+            );
+            let options = options.clone();
+            let token = token.clone();
+            tokio::task::spawn_blocking(move || {
+                get_work_item_ids_from_pull_requests(
+                    &options,
+                    &repositories,
+                    &pull_request_ids,
+                    &token,
+                )
+            })
+            .await
+            .context("resolving work items from pull requests was interrupted")??
+            .into_iter()
+            .map(WorkItemId::from)
+            .collect()
+        }
     };
 
     if work_item_ids.is_empty() {
@@ -149,7 +160,7 @@ pub async fn report_with_events(
             table,
             options,
             ids_only,
-            work_item_ids,
+            work_item_ids: Vec::new(),
             items: Vec::new(),
             groups: Vec::new(),
             source_empty: true,
@@ -182,20 +193,21 @@ pub async fn report_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::LoadingChangelogItems {
-            ids: work_item_ids
-                .iter()
-                .cloned()
-                .map(WorkItemId::from)
-                .collect(),
+            ids: work_item_ids.clone(),
         },
     );
     let mut items = {
         let options = options.clone();
         let token = token.clone();
-        let work_item_ids = work_item_ids.clone();
-        tokio::task::spawn_blocking(move || load_changelog_items(&options, &work_item_ids, &token))
-            .await
-            .context("loading changelog work items was interrupted")??
+        let work_item_id_values = work_item_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>();
+        tokio::task::spawn_blocking(move || {
+            load_changelog_items(&options, &work_item_id_values, &token)
+        })
+        .await
+        .context("loading changelog work items was interrupted")??
     };
     if items.is_empty() {
         return Ok(ChangelogReport {

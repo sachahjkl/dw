@@ -4,15 +4,19 @@ use dw_ado::{
     create_child_task_authenticated, get_related_work_item_ids,
     get_work_item_snapshots_authenticated, is_final_state,
 };
+use dw_core::WorkItemId;
 use dw_workspace::{WorkspaceChildTask, WorkspaceWorkItem};
 
 pub fn load_start_work_items(
     options: &AzureDevOpsOptions,
-    selected_work_item_id: &str,
+    selected_ids: &[WorkItemId],
     with_active_children: bool,
     token: &AdoToken,
 ) -> Result<Vec<dw_workspace::WorkspaceWorkItem>> {
-    let selected_ids = parse_selected_work_item_ids(selected_work_item_id);
+    let selected_ids = selected_ids
+        .iter()
+        .map(|id| id.as_str().to_owned())
+        .collect::<Vec<_>>();
     let snapshots = get_work_item_snapshots_authenticated(options, &selected_ids, token)?;
     if snapshots.is_empty() {
         return Ok(selected_ids
@@ -126,15 +130,6 @@ pub fn merge_start_snapshots(
         .collect()
 }
 
-pub fn parse_selected_work_item_ids(value: &str) -> Vec<String> {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
 pub fn child_task_title(repository: &str, title: &str) -> String {
     let normalized = repository.to_ascii_lowercase();
     let prefix = match normalized.as_str() {
@@ -207,14 +202,6 @@ mod tests {
         );
 
         assert_eq!(work_items.len(), 1);
-    }
-
-    #[test]
-    fn parse_selected_work_item_ids_trims_commas() {
-        assert_eq!(
-            parse_selected_work_item_ids("42, 43,,44"),
-            vec!["42", "43", "44"]
-        );
     }
 
     #[test]

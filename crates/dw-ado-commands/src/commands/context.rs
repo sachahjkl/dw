@@ -1,5 +1,5 @@
 use crate::commands::project::{resolve_ado_options, resolve_cli_ado_options};
-use crate::commands::work_item::parse_work_item_ids_as_strings;
+use crate::commands::work_item::ado_work_item_id_values;
 use crate::load_auth_options;
 use anyhow::{Context, Result};
 use dw_ado::auth::{AdoToken, require_token};
@@ -11,7 +11,7 @@ use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct ContextArgs {
-    pub id: String,
+    pub ids: Vec<WorkItemId>,
     pub root: Option<String>,
     pub project: Option<String>,
     pub summary: bool,
@@ -30,7 +30,7 @@ pub struct ContextReport {
     pub root: String,
     pub project: String,
     #[serde(rename = "requestedIds")]
-    pub requested_ids: Vec<String>,
+    pub requested_ids: Vec<WorkItemId>,
     pub summary: bool,
     pub comments: i32,
     pub expanded: Vec<Value>,
@@ -43,7 +43,7 @@ pub struct AiContextArgs {
     pub root: Option<String>,
     pub organization: Option<String>,
     pub project: Option<String>,
-    pub id: String,
+    pub ids: Vec<WorkItemId>,
     pub summary: bool,
     pub comments: i32,
     pub include_comments: bool,
@@ -53,7 +53,7 @@ pub struct AiContextArgs {
 pub struct AiContextReport {
     pub root: String,
     #[serde(rename = "requestedIds")]
-    pub requested_ids: Vec<String>,
+    pub requested_ids: Vec<WorkItemId>,
     pub summary: bool,
     pub comments: i32,
     #[serde(rename = "includeComments")]
@@ -71,7 +71,7 @@ pub async fn context_report_with_events(
     mut emit: impl FnMut(AdoActionEvent),
 ) -> Result<ContextReport> {
     let ContextArgs {
-        id,
+        ids,
         root,
         project,
         summary,
@@ -93,17 +93,18 @@ pub async fn context_report_with_events(
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
-    let ids = parse_work_item_ids_as_strings(&id)?;
+    if ids.is_empty() {
+        return Err(anyhow::anyhow!("Au moins un work item est requis."));
+    }
+    let id_values = ado_work_item_id_values(&ids);
     push_event(
         &mut events,
         &mut emit,
-        AdoActionEvent::LoadingWorkItems {
-            ids: ids.iter().cloned().map(WorkItemId::from).collect(),
-        },
+        AdoActionEvent::LoadingWorkItems { ids: ids.clone() },
     );
     if mode == ContextMode::Expanded {
         let options = options.clone();
-        let expanded_ids = ids.clone();
+        let expanded_ids = id_values.clone();
         let expanded = tokio::task::spawn_blocking(move || {
             load_expanded_context_items(&options, &expanded_ids, &token)
         })
@@ -121,7 +122,7 @@ pub async fn context_report_with_events(
         })
     } else {
         let options = options.clone();
-        let context_ids = ids.clone();
+        let context_ids = id_values.clone();
         let items = tokio::task::spawn_blocking(move || {
             load_ai_context_items(&options, &context_ids, summary, comments, &token)
         })
@@ -152,7 +153,7 @@ pub async fn ai_context_report_with_events(
         root,
         organization,
         project,
-        id,
+        ids,
         summary,
         comments,
         include_comments,
@@ -166,15 +167,16 @@ pub async fn ai_context_report_with_events(
         AdoActionEvent::Authenticating { project: None },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
-    let ids = parse_work_item_ids_as_strings(&id)?;
+    if ids.is_empty() {
+        return Err(anyhow::anyhow!("Au moins un work item est requis."));
+    }
+    let id_values = ado_work_item_id_values(&ids);
     push_event(
         &mut events,
         &mut emit,
-        AdoActionEvent::LoadingWorkItems {
-            ids: ids.iter().cloned().map(WorkItemId::from).collect(),
-        },
+        AdoActionEvent::LoadingWorkItems { ids: ids.clone() },
     );
-    let context_ids = ids.clone();
+    let context_ids = id_values.clone();
     let context_comments = if include_comments { comments } else { 0 };
     let items = tokio::task::spawn_blocking(move || {
         load_ai_context_items(&options, &context_ids, summary, context_comments, &token)

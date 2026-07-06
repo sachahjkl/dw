@@ -6,6 +6,7 @@ use dw_ado::{
     get_work_item_snapshots_authenticated, run_blocking_ado,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
+use dw_core::WorkItemId;
 use dw_workspace::{
     WorkspaceManifest, execute_add_child_task, execute_task_rename, execute_task_sync,
     plan_task_rename, read_manifest_path, requires_child_tasks, resolve_workspace,
@@ -50,7 +51,7 @@ pub struct CreateChildTaskArgs {
 pub struct SyncReport {
     pub workspace: String,
     #[serde(rename = "requestedIds")]
-    pub requested_ids: Vec<String>,
+    pub requested_ids: Vec<WorkItemId>,
     pub snapshots: Vec<WorkItemSnapshot>,
     pub manifest: WorkspaceManifest,
 }
@@ -121,7 +122,7 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
 
     Ok(SyncReport {
         workspace,
-        requested_ids,
+        requested_ids: requested_ids.into_iter().map(WorkItemId::from).collect(),
         snapshots,
         manifest: updated,
     })

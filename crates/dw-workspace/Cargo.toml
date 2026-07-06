@@ -10,6 +10,7 @@ repository.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 dw-ado = { path = "../dw-ado" }
 dw-config = { path = "../dw-config" }
+dw-core = { path = "../dw-core" }
 dw-contracts = { path = "../dw-contracts" }
 dw-git = { path = "../dw-git" }
 dw-process = { path = "../dw-process" }

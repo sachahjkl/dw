@@ -321,6 +321,15 @@ impl WorkItemId {
         Self(value.into())
     }
 
+    pub fn parse_many(input: &str) -> Vec<Self> {
+        input
+            .split(',')
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(Self::from)
+            .collect()
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -351,6 +360,15 @@ pub struct PullRequestId(String);
 impl PullRequestId {
     pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())
+    }
+
+    pub fn parse_many(input: &str) -> Vec<Self> {
+        input
+            .split(',')
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(Self::from)
+            .collect()
     }
 
     pub fn as_str(&self) -> &str {

@@ -7,4 +7,5 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+dw-core = { path = "../dw-core" }
 serde.workspace = true
