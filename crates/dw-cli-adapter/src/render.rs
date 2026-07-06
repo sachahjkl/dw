@@ -34,9 +34,13 @@ pub fn auth_login_lines(report: &AuthLoginReport) -> Vec<String> {
         format!("Mode      : {}", auth_login_mode_label(report.mode)),
         format!(
             "Source    : {}",
-            report.source.as_deref().unwrap_or("source inconnue")
+            report
+                .source
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "source inconnue".into())
         ),
-        expiration_line(report.expires_on.as_deref()),
+        expiration_line(report.expires_on.as_ref()),
     ]
 }
 
@@ -47,9 +51,13 @@ pub fn auth_status_lines(report: &AuthStatusReport) -> Vec<String> {
             "Statut    : connecté".into(),
             format!(
                 "Source    : {}",
-                report.source.as_deref().unwrap_or("source inconnue")
+                report
+                    .source
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "source inconnue".into())
             ),
-            expiration_line(report.expires_on.as_deref()),
+            expiration_line(report.expires_on.as_ref()),
         ]
     } else {
         vec![

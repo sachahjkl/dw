@@ -1132,6 +1132,48 @@ fn app_and_tui_core_requests_use_typed_config_agent_and_secret_values() {
 }
 
 #[test]
+fn ado_auth_contracts_use_typed_root_source_and_expiration() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-ado-commands/src/auth.rs");
+    let text = fs::read_to_string(&path).expect("read auth source");
+    for required in [
+        "DevWorkflowRoot",
+        "AuthTokenSource",
+        "AuthTokenExpiration",
+        "pub source: Option<AuthTokenSource>",
+        "pub expires_on: Option<AuthTokenExpiration>",
+        "root: Option<DevWorkflowRoot>",
+        "pub async fn status_report(root: Option<DevWorkflowRoot>)",
+        "pub fn logout_report(root: Option<DevWorkflowRoot>)",
+        "pub fn expiration_line(expires_on: Option<&AuthTokenExpiration>)",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should contain typed auth contract token `{}`",
+            path.display(),
+            required
+        );
+    }
+    for forbidden in [
+        "pub source: Option<String>",
+        "pub expires_on: Option<String>",
+        "root: Option<String>",
+        "status_report(root: Option<String>)",
+        "logout_report(root: Option<String>)",
+        "expiration_line(expires_on: Option<&str>)",
+        "source: Some(token.source)",
+        "expires_on: token.expires_on,",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains forbidden string auth contract token `{}`",
+            path.display(),
+            forbidden
+        );
+    }
+}
+
+#[test]
 fn config_color_and_set_reports_are_domain_typed() {
     let repo = repo_root();
     let checked: &[(&str, &[&str], &[&str])] = &[

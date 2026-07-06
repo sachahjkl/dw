@@ -149,6 +149,7 @@ fn clear_upgrade_spinner() -> Result<()> {
 async fn handle_auth(command: AuthCommand) -> Result<()> {
     match command {
         AuthCommand::Login { root } => {
+            let root = root.map(DevWorkflowRoot::from);
             let mode = Select::new(
                 "Mode de connexion Azure DevOps",
                 dw_ado_commands::auth::auth_login_choices(),
@@ -161,14 +162,15 @@ async fn handle_auth(command: AuthCommand) -> Result<()> {
             print_lines(&dw_cli_adapter::render::auth_login_lines(&report));
         }
         AuthCommand::Status { root } => {
-            let report = dw_ado_commands::auth::status_report(root).await?;
+            let report =
+                dw_ado_commands::auth::status_report(root.map(DevWorkflowRoot::from)).await?;
             print_lines(&dw_cli_adapter::render::auth_status_lines(&report));
             if !report.connected {
                 std::process::exit(1);
             }
         }
         AuthCommand::Logout { root } => {
-            let report = dw_ado_commands::auth::logout_report(root)?;
+            let report = dw_ado_commands::auth::logout_report(root.map(DevWorkflowRoot::from))?;
             print_lines(&dw_cli_adapter::render::auth_logout_lines(&report));
         }
     }
