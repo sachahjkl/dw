@@ -1,9 +1,12 @@
 use dw_config::{ProjectConfig, RepositoryConfig, WorkflowConfig, repository_config};
-use dw_core::{WorkItemState, WorkspaceRepositoryName};
+use dw_core::{
+    AdoRepositoryName, BranchName, RepositoryPath, WorkItemState, WorkspaceRepositoryName,
+};
 use dw_git::RepositoryStatus;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -30,8 +33,8 @@ pub enum TaskFinishError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationResult {
-    pub repository: String,
-    pub command: String,
+    pub repository: WorkspaceRepositoryName,
+    pub command: VerificationCommand,
     #[serde(rename = "exitCode")]
     pub exit_code: i32,
     #[serde(rename = "standardOutput")]
@@ -42,10 +45,42 @@ pub struct VerificationResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PullRequestCandidate {
-    pub repository: String,
-    pub path: String,
-    pub ado_repository: Option<String>,
-    pub target_branch: String,
+    pub repository: WorkspaceRepositoryName,
+    pub path: RepositoryPath,
+    pub ado_repository: Option<AdoRepositoryName>,
+    pub target_branch: BranchName,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct VerificationCommand(String);
+
+impl VerificationCommand {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for VerificationCommand {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for VerificationCommand {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for VerificationCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,7 +89,7 @@ pub struct TaskFinishOptions {
     pub update_work_item_state: bool,
     pub bug_state: WorkItemState,
     pub task_state: WorkItemState,
-    pub verification_commands: BTreeMap<String, Vec<String>>,
+    pub verification_commands: BTreeMap<WorkspaceRepositoryName, Vec<VerificationCommand>>,
 }
 
 impl Default for TaskFinishOptions {
@@ -102,7 +137,7 @@ pub fn select_pull_request_candidates(
 ) -> Vec<PullRequestCandidate> {
     let actionable = actionable_repositories
         .iter()
-        .filter_map(|repository| candidate_for(statuses, repository.as_str(), project_config))
+        .filter_map(|repository| candidate_for(statuses, repository, project_config))
         .collect::<Vec<_>>();
     if !actionable.is_empty() {
         return actionable;
@@ -137,7 +172,7 @@ pub fn run_verification(
         };
         for command in commands {
             let resolved = resolve_node_package_manager_command(command);
-            let output = run_shell(&candidate.path, &resolved);
+            let output = run_shell(candidate.path.as_str(), resolved.as_str());
             results.push(VerificationResult {
                 repository: candidate.repository.clone(),
                 command: resolved,
@@ -233,12 +268,17 @@ pub fn read_handoff_summary(
 
 fn candidate_for(
     statuses: &[(&TaskCommitTarget, RepositoryStatus)],
-    repository: &str,
+    repository: &WorkspaceRepositoryName,
     project_config: Option<&ProjectConfig>,
 ) -> Option<PullRequestCandidate> {
     statuses
         .iter()
-        .find(|(target, _)| target.repository.as_str().eq_ignore_ascii_case(repository))
+        .find(|(target, _)| {
+            target
+                .repository
+                .as_str()
+                .eq_ignore_ascii_case(repository.as_str())
+        })
         .and_then(|(target, _)| candidate_from_target(target, project_config))
 }
 
@@ -251,10 +291,11 @@ fn candidate_from_target(
     let ado_repository = repo_config
         .as_ref()
         .and_then(|repo| repo.azure_dev_ops_repository.clone())
-        .filter(|value| !value.trim().is_empty());
+        .filter(|value| !value.trim().is_empty())
+        .map(AdoRepositoryName::from);
     Some(PullRequestCandidate {
-        repository: target.repository.as_str().to_owned(),
-        path: target.path.as_str().to_owned(),
+        repository: target.repository.clone(),
+        path: target.path.clone(),
         ado_repository,
         target_branch: target_branch(repo_config.as_ref()),
     })
@@ -269,7 +310,7 @@ fn has_reviewable_commits(
         .and_then(|project| repository_config(project, repository))
         .as_ref()
         .map(|repo| target_branch(Some(repo)))
-        .unwrap_or_else(|| "main".into());
+        .unwrap_or_else(|| BranchName::from("main"));
     let comparison = format!("origin/{target}..HEAD");
     let Ok(output) = Command::new("git")
         .args(["rev-list", "--count", &comparison])
@@ -287,20 +328,29 @@ fn has_reviewable_commits(
         .is_ok_and(|ahead| ahead > 0)
 }
 
-fn target_branch(repo: Option<&RepositoryConfig>) -> String {
+fn target_branch(repo: Option<&RepositoryConfig>) -> BranchName {
     repo.and_then(|repo| repo.pull_request_target_branch.clone())
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
             repo.map(|repo| repo.default_branch.clone())
                 .filter(|value| !value.trim().is_empty())
         })
-        .unwrap_or_else(|| "main".into())
+        .map(BranchName::from)
+        .unwrap_or_else(|| BranchName::from("main"))
 }
 
-fn render_verification(repository: &str, results: &[VerificationResult]) -> String {
+fn render_verification(
+    repository: &WorkspaceRepositoryName,
+    results: &[VerificationResult],
+) -> String {
     let matching = results
         .iter()
-        .filter(|result| result.repository.eq_ignore_ascii_case(repository))
+        .filter(|result| {
+            result
+                .repository
+                .as_str()
+                .eq_ignore_ascii_case(repository.as_str())
+        })
         .map(|result| {
             format!(
                 "- `{}`: {}",
@@ -341,7 +391,9 @@ fn state_property(value: &Value, key: &str) -> Option<WorkItemState> {
         .map(WorkItemState::from)
 }
 
-fn verification_commands(value: &Value) -> BTreeMap<String, Vec<String>> {
+fn verification_commands(
+    value: &Value,
+) -> BTreeMap<WorkspaceRepositoryName, Vec<VerificationCommand>> {
     value
         .get("verificationCommands")
         .and_then(Value::as_object)
@@ -357,28 +409,30 @@ fn verification_commands(value: &Value) -> BTreeMap<String, Vec<String>> {
                                 .filter_map(Value::as_str)
                                 .map(str::trim)
                                 .filter(|command| !command.is_empty())
-                                .map(ToOwned::to_owned)
+                                .map(VerificationCommand::from)
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
-                    (!commands.is_empty()).then(|| (repository.clone(), commands))
+                    (!commands.is_empty())
+                        .then(|| (WorkspaceRepositoryName::from(repository.as_str()), commands))
                 })
                 .collect()
         })
         .unwrap_or_default()
 }
 
-fn resolve_node_package_manager_command(command: &str) -> String {
+fn resolve_node_package_manager_command(command: &VerificationCommand) -> VerificationCommand {
+    let command = command.as_str();
     let trimmed = command.trim_start();
     if !trimmed.starts_with("npm ") || !command_available("pnpm") {
-        return command.into();
+        return VerificationCommand::from(command);
     }
     let leading_whitespace = command.len() - trimmed.len();
-    format!(
+    VerificationCommand::from(format!(
         "{}pnpm{}",
         &command[..leading_whitespace],
         &trimmed["npm".len()..]
-    )
+    ))
 }
 
 fn command_available(command: &str) -> bool {
@@ -463,8 +517,8 @@ mod tests {
         assert_eq!(options.bug_state, WorkItemState::from("Review"));
         assert_eq!(options.task_state, WorkItemState::from("Done"));
         assert_eq!(
-            options.verification_commands["front"],
-            vec!["npm test".to_string()]
+            options.verification_commands[&WorkspaceRepositoryName::from("front")],
+            vec![VerificationCommand::from("npm test")]
         );
     }
 
@@ -511,10 +565,10 @@ mod tests {
             child_tasks: None,
         };
         let candidate = PullRequestCandidate {
-            repository: "front".into(),
-            path: "/tmp/front".into(),
-            ado_repository: Some("FrontRepo".into()),
-            target_branch: "main".into(),
+            repository: WorkspaceRepositoryName::from("front"),
+            path: RepositoryPath::from("/tmp/front"),
+            ado_repository: Some(AdoRepositoryName::from("FrontRepo")),
+            target_branch: BranchName::from("main"),
         };
         let handoff = WorkspaceHandoffSummary {
             repository: WorkspaceRepositoryName::from("front"),
@@ -526,8 +580,8 @@ mod tests {
             follow_up: vec![],
         };
         let verification = vec![VerificationResult {
-            repository: "front".into(),
-            command: "pnpm test".into(),
+            repository: WorkspaceRepositoryName::from("front"),
+            command: VerificationCommand::from("pnpm test"),
             exit_code: 0,
             standard_output: String::new(),
             standard_error: String::new(),

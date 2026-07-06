@@ -2922,10 +2922,10 @@ mod tests {
             unpushed_repositories: Vec::new(),
             actionable_repositories: vec!["front".into()],
             pull_request_candidates: vec![dw_workspace::PullRequestCandidate {
-                repository: "front".into(),
-                path: "/tmp/ws/front".into(),
-                ado_repository: Some("front".into()),
-                target_branch: "develop".into(),
+                repository: dw_core::WorkspaceRepositoryName::from("front"),
+                path: dw_core::RepositoryPath::from("/tmp/ws/front"),
+                ado_repository: Some(dw_core::AdoRepositoryName::from("front")),
+                target_branch: dw_core::BranchName::from("develop"),
             }],
         };
 

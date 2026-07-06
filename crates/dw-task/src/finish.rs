@@ -366,7 +366,7 @@ pub async fn execute_finish_with_events(
     for candidate in &plan.pull_request_candidates {
         let Some(ado_repository) = candidate.ado_repository.as_ref() else {
             pull_requests.push(FinishPullRequestResult {
-                repository: WorkspaceRepositoryName::from(candidate.repository.clone()),
+                repository: candidate.repository.clone(),
                 action: FinishPullRequestAction::Skipped,
                 url: None,
                 pull_request_id: None,
@@ -378,7 +378,7 @@ pub async fn execute_finish_with_events(
             &mut events,
             &mut emit,
             TaskActionEvent::CheckingActivePullRequest {
-                repository: candidate.repository.clone().into(),
+                repository: candidate.repository.clone(),
             },
         );
         let options_for_find = options.clone();
@@ -388,7 +388,7 @@ pub async fn execute_finish_with_events(
         if let Some(existing) = run_blocking_ado(move || {
             try_find_active_pull_request_authenticated(
                 &options_for_find,
-                &repository_for_find,
+                repository_for_find.as_str(),
                 &source_ref_for_find,
                 &token_for_find,
             )
@@ -396,7 +396,7 @@ pub async fn execute_finish_with_events(
         .await?
         {
             pull_requests.push(FinishPullRequestResult {
-                repository: WorkspaceRepositoryName::from(candidate.repository.clone()),
+                repository: candidate.repository.clone(),
                 action: FinishPullRequestAction::Existing,
                 url: existing.url,
                 pull_request_id: Some(existing.pull_request_id),
@@ -408,13 +408,15 @@ pub async fn execute_finish_with_events(
             &mut events,
             &mut emit,
             TaskActionEvent::CreatingPullRequest {
-                repository: candidate.repository.clone().into(),
+                repository: candidate.repository.clone(),
             },
         );
-        let handoff_summary =
-            read_handoff_summary(Path::new(plan.workspace.as_str()), &candidate.repository)?;
+        let handoff_summary = read_handoff_summary(
+            Path::new(plan.workspace.as_str()),
+            candidate.repository.as_str(),
+        )?;
         let input = CreatePullRequestInput {
-            repository: ado_repository.clone(),
+            repository: ado_repository.to_string(),
             source_ref_name: source_ref.clone(),
             target_ref_name: format!("refs/heads/{}", candidate.target_branch),
             title: pull_request_title(&plan.manifest),
@@ -448,7 +450,7 @@ pub async fn execute_finish_with_events(
                 if let Err(error) = run_blocking_ado(move || {
                     link_work_item_to_pull_request_authenticated(
                         &options_for_link,
-                        &repository_for_link,
+                        repository_for_link.as_str(),
                         pull_request_id,
                         id_for_link.as_str(),
                         &token_for_link,
@@ -586,11 +588,11 @@ pub fn finish_has_work(plan: &FinishPlanReport) -> bool {
 }
 
 fn created_pr_result(
-    repository: &str,
+    repository: &WorkspaceRepositoryName,
     created: PullRequestCreateResult,
 ) -> FinishPullRequestResult {
     FinishPullRequestResult {
-        repository: repository.into(),
+        repository: repository.clone(),
         action: FinishPullRequestAction::Created,
         url: created.url,
         pull_request_id: created.pull_request_id,

@@ -1016,6 +1016,43 @@ fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
             required
         );
     }
+
+    let workspace_path = repo.join("crates/dw-workspace/src/finish.rs");
+    let workspace_text = fs::read_to_string(&workspace_path).expect("read workspace finish source");
+    for forbidden in [
+        "pub struct VerificationResult {\n    pub repository: String",
+        "pub command: String",
+        "pub struct PullRequestCandidate {\n    pub repository: String",
+        "pub path: String",
+        "pub ado_repository: Option<String>",
+        "pub target_branch: String",
+        "pub verification_commands: BTreeMap<String, Vec<String>>",
+        "fn verification_commands(value: &Value) -> BTreeMap<String, Vec<String>>",
+    ] {
+        assert!(
+            !workspace_text.contains(forbidden),
+            "{} contains primitive workspace finish contract token `{}`",
+            workspace_path.display(),
+            forbidden
+        );
+    }
+    for required in [
+        "pub repository: WorkspaceRepositoryName",
+        "pub command: VerificationCommand",
+        "pub struct PullRequestCandidate",
+        "pub path: RepositoryPath",
+        "pub ado_repository: Option<AdoRepositoryName>",
+        "pub target_branch: BranchName",
+        "pub struct VerificationCommand",
+        "pub verification_commands: BTreeMap<WorkspaceRepositoryName, Vec<VerificationCommand>>",
+    ] {
+        assert!(
+            workspace_text.contains(required),
+            "{} should expose typed workspace finish contract token `{}`",
+            workspace_path.display(),
+            required
+        );
+    }
 }
 
 #[test]
