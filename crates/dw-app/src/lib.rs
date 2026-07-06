@@ -3,7 +3,7 @@ use dw_core::{
     Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
     EnvironmentVariableName, RuntimeIdentifier, SecretKey, TaskActionEvent,
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone)]
@@ -191,7 +191,7 @@ pub enum UpgradeActionResult {
 }
 
 pub struct DwActionRun {
-    pub events: mpsc::Receiver<DwActionEvent>,
+    pub events: UnboundedReceiver<DwActionEvent>,
     pub result: JoinHandle<Result<DwActionResult>>,
 }
 
@@ -203,10 +203,10 @@ pub fn spawn_action(request: DwActionRequest) -> DwActionRun {
 }
 
 fn spawn_callback_action(request: DwActionRequest) -> DwActionRun {
-    let (sender, receiver) = mpsc::channel(64);
+    let (sender, receiver) = mpsc::unbounded_channel();
     let result = tokio::spawn(async move {
         run_action(request, |event| {
-            let _ = sender.try_send(event);
+            let _ = sender.send(event);
         })
         .await
     });
@@ -218,11 +218,11 @@ fn spawn_callback_action(request: DwActionRequest) -> DwActionRun {
 
 fn spawn_upgrade_action(check: bool, rid: Option<RuntimeIdentifier>) -> DwActionRun {
     let upgrade = dw_upgrade::spawn_upgrade(check, rid);
-    let (sender, receiver) = mpsc::channel(64);
+    let (sender, receiver) = mpsc::unbounded_channel();
     let result = tokio::spawn(async move {
         let mut upgrade_events = upgrade.events;
         while let Some(event) = upgrade_events.recv().await {
-            let _ = sender.send(DwActionEvent::Upgrade(event)).await;
+            let _ = sender.send(DwActionEvent::Upgrade(event));
         }
         let report = upgrade.result.await??;
         Ok(DwActionResult::Upgrade(UpgradeActionResult::Report(report)))

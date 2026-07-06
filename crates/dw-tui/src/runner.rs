@@ -62,11 +62,15 @@ where
 {
     let mut events = Vec::new();
     let request = action_request(action)?;
-    let result = dw_app::run_action(request, |event| {
+    let action_run = dw_app::spawn_action(request);
+    let mut event_stream = action_run.events;
+    let result = action_run.result;
+
+    while let Some(event) = event_stream.recv().await {
         on_event(event.clone());
         events.push(event);
-    })
-    .await?;
+    }
+    let result = result.await??;
 
     Ok(CapturedActionRunResult {
         display_label: action.display_label(),
