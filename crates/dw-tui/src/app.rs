@@ -1241,7 +1241,7 @@ impl App {
         action: TuiAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
-        if self.run_inline_detail_action(&action) {
+        if self.run_inline_detail_action(&action).await? {
             return Ok(());
         }
 
@@ -1260,41 +1260,50 @@ impl App {
         self.run_action(action, terminal).await
     }
 
-    fn run_inline_detail_action(&mut self, action: &TuiAction) -> bool {
+    async fn run_inline_detail_action(&mut self, action: &TuiAction) -> Result<bool> {
         match &action.request {
             TuiActionRequest::Guide => {
                 self.open_detail_panel(DetailPanel::guide(guide_detail_lines()));
                 self.messages.push("Quick start opened.".into());
-                true
+                Ok(true)
             }
-            TuiActionRequest::ConfigShow { root } => {
-                let report = dw_config::command::show(root.as_ref());
-                self.open_detail_panel(DetailPanel::config_show(&report));
-                self.messages.push("Configuration loaded from core.".into());
-                true
+            TuiActionRequest::ConfigShow { .. } => {
+                let result = runner::run_captured_streaming(action, |_| {}).await?;
+                match result.result {
+                    dw_app::DwActionResult::Config(dw_app::ConfigActionResult::Show(report)) => {
+                        self.open_detail_panel(DetailPanel::config_show(&report));
+                        self.messages.push("Configuration loaded from core.".into());
+                        Ok(true)
+                    }
+                    result => anyhow::bail!("Unexpected config show result: {result:?}"),
+                }
             }
-            TuiActionRequest::ConfigDoctor { root } => {
-                let report = dw_config::command::doctor(root.as_ref());
-                self.snapshot.config_doctor = report.clone();
-                self.open_detail_panel(DetailPanel::config_doctor(&report));
-                self.messages
-                    .push("Configuration doctor completed from core.".into());
-                true
+            TuiActionRequest::ConfigDoctor { .. } => {
+                let result = runner::run_captured_streaming(action, |_| {}).await?;
+                match result.result {
+                    dw_app::DwActionResult::Config(dw_app::ConfigActionResult::Doctor(report)) => {
+                        self.snapshot.config_doctor = report.clone();
+                        self.open_detail_panel(DetailPanel::config_doctor(&report));
+                        self.messages
+                            .push("Configuration doctor completed from core.".into());
+                        Ok(true)
+                    }
+                    result => anyhow::bail!("Unexpected config doctor result: {result:?}"),
+                }
             }
-            TuiActionRequest::AgentDoctor { agent } => {
-                match dw_agent::command::agent_doctor(*agent) {
-                    Ok(report) => {
+            TuiActionRequest::AgentDoctor { .. } => {
+                let result = runner::run_captured_streaming(action, |_| {}).await?;
+                match result.result {
+                    dw_app::DwActionResult::Agent(dw_app::AgentActionResult::Doctor(report)) => {
                         self.open_detail_panel(DetailPanel::agent_doctor(&report));
                         self.messages
                             .push("Agent doctor completed from core.".into());
+                        Ok(true)
                     }
-                    Err(error) => {
-                        self.messages.push(format!("Agent doctor failed: {error}"));
-                    }
+                    result => anyhow::bail!("Unexpected agent doctor result: {result:?}"),
                 }
-                true
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 
@@ -1303,7 +1312,7 @@ impl App {
         option: QuickOptionAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
-        if self.run_core_quick_option(option) {
+        if self.run_core_quick_option(option).await? {
             return Ok(());
         }
         self.request_or_run_action(
@@ -1313,8 +1322,9 @@ impl App {
         .await
     }
 
-    fn run_core_quick_option(&mut self, option: QuickOptionAction) -> bool {
+    async fn run_core_quick_option(&mut self, option: QuickOptionAction) -> Result<bool> {
         self.run_inline_detail_action(&actions::option_action(&self.snapshot.root, option))
+            .await
     }
 
     async fn run_selected_option_action(
@@ -2971,11 +2981,15 @@ mod tests {
         assert_eq!(app.selected_option, 1);
     }
 
-    #[test]
-    fn config_show_quick_option_uses_core_detail_panel() {
+    #[tokio::test]
+    async fn config_show_quick_option_uses_core_detail_panel() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
-        assert!(app.run_core_quick_option(QuickOptionAction::ConfigShow));
+        assert!(
+            app.run_core_quick_option(QuickOptionAction::ConfigShow)
+                .await
+                .expect("quick option")
+        );
 
         let detail = app.detail.expect("detail panel");
         assert_eq!(detail.title(), "Effective configuration");
@@ -2986,13 +3000,17 @@ mod tests {
         assert!(app.history.entries.is_empty());
     }
 
-    #[test]
-    fn config_detail_opened_from_menu_returns_to_menu_when_closed() {
+    #[tokio::test]
+    async fn config_detail_opened_from_menu_returns_to_menu_when_closed() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.open_options();
 
         assert!(app.options_open);
-        assert!(app.run_core_quick_option(QuickOptionAction::ConfigShow));
+        assert!(
+            app.run_core_quick_option(QuickOptionAction::ConfigShow)
+                .await
+                .expect("quick option")
+        );
         assert!(app.options_open);
         assert!(app.detail.is_some());
 
@@ -3003,8 +3021,8 @@ mod tests {
         assert!(app.detail.is_none());
     }
 
-    #[test]
-    fn config_doctor_quick_option_refreshes_snapshot_and_uses_core_detail_panel() {
+    #[tokio::test]
+    async fn config_doctor_quick_option_refreshes_snapshot_and_uses_core_detail_panel() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.snapshot.config_doctor = dw_config::ConfigDoctorReport {
             root: "/tmp/old".into(),
@@ -3012,7 +3030,11 @@ mod tests {
             checks: vec![],
         };
 
-        assert!(app.run_core_quick_option(QuickOptionAction::ConfigDoctor));
+        assert!(
+            app.run_core_quick_option(QuickOptionAction::ConfigDoctor)
+                .await
+                .expect("quick option")
+        );
 
         assert_eq!(app.snapshot.config_doctor.root, "/tmp/missing-dw-root");
         let detail = app.detail.expect("detail panel");
@@ -3025,11 +3047,15 @@ mod tests {
         assert!(app.history.entries.is_empty());
     }
 
-    #[test]
-    fn agent_doctor_quick_option_uses_core_detail_panel() {
+    #[tokio::test]
+    async fn agent_doctor_quick_option_uses_core_detail_panel() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
-        assert!(app.run_core_quick_option(QuickOptionAction::AgentDoctor));
+        assert!(
+            app.run_core_quick_option(QuickOptionAction::AgentDoctor)
+                .await
+                .expect("quick option")
+        );
 
         let detail = app.detail.expect("detail panel");
         assert_eq!(detail.title(), "Agent doctor");
@@ -3040,12 +3066,16 @@ mod tests {
         assert!(app.history.entries.is_empty());
     }
 
-    #[test]
-    fn guide_action_uses_detail_panel_not_history() {
+    #[tokio::test]
+    async fn guide_action_uses_detail_panel_not_history() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         let action = actions::option_action(&app.snapshot.root, QuickOptionAction::Guide);
 
-        assert!(app.run_inline_detail_action(&action));
+        assert!(
+            app.run_inline_detail_action(&action)
+                .await
+                .expect("inline detail")
+        );
 
         let detail = app.detail.expect("detail panel");
         assert_eq!(detail.title(), "DevWorkflow guide");
