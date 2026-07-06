@@ -1,5 +1,4 @@
 use crate::cli::*;
-use crate::guide::print_guide;
 use crate::version::informational_version;
 use anyhow::Result;
 use dw_cli_adapter::{
@@ -26,7 +25,10 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
             ));
         }
         Command::Guide => {
-            print_guide(&informational_version());
+            print_lines(&dw_cli_adapter::render::guide_lines(
+                &informational_version(),
+                &TerminalTheme::stdout_auto(),
+            ));
         }
         Command::Doctor { fix } => {
             let report = dw_doctor::run_doctor(fix)?;

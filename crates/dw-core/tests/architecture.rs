@@ -1336,8 +1336,14 @@ fn cli_handlers_delegate_stable_rendering_to_cli_adapter() {
     let repo = repo_root();
     let handlers = fs::read_to_string(repo.join("crates/dw-cli/src/handlers.rs"))
         .expect("read cli handlers source");
+    assert!(
+        !repo.join("crates/dw-cli/src/guide.rs").exists(),
+        "CLI guide rendering should live in dw-cli-adapter, not dw-cli"
+    );
     for forbidden in [
         "println!(\"Dev Workflow",
+        "print_guide(",
+        "render_guide(",
         "dw_cli_adapter::render::db_query_table(result",
         "dw_cli_adapter::render::db_query_tsv(result",
     ] {
@@ -1353,6 +1359,10 @@ fn cli_handlers_delegate_stable_rendering_to_cli_adapter() {
     assert!(
         render.contains("pub fn version_lines"),
         "dw-cli-adapter render should own version display lines"
+    );
+    assert!(
+        render.contains("pub fn guide_lines"),
+        "dw-cli-adapter render should own guide display lines"
     );
     assert!(
         render.contains("pub enum DbQueryRenderedOutput")
