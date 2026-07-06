@@ -246,16 +246,25 @@ async fn handle_auth(command: AuthCommand) -> Result<()> {
             print_lines(&dw_cli_adapter::render::auth_login_lines(&report));
         }
         AuthCommand::Status { root } => {
-            let report =
-                dw_ado_commands::auth::status_report(root.map(DevWorkflowRoot::from)).await?;
-            print_lines(&dw_cli_adapter::render::auth_status_lines(&report));
-            if !report.connected {
-                std::process::exit(1);
+            let result = execute_cli_action(dw_app::DwActionRequest::AdoAuthStatus {
+                root: root.map(DevWorkflowRoot::from),
+            })
+            .await?;
+            match result {
+                dw_app::DwActionResult::Ado(dw_app::AdoActionResult::AuthStatus(report)) => {
+                    print_lines(&dw_cli_adapter::render::auth_status_lines(&report));
+                    if !report.connected {
+                        std::process::exit(1);
+                    }
+                }
+                result => anyhow::bail!("Résultat auth status inattendu: {result:?}"),
             }
         }
         AuthCommand::Logout { root } => {
-            let report = dw_ado_commands::auth::logout_report(root.map(DevWorkflowRoot::from))?;
-            print_lines(&dw_cli_adapter::render::auth_logout_lines(&report));
+            run_cli_action(dw_app::DwActionRequest::AdoAuthLogout {
+                root: root.map(DevWorkflowRoot::from),
+            })
+            .await?;
         }
     }
     Ok(())

@@ -39,6 +39,12 @@ pub enum DwActionRequest {
     DbSchema(dw_db::commands::SchemaArgs),
     DbDescribe(dw_db::commands::DescribeArgs),
     DbQuery(dw_db::commands::QueryArgs),
+    AdoAuthStatus {
+        root: Option<DevWorkflowRoot>,
+    },
+    AdoAuthLogout {
+        root: Option<DevWorkflowRoot>,
+    },
     AdoAssigned(dw_ado_commands::commands::assigned::AssignedArgs),
     AdoPrs(dw_ado_commands::commands::prs::PrsArgs),
     AdoChangelog(dw_ado_commands::commands::changelog::ChangelogArgs),
@@ -135,6 +141,8 @@ pub enum DbActionResult {
 
 #[derive(Debug, Clone)]
 pub enum AdoActionResult {
+    AuthStatus(dw_ado_commands::auth::AuthStatusReport),
+    AuthLogout(dw_ado_commands::auth::AuthLogoutReport),
     Assigned(dw_ado_commands::commands::assigned::AssignedReport),
     Prs(dw_ado_commands::commands::prs::PrsReport),
     Changelog(dw_ado_commands::commands::changelog::ChangelogReport),
@@ -309,6 +317,12 @@ pub async fn run_action(
             dw_db::commands::query_with_events(args, |event| emit(DwActionEvent::Db(event)))
                 .await?,
         ))),
+        DwActionRequest::AdoAuthStatus { root } => Ok(DwActionResult::Ado(
+            AdoActionResult::AuthStatus(dw_ado_commands::auth::status_report(root).await?),
+        )),
+        DwActionRequest::AdoAuthLogout { root } => Ok(DwActionResult::Ado(
+            AdoActionResult::AuthLogout(dw_ado_commands::auth::logout_report(root)?),
+        )),
         DwActionRequest::AdoAssigned(args) => {
             let report =
                 dw_ado_commands::commands::assigned::report_with_events(args, &mut |event| {

@@ -589,6 +589,8 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             DbActionResult::Describe(None) => Vec::new(),
         },
         DwActionResult::Ado(result) => match result {
+            AdoActionResult::AuthStatus(report) => auth_status_lines(report),
+            AdoActionResult::AuthLogout(report) => auth_logout_lines(report),
             AdoActionResult::Assigned(report) => ado_assigned_lines(report, theme),
             AdoActionResult::Prs(report) => ado_prs_lines(report),
             AdoActionResult::Changelog(report) => ado_changelog_lines(report, theme),
@@ -924,33 +926,43 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     match report {
         dw_upgrade::UpgradeReport::Check(report) => {
             let mut lines = vec![
-                "Upgrade check".into(),
-                format!("✓ Release available : {}", report.release_tag),
-                format!("✓ Target version    : {}+{}", report.version, report.commit),
-                format!("✓ Artifacts found   : {}", report.assets.len()),
+                "dw upgrade --check".into(),
+                format!("✓ 1. Release found       {}", report.release_tag),
+                format!(
+                    "✓ 2. Target version      {}+{}",
+                    report.version, report.commit
+                ),
+                format!("✓ 3. Artifacts available {}", report.assets.len()),
             ];
-            lines.extend(
-                report.assets.iter().map(|asset| {
-                    format!("  - {:14} {} {}", asset.rid, asset.file_name, asset.sha256)
-                }),
-            );
+            lines.extend(report.assets.iter().map(|asset| {
+                format!("   • {:14} {} {}", asset.rid, asset.file_name, asset.sha256)
+            }));
             lines
         }
         dw_upgrade::UpgradeReport::Installed(report) => {
+            let mut lines = vec![
+                "dw upgrade".into(),
+                "✓ 1. Release resolved".into(),
+                format!(
+                    "✓ 2. Version prepared    {}+{}",
+                    report.version, report.commit
+                ),
+                "✓ 3. Binary downloaded".into(),
+                "✓ 4. Integrity verified".into(),
+            ];
             if report.deferred_windows_replacement {
-                vec![
-                    "Upgrade installed".into(),
-                    format!("✓ Version prepared  : {}+{}", report.version, report.commit),
-                    "↪ Replacement queued: binary will be replaced after dw exits".into(),
-                    format!("→ Target binary     : {}", report.executable_path),
-                ]
+                lines.push("↪ 5. Replacement scheduled after dw exits".into());
+                lines.push(format!(
+                    "   Active binary will be replaced: {}",
+                    report.executable_path
+                ));
             } else {
-                vec![
-                    "Upgrade complete".into(),
-                    format!("✓ Version installed : {}+{}", report.version, report.commit),
-                    format!("✓ Binary replaced   : {}", report.executable_path),
-                ]
+                lines.push(format!(
+                    "✓ 5. Binary replaced     {}",
+                    report.executable_path
+                ));
             }
+            lines
         }
     }
 }

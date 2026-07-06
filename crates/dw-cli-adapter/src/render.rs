@@ -73,6 +73,8 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             DbActionResult::Describe(None) => Vec::new(),
         },
         DwActionResult::Ado(result) => match result {
+            AdoActionResult::AuthStatus(report) => auth_status_lines(report),
+            AdoActionResult::AuthLogout(report) => auth_logout_lines(report),
             AdoActionResult::Assigned(report) => ado_assigned_lines(report, theme),
             AdoActionResult::Prs(report) => ado_prs_lines(report),
             AdoActionResult::Changelog(report) => ado_changelog_lines(report, theme),
@@ -600,6 +602,8 @@ pub fn ado_action_output(
     }
 
     Ok(AdoActionRenderedOutput::Lines(match result {
+        AdoActionResult::AuthStatus(report) => auth_status_lines(report),
+        AdoActionResult::AuthLogout(report) => auth_logout_lines(report),
         AdoActionResult::Assigned(report) => {
             let mut report = report.clone();
             report.events.clear();
@@ -1150,7 +1154,7 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     match report {
         dw_upgrade::UpgradeReport::Check(report) => {
             let mut lines = vec![
-                "Mise à jour de dw".into(),
+                "dw upgrade --check".into(),
                 format!("✓ 1. Release trouvée      {}", report.release_tag),
                 format!(
                     "✓ 2. Version cible        {}+{}",
@@ -1165,19 +1169,27 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
         }
         dw_upgrade::UpgradeReport::Installed(report) => {
             let mut lines = vec![
-                "Mise à jour de dw".into(),
+                "dw upgrade".into(),
+                "✓ 1. Release résolue".into(),
                 format!(
-                    "✓ 1. Version préparée     {}+{}",
+                    "✓ 2. Version préparée     {}+{}",
                     report.version, report.commit
                 ),
-                "✓ 2. Binaire téléchargé et vérifié".into(),
+                "✓ 3. Binaire téléchargé".into(),
+                "✓ 4. Intégrité vérifiée".into(),
             ];
             if report.deferred_windows_replacement {
-                lines.push("↪ 3. Remplacement programmé après la fermeture de dw".into());
+                lines.push("↪ 5. Remplacement au prochain arrêt de dw".into());
+                lines.push(format!(
+                    "   Le binaire actif sera remplacé: {}",
+                    report.executable_path
+                ));
             } else {
-                lines.push("✓ 3. Binaire remplacé".into());
+                lines.push(format!(
+                    "✓ 5. Binaire remplacé      {}",
+                    report.executable_path
+                ));
             }
-            lines.push(format!("   Cible: {}", report.executable_path));
             lines
         }
     }
