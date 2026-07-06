@@ -351,7 +351,7 @@ impl FormState {
             }
             FormTemplate::AdoAssigned => {
                 TuiActionRequest::AdoAssigned(dw_ado_commands::commands::assigned::AssignedArgs {
-                    root: Some(root.into()),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: value("Project").map(dw_core::ProjectKey::from),
                     top: value("Top")
                         .and_then(|value| value.parse().ok())

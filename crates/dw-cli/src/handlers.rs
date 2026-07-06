@@ -901,7 +901,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             let project = resolve_ado_project_interactively(root.clone(), project, "ado assigned")?;
             let mut report = dw_ado_commands::commands::assigned::report_with_events(
                 dw_ado_commands::commands::assigned::AssignedArgs {
-                    root,
+                    root: root.map(DevWorkflowRoot::from),
                     project: Some(project),
                     top,
                     all,
@@ -1601,7 +1601,7 @@ async fn resolve_start_work_item_id_interactively(
     print_lines(&[assigned_work_items_loading_line(project.as_str())]);
     let report = dw_ado_commands::commands::assigned::report(
         dw_ado_commands::commands::assigned::AssignedArgs {
-            root: args.root.as_ref().map(ToString::to_string),
+            root: args.root.clone(),
             project: Some(project),
             top: 50,
             all: false,

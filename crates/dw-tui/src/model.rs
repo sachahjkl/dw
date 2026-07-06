@@ -1316,7 +1316,7 @@ pub fn build_actions(
             label: "My work items".into(),
             request: TuiActionRequest::AdoAssigned(
                 dw_ado_commands::commands::assigned::AssignedArgs {
-                    root: Some(root.into()),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: None,
                     top: 20,
                     all: false,
@@ -1330,7 +1330,7 @@ pub fn build_actions(
             label: "My grouped work items".into(),
             request: TuiActionRequest::AdoAssigned(
                 dw_ado_commands::commands::assigned::AssignedArgs {
-                    root: Some(root.into()),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: None,
                     top: 20,
                     all: false,
@@ -1355,7 +1355,7 @@ pub fn build_actions(
             label: format!("Work items · {}", project.key),
             request: TuiActionRequest::AdoAssigned(
                 dw_ado_commands::commands::assigned::AssignedArgs {
-                    root: Some(root.into()),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: Some(dw_core::ProjectKey::from(project.key.clone())),
                     top: 20,
                     all: false,

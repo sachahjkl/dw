@@ -6,7 +6,7 @@ use dw_ado::{
     query_assigned_work_items, run_blocking_ado,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{AdoActionEvent, ProjectKey, PromptChoice, PromptSpec};
+use dw_core::{AdoActionEvent, DevWorkflowRoot, ProjectKey, PromptChoice, PromptSpec, WorkItemId};
 use serde::Serialize;
 
 pub const MANUAL_WORK_ITEM_PROMPT_VALUE: &str = "__manual_work_item_id__";
@@ -14,7 +14,7 @@ pub const MANUAL_WORK_ITEM_PROMPT_LABEL: &str = "Entrer un ID manuel...";
 
 #[derive(Debug, Clone)]
 pub struct AssignedArgs {
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub project: Option<ProjectKey>,
     pub top: i32,
     pub all: bool,
@@ -23,7 +23,7 @@ pub struct AssignedArgs {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct AssignedReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub project: ProjectKey,
     pub top: i32,
     #[serde(rename = "includeFinalStates")]
@@ -50,11 +50,11 @@ pub async fn report_with_events(
         all,
         group_by_parent,
     } = args;
-    let root = resolve_root(root.as_deref());
+    let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
         project.ok_or_else(|| anyhow::anyhow!("ado assigned requiert un projet configuré."))?;
-    let projects = load_projects_config(&root);
-    let workflow = load_workflow_config(&root);
+    let projects = load_projects_config(root.as_str());
+    let workflow = load_workflow_config(root.as_str());
     let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
     let mut events = Vec::new();
     push_event(
@@ -64,7 +64,7 @@ pub async fn report_with_events(
             project: Some(project_key.clone()),
         },
     );
-    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
     push_event(
         &mut events,
         &mut emit,
@@ -123,14 +123,20 @@ pub fn empty_assigned_message(include_final_states: bool) -> &'static str {
     }
 }
 
-pub fn suggested_start_ids(parent: &WorkItemSnapshot, children: &[WorkItemSnapshot]) -> String {
-    let mut ids = vec![parent.id.clone()];
+pub fn suggested_start_ids(
+    parent: &WorkItemSnapshot,
+    children: &[WorkItemSnapshot],
+) -> Vec<WorkItemId> {
+    let mut ids = vec![WorkItemId::from(parent.id.clone())];
     for child in children {
-        if !ids.iter().any(|id| id.eq_ignore_ascii_case(&child.id)) {
-            ids.push(child.id.clone());
+        if !ids
+            .iter()
+            .any(|id| id.as_str().eq_ignore_ascii_case(&child.id))
+        {
+            ids.push(WorkItemId::from(child.id.clone()));
         }
     }
-    ids.join(",")
+    ids
 }
 
 pub fn work_item_choice_label(item: &WorkItemSnapshot) -> String {
@@ -196,7 +202,10 @@ mod tests {
             },
         ];
 
-        assert_eq!(suggested_start_ids(&parent, &children), "42,43");
+        assert_eq!(
+            suggested_start_ids(&parent, &children),
+            vec![WorkItemId::from("42"), WorkItemId::from("43")]
+        );
     }
 
     #[test]

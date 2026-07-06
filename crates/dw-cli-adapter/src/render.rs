@@ -295,7 +295,8 @@ pub fn ado_assigned_lines(
             "Item      : {}",
             ado_work_item_summary(item, theme)
         ));
-        lines.push(ado_start_command_line(&item.id, &report.project, theme));
+        let ids = [dw_core::WorkItemId::from(item.id.clone())];
+        lines.push(ado_start_command_line(&ids, &report.project, theme));
         lines.push(String::new());
     }
     trim_trailing_blank_line(lines)
@@ -1636,10 +1637,11 @@ fn ado_assigned_group_lines(
 }
 
 fn ado_start_command_line(
-    ids: &str,
+    ids: &[dw_core::WorkItemId],
     project: &impl std::fmt::Display,
     theme: &TerminalTheme,
 ) -> String {
+    let ids = join_display_with_separator(ids, ",");
     format!(
         "Démarrer  : {}",
         theme.command(&format!("dw task start {ids} --project {project}"))

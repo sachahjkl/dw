@@ -591,6 +591,17 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             ],
         ),
         (
+            "crates/dw-ado-commands/src/commands/assigned.rs",
+            &[
+                "pub root: Option<String>",
+                "pub root: String",
+                "pub project: Option<String>",
+                "pub project: String",
+                "pub fn suggested_start_ids(parent: &WorkItemSnapshot, children: &[WorkItemSnapshot]) -> String",
+                "ids.join(\",\")",
+            ],
+        ),
+        (
             "crates/dw-ado-commands/src/commands/changelog.rs",
             &["pub ids: String", "pub git_to: Option<String>"],
         ),
@@ -632,6 +643,30 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn ado_assigned_contract_uses_typed_root_project_and_suggested_ids() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-ado-commands/src/commands/assigned.rs");
+    let text = fs::read_to_string(&path).expect("read assigned source");
+    for required in [
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "WorkItemId",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub root: DevWorkflowRoot",
+        "pub project: Option<ProjectKey>",
+        "pub project: ProjectKey",
+        "-> Vec<WorkItemId>",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed ADO assigned contract token `{}`",
+            path.display(),
+            required
+        );
     }
 }
 
