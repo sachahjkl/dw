@@ -1279,7 +1279,7 @@ pub fn build_actions(
             request: TuiActionRequest::AdoAssigned(
                 dw_ado_commands::commands::assigned::AssignedArgs {
                     root: Some(root.into()),
-                    project: Some(project.key.clone()),
+                    project: Some(dw_core::ProjectKey::from(project.key.clone())),
                     top: 20,
                     all: false,
                     group_by_parent: false,

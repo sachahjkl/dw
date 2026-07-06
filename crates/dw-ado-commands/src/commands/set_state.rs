@@ -10,7 +10,7 @@ use serde::Serialize;
 pub struct SetStateArgs {
     pub ids: Vec<WorkItemId>,
     pub root: Option<String>,
-    pub project: Option<String>,
+    pub project: Option<ProjectKey>,
     pub state: String,
     pub history: Option<String>,
     pub yes: bool,
@@ -19,7 +19,7 @@ pub struct SetStateArgs {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SetStatePlanReport {
     pub root: String,
-    pub project: String,
+    pub project: ProjectKey,
     pub ids: Vec<WorkItemId>,
     pub state: String,
     pub history: String,
@@ -77,13 +77,13 @@ pub async fn execute_with_events(
 ) -> Result<SetStateExecutionReport> {
     let projects = load_projects_config(&plan.root);
     let workflow = load_workflow_config(&plan.root);
-    let options = resolve_ado_options(&projects, &workflow, &plan.project)?;
+    let options = resolve_ado_options(&projects, &workflow, plan.project.as_str())?;
     let mut events = Vec::new();
     push_event(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(ProjectKey::from(plan.project.clone())),
+            project: Some(plan.project.clone()),
         },
     );
     let token = require_token(load_auth_options(Some(&plan.root))?).await?;

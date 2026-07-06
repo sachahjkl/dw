@@ -341,7 +341,7 @@ impl FormState {
             FormTemplate::AdoAssigned => {
                 TuiActionRequest::AdoAssigned(dw_ado_commands::commands::assigned::AssignedArgs {
                     root: Some(root.into()),
-                    project: value("Project"),
+                    project: value("Project").map(dw_core::ProjectKey::from),
                     top: value("Top")
                         .and_then(|value| value.parse().ok())
                         .unwrap_or(20),
@@ -353,7 +353,7 @@ impl FormState {
                 TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
                     ids: dw_core::WorkItemId::parse_many(&value("Work item IDs")?),
                     root: Some(root.into()),
-                    project: value("Project"),
+                    project: value("Project").map(dw_core::ProjectKey::from),
                     state: value("Destination state")?,
                     history: value("ADO note"),
                     yes: true,
@@ -1187,7 +1187,10 @@ mod tests {
                     ]
                 );
                 assert_eq!(args.state, "En réalisation");
-                assert_eq!(args.project.as_deref(), Some("ha"));
+                assert_eq!(
+                    args.project.as_ref().map(|project| project.as_str()),
+                    Some("ha")
+                );
                 assert_eq!(args.history.as_deref(), Some("tui"));
                 assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
                 assert!(args.yes);

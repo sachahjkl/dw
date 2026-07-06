@@ -6,19 +6,20 @@ use dw_ado::{
     list_active_pull_requests_authenticated,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
+use dw_core::ProjectKey;
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
 pub struct PrsArgs {
     pub root: Option<String>,
-    pub project: String,
+    pub project: ProjectKey,
     pub repo: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PrsReport {
     pub root: String,
-    pub project: String,
+    pub project: ProjectKey,
     pub repositories: Vec<String>,
     pub items: Vec<PullRequestListItem>,
 }
@@ -27,8 +28,8 @@ pub async fn report(args: PrsArgs) -> Result<PrsReport> {
     let root = resolve_root(args.root.as_deref());
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let options = resolve_ado_options(&projects, &workflow, &args.project)?;
-    let project_config = resolve_project(&projects, &args.project);
+    let options = resolve_ado_options(&projects, &workflow, args.project.as_str())?;
+    let project_config = resolve_project(&projects, args.project.as_str());
     let repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_deref());
     if repositories.is_empty() {
         return Err(anyhow::anyhow!(

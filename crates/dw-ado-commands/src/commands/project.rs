@@ -1,6 +1,7 @@
 use anyhow::Result;
 use dw_ado::{AzureDevOpsOptions, default_api_version};
 use dw_config::resolve_project;
+use dw_core::ProjectKey;
 
 pub fn resolve_ado_options(
     projects: &dw_config::ProjectsConfig,
@@ -43,18 +44,18 @@ pub fn resolve_ado_options(
 pub fn resolve_cli_ado_options(
     root: &str,
     organization: Option<String>,
-    project: Option<String>,
+    project: Option<ProjectKey>,
 ) -> Result<AzureDevOpsOptions> {
     match (organization, project) {
         (Some(organization), Some(project)) => Ok(AzureDevOpsOptions {
             organization,
-            project,
+            project: project.to_string(),
             api_version: default_api_version(),
         }),
         (None, Some(project)) => {
             let projects = dw_config::load_projects_config(root);
             let workflow = dw_config::load_workflow_config(root);
-            resolve_ado_options(&projects, &workflow, &project)
+            resolve_ado_options(&projects, &workflow, project.as_str())
         }
         _ => Err(anyhow::anyhow!(
             "ado ai-context requiert un projet configuré, ou une organisation avec un projet explicite."

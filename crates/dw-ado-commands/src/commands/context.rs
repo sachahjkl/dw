@@ -13,7 +13,7 @@ use serde_json::Value;
 pub struct ContextArgs {
     pub ids: Vec<WorkItemId>,
     pub root: Option<String>,
-    pub project: Option<String>,
+    pub project: Option<ProjectKey>,
     pub summary: bool,
     pub comments: i32,
     pub mode: ContextMode,
@@ -28,7 +28,7 @@ pub enum ContextMode {
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ContextReport {
     pub root: String,
-    pub project: String,
+    pub project: ProjectKey,
     #[serde(rename = "requestedIds")]
     pub requested_ids: Vec<WorkItemId>,
     pub summary: bool,
@@ -42,7 +42,7 @@ pub struct ContextReport {
 pub struct AiContextArgs {
     pub root: Option<String>,
     pub organization: Option<String>,
-    pub project: Option<String>,
+    pub project: Option<ProjectKey>,
     pub ids: Vec<WorkItemId>,
     pub summary: bool,
     pub comments: i32,
@@ -83,13 +83,13 @@ pub async fn context_report_with_events(
         project.ok_or_else(|| anyhow::anyhow!("ado context requiert un projet configuré."))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let options = resolve_ado_options(&projects, &workflow, &project_key)?;
+    let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
     let mut events = Vec::new();
     push_event(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(ProjectKey::from(project_key.clone())),
+            project: Some(project_key.clone()),
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;

@@ -894,7 +894,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             let report =
                 dw_ado_commands::commands::prs::report(dw_ado_commands::commands::prs::PrsArgs {
                     root,
-                    project,
+                    project: ProjectKey::from(project),
                     repo,
                 })
                 .await?;
@@ -935,7 +935,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 dw_ado_commands::commands::changelog::ChangelogArgs {
                     source,
                     root,
-                    project,
+                    project: project.map(ProjectKey::from),
                     repo,
                     group_by_parent,
                     format,
@@ -967,7 +967,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 dw_ado_commands::commands::set_state::SetStateArgs {
                     ids: WorkItemId::parse_many(&id),
                     root,
-                    project,
+                    project: project.map(ProjectKey::from),
                     state,
                     history,
                     yes: false,
@@ -1000,7 +1000,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 dw_ado_commands::commands::work_item::WorkItemArgs {
                     ids: WorkItemId::parse_many(&id),
                     root,
-                    project,
+                    project: project.map(ProjectKey::from),
                 },
                 |event| {
                     if !json {
@@ -1031,7 +1031,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 dw_ado_commands::commands::context::ContextArgs {
                     ids: WorkItemId::parse_many(&id),
                     root,
-                    project,
+                    project: project.map(ProjectKey::from),
                     summary,
                     comments,
                     mode: if json {
@@ -1070,7 +1070,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 dw_ado_commands::commands::context::AiContextArgs {
                     root,
                     organization,
-                    project,
+                    project: project.map(ProjectKey::from),
                     ids: WorkItemId::parse_many(&id),
                     summary,
                     comments,
@@ -1101,9 +1101,9 @@ fn resolve_ado_project_interactively(
     root: Option<String>,
     project: Option<String>,
     command_name: &str,
-) -> Result<String> {
+) -> Result<ProjectKey> {
     if let Some(project) = project.filter(|value| !value.trim().is_empty()) {
-        return Ok(project);
+        return Ok(ProjectKey::from(project));
     }
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("{command_name} requiert --project configuré en mode non-interactif.");
@@ -1124,7 +1124,7 @@ fn resolve_ado_project_interactively(
             "Projet Azure DevOps",
             &choices,
         ))
-        .map(|value| value.to_string())
+        .map(|value| ProjectKey::from(value.to_string()))
 }
 
 fn confirm_ado_set_state(
@@ -1530,7 +1530,7 @@ async fn resolve_start_work_item_id_interactively(
     let report = dw_ado_commands::commands::assigned::report(
         dw_ado_commands::commands::assigned::AssignedArgs {
             root: args.root.clone(),
-            project: Some(project.to_string()),
+            project: Some(project),
             top: 50,
             all: false,
             group_by_parent: false,

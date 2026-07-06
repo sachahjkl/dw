@@ -1811,7 +1811,11 @@ fn ado_assigned_group_lines(
     trim_trailing_blank_line(lines)
 }
 
-fn ado_start_action_line(ids: &str, project: &str, theme: &TerminalTheme) -> String {
+fn ado_start_action_line(
+    ids: &str,
+    project: &impl std::fmt::Display,
+    theme: &TerminalTheme,
+) -> String {
     format!(
         "Start     : {}",
         theme.command(&format!("start action for {ids} ({project})"))

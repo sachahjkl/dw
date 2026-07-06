@@ -15,7 +15,7 @@ pub const MANUAL_WORK_ITEM_PROMPT_LABEL: &str = "Entrer un ID manuel...";
 #[derive(Debug, Clone)]
 pub struct AssignedArgs {
     pub root: Option<String>,
-    pub project: Option<String>,
+    pub project: Option<ProjectKey>,
     pub top: i32,
     pub all: bool,
     pub group_by_parent: bool,
@@ -24,7 +24,7 @@ pub struct AssignedArgs {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct AssignedReport {
     pub root: String,
-    pub project: String,
+    pub project: ProjectKey,
     pub top: i32,
     #[serde(rename = "includeFinalStates")]
     pub include_final_states: bool,
@@ -55,13 +55,13 @@ pub async fn report_with_events(
         project.ok_or_else(|| anyhow::anyhow!("ado assigned requiert un projet configuré."))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let options = resolve_ado_options(&projects, &workflow, &project_key)?;
+    let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
     let mut events = Vec::new();
     push_event(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(ProjectKey::from(project_key.clone())),
+            project: Some(project_key.clone()),
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
@@ -69,7 +69,7 @@ pub async fn report_with_events(
         &mut events,
         &mut emit,
         AdoActionEvent::LoadingAssignedWorkItems {
-            project: ProjectKey::from(project_key.clone()),
+            project: project_key.clone(),
             top,
         },
     );
@@ -83,7 +83,7 @@ pub async fn report_with_events(
             &mut events,
             &mut emit,
             AdoActionEvent::GroupingAssignedWorkItems {
-                project: ProjectKey::from(project_key.clone()),
+                project: project_key.clone(),
             },
         );
         let options = options.clone();

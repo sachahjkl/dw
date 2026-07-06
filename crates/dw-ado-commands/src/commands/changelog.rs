@@ -15,7 +15,7 @@ use std::process::Command as ProcessCommand;
 pub struct ChangelogArgs {
     pub source: ChangelogSource,
     pub root: Option<String>,
-    pub project: Option<String>,
+    pub project: Option<ProjectKey>,
     pub repo: Option<String>,
     pub group_by_parent: bool,
     pub format: Option<String>,
@@ -33,7 +33,7 @@ pub enum ChangelogSource {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ChangelogReport {
     pub root: String,
-    pub project: String,
+    pub project: ProjectKey,
     #[serde(rename = "fromPr")]
     pub from_pr: bool,
     #[serde(rename = "fromGit")]
@@ -93,13 +93,13 @@ pub async fn report_with_events(
         project.ok_or_else(|| anyhow::anyhow!("ado changelog requires a configured project."))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let options = resolve_ado_options(&projects, &workflow, &project_key)?;
+    let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
     let mut events = Vec::new();
     push_event(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(ProjectKey::from(project_key.clone())),
+            project: Some(project_key.clone()),
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
@@ -118,7 +118,7 @@ pub async fn report_with_events(
                 .collect()
         }
         ChangelogSource::PullRequests(pull_request_ids) => {
-            let project_config = resolve_project(&projects, &project_key);
+            let project_config = resolve_project(&projects, project_key.as_str());
             let repositories = resolve_ado_repositories(project_config.as_ref(), repo.as_deref());
             push_event(
                 &mut events,
@@ -234,7 +234,7 @@ pub async fn report_with_events(
             &mut events,
             &mut emit,
             AdoActionEvent::GroupingAssignedWorkItems {
-                project: ProjectKey::from(project_key.clone()),
+                project: project_key.clone(),
             },
         );
         let options = options.clone();

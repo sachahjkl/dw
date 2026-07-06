@@ -570,6 +570,44 @@ fn task_start_contracts_parse_repository_selection_at_boundaries() {
 }
 
 #[test]
+fn migrated_ado_project_contracts_use_project_key() {
+    let repo = repo_root();
+    let checked: &[&str] = &[
+        "crates/dw-ado-commands/src/commands/assigned.rs",
+        "crates/dw-ado-commands/src/commands/changelog.rs",
+        "crates/dw-ado-commands/src/commands/prs.rs",
+        "crates/dw-ado-commands/src/commands/set_state.rs",
+        "crates/dw-ado-commands/src/commands/work_item.rs",
+        "crates/dw-ado-commands/src/commands/context.rs",
+    ];
+
+    for relative in checked {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read source file");
+        assert!(
+            text.contains("ProjectKey"),
+            "{} should use ProjectKey for migrated ADO project contracts",
+            path.display()
+        );
+        assert!(
+            !text.contains("pub project: String"),
+            "{} contains primitive ADO project contract token `pub project: String`",
+            path.display()
+        );
+    }
+
+    for relative in checked {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read source file");
+        assert!(
+            !text.contains("pub project: Option<String>"),
+            "{} contains primitive ADO project contract token `pub project: Option<String>`",
+            path.display()
+        );
+    }
+}
+
+#[test]
 fn tui_and_ui_layers_do_not_embed_cli_command_hints() {
     let repo = repo_root();
     let checked_roots = [

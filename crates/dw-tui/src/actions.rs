@@ -286,7 +286,7 @@ pub fn selected_ado_action(
             TuiActionRequest::AdoContext(dw_ado_commands::commands::context::ContextArgs {
                 ids: vec![dw_core::WorkItemId::from(item.id.clone())],
                 root: Some(snapshot.root.clone()),
-                project: Some(project.key.clone()),
+                project: Some(dw_core::ProjectKey::from(project.key.clone())),
                 summary: false,
                 comments: 200,
                 mode: dw_ado_commands::commands::context::ContextMode::AiContext,
@@ -296,7 +296,7 @@ pub fn selected_ado_action(
             TuiActionRequest::AdoWorkItem(dw_ado_commands::commands::work_item::WorkItemArgs {
                 ids: vec![dw_core::WorkItemId::from(item.id.clone())],
                 root: Some(snapshot.root.clone()),
-                project: Some(project.key.clone()),
+                project: Some(dw_core::ProjectKey::from(project.key.clone())),
             })
         }
         AdoItemAction::SetStartState => {
@@ -304,7 +304,7 @@ pub fn selected_ado_action(
             TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
                 ids: vec![dw_core::WorkItemId::from(item.id.clone())],
                 root: Some(snapshot.root.clone()),
-                project: Some(project.key.clone()),
+                project: Some(dw_core::ProjectKey::from(project.key.clone())),
                 state,
                 history: None,
                 yes: true,
@@ -418,7 +418,7 @@ pub fn selected_pull_request_action(
                     dw_core::PullRequestId::from(pull_request_id.to_string()),
                 ]),
                 root: Some(snapshot.root.clone()),
-                project: Some(item.project.clone()),
+                project: Some(dw_core::ProjectKey::from(item.project.clone())),
                 repo: Some(item.ado_repository.clone()),
                 group_by_parent: false,
                 format: None,
@@ -680,7 +680,10 @@ mod tests {
         match &action.request {
             TuiActionRequest::AdoSetState(args) => {
                 assert_eq!(args.ids, vec![dw_core::WorkItemId::from("42")]);
-                assert_eq!(args.project.as_deref(), Some("ha"));
+                assert_eq!(
+                    args.project.as_ref().map(|project| project.as_str()),
+                    Some("ha")
+                );
                 assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
                 assert_eq!(args.state, "En réalisation");
                 assert!(args.yes);

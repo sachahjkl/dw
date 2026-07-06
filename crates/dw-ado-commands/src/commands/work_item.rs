@@ -10,13 +10,13 @@ use serde::Serialize;
 pub struct WorkItemArgs {
     pub ids: Vec<WorkItemId>,
     pub root: Option<String>,
-    pub project: Option<String>,
+    pub project: Option<ProjectKey>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct WorkItemReport {
     pub root: String,
-    pub project: String,
+    pub project: ProjectKey,
     #[serde(rename = "requestedIds")]
     pub requested_ids: Vec<WorkItemId>,
     pub items: Vec<WorkItemSnapshot>,
@@ -37,13 +37,13 @@ pub async fn report_with_events(
         project.ok_or_else(|| anyhow::anyhow!("ado work-item requiert un projet configuré."))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let options = resolve_ado_options(&projects, &workflow, &project_key)?;
+    let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
     let mut events = Vec::new();
     push_event(
         &mut events,
         &mut emit,
         AdoActionEvent::Authenticating {
-            project: Some(ProjectKey::from(project_key.clone())),
+            project: Some(project_key.clone()),
         },
     );
     let token = require_token(load_auth_options(Some(&root))?).await?;
