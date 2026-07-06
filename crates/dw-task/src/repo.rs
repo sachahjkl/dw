@@ -152,7 +152,7 @@ pub fn repo_latest_plan(args: RepoLatestArgs) -> Result<RepoLatestPlanReport> {
         plan_task_repo_latest(&root, &projects, &workspace, &args.repositories)?;
 
     Ok(RepoLatestPlanReport {
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         branch_name: BranchName::from(manifest.branch_name),
         targets,
     })
@@ -198,7 +198,7 @@ pub fn commit_plan(args: CommitArgs) -> Result<CommitPlanReport> {
         .collect::<Vec<_>>();
 
     Ok(CommitPlanReport {
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         branch_name: BranchName::from(manifest.branch_name.clone()),
         message: build_commit_message(&manifest, args.message.as_deref()),
         targets: statuses,
@@ -234,7 +234,7 @@ pub fn add_repo_choices(args: AddRepoChoicesArgs) -> Result<AddRepoChoicesReport
     let manifest = dw_workspace::read_manifest_path(&format!("{workspace}/task.json"))?;
 
     Ok(AddRepoChoicesReport {
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         choices: add_repo_choices_for_manifest(&projects, &manifest),
     })
 }
@@ -295,7 +295,7 @@ pub fn teardown_plan(args: TeardownArgs) -> Result<TeardownPlanReport> {
     let (_manifest, steps) = plan_task_teardown(&root, &projects, &workspace)?;
 
     Ok(TeardownPlanReport {
-        workspace: Some(WorkspacePath::from(workspace)),
+        workspace: Some(workspace),
         steps,
     })
 }
@@ -305,17 +305,13 @@ pub fn execute_teardown(plan: &TeardownPlanReport) -> Result<TeardownExecutionRe
         .workspace
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Aucun workspace task trouvé."))?;
-    execute_task_teardown(
-        workspace.as_str(),
-        &plan.steps,
-        |git_dir, args| match args {
-            ["worktree", "remove", "--force", target] => {
-                worktree_remove(git_dir, target).map_err(|error| error.to_string())
-            }
-            ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
-            _ => Err(format!("commande git non supportée: {}", args.join(" "))),
-        },
-    )?;
+    execute_task_teardown(workspace, &plan.steps, |git_dir, args| match args {
+        ["worktree", "remove", "--force", target] => {
+            worktree_remove(git_dir, target).map_err(|error| error.to_string())
+        }
+        ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
+        _ => Err(format!("commande git non supportée: {}", args.join(" "))),
+    })?;
 
     Ok(TeardownExecutionReport {
         workspace: workspace.clone(),

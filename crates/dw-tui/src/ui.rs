@@ -753,14 +753,17 @@ fn render_workspace_summary(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .take(12)
         .map(|workspace| {
             ListItem::new(Line::from(vec![
-                Span::styled(&workspace.project, Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    workspace.project.to_string(),
+                    Style::default().fg(Color::Cyan),
+                ),
                 Span::raw(" "),
                 Span::styled(
                     &workspace.display_work_items,
                     Style::default().fg(Color::White),
                 ),
                 Span::raw(" "),
-                Span::styled(&workspace.slug, Style::default().fg(Color::Gray)),
+                Span::styled(workspace.slug.to_string(), Style::default().fg(Color::Gray)),
             ]))
         })
         .collect::<Vec<_>>();
@@ -800,11 +803,16 @@ fn render_workspaces(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 Style::default()
             };
             Row::new([
-                workspace.project.clone(),
+                workspace.project.to_string(),
                 workspace.display_work_items.clone(),
-                workspace.kind.clone(),
-                workspace.slug.clone(),
-                workspace.repositories.join(", "),
+                workspace.kind.to_string(),
+                workspace.slug.to_string(),
+                workspace
+                    .repositories
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
             ])
             .style(style)
         });
@@ -857,18 +865,18 @@ fn selected_workspace_target_lines(app: &App) -> Vec<Line<'static>> {
         ),
         target_line(
             "Path",
-            if workspace.path.is_empty() {
+            if workspace.path.as_str().is_empty() {
                 "-".into()
             } else {
-                workspace.path.clone()
+                workspace.path.to_string()
             },
         ),
         target_line(
             "Branch",
-            if workspace.branch_name.is_empty() {
+            if workspace.branch_name.as_str().is_empty() {
                 "-".into()
             } else {
-                workspace.branch_name.clone()
+                workspace.branch_name.to_string()
             },
         ),
         target_line(
@@ -876,7 +884,12 @@ fn selected_workspace_target_lines(app: &App) -> Vec<Line<'static>> {
             if workspace.repositories.is_empty() {
                 "-".into()
             } else {
-                workspace.repositories.join(", ")
+                workspace
+                    .repositories
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             },
         ),
     ]
@@ -2619,7 +2632,7 @@ mod tests {
             all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: slug.into(),
-            branch_name: format!("feature/42-{slug}"),
+            branch_name: format!("feature/42-{slug}").into(),
             created_at: "2026-07-04T00:00:00Z".into(),
             work_item_type: Some("User Story".into()),
             work_item_title: Some("Demo".into()),

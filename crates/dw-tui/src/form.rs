@@ -465,12 +465,13 @@ fn default_fields(template: FormTemplate, snapshot: &TuiSnapshot) -> Vec<FormFie
     let first_workspace = snapshot
         .workspaces
         .first()
-        .map(|workspace| workspace.path.clone())
+        .map(|workspace| workspace.path.to_string())
         .unwrap_or_default();
     let first_repository = snapshot
         .workspaces
         .first()
-        .and_then(|workspace| workspace.repositories.first().cloned())
+        .and_then(|workspace| workspace.repositories.first())
+        .map(ToString::to_string)
         .unwrap_or_default();
     let first_assigned_work_item = snapshot
         .assigned_work_item_prompt_specs()
@@ -709,7 +710,7 @@ fn default_fields(template: FormTemplate, snapshot: &TuiSnapshot) -> Vec<FormFie
                 snapshot
                     .workspaces
                     .first()
-                    .map(|workspace| workspace.path.clone())
+                    .map(|workspace| workspace.path.to_string())
                     .unwrap_or_default(),
             ),
             FormField::toggle_field("Continue", "Reuse the recent workspace", false),
@@ -749,7 +750,7 @@ fn field_suggestions(label: &str, snapshot: &TuiSnapshot) -> Vec<String> {
             snapshot
                 .workspaces
                 .iter()
-                .map(|workspace| workspace.path.clone()),
+                .map(|workspace| workspace.path.to_string()),
         ),
         "Repository" => repository_suggestions(snapshot),
         "Database" => stable_unique(
@@ -809,7 +810,7 @@ fn state_suggestions(snapshot: &TuiSnapshot) -> Vec<String> {
 fn repository_suggestions(snapshot: &TuiSnapshot) -> Vec<String> {
     let mut values = Vec::new();
     for workspace in &snapshot.workspaces {
-        values.extend(workspace.repositories.iter().cloned());
+        values.extend(workspace.repositories.iter().map(ToString::to_string));
     }
     for project in snapshot.projects.projects.values() {
         if let Ok(project) = serde_json::from_value::<dw_config::ProjectConfig>(project.clone()) {
@@ -822,12 +823,13 @@ fn repository_suggestions(snapshot: &TuiSnapshot) -> Vec<String> {
 fn work_item_suggestions(snapshot: &TuiSnapshot) -> Vec<String> {
     let mut values = Vec::new();
     for workspace in &snapshot.workspaces {
-        if !workspace.work_item_id.trim().is_empty() {
-            values.push(workspace.work_item_id.clone());
+        if !workspace.work_item_id.as_str().trim().is_empty() {
+            values.push(workspace.work_item_id.to_string());
         }
         if let Some(task_id) = workspace
             .task_id
-            .as_deref()
+            .as_ref()
+            .map(dw_core::TaskId::as_str)
             .filter(|value| !value.trim().is_empty())
         {
             values.push(task_id.to_string());

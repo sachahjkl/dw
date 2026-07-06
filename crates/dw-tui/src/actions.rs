@@ -272,7 +272,7 @@ pub fn selected_ado_action(
             let workspace =
                 snapshot.selected_work_item_workspace(selected_project, selected_item)?;
             TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace.path.clone())),
+                workspace: Some(workspace.path.clone()),
                 project: None,
                 work_item_ids: Vec::new(),
                 pull_request: None,
@@ -1043,7 +1043,7 @@ mod tests {
             all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: slug.into(),
-            branch_name: format!("feature/42-{slug}"),
+            branch_name: format!("feature/42-{slug}").into(),
             created_at: "2026-07-04T00:00:00Z".into(),
             work_item_type: Some("User Story".into()),
             work_item_title: Some("Demo".into()),

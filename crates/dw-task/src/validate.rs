@@ -80,9 +80,9 @@ pub fn handoff_validation_report(args: HandoffValidateArgs) -> Result<TaskHandof
     Ok(build_handoff_validation_report(&workspace)?)
 }
 
-fn discover_ai_context_files(workspace: &str) -> Vec<AiContextFilePath> {
+fn discover_ai_context_files(workspace: &WorkspacePath) -> Vec<AiContextFilePath> {
     let mut files = Vec::new();
-    collect_ai_context_files(Path::new(workspace), &mut files);
+    collect_ai_context_files(Path::new(workspace.as_str()), &mut files);
     files.sort();
     files
 }

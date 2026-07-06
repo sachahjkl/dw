@@ -167,16 +167,13 @@ pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<Ex
             .into_iter()
             .map(dw_core::WorkItemId::from)
             .collect::<Vec<_>>();
-        args.workspace = Some(
-            resolve_workspace_by_work_item_ids(
-                &root,
-                args.workspace.as_ref().map(WorkspacePath::as_str),
-                Some(project.as_str()),
-                &resolved_work_item_ids,
-                args.r#continue,
-            )?
-            .into(),
-        );
+        args.workspace = Some(resolve_workspace_by_work_item_ids(
+            &root,
+            args.workspace.as_ref().map(WorkspacePath::as_str),
+            Some(project.as_str()),
+            &resolved_work_item_ids,
+            args.r#continue,
+        )?);
         args.root = Some(DevWorkflowRoot::from(root));
         args.project = Some(project);
         args.work_item_ids = Vec::new();

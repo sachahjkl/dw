@@ -105,7 +105,7 @@ pub fn execute(
             ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
             _ => Err(format!("commande git non supportée: {}", args.join(" "))),
         })?;
-        deleted.push(WorkspacePath::from(candidate.path));
+        deleted.push(candidate.path);
     }
     Ok(PruneExecutionReport {
         root: root.clone(),
@@ -138,7 +138,7 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
             return workspaces
                 .iter()
                 .map(|workspace| PruneSyncReport {
-                    workspace: WorkspacePath::from(workspace.path.clone()),
+                    workspace: workspace.path.clone(),
                     status: PruneSyncStatus::Skipped,
                     detail: PruneSyncDetail::AuthUnavailable {
                         error: error.to_string(),
@@ -176,12 +176,12 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
 
         match result {
             Ok(work_items) => reports.push(PruneSyncReport {
-                workspace: WorkspacePath::from(workspace.path.clone()),
+                workspace: workspace.path.clone(),
                 status: PruneSyncStatus::Synced,
                 detail: PruneSyncDetail::Synced { work_items },
             }),
             Err(error) => reports.push(PruneSyncReport {
-                workspace: WorkspacePath::from(workspace.path.clone()),
+                workspace: workspace.path.clone(),
                 status: PruneSyncStatus::Skipped,
                 detail: PruneSyncDetail::SyncFailed {
                     error: error.to_string(),

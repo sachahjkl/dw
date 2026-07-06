@@ -28,7 +28,7 @@ pub fn repository_values(
 pub fn workspace_values(root: &str, project: Option<&str>, work_item: Option<&str>) -> Vec<String> {
     task_list(root, project, work_item)
         .into_iter()
-        .map(|item| item.path)
+        .map(|item| item.path.to_string())
         .collect()
 }
 

@@ -112,7 +112,7 @@ pub async fn add_work_item_choices_report(
         .collect::<Vec<_>>();
 
     Ok(WorkItemChoicesReport {
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         project: ProjectKey::from(manifest.project),
         choices,
     })
@@ -125,7 +125,7 @@ pub fn removable_work_item_choices_report(
     let workspace = resolve_workspace_from_args(&root, &args)?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     Ok(WorkItemChoicesReport {
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         project: ProjectKey::from(manifest.project.clone()),
         choices: removable_work_item_choices(&manifest),
     })
@@ -160,7 +160,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
     if missing_ids.is_empty() {
         return Ok(WorkItemUpdatePlanReport {
             action: WorkItemUpdateAction::Add,
-            workspace: WorkspacePath::from(workspace),
+            workspace,
             requested_ids,
             skipped_existing_ids,
             snapshots: Vec::new(),
@@ -201,7 +201,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
 
     Ok(WorkItemUpdatePlanReport {
         action: WorkItemUpdateAction::Add,
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         requested_ids,
         skipped_existing_ids,
         snapshots,
@@ -228,7 +228,7 @@ pub fn remove_plan(args: RemoveWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
 
     Ok(WorkItemUpdatePlanReport {
         action: WorkItemUpdateAction::Remove,
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         requested_ids,
         skipped_existing_ids: Vec::new(),
         snapshots: Vec::new(),
@@ -282,7 +282,7 @@ pub fn work_item_id_from_choice(label: &str) -> WorkItemId {
     )
 }
 
-fn resolve_workspace_from_args(root: &str, args: &WorkItemChoicesArgs) -> Result<String> {
+fn resolve_workspace_from_args(root: &str, args: &WorkItemChoicesArgs) -> Result<WorkspacePath> {
     Ok(resolve_workspace_by_work_item_ids(
         root,
         args.workspace.as_ref().map(WorkspacePath::as_str),

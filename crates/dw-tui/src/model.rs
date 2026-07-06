@@ -835,11 +835,11 @@ impl TuiSnapshot {
         work_item_id: &str,
     ) -> Option<&TaskListItem> {
         self.workspaces.iter().find(|workspace| {
-            workspace.project == project
+            workspace.project.as_str() == project
                 && workspace
                     .all_known_work_item_ids
                     .iter()
-                    .any(|id| id.eq_ignore_ascii_case(work_item_id))
+                    .any(|id| id.as_str().eq_ignore_ascii_case(work_item_id))
         })
     }
 
@@ -1212,14 +1212,14 @@ fn load_pull_request_target(
                 let workspace = workspaces
                     .iter()
                     .find(|workspace| {
-                        workspace.project == target.project
-                            && workspace.branch_name.eq_ignore_ascii_case(&branch)
+                        workspace.project.as_str() == target.project
+                            && workspace.branch_name.as_str().eq_ignore_ascii_case(&branch)
                             && workspace
                                 .repositories
                                 .iter()
-                                .any(|item| item == &target.repository)
+                                .any(|item| item.as_str() == target.repository)
                     })
-                    .map(|workspace| workspace.path.clone());
+                    .map(|workspace| workspace.path.to_string());
                 TuiPullRequest {
                     workspace,
                     project: target.project.clone(),
@@ -1392,7 +1392,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::Open => TuiAction {
             label: "Open workspace".into(),
             request: TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
+                workspace: Some(workspace_arg),
                 root: None,
                 project: None,
                 work_item_ids: Vec::new(),
@@ -1407,20 +1407,20 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::Preflight => TuiAction {
             label: "Check workspace".into(),
             request: TuiActionRequest::TaskPreflight(dw_task::validate::PreflightArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
+                workspace: Some(workspace_arg),
                 root: None,
                 project: None,
                 work_item_ids: Vec::new(),
                 r#continue: false,
                 ai_context_files: Vec::new(),
             }),
-            description: workspace.path.clone(),
+            description: workspace.path.to_string(),
             kind: ActionRisk::Safe,
         },
         WorkspaceAction::Sync => TuiAction {
             label: "Sync ADO metadata".into(),
             request: TuiActionRequest::TaskSync(dw_task::lifecycle::SyncArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
+                workspace: Some(workspace_arg),
                 root: None,
                 project: None,
                 work_item_ids: Vec::new(),
@@ -1432,7 +1432,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::RepoLatest => TuiAction {
             label: "Update repositories".into(),
             request: TuiActionRequest::TaskRepoLatest(dw_task::repo::RepoLatestArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
+                workspace: Some(workspace_arg),
                 r#continue: false,
                 repositories: Vec::new(),
                 root: None,
@@ -1444,7 +1444,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
             label: "Validate handoff".into(),
             request: TuiActionRequest::TaskHandoffValidate(
                 dw_task::validate::HandoffValidateArgs {
-                    workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
+                    workspace: Some(workspace_arg),
                     root: None,
                     project: None,
                     work_item_ids: Vec::new(),
@@ -1457,7 +1457,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::CommitPreview => TuiAction {
             label: "Preview commit".into(),
             request: TuiActionRequest::TaskCommit(dw_task::repo::CommitArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
+                workspace: Some(workspace_arg),
                 r#continue: false,
                 root: None,
                 mode: dw_core::ExecutionMode::Preview,
@@ -1469,7 +1469,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::FinishPreview => TuiAction {
             label: "Preview finish".into(),
             request: TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
+                workspace: Some(workspace_arg),
                 r#continue: false,
                 root: None,
                 mode: dw_core::ExecutionMode::Preview,
@@ -1486,7 +1486,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::FinishExecute => TuiAction {
             label: "Finish workspace".into(),
             request: TuiActionRequest::TaskFinish(dw_task::finish::FinishArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg.clone())),
+                workspace: Some(workspace_arg.clone()),
                 r#continue: false,
                 root: None,
                 mode: dw_core::ExecutionMode::Execute,
@@ -1503,7 +1503,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::TeardownPreview => TuiAction {
             label: "Preview removal".into(),
             request: TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg.clone())),
+                workspace: Some(workspace_arg.clone()),
                 root: None,
                 project: None,
                 work_item_ids: Vec::new(),
@@ -1517,7 +1517,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::TeardownExecute => TuiAction {
             label: "Remove workspace".into(),
             request: TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
-                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
+                workspace: Some(workspace_arg),
                 root: None,
                 project: None,
                 work_item_ids: Vec::new(),

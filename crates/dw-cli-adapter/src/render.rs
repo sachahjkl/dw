@@ -732,7 +732,10 @@ pub fn task_status_lines(report: &TaskStatusReport) -> Vec<String> {
         ));
         lines.push(format!("  Branche     : {}", item.branch_name));
         if !item.repositories.is_empty() {
-            lines.push(format!("  Repositories: {}", item.repositories.join(", ")));
+            lines.push(format!(
+                "  Repositories: {}",
+                join_display(&item.repositories)
+            ));
         }
         lines.push(format!("  Chemin      : {}", item.path));
     }
@@ -755,7 +758,10 @@ pub fn task_list_lines(report: &TaskListReport) -> Vec<String> {
         ));
         lines.push(format!("  Branche: {}", item.branch_name));
         if !item.repositories.is_empty() {
-            lines.push(format!("  Repositories: {}", item.repositories.join(", ")));
+            lines.push(format!(
+                "  Repositories: {}",
+                join_display(&item.repositories)
+            ));
         }
         lines.push(format!("  Chemin: {}", item.path));
     }
@@ -779,7 +785,10 @@ pub fn task_current_lines(item: &TaskCurrentItem) -> Vec<String> {
         lines.push(format!("Tâches enfants: {}", format_child_tasks(item)));
     }
 
-    lines.push(format!("Repositories: {}", item.repositories.join(", ")));
+    lines.push(format!(
+        "Repositories: {}",
+        join_display(&item.repositories)
+    ));
     lines
 }
 

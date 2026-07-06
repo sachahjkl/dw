@@ -408,7 +408,7 @@ impl App {
         action.is_workspace_action()
             && action
                 .workspace_path()
-                .is_none_or(|path| path == workspace.path)
+                .is_none_or(|path| path == workspace.path.as_str())
     }
 
     pub fn selected_visible_action(&self) -> Option<(usize, &TuiAction)> {
@@ -509,8 +509,8 @@ impl App {
                 items.push(CockpitItem {
                     section: "In progress",
                     title: format!("Preflight {}", workspace.display_work_items),
-                    subtitle: workspace.path.clone(),
-                    status: workspace.kind.clone(),
+                    subtitle: workspace.path.to_string(),
+                    status: workspace.kind.to_string(),
                     severity: CockpitSeverity::Normal,
                     primary_action: action,
                 });
@@ -3399,7 +3399,7 @@ mod tests {
             all_known_work_item_ids: vec!["42".into()],
             kind: "feature".into(),
             slug: slug.into(),
-            branch_name: format!("feature/42-{slug}"),
+            branch_name: format!("feature/42-{slug}").into(),
             created_at: "2026-07-04T00:00:00Z".into(),
             work_item_type: Some("User Story".into()),
             work_item_title: Some("Demo".into()),

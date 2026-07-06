@@ -156,7 +156,11 @@ pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
     let handoff_summaries = targets
         .iter()
         .filter_map(|target| {
-            read_handoff_summary(Path::new(&workspace), target.target.repository.as_str()).ok()
+            read_handoff_summary(
+                Path::new(workspace.as_str()),
+                target.target.repository.as_str(),
+            )
+            .ok()
         })
         .collect::<Vec<WorkspaceHandoffSummary>>();
     let changed_repositories = targets
@@ -190,7 +194,7 @@ pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
 
     Ok(FinishPlanReport {
         root: DevWorkflowRoot::from(root),
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         commit_message: build_commit_message(&manifest, args.message.as_deref()),
         manifest,
         targets,

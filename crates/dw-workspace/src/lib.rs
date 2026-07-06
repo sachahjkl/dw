@@ -84,27 +84,27 @@ pub struct WorkspaceChildTask {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceSummary {
-    pub path: String,
+    pub path: WorkspacePath,
     pub manifest: WorkspaceManifest,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskListItem {
-    pub path: String,
-    pub project: String,
+    pub path: WorkspacePath,
+    pub project: ProjectKey,
     #[serde(rename = "workItemId")]
-    pub work_item_id: String,
+    pub work_item_id: WorkItemId,
     #[serde(rename = "displayWorkItems")]
     pub display_work_items: String,
     #[serde(rename = "taskId")]
-    pub task_id: Option<String>,
+    pub task_id: Option<TaskId>,
     #[serde(rename = "allKnownWorkItemIds")]
-    pub all_known_work_item_ids: Vec<String>,
+    pub all_known_work_item_ids: Vec<WorkItemId>,
     #[serde(rename = "type")]
-    pub kind: String,
-    pub slug: String,
+    pub kind: WorkItemTypeName,
+    pub slug: TaskSlug,
     #[serde(rename = "branchName")]
-    pub branch_name: String,
+    pub branch_name: BranchName,
     #[serde(rename = "createdAt")]
     pub created_at: String,
     #[serde(rename = "workItemType")]
@@ -113,25 +113,25 @@ pub struct TaskListItem {
     pub work_item_title: Option<String>,
     #[serde(rename = "workItemState")]
     pub work_item_state: Option<String>,
-    pub repositories: Vec<String>,
+    pub repositories: Vec<WorkspaceRepositoryName>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskCurrentItem {
-    pub workspace: String,
-    pub project: String,
+    pub workspace: WorkspacePath,
+    pub project: ProjectKey,
     #[serde(rename = "primaryWorkItemId")]
-    pub primary_work_item_id: String,
+    pub primary_work_item_id: WorkItemId,
     #[serde(rename = "workItems")]
     pub work_items: Vec<WorkspaceWorkItem>,
     #[serde(rename = "taskId")]
-    pub task_id: Option<String>,
+    pub task_id: Option<TaskId>,
     #[serde(rename = "childTaskIds")]
-    pub child_task_ids: BTreeMap<String, String>,
+    pub child_task_ids: BTreeMap<WorkspaceRepositoryName, WorkItemId>,
     #[serde(rename = "childTasks")]
     pub child_tasks: Vec<WorkspaceChildTask>,
-    pub branch: String,
-    pub repositories: Vec<String>,
+    pub branch: BranchName,
+    pub repositories: Vec<WorkspaceRepositoryName>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -295,11 +295,11 @@ pub enum WorkspaceError {
 }
 
 pub fn build_handoff_validation_report(
-    workspace: &str,
+    workspace: &WorkspacePath,
 ) -> Result<TaskHandoffValidationReport, WorkspaceError> {
-    let workspace_path = Path::new(workspace);
+    let workspace_path = Path::new(workspace.as_str());
     if !workspace_path.exists() {
-        return Err(WorkspaceError::MissingWorkspace(workspace.into()));
+        return Err(WorkspaceError::MissingWorkspace(workspace.to_string()));
     }
 
     let manifest_path = workspace_path.join("task.json");
@@ -405,7 +405,7 @@ pub fn build_handoff_validation_report(
     let is_valid = items.iter().all(|item| item.valid);
     Ok(TaskHandoffValidationReport {
         schema_version: HANDOFF_VALIDATION_VERSION.into(),
-        workspace: WorkspacePath::from(workspace),
+        workspace: workspace.clone(),
         project: ProjectKey::from(manifest.project),
         items,
         is_valid,
@@ -477,7 +477,7 @@ fn filter_workspaces_by_requested_ids(
 pub fn task_status(root: &str) -> Vec<String> {
     find_workspaces(root)
         .into_iter()
-        .map(|workspace| workspace.path)
+        .map(|workspace| workspace.path.to_string())
         .collect()
 }
 
@@ -486,19 +486,30 @@ pub fn task_list(root: &str, project: Option<&str>, work_item: Option<&str>) -> 
         .into_iter()
         .map(|workspace| TaskListItem {
             path: workspace.path,
-            project: workspace.manifest.project.clone(),
-            work_item_id: workspace.manifest.display_work_item_ids(),
+            project: ProjectKey::from(workspace.manifest.project.clone()),
+            work_item_id: WorkItemId::from(workspace.manifest.primary_work_item_id()),
             display_work_items: workspace.manifest.display_work_items(),
-            task_id: workspace.manifest.task_id.clone(),
-            all_known_work_item_ids: workspace.manifest.all_known_work_item_ids(),
-            kind: workspace.manifest.kind.clone(),
-            slug: workspace.manifest.slug.clone(),
-            branch_name: workspace.manifest.branch_name.clone(),
+            task_id: workspace.manifest.task_id.clone().map(TaskId::from),
+            all_known_work_item_ids: workspace
+                .manifest
+                .all_known_work_item_ids()
+                .into_iter()
+                .map(WorkItemId::from)
+                .collect(),
+            kind: WorkItemTypeName::from(workspace.manifest.kind.clone()),
+            slug: TaskSlug::from(workspace.manifest.slug.clone()),
+            branch_name: BranchName::from(workspace.manifest.branch_name.clone()),
             created_at: workspace.manifest.created_at.clone(),
             work_item_type: workspace.manifest.work_item_type.clone(),
             work_item_title: workspace.manifest.work_item_title.clone(),
             work_item_state: workspace.manifest.work_item_state.clone(),
-            repositories: workspace.manifest.repositories.clone(),
+            repositories: workspace
+                .manifest
+                .repositories
+                .iter()
+                .cloned()
+                .map(WorkspaceRepositoryName::from)
+                .collect(),
         })
         .collect()
 }
@@ -563,15 +574,29 @@ pub fn task_current(start_path: &str) -> Result<TaskCurrentItem, WorkspaceError>
     let workspace = find_workspace_path(start_path).ok_or(WorkspaceError::NoCurrentWorkspace)?;
     let manifest = read_manifest(&Path::new(&workspace).join("task.json"))?;
     Ok(TaskCurrentItem {
-        workspace,
-        project: manifest.project.clone(),
-        primary_work_item_id: manifest.primary_work_item_id(),
+        workspace: WorkspacePath::from(workspace),
+        project: ProjectKey::from(manifest.project.clone()),
+        primary_work_item_id: WorkItemId::from(manifest.primary_work_item_id()),
         work_items: manifest.parent_work_items(),
-        task_id: manifest.task_id.clone(),
-        child_task_ids: manifest.legacy_child_task_ids(),
+        task_id: manifest.task_id.clone().map(TaskId::from),
+        child_task_ids: manifest
+            .legacy_child_task_ids()
+            .into_iter()
+            .map(|(repository, id)| {
+                (
+                    WorkspaceRepositoryName::from(repository),
+                    WorkItemId::from(id),
+                )
+            })
+            .collect(),
         child_tasks: manifest.normalized_child_tasks(),
-        branch: manifest.branch_name.clone(),
-        repositories: manifest.repositories.clone(),
+        branch: BranchName::from(manifest.branch_name.clone()),
+        repositories: manifest
+            .repositories
+            .iter()
+            .cloned()
+            .map(WorkspaceRepositoryName::from)
+            .collect(),
     })
 }
 
@@ -582,10 +607,10 @@ pub fn read_manifest_path(path: &str) -> Result<WorkspaceManifest, WorkspaceErro
 pub fn plan_task_rename(
     root: &str,
     projects: &ProjectsConfig,
-    workspace: &str,
+    workspace: &WorkspacePath,
     slug: &str,
 ) -> Result<(WorkspaceManifest, TaskRenamePlan), WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let _project_config = resolve_project(projects, &manifest.project);
     let new_slug = slug_from_phrase_or_fallback(Some(slug), &manifest.slug);
     let new_branch = build_branch_name(
@@ -593,7 +618,7 @@ pub fn plan_task_rename(
         &manifest.all_known_work_item_ids(),
         &new_slug,
     );
-    let new_workspace = Path::new(workspace)
+    let new_workspace = Path::new(workspace.as_str())
         .parent()
         .unwrap_or_else(|| Path::new(root))
         .join(build_subject_name(
@@ -611,7 +636,7 @@ pub fn plan_task_rename(
     Ok((
         manifest.clone(),
         TaskRenamePlan {
-            workspace: WorkspacePath::from(workspace),
+            workspace: workspace.clone(),
             new_workspace: WorkspacePath::from(new_workspace),
             old_slug: TaskSlug::from(manifest.slug),
             new_slug: TaskSlug::from(new_slug),
@@ -653,25 +678,29 @@ pub fn resolve_workspace_for_workspace_command(
     workspace: Option<&str>,
     use_latest_workspace: bool,
     current_directory: &str,
-) -> Result<String, WorkspaceError> {
+) -> Result<WorkspacePath, WorkspaceError> {
     if let Some(workspace) = workspace.filter(|value| !value.trim().is_empty()) {
-        return Ok(PathBuf::from(workspace).display().to_string());
+        return Ok(WorkspacePath::from(
+            PathBuf::from(workspace).display().to_string(),
+        ));
     }
 
     if use_latest_workspace {
         return resolve_workspace(root, None, None, None, None, true);
     }
 
-    find_workspace_path(current_directory).ok_or(WorkspaceError::NoCurrentWorkspace)
+    find_workspace_path(current_directory)
+        .map(WorkspacePath::from)
+        .ok_or(WorkspaceError::NoCurrentWorkspace)
 }
 
 pub fn plan_task_repo_latest(
     root: &str,
     projects: &ProjectsConfig,
-    workspace: &str,
+    workspace: &WorkspacePath,
     requested_repositories: &[WorkspaceRepositoryName],
 ) -> Result<(WorkspaceManifest, Vec<TaskRepoLatestTarget>), WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let project_config = resolve_project(projects, &manifest.project);
     let repositories = resolve_workspace_repositories(&manifest, requested_repositories)?;
     let targets = repositories
@@ -695,7 +724,10 @@ pub fn plan_task_repo_latest(
             TaskRepoLatestTarget {
                 repository: WorkspaceRepositoryName::from(repository),
                 repository_path: RepositoryPath::from(
-                    Path::new(workspace).join(folder).display().to_string(),
+                    Path::new(workspace.as_str())
+                        .join(folder)
+                        .display()
+                        .to_string(),
                 ),
                 default_branch: BranchName::from(repository_config.default_branch),
             }
@@ -707,9 +739,9 @@ pub fn plan_task_repo_latest(
 
 pub fn plan_task_commit(
     projects: &ProjectsConfig,
-    workspace: &str,
+    workspace: &WorkspacePath,
 ) -> Result<(WorkspaceManifest, Vec<TaskCommitTarget>), WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let project_config = resolve_project(projects, &manifest.project);
     let targets = manifest
         .repositories
@@ -724,7 +756,12 @@ pub fn plan_task_commit(
                 .unwrap_or_else(|| repository.clone());
             TaskCommitTarget {
                 repository: WorkspaceRepositoryName::from(repository.clone()),
-                path: RepositoryPath::from(Path::new(workspace).join(folder).display().to_string()),
+                path: RepositoryPath::from(
+                    Path::new(workspace.as_str())
+                        .join(folder)
+                        .display()
+                        .to_string(),
+                ),
             }
         })
         .collect();
@@ -733,7 +770,7 @@ pub fn plan_task_commit(
 
 pub fn plan_task_finish(
     projects: &ProjectsConfig,
-    workspace: &str,
+    workspace: &WorkspacePath,
 ) -> Result<
     (
         WorkspaceManifest,
@@ -776,13 +813,13 @@ pub fn ensure_work_item_reference(message: &str, manifest: &WorkspaceManifest) -
 
 pub fn plan_add_work_items(
     root: &str,
-    workspace: &str,
+    workspace: &WorkspacePath,
     ids: &[WorkItemId],
     kind: Option<&str>,
     title: Option<&str>,
     state: Option<&str>,
 ) -> Result<(WorkspaceManifest, TaskWorkItemUpdatePlan), WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let mut work_items = manifest.parent_work_items();
     let mut added_ids = Vec::new();
     for id in ids {
@@ -801,16 +838,17 @@ pub fn plan_add_work_items(
             state: state.map(ToOwned::to_owned),
         });
     }
-    reject_work_item_conflicts(root, workspace, &manifest.project, &added_ids)?;
-    build_work_item_update_plan(root, workspace, &manifest, work_items).map(|plan| (manifest, plan))
+    reject_work_item_conflicts(root, workspace.as_str(), &manifest.project, &added_ids)?;
+    build_work_item_update_plan(root, workspace.as_str(), &manifest, work_items)
+        .map(|plan| (manifest, plan))
 }
 
 pub fn plan_add_work_item_snapshots(
     root: &str,
-    workspace: &str,
+    workspace: &WorkspacePath,
     snapshots: &[WorkItemSnapshot],
 ) -> Result<(WorkspaceManifest, TaskWorkItemUpdatePlan), WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let mut work_items = manifest.parent_work_items();
     let mut added_ids = Vec::new();
     for snapshot in snapshots {
@@ -829,16 +867,17 @@ pub fn plan_add_work_item_snapshots(
             state: snapshot.state.clone(),
         });
     }
-    reject_work_item_conflicts(root, workspace, &manifest.project, &added_ids)?;
-    build_work_item_update_plan(root, workspace, &manifest, work_items).map(|plan| (manifest, plan))
+    reject_work_item_conflicts(root, workspace.as_str(), &manifest.project, &added_ids)?;
+    build_work_item_update_plan(root, workspace.as_str(), &manifest, work_items)
+        .map(|plan| (manifest, plan))
 }
 
 pub fn plan_remove_work_items(
     root: &str,
-    workspace: &str,
+    workspace: &WorkspacePath,
     ids: &[WorkItemId],
 ) -> Result<(WorkspaceManifest, TaskWorkItemUpdatePlan), WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let work_items = manifest
         .parent_work_items()
         .into_iter()
@@ -850,7 +889,8 @@ pub fn plan_remove_work_items(
     if work_items.is_empty() {
         return Err(WorkspaceError::EmptyWorkItemSet);
     }
-    build_work_item_update_plan(root, workspace, &manifest, work_items).map(|plan| (manifest, plan))
+    build_work_item_update_plan(root, workspace.as_str(), &manifest, work_items)
+        .map(|plan| (manifest, plan))
 }
 
 pub fn execute_work_item_update(
@@ -899,10 +939,10 @@ pub fn execute_work_item_update(
 }
 
 pub fn execute_task_sync(
-    workspace: &str,
+    workspace: &WorkspacePath,
     snapshots: &[WorkItemSnapshot],
 ) -> Result<WorkspaceManifest, WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     if snapshots.is_empty() {
         return Ok(manifest);
     }
@@ -925,20 +965,20 @@ pub fn execute_task_sync(
         ..manifest
     };
     write_text(
-        &Path::new(workspace).join("task.json"),
+        &Path::new(workspace.as_str()).join("task.json"),
         &serde_json::to_string_pretty(&updated)
-            .map_err(|_| WorkspaceError::InvalidManifest(workspace.into()))?,
+            .map_err(|_| WorkspaceError::InvalidManifest(workspace.to_string()))?,
     )?;
     Ok(updated)
 }
 
 pub fn execute_add_child_task(
-    workspace: &str,
+    workspace: &WorkspacePath,
     repository: &str,
     id: &str,
     title: Option<String>,
 ) -> Result<WorkspaceManifest, WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let mut child_tasks = manifest.normalized_child_tasks();
     child_tasks.push(WorkspaceChildTask {
         repository: repository.into(),
@@ -950,9 +990,9 @@ pub fn execute_add_child_task(
         ..manifest
     };
     write_text(
-        &Path::new(workspace).join("task.json"),
+        &Path::new(workspace.as_str()).join("task.json"),
         &serde_json::to_string_pretty(&updated)
-            .map_err(|_| WorkspaceError::InvalidManifest(workspace.into()))?,
+            .map_err(|_| WorkspaceError::InvalidManifest(workspace.to_string()))?,
     )?;
     Ok(updated)
 }
@@ -965,11 +1005,11 @@ pub fn requires_child_tasks(work_item_type: Option<&str>) -> bool {
 pub fn plan_task_add_repo(
     root: &str,
     projects: &ProjectsConfig,
-    workspace: &str,
+    workspace: &WorkspacePath,
     repository_key: &str,
 ) -> Result<(WorkspaceManifest, TaskAddRepoPlan), WorkspaceError> {
     let repository_key = repository_key.trim();
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     if manifest
         .repositories
         .iter()
@@ -979,7 +1019,7 @@ pub fn plan_task_add_repo(
         return Ok((
             manifest.clone(),
             TaskAddRepoPlan {
-                workspace: WorkspacePath::from(workspace),
+                workspace: workspace.clone(),
                 repository: WorkspaceRepositoryName::from(repository.clone()),
                 project_root: ProjectRootPath::from(
                     Path::new(root)
@@ -989,7 +1029,10 @@ pub fn plan_task_add_repo(
                         .to_string(),
                 ),
                 worktree_path: RepositoryPath::from(
-                    Path::new(workspace).join(&repository).display().to_string(),
+                    Path::new(workspace.as_str())
+                        .join(&repository)
+                        .display()
+                        .to_string(),
                 ),
                 url: String::new(),
                 default_branch: BranchName::from("main"),
@@ -1026,7 +1069,7 @@ pub fn plan_task_add_repo(
     Ok((
         manifest.clone(),
         TaskAddRepoPlan {
-            workspace: WorkspacePath::from(workspace),
+            workspace: workspace.clone(),
             repository: WorkspaceRepositoryName::from(repository_key),
             project_root: ProjectRootPath::from(
                 Path::new(root)
@@ -1036,7 +1079,10 @@ pub fn plan_task_add_repo(
                     .to_string(),
             ),
             worktree_path: RepositoryPath::from(
-                Path::new(workspace).join(folder).display().to_string(),
+                Path::new(workspace.as_str())
+                    .join(folder)
+                    .display()
+                    .to_string(),
             ),
             url: repository_config.url,
             default_branch: BranchName::from(repository_config.default_branch),
@@ -1078,9 +1124,9 @@ pub fn execute_task_add_repo(
 pub fn plan_task_teardown(
     root: &str,
     projects: &ProjectsConfig,
-    workspace: &str,
+    workspace: &WorkspacePath,
 ) -> Result<(WorkspaceManifest, Vec<WorkspaceTeardownStep>), WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let project_config = resolve_project(projects, &manifest.project);
     let project_root = Path::new(root).join("projects").join(&manifest.project);
     let mut steps = Vec::new();
@@ -1115,7 +1161,10 @@ pub fn plan_task_teardown(
         steps.push(WorkspaceTeardownStep {
             repository: repository_key.clone(),
             action: "worktree remove".into(),
-            target: Path::new(workspace).join(folder).display().to_string(),
+            target: Path::new(workspace.as_str())
+                .join(folder)
+                .display()
+                .to_string(),
             git_dir: Some(git_dir.clone()),
         });
 
@@ -1132,7 +1181,7 @@ pub fn plan_task_teardown(
     steps.push(WorkspaceTeardownStep {
         repository: "workspace".into(),
         action: "delete directory".into(),
-        target: workspace.into(),
+        target: workspace.to_string(),
         git_dir: None,
     });
 
@@ -1140,7 +1189,7 @@ pub fn plan_task_teardown(
 }
 
 pub fn execute_task_teardown<F>(
-    workspace: &str,
+    workspace: &WorkspacePath,
     steps: &[WorkspaceTeardownStep],
     mut run_git_dir: F,
 ) -> Result<(), WorkspaceError>
@@ -1176,8 +1225,8 @@ where
         })?;
     }
 
-    if Path::new(workspace).exists() {
-        fs::remove_dir_all(workspace).map_err(|error| WorkspaceError::TeardownFailed {
+    if Path::new(workspace.as_str()).exists() {
+        fs::remove_dir_all(workspace.as_str()).map_err(|error| WorkspaceError::TeardownFailed {
             repository: "workspace".into(),
             message: error.to_string(),
         })?;
@@ -1353,10 +1402,10 @@ pub fn start_plan_with_child_tasks(
 }
 
 pub fn build_preflight_report_from_ai_context_files(
-    workspace: &str,
+    workspace: &WorkspacePath,
     ai_context_files: &[AiContextFilePath],
 ) -> Result<TaskPreflightReport, WorkspaceError> {
-    let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
+    let manifest = read_manifest(&Path::new(workspace.as_str()).join("task.json"))?;
     let mut issues = Vec::new();
 
     for file in ai_context_files {
@@ -1371,7 +1420,7 @@ pub fn build_preflight_report_from_ai_context_files(
     let has_blocking_issues = issues.iter().any(|issue| issue.severity.is_blocking());
     Ok(TaskPreflightReport {
         schema_version: PREFLIGHT_VERSION.into(),
-        workspace: WorkspacePath::from(workspace),
+        workspace: workspace.clone(),
         project: ProjectKey::from(manifest.project.clone()),
         work_item_ids: manifest
             .parent_work_items()
@@ -1516,11 +1565,13 @@ pub fn resolve_workspace(
     work_item: Option<&str>,
     positional_work_item: Option<&str>,
     r#continue: bool,
-) -> Result<String, WorkspaceError> {
+) -> Result<WorkspacePath, WorkspaceError> {
     let work_item = resolve_work_item_ids(work_item, positional_work_item)?;
 
     if let Some(workspace) = workspace.filter(|value| !value.trim().is_empty()) {
-        return Ok(PathBuf::from(workspace).display().to_string());
+        return Ok(WorkspacePath::from(
+            PathBuf::from(workspace).display().to_string(),
+        ));
     }
 
     let workspaces = filter_workspaces(find_workspaces(root), project, work_item.as_deref());
@@ -1541,9 +1592,11 @@ pub fn resolve_workspace_by_work_item_ids(
     project: Option<&str>,
     work_item_ids: &[WorkItemId],
     r#continue: bool,
-) -> Result<String, WorkspaceError> {
+) -> Result<WorkspacePath, WorkspaceError> {
     if let Some(workspace) = workspace.filter(|value| !value.trim().is_empty()) {
-        return Ok(PathBuf::from(workspace).display().to_string());
+        return Ok(WorkspacePath::from(
+            PathBuf::from(workspace).display().to_string(),
+        ));
     }
 
     let workspaces =
@@ -1560,13 +1613,13 @@ pub fn resolve_workspace_by_work_item_ids(
 }
 
 pub fn resolve_open_target(
-    workspace: &str,
+    workspace: &WorkspacePath,
     manifest: &WorkspaceManifest,
     project_config: Option<&ProjectConfig>,
     repository_key: Option<&str>,
 ) -> Result<String, WorkspaceError> {
     let Some(repository_key) = repository_key.filter(|value| !value.trim().is_empty()) else {
-        return Ok(workspace.into());
+        return Ok(workspace.to_string());
     };
 
     if !manifest
@@ -1590,7 +1643,10 @@ pub fn resolve_open_target(
             folder: Some(repository_key.into()),
         });
     let folder = repository.folder.unwrap_or_else(|| repository_key.into());
-    Ok(Path::new(workspace).join(folder).display().to_string())
+    Ok(Path::new(workspace.as_str())
+        .join(folder)
+        .display()
+        .to_string())
 }
 
 impl WorkspaceManifest {
@@ -2147,13 +2203,18 @@ fn reject_work_item_conflicts(
 
     let conflicts = find_workspaces(root)
         .into_iter()
-        .filter(|workspace| !workspace.path.eq_ignore_ascii_case(current_workspace))
+        .filter(|workspace| {
+            !workspace
+                .path
+                .as_str()
+                .eq_ignore_ascii_case(current_workspace)
+        })
         .filter(|workspace| workspace.manifest.project.eq_ignore_ascii_case(project))
         .filter(|workspace| {
             ids.iter()
                 .any(|id| workspace.manifest.matches_work_item(id.as_str()))
         })
-        .map(|workspace| workspace.path)
+        .map(|workspace| workspace.path.to_string())
         .collect::<Vec<_>>();
 
     if conflicts.is_empty() {
@@ -2201,7 +2262,7 @@ fn collect_manifests(root: &Path, entries: &mut Vec<WorkspaceSummary>) {
             if manifest_path.exists() {
                 if let Ok(manifest) = read_manifest(&manifest_path) {
                     entries.push(WorkspaceSummary {
-                        path: path.display().to_string(),
+                        path: WorkspacePath::from(path.display().to_string()),
                         manifest,
                     });
                 }
@@ -2314,6 +2375,10 @@ mod tests {
     use std::fs;
     use std::process::Command;
     use tempfile::tempdir;
+
+    fn typed_workspace_path(path: &Path) -> WorkspacePath {
+        WorkspacePath::from(path.display().to_string())
+    }
 
     fn run_git(cwd: &Path, args: &[&str]) {
         let output = Command::new("git")
@@ -2507,10 +2572,10 @@ artifacts:
 
         let result = task_list(root.to_str().expect("utf8 path"), Some("ha"), Some("123"));
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].project, "ha");
-        assert_eq!(result[0].work_item_id, "123");
+        assert_eq!(result[0].project.as_str(), "ha");
+        assert_eq!(result[0].work_item_id.as_str(), "123");
         assert_eq!(result[0].display_work_items, "#123 Titre HA");
-        assert_eq!(result[0].branch_name, "feat/123-demo");
+        assert_eq!(result[0].branch_name.as_str(), "feat/123-demo");
     }
 
     #[test]
@@ -2538,9 +2603,16 @@ artifacts:
 
         let current = task_current(nested.to_str().expect("utf8 path"))
             .expect("current workspace should resolve");
-        assert_eq!(current.project, "ha");
-        assert_eq!(current.primary_work_item_id, "123");
-        assert_eq!(current.repositories, vec!["front", "back"]);
+        assert_eq!(current.project.as_str(), "ha");
+        assert_eq!(current.primary_work_item_id.as_str(), "123");
+        assert_eq!(
+            current
+                .repositories
+                .iter()
+                .map(WorkspaceRepositoryName::as_str)
+                .collect::<Vec<_>>(),
+            vec!["front", "back"]
+        );
     }
 
     #[test]
@@ -2575,7 +2647,7 @@ artifacts:
         )
         .expect("back handoff should be written");
 
-        let report = build_handoff_validation_report(workspace.to_str().expect("utf8 path"))
+        let report = build_handoff_validation_report(&typed_workspace_path(&workspace))
             .expect("report should be built");
 
         assert!(!report.is_valid);
@@ -2609,7 +2681,7 @@ artifacts:
         )
         .expect("manifest should be written");
 
-        let report = build_handoff_validation_report(workspace.to_str().expect("utf8 path"))
+        let report = build_handoff_validation_report(&typed_workspace_path(&workspace))
             .expect("report should be built");
 
         assert!(!report.is_valid);
@@ -2646,7 +2718,7 @@ artifacts:
         )
         .expect("workspace should resolve");
 
-        assert_eq!(workspace, new_workspace.display().to_string());
+        assert_eq!(workspace.as_str(), new_workspace.display().to_string());
     }
 
     #[test]
@@ -2671,7 +2743,7 @@ artifacts:
         )
         .expect("workspace should resolve");
 
-        assert_eq!(resolved, workspace.display().to_string());
+        assert_eq!(resolved.as_str(), workspace.display().to_string());
     }
 
     #[test]
@@ -2696,7 +2768,7 @@ artifacts:
         )
         .expect("workspace should resolve");
 
-        assert_eq!(resolved, workspace.display().to_string());
+        assert_eq!(resolved.as_str(), workspace.display().to_string());
     }
 
     #[test]
@@ -2721,7 +2793,7 @@ artifacts:
         )
         .expect("workspace should resolve");
 
-        assert_eq!(resolved, workspace.display().to_string());
+        assert_eq!(resolved.as_str(), workspace.display().to_string());
     }
 
     #[test]
@@ -2755,14 +2827,11 @@ artifacts:
             r#"{"displayName":"HA","repositories":{"front":{"url":"","defaultBranch":"develop","folder":"custom-front"}}}"#,
         )
         .expect("project config should parse");
+        let workspace = WorkspacePath::from("/tmp/workspace");
 
-        let target = resolve_open_target(
-            "/tmp/workspace",
-            &manifest,
-            Some(&project_config),
-            Some("front"),
-        )
-        .expect("target should resolve");
+        let target =
+            resolve_open_target(&workspace, &manifest, Some(&project_config), Some("front"))
+                .expect("target should resolve");
 
         assert_eq!(target, "/tmp/workspace/custom-front");
     }
@@ -3165,7 +3234,7 @@ artifacts:
         .expect("ai context should be written");
 
         let report = build_preflight_report_from_ai_context_files(
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &[AiContextFilePath::from(
                 ai_context_path.display().to_string(),
             )],
@@ -3210,7 +3279,7 @@ artifacts:
         )
         .expect("workspace should resolve");
 
-        assert_eq!(resolved, workspace.display().to_string());
+        assert_eq!(resolved.as_str(), workspace.display().to_string());
     }
 
     #[test]
@@ -3232,7 +3301,7 @@ artifacts:
         let (_manifest, targets) = plan_task_repo_latest(
             root.to_str().expect("utf8 path"),
             &projects,
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &[WorkspaceRepositoryName::from("front")],
         )
         .expect("plan should build");
@@ -3263,9 +3332,8 @@ artifacts:
         )
         .expect("projects should parse");
 
-        let (_manifest, targets) =
-            plan_task_commit(&projects, workspace.to_str().expect("utf8 path"))
-                .expect("plan should build");
+        let (_manifest, targets) = plan_task_commit(&projects, &typed_workspace_path(&workspace))
+            .expect("plan should build");
 
         assert_eq!(targets.len(), 2);
         assert!(targets.iter().any(|target| {
@@ -3364,7 +3432,7 @@ artifacts:
 
         let (_manifest, plan) = plan_add_work_items(
             temp.path().to_str().expect("utf8 path"),
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &[WorkItemId::from("55206")],
             Some("Bug"),
             Some("Secondaire"),
@@ -3395,7 +3463,7 @@ artifacts:
 
         let (_manifest, plan) = plan_add_work_item_snapshots(
             temp.path().to_str().expect("utf8 path"),
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &[WorkItemSnapshot {
                 id: "55206".into(),
                 kind: Some("Bug".into()),
@@ -3435,7 +3503,7 @@ artifacts:
 
         let error = plan_add_work_item_snapshots(
             temp.path().to_str().expect("utf8 path"),
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &[WorkItemSnapshot {
                 id: "55206".into(),
                 kind: Some("Bug".into()),
@@ -3461,7 +3529,7 @@ artifacts:
         .expect("manifest should be written");
         let (manifest, plan) = plan_add_work_items(
             temp.path().to_str().expect("utf8 path"),
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &[WorkItemId::from("55206")],
             None,
             None,
@@ -3499,7 +3567,7 @@ artifacts:
 
         let error = plan_remove_work_items(
             temp.path().to_str().expect("utf8 path"),
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &[WorkItemId::from("11010")],
         )
         .expect_err("removing every parent should fail");
@@ -3526,7 +3594,7 @@ artifacts:
         let (_manifest, plan) = plan_task_add_repo(
             root.to_str().expect("utf8 path"),
             &projects,
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             "db",
         )
         .expect("plan should build");
@@ -3563,7 +3631,7 @@ artifacts:
         let (manifest, plan) = plan_task_add_repo(
             root.to_str().expect("utf8 path"),
             &projects,
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             "db",
         )
         .expect("plan should build");
@@ -3588,7 +3656,7 @@ artifacts:
         .expect("manifest should be written");
 
         let updated = execute_task_sync(
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &[WorkItemSnapshot {
                 id: "123".into(),
                 kind: Some("Bug".into()),
@@ -3668,7 +3736,10 @@ artifacts:
         let candidates = plan_task_prune(root.to_str().expect("utf8 path"), Some("ha"), None);
 
         assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0].path, final_workspace.display().to_string());
+        assert_eq!(
+            candidates[0].path.as_str(),
+            final_workspace.display().to_string()
+        );
     }
 
     #[test]
@@ -3690,7 +3761,7 @@ artifacts:
         let (_manifest, steps) = plan_task_teardown(
             root.to_str().expect("utf8 path"),
             &projects,
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
         )
         .expect("plan should build");
         let anchor = root.join("projects/ha/repositories/front.git");
@@ -3745,7 +3816,7 @@ artifacts:
         let mut calls: Vec<(String, Vec<String>)> = Vec::new();
 
         execute_task_teardown(
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &steps,
             |git_dir, args| {
                 calls.push((
@@ -3797,7 +3868,7 @@ artifacts:
         let mut calls = 0;
 
         execute_task_teardown(
-            workspace.to_str().expect("utf8 path"),
+            &typed_workspace_path(&workspace),
             &steps,
             |_git_dir, _args| {
                 calls += 1;

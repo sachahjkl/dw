@@ -120,7 +120,7 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
     let updated = execute_task_sync(&workspace, &snapshots)?;
 
     Ok(SyncReport {
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         requested_ids: requested_ids.into_iter().map(WorkItemId::from).collect(),
         snapshots,
         manifest: updated,
@@ -205,7 +205,7 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
     )?;
 
     Ok(CreateChildTaskReport {
-        workspace: WorkspacePath::from(workspace),
+        workspace,
         repository: args.repo,
         parent,
         requested_title: task_title,

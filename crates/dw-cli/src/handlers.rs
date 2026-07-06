@@ -1505,7 +1505,7 @@ fn resolve_open_args_interactively(
         anyhow::bail!("Aucun workspace task trouvé.");
     }
     if items.len() == 1 {
-        args.workspace = Some(WorkspacePath::from(items[0].path.clone()));
+        args.workspace = Some(items[0].path.clone());
         return Ok(args);
     }
 
@@ -1531,7 +1531,7 @@ fn resolve_open_args_interactively(
     args.workspace = options
         .into_iter()
         .find(|(label, _)| *label == selected)
-        .map(|(_, path)| WorkspacePath::from(path));
+        .map(|(_, path)| path);
     if args.workspace.is_none() {
         anyhow::bail!("Sélection workspace invalide");
     }

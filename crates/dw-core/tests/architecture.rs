@@ -1231,6 +1231,59 @@ fn workspace_rename_and_work_item_update_plans_use_typed_paths_slugs_and_branche
 }
 
 #[test]
+fn workspace_list_current_and_resolution_contracts_use_domain_types() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-workspace/src/lib.rs");
+    let text = fs::read_to_string(&path).expect("read workspace source");
+    for forbidden in [
+        "pub struct WorkspaceSummary {\n    pub path: String",
+        "pub struct TaskListItem {\n    pub path: String",
+        "pub struct TaskListItem {\n    pub path: WorkspacePath,\n    pub project: String",
+        "pub work_item_id: String,\n    #[serde(rename = \"displayWorkItems\")]",
+        "pub task_id: Option<String>,\n    #[serde(rename = \"displayWorkItems\")]",
+        "pub all_known_work_item_ids: Vec<String>",
+        "pub slug: TaskSlug,\n    #[serde(rename = \"branchName\")]\n    pub branch_name: String",
+        "pub repositories: Vec<String>,\n}",
+        "pub struct TaskCurrentItem {\n    pub workspace: String",
+        "pub child_task_ids: BTreeMap<String, String>",
+        ") -> Result<String, WorkspaceError> {\n    let work_item = resolve_work_item_ids",
+        ") -> Result<String, WorkspaceError> {\n    if let Some(workspace) = workspace.filter",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains primitive workspace result token `{}`",
+            path.display(),
+            forbidden
+        );
+    }
+    for required in [
+        "pub struct WorkspaceSummary {\n    pub path: WorkspacePath",
+        "pub path: WorkspacePath",
+        "pub project: ProjectKey",
+        "pub work_item_id: WorkItemId",
+        "pub task_id: Option<TaskId>",
+        "pub all_known_work_item_ids: Vec<WorkItemId>",
+        "pub kind: WorkItemTypeName",
+        "pub slug: TaskSlug",
+        "pub branch_name: BranchName",
+        "pub repositories: Vec<WorkspaceRepositoryName>",
+        "pub workspace: WorkspacePath",
+        "pub primary_work_item_id: WorkItemId",
+        "pub child_task_ids: BTreeMap<WorkspaceRepositoryName, WorkItemId>",
+        "pub branch: BranchName",
+        ") -> Result<WorkspacePath, WorkspaceError> {\n    let work_item = resolve_work_item_ids",
+        ") -> Result<WorkspacePath, WorkspaceError> {\n    if let Some(workspace) = workspace.filter",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed workspace result token `{}`",
+            path.display(),
+            required
+        );
+    }
+}
+
+#[test]
 fn task_validate_contract_uses_typed_workspace_filters_and_ai_context_paths() {
     let repo = repo_root();
     let path = repo.join("crates/dw-task/src/validate.rs");
