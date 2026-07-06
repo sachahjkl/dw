@@ -1355,7 +1355,7 @@ pub fn execute_task_teardown<F>(
     mut run_git_operation: F,
 ) -> Result<(), WorkspaceError>
 where
-    F: FnMut(WorkspaceGitOperation) -> Result<(), String>,
+    F: FnMut(WorkspaceGitOperation) -> Result<(), WorkspaceOperationError>,
 {
     for step in steps
         .iter()
@@ -1377,7 +1377,7 @@ where
         })
         .map_err(|message| WorkspaceError::TeardownFailed {
             repository: step.subject.clone(),
-            message: WorkspaceOperationError::from(message),
+            message,
         })?;
     }
 
@@ -1394,7 +1394,7 @@ where
         })
         .map_err(|message| WorkspaceError::TeardownFailed {
             repository: step.subject.clone(),
-            message: WorkspaceOperationError::from(message),
+            message,
         })?;
     }
 

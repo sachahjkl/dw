@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 use dw_config::{load_projects_config, resolve_project, resolve_root};
 use dw_core::{
     BranchName, CommitMessage, DevWorkflowRoot, ProjectKey, RepositoryPath, WorkItemId,
-    WorkspacePath, WorkspaceRepositoryName,
+    WorkspaceOperationError, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
     RepositoryStatus, WorktreePrepareRequest, WorktreePrepareResult, commit_repository,
@@ -318,9 +318,9 @@ pub fn execute_teardown(plan: &TeardownPlanReport) -> Result<TeardownExecutionRe
             git_dir,
             worktree_path,
         } => worktree_remove(git_dir.as_str(), worktree_path.as_str())
-            .map_err(|error| error.to_string()),
+            .map_err(workspace_operation_error),
         WorkspaceGitOperation::WorktreePrune { git_dir } => {
-            worktree_prune(git_dir.as_str()).map_err(|error| error.to_string())
+            worktree_prune(git_dir.as_str()).map_err(workspace_operation_error)
         }
     })?;
 
@@ -328,6 +328,10 @@ pub fn execute_teardown(plan: &TeardownPlanReport) -> Result<TeardownExecutionRe
         workspace: workspace.clone(),
         steps: plan.steps.clone(),
     })
+}
+
+fn workspace_operation_error(error: anyhow::Error) -> WorkspaceOperationError {
+    WorkspaceOperationError::from(error.to_string())
 }
 
 pub fn changed_commit_targets(plan: &CommitPlanReport) -> Vec<&CommitTargetStatus> {

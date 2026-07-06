@@ -3,7 +3,7 @@ use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{get_work_item_snapshots_authenticated, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{DevWorkflowRoot, ProjectKey, WorkItemId, WorkspacePath};
+use dw_core::{DevWorkflowRoot, ProjectKey, WorkItemId, WorkspaceOperationError, WorkspacePath};
 use dw_git::{worktree_prune, worktree_remove};
 use dw_workspace::{
     WorkspaceGitOperation, WorkspaceSummary, WorkspaceWorkItem, execute_task_sync,
@@ -105,9 +105,9 @@ pub fn execute(
                 git_dir,
                 worktree_path,
             } => worktree_remove(git_dir.as_str(), worktree_path.as_str())
-                .map_err(|error| error.to_string()),
+                .map_err(workspace_operation_error),
             WorkspaceGitOperation::WorktreePrune { git_dir } => {
-                worktree_prune(git_dir.as_str()).map_err(|error| error.to_string())
+                worktree_prune(git_dir.as_str()).map_err(workspace_operation_error)
             }
         })?;
         deleted.push(candidate.path);
@@ -116,6 +116,10 @@ pub fn execute(
         root: root.clone(),
         deleted,
     })
+}
+
+fn workspace_operation_error(error: anyhow::Error) -> WorkspaceOperationError {
+    WorkspaceOperationError::from(error.to_string())
 }
 
 fn filter_workspaces(
