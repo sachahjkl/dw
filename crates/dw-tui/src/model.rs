@@ -5,9 +5,9 @@ use dw_config::{
     project_choices, repository_config, resolve_project, resolve_root, root_status,
 };
 use dw_core::{
-    AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
-    EnvironmentVariableName, ProjectKey, PullRequestId, SecretKey, WorkItemId, WorkItemState,
-    WorkspaceRepositoryName,
+    AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DatabaseKey, DevWorkflowRoot,
+    DwActionEvent, EnvironmentVariableName, ProjectKey, PullRequestId, SecretKey, WorkItemId,
+    WorkItemState, WorkspaceRepositoryName,
 };
 use dw_workspace::{TaskListItem, plan_task_prune, task_list};
 
@@ -685,8 +685,8 @@ pub struct TuiSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TuiDatabase {
-    pub project: Option<String>,
-    pub key: String,
+    pub project: Option<ProjectKey>,
+    pub key: DatabaseKey,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -919,27 +919,13 @@ fn assigned_item_prompt_label(item: &AdoAssignedItem) -> String {
 }
 
 pub fn database_entries_for_tui(databases: &DatabasesConfig) -> Vec<TuiDatabase> {
-    let mut entries = databases
-        .globals
-        .keys()
-        .map(|key| TuiDatabase {
-            project: None,
-            key: key.clone(),
+    dw_db::database_catalog(databases)
+        .into_iter()
+        .map(|entry| TuiDatabase {
+            project: entry.project,
+            key: entry.database,
         })
-        .collect::<Vec<_>>();
-    for (project, value) in &databases.projects {
-        let Some(items) = value
-            .get("databases")
-            .and_then(serde_json::Value::as_object)
-        else {
-            continue;
-        };
-        entries.extend(items.keys().map(|key| TuiDatabase {
-            project: Some(project.clone()),
-            key: key.clone(),
-        }));
-    }
-    entries
+        .collect()
 }
 
 pub async fn load_assigned_data(
@@ -1536,37 +1522,26 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
 
 fn database_actions(databases: &DatabasesConfig) -> Vec<TuiAction> {
     let mut actions = Vec::new();
-    for key in databases.globals.keys() {
+    for entry in dw_db::database_catalog(databases) {
+        let label = match &entry.project {
+            Some(project) => format!("Explore schema · {project}/{}", entry.database),
+            None => format!("Explore schema · {}", entry.database),
+        };
+        let description = if entry.project.is_some() {
+            "Project database"
+        } else {
+            "Global database"
+        };
         actions.push(TuiAction {
-            label: format!("Explore schema · {key}"),
+            label,
             request: TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
-                project: None,
-                database: Some(dw_core::DatabaseKey::from(key.clone())),
+                project: entry.project,
+                database: Some(entry.database),
                 env: None,
             }),
-            description: "Global database".into(),
+            description: description.into(),
             kind: ActionRisk::Safe,
         });
-    }
-    for (project, value) in &databases.projects {
-        let Some(items) = value
-            .get("databases")
-            .and_then(serde_json::Value::as_object)
-        else {
-            continue;
-        };
-        for key in items.keys() {
-            actions.push(TuiAction {
-                label: format!("Explore schema · {project}/{key}"),
-                request: TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
-                    project: Some(dw_core::ProjectKey::from(project.clone())),
-                    database: Some(dw_core::DatabaseKey::from(key.clone())),
-                    env: None,
-                }),
-                description: "Project database".into(),
-                kind: ActionRisk::Safe,
-            });
-        }
     }
     actions
 }

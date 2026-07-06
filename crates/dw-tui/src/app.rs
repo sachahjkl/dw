@@ -1896,8 +1896,14 @@ impl App {
         if let Some(database) = self.snapshot.database_entries.get(self.selected_database) {
             for field in &mut form.fields {
                 match field.label.as_str() {
-                    "Project" => field.value = database.project.clone().unwrap_or_default(),
-                    "Database" => field.value = database.key.clone(),
+                    "Project" => {
+                        field.value = database
+                            .project
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_default()
+                    }
+                    "Database" => field.value = database.key.to_string(),
                     _ => {}
                 }
             }

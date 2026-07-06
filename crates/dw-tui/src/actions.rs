@@ -469,7 +469,7 @@ pub fn database_action(database: &TuiDatabase, action: DatabaseAction) -> TuiAct
     let verb = match action {
         DatabaseAction::Schema => "schema",
     };
-    let label = if let Some(project) = database.project.as_deref() {
+    let label = if let Some(project) = database.project.as_ref() {
         format!("DB {verb} · {project}/{}", database.key)
     } else {
         format!("DB {verb} · {}", database.key)
@@ -478,8 +478,8 @@ pub fn database_action(database: &TuiDatabase, action: DatabaseAction) -> TuiAct
     TuiAction {
         label,
         request: TuiActionRequest::DbSchema(dw_db::commands::SchemaArgs {
-            project: database.project.clone().map(dw_core::ProjectKey::from),
-            database: Some(dw_core::DatabaseKey::from(database.key.clone())),
+            project: database.project.clone(),
+            database: Some(database.key.clone()),
             env: None,
         }),
         description: match action {

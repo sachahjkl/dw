@@ -86,7 +86,7 @@ impl fmt::Display for DatabaseProviderName {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProjectDatabases {
-    pub databases: BTreeMap<String, DatabaseConnectionConfig>,
+    pub databases: BTreeMap<DatabaseKey, DatabaseConnectionConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +99,12 @@ pub struct ResolvedDatabase {
 pub struct DatabaseSelection<'a> {
     pub project: &'a ProjectKey,
     pub database: &'a DatabaseKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DatabaseCatalogEntry {
+    pub project: Option<ProjectKey>,
+    pub database: DatabaseKey,
 }
 
 #[derive(Debug, Error)]
@@ -142,13 +148,41 @@ pub fn try_resolve_connection(
         .projects
         .get(project.as_str())
         .and_then(parse_project_databases)
-        .and_then(|project| project.databases.get(database.as_str()).cloned())
+        .and_then(|project| project.databases.get(database).cloned())
         .or_else(|| {
             config
                 .globals
                 .get(database.as_str())
                 .and_then(parse_database_connection)
         })
+}
+
+pub fn database_catalog(config: &dw_config::DatabasesConfig) -> Vec<DatabaseCatalogEntry> {
+    let mut entries = config
+        .globals
+        .keys()
+        .map(|key| DatabaseCatalogEntry {
+            project: None,
+            database: DatabaseKey::from(key.as_str()),
+        })
+        .collect::<Vec<_>>();
+
+    for (project, value) in &config.projects {
+        let Some(databases) = parse_project_databases(value) else {
+            continue;
+        };
+        entries.extend(
+            databases
+                .databases
+                .keys()
+                .map(|database| DatabaseCatalogEntry {
+                    project: Some(ProjectKey::from(project.as_str())),
+                    database: database.clone(),
+                }),
+        );
+    }
+
+    entries
 }
 
 fn parse_defaults(value: Option<&Value>) -> Result<DatabaseDefaults, DbConfigError> {
@@ -178,7 +212,12 @@ fn parse_project_databases(value: &Value) -> Option<ProjectDatabases> {
     Some(ProjectDatabases {
         databases: databases
             .iter()
-            .filter_map(|(key, value)| Some((key.clone(), parse_database_connection(value)?)))
+            .filter_map(|(key, value)| {
+                Some((
+                    DatabaseKey::from(key.as_str()),
+                    parse_database_connection(value)?,
+                ))
+            })
             .collect(),
     })
 }

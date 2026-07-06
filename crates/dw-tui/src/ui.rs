@@ -1803,13 +1803,17 @@ fn database_rows(app: &App) -> Vec<[String; 3]> {
         .database_entries
         .iter()
         .map(|database| {
-            let scope = database.project.clone().unwrap_or_else(|| "global".into());
-            let action = if let Some(project) = database.project.as_deref() {
+            let scope = database
+                .project
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "global".into());
+            let action = if let Some(project) = database.project.as_ref() {
                 format!("Schema ({project}/{})", database.key)
             } else {
                 format!("Schema ({})", database.key)
             };
-            [scope, database.key.clone(), action]
+            [scope, database.key.to_string(), action]
         })
         .collect()
 }

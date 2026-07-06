@@ -462,10 +462,10 @@ fn default_fields(template: FormTemplate, snapshot: &TuiSnapshot) -> Vec<FormFie
         .unwrap_or_default();
     let first_database_entry = snapshot.database_entries.first();
     let first_database_key = first_database_entry
-        .map(|database| database.key.clone())
+        .map(|database| database.key.to_string())
         .unwrap_or_else(|| first_database.clone());
     let first_database_project = first_database_entry
-        .and_then(|database| database.project.clone())
+        .and_then(|database| database.project.as_ref().map(ToString::to_string))
         .unwrap_or_else(|| first_project.clone());
     let first_workspace = snapshot
         .workspaces
@@ -762,7 +762,7 @@ fn field_suggestions(label: &str, snapshot: &TuiSnapshot) -> Vec<String> {
             snapshot
                 .database_entries
                 .iter()
-                .map(|database| database.key.clone()),
+                .map(|database| database.key.to_string()),
         ),
         "Pull request" => pull_request_suggestions(snapshot),
         "Work item" | "Workspace work item" | "Work items" | "Work item IDs" => {

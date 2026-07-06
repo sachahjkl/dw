@@ -4,8 +4,9 @@ mod guard;
 mod query;
 
 pub use config::{
-    DatabaseConnectionConfig, DatabaseDefaults, DatabaseProvider, DatabaseSelection, DbConfigError,
-    ProjectDatabases, ResolvedDatabase, resolve_connection,
+    DatabaseCatalogEntry, DatabaseConnectionConfig, DatabaseDefaults, DatabaseProvider,
+    DatabaseSelection, DbConfigError, ProjectDatabases, ResolvedDatabase, database_catalog,
+    resolve_connection,
 };
 pub use guard::{SqlGuardResult, validate_read_only_sql};
 pub use query::{
