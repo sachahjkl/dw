@@ -483,10 +483,16 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             "crates/dw-task/src/work_item.rs",
             &[
                 "pub work_item_ids: Option<String>",
+                "pub workspace: Option<String>",
+                "pub root: Option<String>",
+                "pub project: Option<String>",
+                "pub work_item: Option<String>",
+                "pub positional_work_item",
                 "parse_work_item_ids as parse_workspace_work_item_ids",
                 "work_item_ids.join(",
                 "work_item_id_values(&args.work_item_ids).join",
                 "let work_item_selection",
+                "resolve_workspace(",
                 "pub workspace: String",
                 "pub project: String",
                 "pub new_workspace: String",
@@ -578,6 +584,35 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn task_work_item_contract_uses_typed_workspace_filters_and_ids() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-task/src/work_item.rs");
+    let text = fs::read_to_string(&path).expect("read work item source");
+    for required in [
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "WorkItemId",
+        "WorkspacePath",
+        "pub work_item_ids: Vec<WorkItemId>",
+        "pub workspace: Option<WorkspacePath>",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub project: Option<ProjectKey>",
+        "pub workspace_work_item_ids: Vec<WorkItemId>",
+        "pub requested_ids: Vec<WorkItemId>",
+        "pub skipped_existing_ids: Vec<WorkItemId>",
+        "pub fn work_item_id_from_choice(label: &str) -> WorkItemId",
+        "resolve_workspace_by_work_item_ids",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed work-item contract token `{}`",
+            path.display(),
+            required
+        );
     }
 }
 

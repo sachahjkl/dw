@@ -293,12 +293,14 @@ impl FormState {
                         .as_deref()
                         .map(dw_core::WorkItemId::parse_many)
                         .unwrap_or_default(),
-                    workspace: value("Workspace"),
-                    root: Some(root.into()),
-                    project: value("Project"),
-                    work_item: value("Workspace work item"),
+                    workspace: value("Workspace").map(dw_core::WorkspacePath::from),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
+                    project: value("Project").map(dw_core::ProjectKey::from),
+                    workspace_work_item_ids: value("Workspace work item")
+                        .as_deref()
+                        .map(dw_core::WorkItemId::parse_many)
+                        .unwrap_or_default(),
                     r#continue: enabled("Continue"),
-                    positional_work_item: None,
                     skip_ado: enabled("Skip ADO"),
                     type_name: value("Type"),
                     title: value("Title"),
@@ -312,12 +314,14 @@ impl FormState {
                         .as_deref()
                         .map(dw_core::WorkItemId::parse_many)
                         .unwrap_or_default(),
-                    workspace: value("Workspace"),
-                    root: Some(root.into()),
-                    project: value("Project"),
-                    work_item: value("Workspace work item"),
+                    workspace: value("Workspace").map(dw_core::WorkspacePath::from),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
+                    project: value("Project").map(dw_core::ProjectKey::from),
+                    workspace_work_item_ids: value("Workspace work item")
+                        .as_deref()
+                        .map(dw_core::WorkItemId::parse_many)
+                        .unwrap_or_default(),
                     r#continue: enabled("Continue"),
-                    positional_work_item: None,
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 })
             }

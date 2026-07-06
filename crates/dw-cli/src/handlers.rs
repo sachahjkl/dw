@@ -677,12 +677,14 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
         } => {
             let choices_args = dw_task::work_item::WorkItemChoicesArgs {
-                workspace: workspace.clone(),
-                root: root.clone(),
-                project: project.clone(),
-                work_item: work_item.clone(),
+                workspace: workspace.clone().map(WorkspacePath::from),
+                root: root.clone().map(DevWorkflowRoot::from),
+                project: project.clone().map(ProjectKey::from),
+                workspace_work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 r#continue,
-                positional_work_item: positional_work_item.clone(),
             };
             let work_item_ids =
                 resolve_add_work_item_ids_interactively(work_item_ids, choices_args, skip_ado)
@@ -691,13 +693,15 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 return Ok(());
             };
             let report = dw_task::work_item::add_plan(dw_task::work_item::AddWorkItemArgs {
-                work_item_ids: WorkItemId::parse_many(&work_item_ids),
-                workspace,
-                root,
-                project,
-                work_item,
+                work_item_ids,
+                workspace: workspace.map(WorkspacePath::from),
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                workspace_work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 r#continue,
-                positional_work_item,
                 skip_ado,
                 type_name,
                 title,
@@ -735,12 +739,14 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
         } => {
             let choices_args = dw_task::work_item::WorkItemChoicesArgs {
-                workspace: workspace.clone(),
-                root: root.clone(),
-                project: project.clone(),
-                work_item: work_item.clone(),
+                workspace: workspace.clone().map(WorkspacePath::from),
+                root: root.clone().map(DevWorkflowRoot::from),
+                project: project.clone().map(ProjectKey::from),
+                workspace_work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 r#continue,
-                positional_work_item: positional_work_item.clone(),
             };
             let work_item_ids =
                 resolve_remove_work_item_ids_interactively(work_item_ids, choices_args)?;
@@ -748,13 +754,15 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 return Ok(());
             };
             let report = dw_task::work_item::remove_plan(dw_task::work_item::RemoveWorkItemArgs {
-                work_item_ids: WorkItemId::parse_many(&work_item_ids),
-                workspace,
-                root,
-                project,
-                work_item,
+                work_item_ids,
+                workspace: workspace.map(WorkspacePath::from),
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                workspace_work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 r#continue,
-                positional_work_item,
                 mode: dw_core::ExecutionMode::Preview,
             })?;
             if execute {
@@ -1391,9 +1399,9 @@ async fn resolve_add_work_item_ids_interactively(
     explicit: Option<String>,
     choices_args: dw_task::work_item::WorkItemChoicesArgs,
     skip_ado: bool,
-) -> Result<Option<String>> {
+) -> Result<Option<Vec<WorkItemId>>> {
     if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
-        return Ok(Some(ids));
+        return Ok(Some(WorkItemId::parse_many(&ids)));
     }
     if skip_ado || !std::io::stdin().is_terminal() {
         anyhow::bail!("Work items à ajouter manquants. Fournir `dw task add-work-item <ids>`.");
@@ -1414,9 +1422,9 @@ async fn resolve_add_work_item_ids_interactively(
 fn resolve_remove_work_item_ids_interactively(
     explicit: Option<String>,
     choices_args: dw_task::work_item::WorkItemChoicesArgs,
-) -> Result<Option<String>> {
+) -> Result<Option<Vec<WorkItemId>>> {
     if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
-        return Ok(Some(ids));
+        return Ok(Some(WorkItemId::parse_many(&ids)));
     }
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`.");
@@ -1433,7 +1441,7 @@ fn resolve_remove_work_item_ids_interactively(
 fn select_work_item_ids(
     prompt: &str,
     choices: &[dw_workspace::WorkspaceWorkItem],
-) -> Result<Option<String>> {
+) -> Result<Option<Vec<WorkItemId>>> {
     let labels = choices
         .iter()
         .map(dw_task::work_item::work_item_choice_label)
@@ -1449,8 +1457,7 @@ fn select_work_item_ids(
         selected
             .iter()
             .map(|label| dw_task::work_item::work_item_id_from_choice(label))
-            .collect::<Vec<_>>()
-            .join(","),
+            .collect::<Vec<_>>(),
     ))
 }
 

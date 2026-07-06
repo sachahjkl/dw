@@ -607,8 +607,12 @@ impl TuiAction {
                 args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
             }
             TuiActionRequest::TaskFinish(args) => args.workspace.as_deref(),
-            TuiActionRequest::TaskAddWorkItem(args) => args.workspace.as_deref(),
-            TuiActionRequest::TaskRemoveWorkItem(args) => args.workspace.as_deref(),
+            TuiActionRequest::TaskAddWorkItem(args) => {
+                args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
+            }
+            TuiActionRequest::TaskRemoveWorkItem(args) => {
+                args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
+            }
             _ => None,
         }
     }

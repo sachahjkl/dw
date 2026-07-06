@@ -4,22 +4,22 @@ use dw_ado::WorkItemSnapshot;
 use dw_ado::auth::require_token;
 use dw_ado::{get_work_item_snapshots_authenticated, query_assigned_work_items, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{ProjectKey, WorkItemId, WorkspacePath};
+use dw_core::{DevWorkflowRoot, ProjectKey, WorkItemId, WorkspacePath};
 use dw_workspace::{
     WorkspaceManifest, WorkspaceWorkItem, execute_work_item_update, plan_add_work_item_snapshots,
-    plan_add_work_items, plan_remove_work_items, read_manifest_path, resolve_workspace,
+    plan_add_work_items, plan_remove_work_items, read_manifest_path,
+    resolve_workspace_by_work_item_ids,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct AddWorkItemArgs {
     pub work_item_ids: Vec<WorkItemId>,
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub workspace_work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
-    pub positional_work_item: Option<String>,
     pub skip_ado: bool,
     pub type_name: Option<String>,
     pub title: Option<String>,
@@ -30,23 +30,21 @@ pub struct AddWorkItemArgs {
 #[derive(Debug, Clone)]
 pub struct RemoveWorkItemArgs {
     pub work_item_ids: Vec<WorkItemId>,
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub workspace_work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
-    pub positional_work_item: Option<String>,
     pub mode: dw_core::ExecutionMode,
 }
 
 #[derive(Debug, Clone)]
 pub struct WorkItemChoicesArgs {
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub workspace_work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
-    pub positional_work_item: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -87,7 +85,7 @@ pub struct WorkItemUpdateExecutionReport {
 pub async fn add_work_item_choices_report(
     args: WorkItemChoicesArgs,
 ) -> Result<WorkItemChoicesReport> {
-    let root = resolve_root(args.root.as_deref());
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
     let workspace = resolve_workspace_from_args(&root, &args)?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     let projects = load_projects_config(&root);
@@ -120,7 +118,7 @@ pub async fn add_work_item_choices_report(
 pub fn removable_work_item_choices_report(
     args: WorkItemChoicesArgs,
 ) -> Result<WorkItemChoicesReport> {
-    let root = resolve_root(args.root.as_deref());
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
     let workspace = resolve_workspace_from_args(&root, &args)?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     Ok(WorkItemChoicesReport {
@@ -136,13 +134,12 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
             "Work items à ajouter manquants. Fournir au moins un identifiant."
         ));
     }
-    let root = resolve_root(args.root.as_deref());
-    let workspace = resolve_workspace(
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
+    let workspace = resolve_workspace_by_work_item_ids(
         &root,
-        args.workspace.as_deref(),
-        args.project.as_deref(),
-        args.work_item.as_deref(),
-        args.positional_work_item.as_deref(),
+        args.workspace.as_ref().map(WorkspacePath::as_str),
+        args.project.as_ref().map(ProjectKey::as_str),
+        &args.workspace_work_item_ids,
         args.r#continue,
     )?;
     let current_manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
@@ -193,7 +190,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
             get_work_item_snapshots_authenticated(&options, &missing_ids_for_fetch, &token)
         })
         .await?;
-        ensure_all_snapshots_resolved(&work_item_id_values(&missing_ids), &snapshots)?;
+        ensure_all_snapshots_resolved(&missing_ids, &snapshots)?;
         ensure_no_final_snapshots(&snapshots)?;
         let (_manifest, plan) = plan_add_work_item_snapshots(&root, &workspace, &snapshots)?;
         (plan, snapshots)
@@ -215,13 +212,12 @@ pub fn remove_plan(args: RemoveWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
             "Work items à retirer manquants. Fournir au moins un identifiant."
         ));
     }
-    let root = resolve_root(args.root.as_deref());
-    let workspace = resolve_workspace(
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
+    let workspace = resolve_workspace_by_work_item_ids(
         &root,
-        args.workspace.as_deref(),
-        args.project.as_deref(),
-        args.work_item.as_deref(),
-        args.positional_work_item.as_deref(),
+        args.workspace.as_ref().map(WorkspacePath::as_str),
+        args.project.as_ref().map(ProjectKey::as_str),
+        &args.workspace_work_item_ids,
         args.r#continue,
     )?;
     let requested_ids = args.work_item_ids.clone();
@@ -273,22 +269,22 @@ pub fn work_item_choice_label(item: &WorkspaceWorkItem) -> String {
     )
 }
 
-pub fn work_item_id_from_choice(label: &str) -> String {
-    label
-        .trim_start_matches('#')
-        .split_whitespace()
-        .next()
-        .unwrap_or(label)
-        .to_string()
+pub fn work_item_id_from_choice(label: &str) -> WorkItemId {
+    WorkItemId::from(
+        label
+            .trim_start_matches('#')
+            .split_whitespace()
+            .next()
+            .unwrap_or(label),
+    )
 }
 
 fn resolve_workspace_from_args(root: &str, args: &WorkItemChoicesArgs) -> Result<String> {
-    Ok(resolve_workspace(
+    Ok(resolve_workspace_by_work_item_ids(
         root,
-        args.workspace.as_deref(),
-        args.project.as_deref(),
-        args.work_item.as_deref(),
-        args.positional_work_item.as_deref(),
+        args.workspace.as_ref().map(WorkspacePath::as_str),
+        args.project.as_ref().map(ProjectKey::as_str),
+        &args.workspace_work_item_ids,
         args.r#continue,
     )?)
 }
@@ -298,7 +294,7 @@ fn removable_work_item_choices(manifest: &WorkspaceManifest) -> Vec<WorkspaceWor
 }
 
 fn ensure_all_snapshots_resolved(
-    requested: &[String],
+    requested: &[WorkItemId],
     snapshots: &[WorkItemSnapshot],
 ) -> Result<()> {
     if snapshots.len() == requested.len() {
@@ -313,13 +309,17 @@ fn ensure_all_snapshots_resolved(
         .filter(|id| {
             !found
                 .iter()
-                .any(|found_id| found_id.eq_ignore_ascii_case(id))
+                .any(|found_id| found_id.eq_ignore_ascii_case(id.as_str()))
         })
         .cloned()
         .collect::<Vec<_>>();
     Err(anyhow::anyhow!(
         "Work items ADO introuvables ou inaccessibles: {}",
-        unresolved.join(", ")
+        unresolved
+            .iter()
+            .map(WorkItemId::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
     ))
 }
 
@@ -350,7 +350,7 @@ fn ensure_no_final_snapshots(snapshots: &[WorkItemSnapshot]) -> Result<()> {
 }
 
 fn work_item_id_values(ids: &[WorkItemId]) -> Vec<String> {
-    ids.iter().map(|id| id.to_string()).collect()
+    ids.iter().map(ToString::to_string).collect()
 }
 
 #[cfg(test)]
@@ -386,7 +386,7 @@ mod tests {
         );
         assert_eq!(
             work_item_id_from_choice(&work_item_choice_label(&choices[1])),
-            "2"
+            WorkItemId::from("2")
         );
     }
 
