@@ -488,7 +488,7 @@ fn default_fields(template: FormTemplate, snapshot: &TuiSnapshot) -> Vec<FormFie
         .assigned
         .iter()
         .flat_map(|project| project.items.iter())
-        .map(|item| item.id.clone())
+        .map(|item| item.id.to_string())
         .next()
         .unwrap_or_default();
     let first_state = state_suggestions(snapshot)
@@ -500,14 +500,14 @@ fn default_fields(template: FormTemplate, snapshot: &TuiSnapshot) -> Vec<FormFie
         .iter()
         .find(|item| item.pull_request_id.is_some());
     let first_pull_request_id = first_pull_request
-        .and_then(|item| item.pull_request_id)
+        .and_then(|item| item.pull_request_id.as_ref())
         .map(|id| id.to_string())
         .unwrap_or_default();
     let first_pull_request_project = first_pull_request
-        .map(|item| item.project.clone())
+        .map(|item| item.project.to_string())
         .unwrap_or_else(|| first_project.clone());
     let first_pull_request_repository = first_pull_request
-        .map(|item| item.repository.clone())
+        .map(|item| item.repository.to_string())
         .unwrap_or_else(|| first_repository.clone());
 
     match template {
@@ -797,7 +797,7 @@ fn state_suggestions(snapshot: &TuiSnapshot) -> Vec<String> {
         snapshot
             .assigned
             .iter()
-            .flat_map(|project| project.items.iter().map(|item| item.state.clone())),
+            .flat_map(|project| project.items.iter().map(|item| item.state.to_string())),
     );
     values.extend([
         "Nouveau".into(),
@@ -841,7 +841,7 @@ fn work_item_suggestions(snapshot: &TuiSnapshot) -> Vec<String> {
     }
     for project in &snapshot.assigned {
         for item in &project.items {
-            values.push(item.id.clone());
+            values.push(item.id.to_string());
         }
     }
     stable_unique(values)
@@ -852,7 +852,7 @@ fn pull_request_suggestions(snapshot: &TuiSnapshot) -> Vec<String> {
         snapshot
             .pull_requests
             .iter()
-            .filter_map(|item| item.pull_request_id.map(|id| id.to_string())),
+            .filter_map(|item| item.pull_request_id.as_ref().map(|id| id.to_string())),
     )
 }
 
@@ -1478,7 +1478,7 @@ mod tests {
                 ado_repository: "HA Front".into(),
                 branch: "feature/42-demo".into(),
                 target_branch: "develop".into(),
-                pull_request_id: Some(42),
+                pull_request_id: Some(dw_core::PullRequestId::from("42")),
                 title: Some("Demo".into()),
                 is_draft: false,
                 work_item_ids: vec!["123".into()],
@@ -1492,7 +1492,7 @@ mod tests {
                 ado_repository: "OPS Tools".into(),
                 branch: "feature/77-tools".into(),
                 target_branch: "main".into(),
-                pull_request_id: Some(77),
+                pull_request_id: Some(dw_core::PullRequestId::from("77")),
                 title: Some("Tools".into()),
                 is_draft: false,
                 work_item_ids: vec!["777".into()],

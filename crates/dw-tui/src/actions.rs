@@ -255,9 +255,9 @@ pub fn selected_ado_action(
                 return None;
             }
             TuiActionRequest::TaskStart(dw_task::start::StartArgs {
-                work_item_ids: vec![dw_core::WorkItemId::from(item.id.clone())],
+                work_item_ids: vec![item.id.clone()],
                 root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
-                project: Some(dw_core::ProjectKey::from(project.key.clone())),
+                project: Some(project.key.clone()),
                 task: None,
                 type_name: None,
                 repositories: Vec::new(),
@@ -284,9 +284,9 @@ pub fn selected_ado_action(
         }
         AdoItemAction::Context => {
             TuiActionRequest::AdoContext(dw_ado_commands::commands::context::ContextArgs {
-                ids: vec![dw_core::WorkItemId::from(item.id.clone())],
+                ids: vec![item.id.clone()],
                 root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
-                project: Some(dw_core::ProjectKey::from(project.key.clone())),
+                project: Some(project.key.clone()),
                 summary: false,
                 comments: 200,
                 mode: dw_ado_commands::commands::context::ContextMode::AiContext,
@@ -294,17 +294,17 @@ pub fn selected_ado_action(
         }
         AdoItemAction::WorkItem => {
             TuiActionRequest::AdoWorkItem(dw_ado_commands::commands::work_item::WorkItemArgs {
-                ids: vec![dw_core::WorkItemId::from(item.id.clone())],
+                ids: vec![item.id.clone()],
                 root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
-                project: Some(dw_core::ProjectKey::from(project.key.clone())),
+                project: Some(project.key.clone()),
             })
         }
         AdoItemAction::SetStartState => {
             let state = ado_start_state(snapshot, item)?;
             TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
-                ids: vec![dw_core::WorkItemId::from(item.id.clone())],
+                ids: vec![item.id.clone()],
                 root: Some(DevWorkflowRoot::from(snapshot.root.clone())),
-                project: Some(dw_core::ProjectKey::from(project.key.clone())),
+                project: Some(project.key.clone()),
                 state,
                 history: None,
                 yes: true,
@@ -361,19 +361,17 @@ pub fn selected_pull_request_action(
     action: PullRequestAction,
 ) -> Option<TuiAction> {
     let item = snapshot.pull_requests.get(selected_pull_request)?;
-    let pull_request_id = item.pull_request_id?;
+    let pull_request_id = item.pull_request_id.clone()?;
     let request = match action {
         PullRequestAction::StartPreview | PullRequestAction::StartExecute => {
             if item.workspace.is_some() {
                 return None;
             }
             TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
-                pull_request_id: dw_core::PullRequestId::from(pull_request_id.to_string()),
+                pull_request_id,
                 root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
-                project: dw_core::ProjectKey::from(item.project.clone()),
-                repositories: vec![dw_core::WorkspaceRepositoryName::from(
-                    item.repository.clone(),
-                )],
+                project: item.project.clone(),
+                repositories: vec![item.repository.clone()],
                 type_name: None,
                 slug: None,
                 mode: dw_core::ExecutionMode::from_execute(
@@ -388,9 +386,7 @@ pub fn selected_pull_request_action(
                 work_item_ids: Vec::new(),
                 pull_request: None,
                 r#continue: false,
-                repo: Some(dw_core::WorkspaceRepositoryName::from(
-                    item.repository.clone(),
-                )),
+                repo: Some(item.repository.clone()),
                 agent: None,
                 root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
             })
@@ -421,13 +417,11 @@ pub fn selected_pull_request_action(
         PullRequestAction::Changelog => {
             TuiActionRequest::AdoChangelog(dw_ado_commands::commands::changelog::ChangelogArgs {
                 source: dw_ado_commands::commands::changelog::ChangelogSource::PullRequests(vec![
-                    dw_core::PullRequestId::from(pull_request_id.to_string()),
+                    pull_request_id,
                 ]),
                 root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
-                project: Some(dw_core::ProjectKey::from(item.project.clone())),
-                repo: Some(dw_core::AdoRepositoryName::from(
-                    item.ado_repository.clone(),
-                )),
+                project: Some(item.project.clone()),
+                repo: Some(item.ado_repository.clone()),
                 group_by_parent: false,
                 format: dw_ado_commands::commands::changelog::ChangelogOutputFormat::default(),
                 table: false,
@@ -1025,7 +1019,7 @@ mod tests {
             ado_repository: "Front".into(),
             branch: "feature/demo".into(),
             target_branch: "develop".into(),
-            pull_request_id: Some(42),
+            pull_request_id: Some(dw_core::PullRequestId::from("42")),
             title: Some("Demo".into()),
             is_draft: false,
             work_item_ids: vec!["123".into()],

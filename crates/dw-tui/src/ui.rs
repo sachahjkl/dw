@@ -510,9 +510,10 @@ fn render_pull_requests(frame: &mut Frame<'_>, area: Rect, app: &App) {
                 Style::default().fg(Color::Gray)
             };
             Row::new([
-                item.project.clone(),
-                item.repository.clone(),
+                item.project.to_string(),
+                item.repository.to_string(),
                 item.pull_request_id
+                    .as_ref()
                     .map(|id| format!("#{id}"))
                     .unwrap_or_else(|| "-".into()),
                 if item.error.is_some() {
@@ -603,6 +604,7 @@ fn selected_pull_request_target_lines(app: &App) -> Vec<Line<'static>> {
     };
     let pr = item
         .pull_request_id
+        .as_ref()
         .map(|id| format!("#{id}"))
         .unwrap_or_else(|| "missing PR".into());
     let title = item.title.clone().unwrap_or_else(|| "-".into());
@@ -1310,7 +1312,7 @@ fn render_ado_items(frame: &mut Frame<'_>, area: Rect, app: &App) {
             Row::new([
                 format!("#{}", item.id),
                 item.kind.clone(),
-                item.state.clone(),
+                item.state.to_string(),
                 if app
                     .snapshot
                     .workspace_for_work_item(&project.key, &item.id)
@@ -2242,7 +2244,7 @@ fn render_ado_state_form_fields(
         target_line("Work item", format!("{project} #{work_items}")),
         target_line("Title", title),
         Line::from(vec![
-            Span::styled(current_state, Style::default().fg(Color::Gray)),
+            Span::styled(current_state.to_string(), Style::default().fg(Color::Gray)),
             Span::styled("  ->  ", Style::default().fg(Color::DarkGray)),
             Span::styled(
                 destination.clone(),
@@ -2617,7 +2619,7 @@ mod tests {
             ado_repository: "HA Front".into(),
             branch: "feature/42-demo".into(),
             target_branch: "develop".into(),
-            pull_request_id: Some(42),
+            pull_request_id: Some(dw_core::PullRequestId::from("42")),
             title: Some("Demo".into()),
             is_draft: false,
             work_item_ids: vec!["42".into()],

@@ -2,7 +2,7 @@ use crate::config::{DatabaseConnectionConfig, DatabaseDefaults, DatabaseProvider
 use crate::guard::validate_read_only_sql;
 #[cfg(test)]
 use dw_core::DatabaseEnvironmentName;
-use dw_core::{DatabaseConnectionString, SecretKey};
+use dw_core::{DatabaseConnectionString, SecretKey, SecretValue};
 use dw_secret::{KeyringSecretStore, SecretError, SecretStore};
 use serde::Serialize;
 use std::time::Duration;
@@ -92,13 +92,17 @@ pub fn resolve_connection_string_with_store(
         .filter(|value| !value.as_str().trim().is_empty())
     {
         return store
-            .get(key.as_str())?
-            .filter(|value| !value.trim().is_empty())
-            .map(DatabaseConnectionString::from)
+            .get(key)?
+            .filter(|value| !value.as_str().trim().is_empty())
+            .map(database_connection_string_from_secret)
             .ok_or_else(|| DbError::MissingSecret { key: key.clone() });
     }
 
     Err(DbError::MissingConnectionString)
+}
+
+fn database_connection_string_from_secret(secret: SecretValue) -> DatabaseConnectionString {
+    DatabaseConnectionString::from(secret.as_str())
 }
 
 pub async fn query_sql_server(
@@ -293,14 +297,14 @@ mod tests {
     #[test]
     fn resolve_connection_string_reads_credential_key() {
         let store = dw_secret::MemorySecretStore::new();
-        store
-            .set("db/demo", "from-secret")
-            .expect("secret should be stored");
+        let key = SecretKey::from("db/demo");
+        let secret = dw_core::SecretValue::from("from-secret");
+        store.set(&key, &secret).expect("secret should be stored");
         let connection = DatabaseConnectionConfig {
             provider: DatabaseProvider::SqlServer,
             connection_string: None,
             connection_string_environment_variable: None,
-            credential_key: Some(SecretKey::from("db/demo")),
+            credential_key: Some(key),
             readonly: Some(true),
             max_rows: None,
             timeout_seconds: None,

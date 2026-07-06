@@ -1153,6 +1153,37 @@ impl fmt::Display for SecretKey {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct SecretValue(String);
+
+impl SecretValue {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for SecretValue {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for SecretValue {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Debug for SecretValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("SecretValue(***)")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct EnvironmentVariableName(String);
@@ -1411,6 +1442,8 @@ impl fmt::Display for AiContextFilePath {
 
 string_newtype!(HandoffFilePath);
 string_newtype!(HandoffParseError);
+string_newtype!(WorkspaceOperationError);
+string_newtype!(SecretStoreErrorMessage);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

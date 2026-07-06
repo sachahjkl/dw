@@ -12,7 +12,7 @@ use dw_contracts::{
 use dw_core::{
     AiContextFilePath, BranchName, GitAnchorName, HandoffFilePath, HandoffParseError, ProjectKey,
     ProjectRootPath, RepositoryPath, TaskId, TaskSlug, WorkItemId, WorkItemState, WorkItemTitle,
-    WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
+    WorkItemTypeName, WorkspaceOperationError, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
@@ -465,9 +465,15 @@ pub enum WorkspaceError {
     #[error("Fichier ai-context introuvable: {0}")]
     MissingAiContext(String),
     #[error("Suppression workspace échouée [{repository}]: {message}")]
-    TeardownFailed { repository: String, message: String },
+    TeardownFailed {
+        repository: WorkspaceTeardownSubject,
+        message: WorkspaceOperationError,
+    },
     #[error("Préparation worktree échouée [{repository}]: {message}")]
-    WorktreePrepareFailed { repository: String, message: String },
+    WorktreePrepareFailed {
+        repository: WorkspaceRepositoryName,
+        message: WorkspaceOperationError,
+    },
     #[error("Impossible de retirer tous les work items du workspace.")]
     EmptyWorkItemSet,
 }
@@ -1349,8 +1355,8 @@ where
         let git_dir = teardown_git_dir(step)?;
         if !Path::new(git_dir).exists() {
             return Err(WorkspaceError::TeardownFailed {
-                repository: step.subject.to_string(),
-                message: format!("gitDir introuvable {git_dir}"),
+                repository: step.subject.clone(),
+                message: WorkspaceOperationError::from(format!("gitDir introuvable {git_dir}")),
             });
         }
         let WorkspaceTeardownAction::WorktreeRemove { worktree_path, .. } = &step.action else {
@@ -1361,8 +1367,8 @@ where
             &["worktree", "remove", "--force", worktree_path.as_str()],
         )
         .map_err(|message| WorkspaceError::TeardownFailed {
-            repository: step.subject.to_string(),
-            message,
+            repository: step.subject.clone(),
+            message: WorkspaceOperationError::from(message),
         })?;
     }
 
@@ -1376,16 +1382,16 @@ where
         }
         run_git_dir(git_dir, &["worktree", "prune"]).map_err(|message| {
             WorkspaceError::TeardownFailed {
-                repository: step.subject.to_string(),
-                message,
+                repository: step.subject.clone(),
+                message: WorkspaceOperationError::from(message),
             }
         })?;
     }
 
     if Path::new(workspace.as_str()).exists() {
         fs::remove_dir_all(workspace.as_str()).map_err(|error| WorkspaceError::TeardownFailed {
-            repository: "workspace".into(),
-            message: error.to_string(),
+            repository: WorkspaceTeardownSubject::Workspace,
+            message: WorkspaceOperationError::from(error.to_string()),
         })?;
     }
 
@@ -1447,8 +1453,8 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
                 worktree_path: target.worktree_path.to_string(),
             })
             .map_err(|error| WorkspaceError::WorktreePrepareFailed {
-                repository: target.repository.to_string(),
-                message: error.to_string(),
+                repository: target.repository.clone(),
+                message: WorkspaceOperationError::from(error.to_string()),
             })?;
         }
     }
@@ -2459,16 +2465,18 @@ fn teardown_git_dir(step: &WorkspaceTeardownStep) -> Result<&str, WorkspaceError
         | WorkspaceTeardownAction::WorktreePrune { git_dir } => git_dir.as_str(),
         WorkspaceTeardownAction::DeleteWorkspace { .. } => {
             return Err(WorkspaceError::TeardownFailed {
-                repository: step.subject.to_string(),
-                message: "gitDir incompatible avec suppression workspace".into(),
+                repository: step.subject.clone(),
+                message: WorkspaceOperationError::from(
+                    "gitDir incompatible avec suppression workspace",
+                ),
             });
         }
     };
 
     if git_dir.trim().is_empty() {
         return Err(WorkspaceError::TeardownFailed {
-            repository: step.subject.to_string(),
-            message: "gitDir manquant".into(),
+            repository: step.subject.clone(),
+            message: WorkspaceOperationError::from("gitDir manquant"),
         });
     }
 
@@ -3188,7 +3196,8 @@ artifacts:
 
         assert!(matches!(
             error,
-            WorkspaceError::WorktreePrepareFailed { repository, .. } if repository == "front"
+            WorkspaceError::WorktreePrepareFailed { repository, .. }
+                if repository == WorkspaceRepositoryName::from("front")
         ));
         assert!(!workspace.join("task.json").exists());
     }

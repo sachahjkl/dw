@@ -1165,15 +1165,39 @@ fn app_and_tui_core_requests_use_typed_config_agent_and_secret_values() {
             "crates/dw-secret/src/command.rs",
             &[
                 "pub key: SecretKey",
-                "pub fn set_secret(key: &SecretKey",
+                "pub storage: SecretStorage",
+                "pub enum SecretStorage",
+                "pub fn set_secret(key: &SecretKey, secret: &SecretValue)",
                 "pub fn get_secret(key: &SecretKey)",
                 "pub fn delete_secret_key(key: &SecretKey)",
             ],
             &[
                 "pub key: String",
+                "pub storage: String",
                 "pub fn set_secret(key: &str",
+                "pub fn set_secret(key: &SecretKey, secret: &str)",
                 "pub fn get_secret(key: &str)",
                 "pub fn delete_secret_key(key: &str)",
+            ],
+        ),
+        (
+            "crates/dw-secret/src/lib.rs",
+            &[
+                "use dw_core::{EnvironmentVariableName, SecretKey, SecretStoreErrorMessage, SecretValue}",
+                "MissingEnvironmentVariable(EnvironmentVariableName)",
+                "Store(SecretStoreErrorMessage)",
+                "fn set(&self, key: &SecretKey, secret: &SecretValue)",
+                "fn get(&self, key: &SecretKey) -> Result<Option<SecretValue>, SecretError>",
+                "pub fn secret_from_env(name: &EnvironmentVariableName) -> Result<SecretValue, SecretError>",
+                "pub fn store_secret(\n    store: &impl SecretStore,\n    key: &SecretKey,\n    secret: &SecretValue,",
+            ],
+            &[
+                "MissingEnvironmentVariable(String)",
+                "Store(String)",
+                "fn set(&self, key: &str, secret: &str)",
+                "fn get(&self, key: &str) -> Result<Option<String>, SecretError>",
+                "pub fn secret_from_env(name: &EnvironmentVariableName) -> Result<String, SecretError>",
+                "pub fn store_secret(store: &impl SecretStore, key: &str, secret: &str)",
             ],
         ),
     ];
@@ -2248,6 +2272,8 @@ fn workspace_teardown_contract_is_typed_not_string_protocol() {
         "action: \"worktree remove\"",
         "action: \"worktree prune\"",
         "action: \"delete directory\"",
+        "TeardownFailed { repository: String, message: String }",
+        "WorktreePrepareFailed { repository: String, message: String }",
     ] {
         assert!(
             !text.contains(forbidden),
@@ -2264,11 +2290,50 @@ fn workspace_teardown_contract_is_typed_not_string_protocol() {
         "WorktreeRemove {\n        #[serde(rename = \"worktreePath\")]\n        worktree_path: RepositoryPath",
         "WorktreePrune {\n        #[serde(rename = \"gitDir\")]\n        git_dir: RepositoryPath",
         "DeleteWorkspace {\n        workspace: WorkspacePath",
+        "TeardownFailed {\n        repository: WorkspaceTeardownSubject,\n        message: WorkspaceOperationError",
+        "WorktreePrepareFailed {\n        repository: WorkspaceRepositoryName,\n        message: WorkspaceOperationError",
     ] {
         assert!(
             text.contains(required),
             "workspace teardown should contain typed contract token `{}`",
             required
+        );
+    }
+}
+
+#[test]
+fn tui_snapshot_action_inputs_are_typed_not_string_protocol() {
+    let repo = repo_root();
+    let text = fs::read_to_string(repo.join("crates/dw-tui/src/model.rs")).expect("read TUI model");
+
+    for forbidden in [
+        "pub struct AdoAssignedProject {\n    pub key: String",
+        "pub struct AdoAssignedItem {\n    pub id: String",
+        "pub kind: String,\n    pub state: String",
+        "pub struct TuiPullRequest {\n    pub workspace: Option<String>,\n    pub project: String",
+        "pub repository: String,\n    pub ado_repository: String",
+        "pub pull_request_id: Option<i64>",
+        "pub work_item_ids: Vec<String>",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "TUI snapshot action input contract regressed to primitive token `{forbidden}`"
+        );
+    }
+
+    for required in [
+        "pub key: ProjectKey",
+        "pub id: WorkItemId",
+        "pub state: WorkItemState",
+        "pub project: ProjectKey",
+        "pub repository: WorkspaceRepositoryName",
+        "pub ado_repository: AdoRepositoryName",
+        "pub pull_request_id: Option<PullRequestId>",
+        "pub work_item_ids: Vec<WorkItemId>",
+    ] {
+        assert!(
+            text.contains(required),
+            "TUI snapshot action input contract missing typed token `{required}`"
         );
     }
 }

@@ -465,7 +465,11 @@ impl App {
                     section: "To do",
                     title: format!(
                         "Create PR workspace #{}",
-                        pr_item.pull_request_id.unwrap_or_default()
+                        pr_item
+                            .pull_request_id
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_default()
                     ),
                     subtitle: format!(
                         "{} / {} · {}",
@@ -492,7 +496,14 @@ impl App {
                 let pr_item = pr.1;
                 items.push(CockpitItem {
                     section: "In progress",
-                    title: format!("Finish PR #{}", pr_item.pull_request_id.unwrap_or_default()),
+                    title: format!(
+                        "Finish PR #{}",
+                        pr_item
+                            .pull_request_id
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_default()
+                    ),
                     subtitle: pr_item.workspace.clone().unwrap_or_default(),
                     status: "workspace linked".into(),
                     severity: CockpitSeverity::Normal,
@@ -1804,7 +1815,7 @@ impl App {
                 .push(self.selected_pull_request_action_error(PullRequestAction::StartPreview));
             return;
         };
-        let Some(pull_request_id) = item.pull_request_id else {
+        let Some(pull_request_id) = item.pull_request_id.clone() else {
             self.messages
                 .push(self.selected_pull_request_action_error(PullRequestAction::StartPreview));
             return;
@@ -1819,8 +1830,8 @@ impl App {
         for field in &mut form.fields {
             match field.label.as_str() {
                 "Pull request" => field.value = pull_request_id.to_string(),
-                "Project" => field.value = item.project.clone(),
-                "Repository" => field.value = item.repository.clone(),
+                "Project" => field.value = item.project.to_string(),
+                "Repository" => field.value = item.repository.to_string(),
                 _ => {}
             }
         }
@@ -1863,8 +1874,8 @@ impl App {
         });
         for field in &mut form.fields {
             match field.label.as_str() {
-                "Work item IDs" => field.value = item.id.clone(),
-                "Project" => field.value = project.key.clone(),
+                "Work item IDs" => field.value = item.id.to_string(),
+                "Project" => field.value = project.key.to_string(),
                 "Destination state" => {
                     if let Some(state) = workflow_state.clone() {
                         field.value = state;
@@ -2417,7 +2428,7 @@ mod tests {
             ado_repository: "HA Front".into(),
             branch: "feature/42-demo".into(),
             target_branch: "develop".into(),
-            pull_request_id: Some(123),
+            pull_request_id: Some(dw_core::PullRequestId::from("123")),
             title: Some("Demo".into()),
             is_draft: false,
             work_item_ids: vec!["42".into()],
@@ -2599,7 +2610,7 @@ mod tests {
                 ado_repository: "HA Front".into(),
                 branch: "feature/demo".into(),
                 target_branch: "develop".into(),
-                pull_request_id: Some(12),
+                pull_request_id: Some(dw_core::PullRequestId::from("12")),
                 title: None,
                 is_draft: false,
                 work_item_ids: Vec::new(),
@@ -2779,7 +2790,7 @@ mod tests {
             ado_repository: "HA Front".into(),
             branch: "feature/demo".into(),
             target_branch: "develop".into(),
-            pull_request_id: Some(12),
+            pull_request_id: Some(dw_core::PullRequestId::from("12")),
             title: None,
             is_draft: false,
             work_item_ids: Vec::new(),
@@ -3377,10 +3388,10 @@ mod tests {
             ado_repository: repository.into(),
             branch: format!("feature/{pull_request_id}-demo"),
             target_branch: "develop".into(),
-            pull_request_id: Some(pull_request_id),
+            pull_request_id: Some(dw_core::PullRequestId::from(pull_request_id.to_string())),
             title: Some("Demo".into()),
             is_draft: false,
-            work_item_ids: vec![pull_request_id.to_string()],
+            work_item_ids: vec![dw_core::WorkItemId::from(pull_request_id.to_string())],
             url: None,
             error: None,
         }

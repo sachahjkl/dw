@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
-use dw_core::EnvironmentVariableName;
+use dw_core::{EnvironmentVariableName, SecretKey, SecretStoreErrorMessage, SecretValue};
 
 pub const KEYRING_SERVICE: &str = "dw";
 pub const KEY_PREFIX: &str = "dw/";
@@ -14,46 +14,50 @@ pub enum SecretError {
     #[error("Clé de secret vide.")]
     EmptyKey,
     #[error("Variable d'environnement introuvable: {0}")]
-    MissingEnvironmentVariable(String),
+    MissingEnvironmentVariable(EnvironmentVariableName),
     #[error("Secret store indisponible: {0}")]
-    Store(String),
+    Store(SecretStoreErrorMessage),
 }
 
 pub trait SecretStore {
-    fn set(&self, key: &str, secret: &str) -> Result<(), SecretError>;
-    fn get(&self, key: &str) -> Result<Option<String>, SecretError>;
-    fn delete(&self, key: &str) -> Result<(), SecretError>;
+    fn set(&self, key: &SecretKey, secret: &SecretValue) -> Result<(), SecretError>;
+    fn get(&self, key: &SecretKey) -> Result<Option<SecretValue>, SecretError>;
+    fn delete(&self, key: &SecretKey) -> Result<(), SecretError>;
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct KeyringSecretStore;
 
 impl SecretStore for KeyringSecretStore {
-    fn set(&self, key: &str, secret: &str) -> Result<(), SecretError> {
+    fn set(&self, key: &SecretKey, secret: &SecretValue) -> Result<(), SecretError> {
         entry(key)?
-            .set_password(secret)
-            .map_err(|error| SecretError::Store(error.to_string()))
+            .set_password(secret.as_str())
+            .map_err(|error| SecretError::Store(SecretStoreErrorMessage::from(error.to_string())))
     }
 
-    fn get(&self, key: &str) -> Result<Option<String>, SecretError> {
+    fn get(&self, key: &SecretKey) -> Result<Option<SecretValue>, SecretError> {
         match entry(key)?.get_password() {
-            Ok(value) => Ok(Some(value)),
+            Ok(value) => Ok(Some(SecretValue::from(value))),
             Err(keyring::Error::NoEntry) => Ok(None),
-            Err(error) => Err(SecretError::Store(error.to_string())),
+            Err(error) => Err(SecretError::Store(SecretStoreErrorMessage::from(
+                error.to_string(),
+            ))),
         }
     }
 
-    fn delete(&self, key: &str) -> Result<(), SecretError> {
+    fn delete(&self, key: &SecretKey) -> Result<(), SecretError> {
         match entry(key)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(error) => Err(SecretError::Store(error.to_string())),
+            Err(error) => Err(SecretError::Store(SecretStoreErrorMessage::from(
+                error.to_string(),
+            ))),
         }
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct MemorySecretStore {
-    values: Arc<Mutex<BTreeMap<String, String>>>,
+    values: Arc<Mutex<BTreeMap<SecretKey, SecretValue>>>,
 }
 
 impl MemorySecretStore {
@@ -63,68 +67,73 @@ impl MemorySecretStore {
 }
 
 impl SecretStore for MemorySecretStore {
-    fn set(&self, key: &str, secret: &str) -> Result<(), SecretError> {
+    fn set(&self, key: &SecretKey, secret: &SecretValue) -> Result<(), SecretError> {
         validate_key(key)?;
         self.values
             .lock()
-            .map_err(|error| SecretError::Store(error.to_string()))?
-            .insert(normalize_key(key), secret.into());
+            .map_err(|error| SecretError::Store(SecretStoreErrorMessage::from(error.to_string())))?
+            .insert(normalize_key(key), secret.clone());
         Ok(())
     }
 
-    fn get(&self, key: &str) -> Result<Option<String>, SecretError> {
+    fn get(&self, key: &SecretKey) -> Result<Option<SecretValue>, SecretError> {
         validate_key(key)?;
         Ok(self
             .values
             .lock()
-            .map_err(|error| SecretError::Store(error.to_string()))?
+            .map_err(|error| SecretError::Store(SecretStoreErrorMessage::from(error.to_string())))?
             .get(&normalize_key(key))
             .cloned())
     }
 
-    fn delete(&self, key: &str) -> Result<(), SecretError> {
+    fn delete(&self, key: &SecretKey) -> Result<(), SecretError> {
         validate_key(key)?;
         self.values
             .lock()
-            .map_err(|error| SecretError::Store(error.to_string()))?
+            .map_err(|error| SecretError::Store(SecretStoreErrorMessage::from(error.to_string())))?
             .remove(&normalize_key(key));
         Ok(())
     }
 }
 
-pub fn secret_from_env(name: &EnvironmentVariableName) -> Result<String, SecretError> {
+pub fn secret_from_env(name: &EnvironmentVariableName) -> Result<SecretValue, SecretError> {
     std::env::var(name.as_str())
-        .map_err(|_| SecretError::MissingEnvironmentVariable(name.to_string()))
+        .map(SecretValue::from)
+        .map_err(|_| SecretError::MissingEnvironmentVariable(name.clone()))
 }
 
-pub fn store_secret(store: &impl SecretStore, key: &str, secret: &str) -> Result<(), SecretError> {
+pub fn store_secret(
+    store: &impl SecretStore,
+    key: &SecretKey,
+    secret: &SecretValue,
+) -> Result<(), SecretError> {
     store.set(key, secret)
 }
 
-pub fn secret_exists(store: &impl SecretStore, key: &str) -> Result<bool, SecretError> {
+pub fn secret_exists(store: &impl SecretStore, key: &SecretKey) -> Result<bool, SecretError> {
     Ok(store.get(key)?.is_some())
 }
 
-pub fn delete_secret(store: &impl SecretStore, key: &str) -> Result<(), SecretError> {
+pub fn delete_secret(store: &impl SecretStore, key: &SecretKey) -> Result<(), SecretError> {
     store.delete(key)
 }
 
-fn entry(key: &str) -> Result<keyring::Entry, SecretError> {
+fn entry(key: &SecretKey) -> Result<keyring::Entry, SecretError> {
     keyring::Entry::new(KEYRING_SERVICE, &target(key)?)
-        .map_err(|error| SecretError::Store(error.to_string()))
+        .map_err(|error| SecretError::Store(SecretStoreErrorMessage::from(error.to_string())))
 }
 
-fn target(key: &str) -> Result<String, SecretError> {
+fn target(key: &SecretKey) -> Result<String, SecretError> {
     validate_key(key)?;
-    Ok(format!("{KEY_PREFIX}{}", key.trim()))
+    Ok(format!("{KEY_PREFIX}{}", key.as_str().trim()))
 }
 
-fn normalize_key(key: &str) -> String {
-    key.trim().into()
+fn normalize_key(key: &SecretKey) -> SecretKey {
+    SecretKey::from(key.as_str().trim())
 }
 
-fn validate_key(key: &str) -> Result<(), SecretError> {
-    if key.trim().is_empty() {
+fn validate_key(key: &SecretKey) -> Result<(), SecretError> {
+    if key.as_str().trim().is_empty() {
         Err(SecretError::EmptyKey)
     } else {
         Ok(())
@@ -138,29 +147,30 @@ mod tests {
     #[test]
     fn memory_store_sets_gets_and_deletes_secret() {
         let store = MemorySecretStore::new();
+        let key = SecretKey::from("db/password");
+        let value = SecretValue::from("secret");
 
-        store_secret(&store, "db/password", "secret").expect("secret should be stored");
+        store_secret(&store, &key, &value).expect("secret should be stored");
 
-        assert!(secret_exists(&store, "db/password").expect("lookup should work"));
-        assert_eq!(
-            store.get("db/password").expect("secret should be read"),
-            Some("secret".into())
-        );
-        delete_secret(&store, "db/password").expect("secret should be deleted");
-        assert!(!secret_exists(&store, "db/password").expect("lookup should work"));
+        assert!(secret_exists(&store, &key).expect("lookup should work"));
+        assert_eq!(store.get(&key).expect("secret should be read"), Some(value));
+        delete_secret(&store, &key).expect("secret should be deleted");
+        assert!(!secret_exists(&store, &key).expect("lookup should work"));
     }
 
     #[test]
     fn empty_keys_are_rejected() {
         let store = MemorySecretStore::new();
+        let key = SecretKey::from(" ");
+        let value = SecretValue::from("secret");
 
-        let error = store_secret(&store, " ", "secret").expect_err("empty key should fail");
+        let error = store_secret(&store, &key, &value).expect_err("empty key should fail");
 
         assert!(matches!(error, SecretError::EmptyKey));
     }
 
     #[test]
     fn target_prefix_matches_dotnet_shape() {
-        assert_eq!(target("demo").expect("target"), "dw/demo");
+        assert_eq!(target(&SecretKey::from("demo")).expect("target"), "dw/demo");
     }
 }

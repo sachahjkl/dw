@@ -347,7 +347,7 @@ mod tests {
             ado_repository: "back".into(),
             branch: "feature/55265-demo".into(),
             target_branch: "develop".into(),
-            pull_request_id: Some(55265),
+            pull_request_id: Some(dw_core::PullRequestId::from("55265")),
             title: Some("Corriger footer".into()),
             is_draft: false,
             work_item_ids: vec!["55265".into()],

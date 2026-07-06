@@ -5,8 +5,9 @@ use dw_config::{
     project_choices, repository_config, resolve_project, resolve_root, root_status,
 };
 use dw_core::{
-    Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
-    EnvironmentVariableName, SecretKey,
+    AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
+    EnvironmentVariableName, ProjectKey, PullRequestId, SecretKey, WorkItemId, WorkItemState,
+    WorkspaceRepositoryName,
 };
 use dw_workspace::{TaskListItem, plan_task_prune, task_list};
 
@@ -688,7 +689,7 @@ pub struct TuiDatabase {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdoAssignedProject {
-    pub key: String,
+    pub key: ProjectKey,
     pub label: String,
     pub items: Vec<AdoAssignedItem>,
     pub error: Option<String>,
@@ -696,9 +697,9 @@ pub struct AdoAssignedProject {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdoAssignedItem {
-    pub id: String,
+    pub id: WorkItemId,
     pub kind: String,
-    pub state: String,
+    pub state: WorkItemState,
     pub title: String,
     pub url: Option<String>,
 }
@@ -706,15 +707,15 @@ pub struct AdoAssignedItem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TuiPullRequest {
     pub workspace: Option<String>,
-    pub project: String,
-    pub repository: String,
-    pub ado_repository: String,
+    pub project: ProjectKey,
+    pub repository: WorkspaceRepositoryName,
+    pub ado_repository: AdoRepositoryName,
     pub branch: String,
     pub target_branch: String,
-    pub pull_request_id: Option<i64>,
+    pub pull_request_id: Option<PullRequestId>,
     pub title: Option<String>,
     pub is_draft: bool,
-    pub work_item_ids: Vec<String>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub url: Option<String>,
     pub error: Option<String>,
 }
@@ -722,9 +723,9 @@ pub struct TuiPullRequest {
 #[derive(Debug, Clone)]
 struct PullRequestTarget {
     order: usize,
-    project: String,
-    repository: String,
-    ado_repository: String,
+    project: ProjectKey,
+    repository: WorkspaceRepositoryName,
+    ado_repository: AdoRepositoryName,
     options: Option<dw_ado::AzureDevOpsOptions>,
 }
 
@@ -823,15 +824,15 @@ impl TuiSnapshot {
 
     pub fn workspace_for_work_item(
         &self,
-        project: &str,
-        work_item_id: &str,
+        project: &ProjectKey,
+        work_item_id: &WorkItemId,
     ) -> Option<&TaskListItem> {
         self.workspaces.iter().find(|workspace| {
-            workspace.project.as_str() == project
+            workspace.project.as_str() == project.as_str()
                 && workspace
                     .all_known_work_item_ids
                     .iter()
-                    .any(|id| id.as_str().eq_ignore_ascii_case(work_item_id))
+                    .any(|id| id.as_str().eq_ignore_ascii_case(work_item_id.as_str()))
         })
     }
 
@@ -872,7 +873,7 @@ impl TuiSnapshot {
                     .iter()
                     .map(|item| {
                         dw_core::PromptChoice::new(
-                            item.id.clone(),
+                            item.id.to_string(),
                             assigned_item_prompt_label(item),
                         )
                     })
@@ -902,7 +903,7 @@ fn assigned_item_prompt_label(item: &AdoAssignedItem) -> String {
         } else {
             format!(" [{}]", item.kind)
         },
-        if item.state.is_empty() {
+        if item.state.as_str().is_empty() {
             String::new()
         } else {
             format!(" ({})", item.state)
@@ -961,7 +962,7 @@ pub async fn load_assigned_data(
             return choices
                 .into_iter()
                 .map(|choice| AdoAssignedProject {
-                    key: choice.key,
+                    key: ProjectKey::from(choice.key),
                     label: choice.label,
                     items: Vec::new(),
                     error: Some(error.to_string()),
@@ -1020,7 +1021,7 @@ async fn load_assigned_project(
     match dw_ado_commands::resolve_options(&projects, &workflow, &choice.key) {
         Ok(options) => match dw_ado::query_assigned_work_items(&options, 50, &token).await {
             Ok(items) => AdoAssignedProject {
-                key: choice.key,
+                key: ProjectKey::from(choice.key),
                 label: choice.label,
                 items: items
                     .into_iter()
@@ -1032,14 +1033,14 @@ async fn load_assigned_project(
                 error: None,
             },
             Err(error) => AdoAssignedProject {
-                key: choice.key,
+                key: ProjectKey::from(choice.key),
                 label: choice.label,
                 items: Vec::new(),
                 error: Some(error.to_string()),
             },
         },
         Err(error) => AdoAssignedProject {
-            key: choice.key,
+            key: ProjectKey::from(choice.key),
             label: choice.label,
             items: Vec::new(),
             error: Some(error.to_string()),
@@ -1050,9 +1051,9 @@ async fn load_assigned_project(
 impl From<dw_ado::WorkItemSnapshot> for AdoAssignedItem {
     fn from(value: dw_ado::WorkItemSnapshot) -> Self {
         Self {
-            id: value.id,
+            id: WorkItemId::from(value.id),
             kind: value.kind.unwrap_or_else(|| "-".into()),
-            state: value.state.unwrap_or_else(|| "-".into()),
+            state: WorkItemState::from(value.state.unwrap_or_else(|| "-".into())),
             title: value.title.unwrap_or_default(),
             url: value.url,
         }
@@ -1081,9 +1082,9 @@ pub async fn load_pull_request_data(
                 .into_iter()
                 .map(|choice| TuiPullRequest {
                     workspace: None,
-                    project: choice.key,
-                    repository: "-".into(),
-                    ado_repository: "-".into(),
+                    project: ProjectKey::from(choice.key),
+                    repository: WorkspaceRepositoryName::from("-"),
+                    ado_repository: AdoRepositoryName::from("-"),
                     branch: "-".into(),
                     target_branch: "-".into(),
                     pull_request_id: None,
@@ -1126,9 +1127,9 @@ fn pull_request_targets(
             };
             targets.push(PullRequestTarget {
                 order: targets.len(),
-                project: choice.key.clone(),
-                repository: repository.clone(),
-                ado_repository,
+                project: ProjectKey::from(choice.key.clone()),
+                repository: WorkspaceRepositoryName::from(repository.clone()),
+                ado_repository: AdoRepositoryName::from(ado_repository),
                 options: options.clone(),
             });
         }
@@ -1163,9 +1164,9 @@ async fn load_pull_request_targets(
                 usize::MAX,
                 vec![TuiPullRequest {
                     workspace: None,
-                    project: "-".into(),
-                    repository: "-".into(),
-                    ado_repository: "-".into(),
+                    project: ProjectKey::from("-"),
+                    repository: WorkspaceRepositoryName::from("-"),
+                    ado_repository: AdoRepositoryName::from("-"),
                     branch: "-".into(),
                     target_branch: "-".into(),
                     pull_request_id: None,
@@ -1197,7 +1198,11 @@ fn load_pull_request_target(
         )];
     };
 
-    match dw_ado::list_active_pull_requests_authenticated(options, &target.ado_repository, token) {
+    match dw_ado::list_active_pull_requests_authenticated(
+        options,
+        target.ado_repository.as_str(),
+        token,
+    ) {
         Ok(prs) => prs
             .into_iter()
             .map(|pr| {
@@ -1205,28 +1210,28 @@ fn load_pull_request_target(
                 let workspace = workspaces
                     .iter()
                     .find(|workspace| {
-                        workspace.project.as_str() == target.project
+                        workspace.project.as_str() == target.project.as_str()
                             && workspace.branch_name.as_str().eq_ignore_ascii_case(&branch)
                             && workspace
                                 .repositories
                                 .iter()
-                                .any(|item| item.as_str() == target.repository)
+                                .any(|item| item.as_str() == target.repository.as_str())
                     })
                     .map(|workspace| workspace.path.to_string());
                 TuiPullRequest {
                     workspace,
                     project: target.project.clone(),
                     repository: target.repository.clone(),
-                    ado_repository: pr.repository,
+                    ado_repository: AdoRepositoryName::from(pr.repository),
                     branch,
                     target_branch: trim_branch(pr.target_ref_name.as_deref()).to_string(),
-                    pull_request_id: Some(pr.pull_request_id),
+                    pull_request_id: Some(PullRequestId::from(pr.pull_request_id.to_string())),
                     title: pr.title,
                     is_draft: pr.is_draft,
-                    work_item_ids: pr.work_item_ids,
+                    work_item_ids: pr.work_item_ids.into_iter().map(WorkItemId::from).collect(),
                     url: Some(dw_ado::pull_request_web_url(
                         options,
-                        &target.ado_repository,
+                        target.ado_repository.as_str(),
                         pr.pull_request_id,
                     )),
                     error: None,
@@ -2002,9 +2007,9 @@ mod tests {
             "boom",
         );
 
-        assert_eq!(item.project, "ha");
-        assert_eq!(item.repository, "front");
-        assert_eq!(item.ado_repository, "HA Front");
+        assert_eq!(item.project, ProjectKey::from("ha"));
+        assert_eq!(item.repository, WorkspaceRepositoryName::from("front"));
+        assert_eq!(item.ado_repository, AdoRepositoryName::from("HA Front"));
         assert_eq!(item.error.as_deref(), Some("boom"));
     }
 

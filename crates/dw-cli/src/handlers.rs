@@ -9,8 +9,8 @@ use dw_cli_adapter::{
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
     EnvironmentVariableName, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
-    PullRequestId, SecretKey, TaskId, TaskSlug, WorkItemId, WorkItemTypeName, WorkspacePath,
-    WorkspaceRepositoryName,
+    PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId, WorkItemTypeName,
+    WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
@@ -1822,14 +1822,16 @@ fn handle_secret(command: SecretCommand) -> Result<()> {
             from_env,
         } => {
             let secret = match (value, from_env) {
-                (Some(secret), None) => secret,
+                (Some(secret), None) => SecretValue::from(secret),
                 (None, Some(name)) => {
                     dw_secret::secret_from_env(&EnvironmentVariableName::from(name))?
                 }
-                (None, None) if std::io::stdin().is_terminal() => Password::new("Secret")
-                    .with_display_mode(PasswordDisplayMode::Hidden)
-                    .without_confirmation()
-                    .prompt()?,
+                (None, None) if std::io::stdin().is_terminal() => SecretValue::from(
+                    Password::new("Secret")
+                        .with_display_mode(PasswordDisplayMode::Hidden)
+                        .without_confirmation()
+                        .prompt()?,
+                ),
                 (None, None) => {
                     return Err(anyhow::anyhow!(
                         "secret set requiert --value ou --from-env en mode non interactif"
