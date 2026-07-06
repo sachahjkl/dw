@@ -84,7 +84,7 @@ where
 fn action_request(action: &TuiAction) -> Result<DwActionRequest> {
     match &action.request {
         TuiActionRequest::Version => Ok(DwActionRequest::Version),
-        TuiActionRequest::Doctor => Ok(DwActionRequest::Doctor),
+        TuiActionRequest::Doctor => Ok(DwActionRequest::Doctor { fix: false }),
         TuiActionRequest::Guide => Ok(DwActionRequest::Guide),
         TuiActionRequest::Refresh(args) => Ok(DwActionRequest::Refresh(args.clone())),
         TuiActionRequest::ConfigShow { root } => {

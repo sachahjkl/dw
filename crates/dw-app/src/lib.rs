@@ -10,7 +10,9 @@ use tokio::task::JoinHandle;
 #[derive(Debug, Clone)]
 pub enum DwActionRequest {
     Version,
-    Doctor,
+    Doctor {
+        fix: bool,
+    },
     Guide,
     Refresh(dw_config::command::RefreshCommandArgs),
     ConfigShow {
@@ -282,7 +284,7 @@ pub async fn run_action(
         DwActionRequest::Guide => Ok(DwActionResult::App(AppActionResult::Guide {
             topic: GuideTopic::Main,
         })),
-        DwActionRequest::Doctor => Ok(DwActionResult::Doctor(dw_doctor::run_doctor(false)?)),
+        DwActionRequest::Doctor { fix } => Ok(DwActionResult::Doctor(dw_doctor::run_doctor(fix)?)),
         DwActionRequest::Refresh(args) => Ok(DwActionResult::Config(ConfigActionResult::Refresh(
             dw_config::command::refresh(args)?,
         ))),

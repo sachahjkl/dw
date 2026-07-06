@@ -28,22 +28,11 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
             ));
         }
         Command::Doctor { fix } => {
-            if fix {
-                let report = dw_doctor::run_doctor(true)?;
-                print_lines(&dw_cli_adapter::render::doctor_report_lines(
-                    &report,
-                    &TerminalTheme::stdout_auto(),
-                ));
-                if !report.passed() {
-                    return Err(anyhow::anyhow!("doctor a détecté des points à corriger."));
-                }
-            } else {
-                let result = run_cli_action(dw_app::DwActionRequest::Doctor).await?;
-                if let dw_app::DwActionResult::Doctor(report) = result
-                    && !report.passed()
-                {
-                    return Err(anyhow::anyhow!("doctor a détecté des points à corriger."));
-                }
+            let result = run_cli_action(dw_app::DwActionRequest::Doctor { fix }).await?;
+            if let dw_app::DwActionResult::Doctor(report) = result
+                && !report.passed()
+            {
+                return Err(anyhow::anyhow!("doctor a détecté des points à corriger."));
             }
         }
         Command::Init {
