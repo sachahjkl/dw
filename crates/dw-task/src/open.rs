@@ -132,10 +132,8 @@ pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<Ex
         let projects = load_projects_config(&root);
         let workflow = load_workflow_config(&root);
         let project_config = resolve_project(&projects, project.as_str());
-        let repositories = resolve_ado_repositories(
-            project_config.as_ref(),
-            args.repo.as_ref().map(WorkspaceRepositoryName::as_str),
-        );
+        let repositories = args.repo.clone().into_iter().collect::<Vec<_>>();
+        let repositories = resolve_ado_repositories(project_config.as_ref(), &repositories);
         if repositories.is_empty() {
             return Err(anyhow::anyhow!(
                 "task open --pr requires --repo, or a project with configured Azure DevOps repositories."

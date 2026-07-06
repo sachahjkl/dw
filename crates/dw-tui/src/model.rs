@@ -1656,8 +1656,8 @@ mod tests {
             label: "Create workspace · ha #42".into(),
             request: TuiActionRequest::TaskStart(dw_task::start::StartArgs {
                 work_item_ids: vec![dw_core::WorkItemId::from("42")],
-                root: Some("/tmp/dw".into()),
-                project: Some("ha".into()),
+                root: Some(dw_core::DevWorkflowRoot::from("/tmp/dw")),
+                project: Some(dw_core::ProjectKey::from("ha")),
                 task: None,
                 type_name: None,
                 repositories: Vec::new(),

@@ -9,7 +9,8 @@ use dw_cli_adapter::{
 use dw_core::{
     AdoActionEvent, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
     EnvironmentVariableName, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
-    PullRequestId, SecretKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName,
+    PullRequestId, SecretKey, TaskId, TaskSlug, WorkItemId, WorkItemTypeName, WorkspacePath,
+    WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
@@ -260,12 +261,12 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                     .as_deref()
                     .map(WorkItemId::parse_many)
                     .unwrap_or_default(),
-                root,
+                root: root.map(DevWorkflowRoot::from),
                 project: project.map(ProjectKey::from),
-                task,
-                type_name,
+                task: task.map(TaskId::from),
+                type_name: type_name.map(WorkItemTypeName::from),
                 repositories: parse_workspace_repository_names(only.as_deref()),
-                slug,
+                slug: slug.map(TaskSlug::from),
                 skip_ado,
                 with_active_children,
                 create_child_tasks,
@@ -300,11 +301,11 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
         } => {
             let args = dw_task::start::StartPrArgs {
                 pull_request_id: PullRequestId::from(pull_request_id),
-                root,
+                root: root.map(DevWorkflowRoot::from),
                 project: ProjectKey::from(project),
-                repo,
-                type_name,
-                slug,
+                repositories: parse_workspace_repository_names(repo.as_deref()),
+                type_name: type_name.map(WorkItemTypeName::from),
+                slug: slug.map(TaskSlug::from),
                 mode: ExecutionMode::from_execute(execute),
             };
             let report = dw_task::start::start_pr_plan(args.clone()).await?;
@@ -1227,7 +1228,6 @@ fn finish_mode_from_label(label: &str) -> FinishMode {
 fn parse_workspace_repository_names(value: Option<&str>) -> Vec<WorkspaceRepositoryName> {
     value
         .into_iter()
-        .flat_map(|value| value.split(','))
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(WorkspaceRepositoryName::from)
@@ -1538,7 +1538,7 @@ async fn resolve_start_args_interactively(
     mut args: dw_task::start::StartArgs,
 ) -> Result<dw_task::start::StartArgs> {
     if args.project.is_none() && std::io::stdin().is_terminal() {
-        let root = dw_config::resolve_root(args.root.as_deref());
+        let root = dw_config::resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
         let projects = dw_config::load_projects_config(&root);
         let choices = dw_config::project_choices(&projects);
         if !choices.is_empty() {
@@ -1563,7 +1563,7 @@ async fn resolve_start_args_interactively(
         let Some(project) = args.project.as_ref() else {
             return Ok(args);
         };
-        let root = dw_config::resolve_root(args.root.as_deref());
+        let root = dw_config::resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
         let projects = dw_config::load_projects_config(&root);
         let Some(project_config) = dw_config::resolve_project(&projects, project.as_str()) else {
             return Ok(args);
@@ -1601,7 +1601,7 @@ async fn resolve_start_work_item_id_interactively(
     print_lines(&[assigned_work_items_loading_line(project.as_str())]);
     let report = dw_ado_commands::commands::assigned::report(
         dw_ado_commands::commands::assigned::AssignedArgs {
-            root: args.root.clone(),
+            root: args.root.as_ref().map(ToString::to_string),
             project: Some(project),
             top: 50,
             all: false,

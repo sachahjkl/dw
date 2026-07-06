@@ -256,7 +256,7 @@ pub fn selected_ado_action(
             }
             TuiActionRequest::TaskStart(dw_task::start::StartArgs {
                 work_item_ids: vec![dw_core::WorkItemId::from(item.id.clone())],
-                root: Some(snapshot.root.clone()),
+                root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
                 project: Some(dw_core::ProjectKey::from(project.key.clone())),
                 task: None,
                 type_name: None,
@@ -366,9 +366,11 @@ pub fn selected_pull_request_action(
             }
             TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
                 pull_request_id: dw_core::PullRequestId::from(pull_request_id.to_string()),
-                root: Some(snapshot.root.clone()),
+                root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
                 project: dw_core::ProjectKey::from(item.project.clone()),
-                repo: Some(item.repository.clone()),
+                repositories: vec![dw_core::WorkspaceRepositoryName::from(
+                    item.repository.clone(),
+                )],
                 type_name: None,
                 slug: None,
                 mode: dw_core::ExecutionMode::from_execute(
@@ -583,7 +585,10 @@ mod tests {
         match &action.request {
             TuiActionRequest::TaskStart(args) => {
                 assert_eq!(args.work_item_ids, vec![dw_core::WorkItemId::from("42")]);
-                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/dw")
+                );
                 assert_eq!(
                     args.project.as_ref().map(|project| project.as_str()),
                     Some("ha")
@@ -716,7 +721,12 @@ mod tests {
         match &action.request {
             TuiActionRequest::TaskStartPr(args) => {
                 assert_eq!(args.pull_request_id, dw_core::PullRequestId::from("42"));
-                assert_eq!(args.repo.as_deref(), Some("front"));
+                assert_eq!(
+                    args.repositories
+                        .first()
+                        .map(dw_core::WorkspaceRepositoryName::as_str),
+                    Some("front")
+                );
                 assert!(!args.mode.executes());
             }
             _ => panic!("expected PR workspace request"),

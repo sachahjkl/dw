@@ -191,9 +191,9 @@ mod tests {
             label: "Start PR preview".into(),
             request: TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
                 pull_request_id: dw_core::PullRequestId::from("42"),
-                root: Some("/tmp/missing-dw-root".into()),
+                root: Some(dw_core::DevWorkflowRoot::from("/tmp/missing-dw-root")),
                 project: dw_core::ProjectKey::from("ha"),
-                repo: None,
+                repositories: Vec::new(),
                 type_name: None,
                 slug: None,
                 mode: dw_core::ExecutionMode::Preview,

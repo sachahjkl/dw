@@ -230,12 +230,12 @@ impl FormState {
                     .as_deref()
                     .map(dw_core::WorkItemId::parse_many)
                     .unwrap_or_default(),
-                root: Some(root.into()),
+                root: Some(dw_core::DevWorkflowRoot::from(root)),
                 project: value("Project").map(dw_core::ProjectKey::from),
                 task: None,
-                type_name: value("Type"),
+                type_name: value("Type").map(dw_core::WorkItemTypeName::from),
                 repositories: parse_workspace_repository_names(value("Repository").as_deref()),
-                slug: value("Slug"),
+                slug: value("Slug").map(dw_core::TaskSlug::from),
                 skip_ado: enabled("Skip ADO"),
                 with_active_children: false,
                 create_child_tasks: false,
@@ -244,11 +244,11 @@ impl FormState {
             FormTemplate::TaskStartPr => {
                 TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
                     pull_request_id: dw_core::PullRequestId::from(value("Pull request")?),
-                    root: Some(root.into()),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: dw_core::ProjectKey::from(value("Project")?),
-                    repo: value("Repository"),
-                    type_name: value("Type"),
-                    slug: value("Slug"),
+                    repositories: parse_workspace_repository_names(value("Repository").as_deref()),
+                    type_name: value("Type").map(dw_core::WorkItemTypeName::from),
+                    slug: value("Slug").map(dw_core::TaskSlug::from),
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 })
             }
@@ -945,7 +945,6 @@ fn field_value(fields: &[FormField], label: &str) -> Option<String> {
 fn parse_workspace_repository_names(value: Option<&str>) -> Vec<dw_core::WorkspaceRepositoryName> {
     value
         .into_iter()
-        .flat_map(|value| value.split(','))
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(dw_core::WorkspaceRepositoryName::from)
@@ -1000,7 +999,10 @@ mod tests {
         match &action.request {
             TuiActionRequest::TaskStart(args) => {
                 assert_eq!(args.work_item_ids, vec![dw_core::WorkItemId::from("42")]);
-                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/dw")
+                );
                 assert!(!args.mode.executes());
             }
             _ => panic!("expected task start request"),
@@ -1051,9 +1053,22 @@ mod tests {
             TuiActionRequest::TaskStartPr(args) => {
                 assert_eq!(args.pull_request_id, dw_core::PullRequestId::from("123"));
                 assert_eq!(args.project.as_str(), "ha");
-                assert_eq!(args.repo.as_deref(), Some("front"));
-                assert_eq!(args.type_name.as_deref(), Some("feature"));
-                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+                assert_eq!(
+                    args.repositories
+                        .first()
+                        .map(dw_core::WorkspaceRepositoryName::as_str),
+                    Some("front")
+                );
+                assert_eq!(
+                    args.type_name
+                        .as_ref()
+                        .map(dw_core::WorkItemTypeName::as_str),
+                    Some("feature")
+                );
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/dw")
+                );
                 assert!(!args.mode.executes());
             }
             _ => panic!("expected PR workspace request"),

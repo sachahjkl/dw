@@ -8,7 +8,10 @@ use dw_ado::{
 use dw_config::{
     load_projects_config, load_workflow_config, repository_config, resolve_project, resolve_root,
 };
-use dw_core::{AdoRepositoryName, ProjectKey, PullRequestId, WorkItemId, WorkspaceRepositoryName};
+use dw_core::{
+    AdoRepositoryName, DevWorkflowRoot, ProjectKey, PullRequestId, TaskId, TaskSlug, WorkItemId,
+    WorkItemState, WorkItemTypeName, WorkspaceRepositoryName,
+};
 use dw_workspace::{
     TaskStartOptions, TaskStartPlan, TaskStartRequest, WorkspaceChildTask, WorkspaceManifest,
     WorkspaceWorkItem, execute_task_start, execute_task_start_with_work_items_and_child_tasks,
@@ -21,12 +24,12 @@ pub mod ado;
 #[derive(Debug, Clone)]
 pub struct StartArgs {
     pub work_item_ids: Vec<WorkItemId>,
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub project: Option<ProjectKey>,
-    pub task: Option<String>,
-    pub type_name: Option<String>,
+    pub task: Option<TaskId>,
+    pub type_name: Option<WorkItemTypeName>,
     pub repositories: Vec<WorkspaceRepositoryName>,
-    pub slug: Option<String>,
+    pub slug: Option<TaskSlug>,
     pub skip_ado: bool,
     pub with_active_children: bool,
     pub create_child_tasks: bool,
@@ -36,17 +39,17 @@ pub struct StartArgs {
 #[derive(Debug, Clone)]
 pub struct StartPrArgs {
     pub pull_request_id: PullRequestId,
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub project: ProjectKey,
-    pub repo: Option<String>,
-    pub type_name: Option<String>,
-    pub slug: Option<String>,
+    pub repositories: Vec<WorkspaceRepositoryName>,
+    pub type_name: Option<WorkItemTypeName>,
+    pub slug: Option<TaskSlug>,
     pub mode: dw_core::ExecutionMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StartPlanReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub plan: TaskStartPlan,
     #[serde(rename = "workItems")]
     pub work_items: Vec<WorkspaceWorkItem>,
@@ -81,14 +84,16 @@ pub struct StartStateUpdate {
     pub id: WorkItemId,
     pub label: String,
     #[serde(rename = "targetState")]
-    pub target_state: String,
+    pub target_state: WorkItemState,
     pub changed: bool,
 }
 
 pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
-    let root = resolve_root(args.root.as_deref());
-    let projects = load_projects_config(&root);
-    let workflow = load_workflow_config(&root);
+    let root = DevWorkflowRoot::from(resolve_root(
+        args.root.as_ref().map(DevWorkflowRoot::as_str),
+    ));
+    let projects = load_projects_config(root.as_str());
+    let workflow = load_workflow_config(root.as_str());
     if args.work_item_ids.is_empty() {
         anyhow::bail!("work-item-id requis pour construire un plan de démarrage task.");
     }
@@ -101,7 +106,7 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
         if ado_options.project.trim().is_empty() {
             ado_options.project = project_key.to_string();
         }
-        let token = require_token(load_auth_options(Some(&root))?).await?;
+        let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
         Some((ado_options, token))
     } else {
         None
@@ -133,14 +138,14 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
         args.work_item_ids.clone()
     };
     let plan = plan_task_start(TaskStartRequest {
-        root: &root,
+        root: root.as_str(),
         projects: &projects,
         work_item_ids: &planned_work_item_ids,
         project,
-        task_id: args.task.as_deref(),
-        type_name: args.type_name.as_deref(),
+        task_id: args.task.as_ref().map(TaskId::as_str),
+        type_name: args.type_name.as_ref().map(WorkItemTypeName::as_str),
         repositories: &args.repositories,
-        slug: args.slug.as_deref(),
+        slug: args.slug.as_ref().map(TaskSlug::as_str),
     })?;
 
     Ok(StartPlanReport {
@@ -155,11 +160,11 @@ pub async fn execute_start(
     mut report: StartPlanReport,
     args: &StartArgs,
 ) -> Result<StartExecutionReport> {
-    let workflow = load_workflow_config(&report.root);
+    let workflow = load_workflow_config(report.root.as_str());
     let manifest = if args.skip_ado {
         execute_task_start(&report.plan, None, None, None)?
     } else {
-        let projects = load_projects_config(&report.root);
+        let projects = load_projects_config(report.root.as_str());
         let mut work_items = report.work_items.clone();
         if work_items.is_empty() {
             work_items = report
@@ -183,7 +188,7 @@ pub async fn execute_start(
         if ado_options.project.trim().is_empty() {
             ado_options.project = report.plan.project.clone();
         }
-        let token = require_token(load_auth_options(Some(&report.root))?).await?;
+        let token = require_token(load_auth_options(Some(report.root.as_str()))?).await?;
         let start_options = task_start_options(&workflow);
         let child_tasks = if args.create_child_tasks || start_options.create_child_tasks {
             let ado_options = ado_options.clone();
@@ -228,18 +233,20 @@ pub async fn execute_start(
 }
 
 pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
-    let root = resolve_root(args.root.as_deref());
-    let projects = load_projects_config(&root);
-    let workflow = load_workflow_config(&root);
+    let root = DevWorkflowRoot::from(resolve_root(
+        args.root.as_ref().map(DevWorkflowRoot::as_str),
+    ));
+    let projects = load_projects_config(root.as_str());
+    let workflow = load_workflow_config(root.as_str());
     let project_config = resolve_project(&projects, args.project.as_str());
-    let ado_repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_deref());
+    let ado_repositories = resolve_ado_repositories(project_config.as_ref(), &args.repositories);
     if ado_repositories.is_empty() {
         return Err(anyhow::anyhow!(
             "task start-pr requires an explicit repository, or a project with configured azureDevOpsRepository entries."
         ));
     }
     let options = resolve_ado_options(&projects, &workflow, args.project.as_str())?;
-    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
     let work_item_options = options.clone();
     let work_item_repositories = ado_repositories.clone();
     let pull_request_id = args.pull_request_id.clone();
@@ -262,7 +269,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
         ));
     }
     let workspace_repositories =
-        resolve_workspace_repositories(project_config.as_ref(), args.repo.as_deref());
+        resolve_workspace_repositories(project_config.as_ref(), &args.repositories);
 
     let start = start_plan(StartArgs {
         work_item_ids: work_item_ids
@@ -309,12 +316,7 @@ pub async fn execute_start_pr(
             project: Some(args.project.clone()),
             task: None,
             type_name: args.type_name.clone(),
-            repositories: args
-                .repo
-                .clone()
-                .map(WorkspaceRepositoryName::from)
-                .into_iter()
-                .collect(),
+            repositories: args.repositories.clone(),
             slug: args.slug.clone(),
             skip_ado: false,
             with_active_children: false,
@@ -327,23 +329,13 @@ pub async fn execute_start_pr(
 
 pub fn resolve_ado_repositories(
     project_config: Option<&dw_config::ProjectConfig>,
-    repository: Option<&str>,
+    repositories: &[WorkspaceRepositoryName],
 ) -> Vec<String> {
-    if let Some(repository) = repository.filter(|value| !value.trim().is_empty()) {
-        return repository
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(|repo| resolve_ado_repository(project_config, repo))
-            .fold(Vec::new(), |mut repos, repo| {
-                if !repos
-                    .iter()
-                    .any(|existing| existing.eq_ignore_ascii_case(&repo))
-                {
-                    repos.push(repo);
-                }
-                repos
-            });
+    if !repositories.is_empty() {
+        return repositories
+            .iter()
+            .map(|repo| resolve_ado_repository(project_config, repo.as_str()))
+            .fold(Vec::new(), push_case_insensitive_unique);
     }
 
     project_config
@@ -369,28 +361,28 @@ pub fn resolve_ado_repositories(
 
 fn resolve_workspace_repositories(
     project_config: Option<&dw_config::ProjectConfig>,
-    repository: Option<&str>,
+    repositories: &[WorkspaceRepositoryName],
 ) -> Vec<String> {
-    if let Some(repository) = repository.filter(|value| !value.trim().is_empty()) {
-        return repository
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(|repo| resolve_workspace_repository(project_config, repo))
-            .fold(Vec::new(), |mut repos, repo| {
-                if !repos
-                    .iter()
-                    .any(|existing| existing.eq_ignore_ascii_case(&repo))
-                {
-                    repos.push(repo);
-                }
-                repos
-            });
+    if !repositories.is_empty() {
+        return repositories
+            .iter()
+            .map(|repo| resolve_workspace_repository(project_config, repo.as_str()))
+            .fold(Vec::new(), push_case_insensitive_unique);
     }
 
     project_config
         .map(|project| project.repositories.keys().cloned().collect())
         .unwrap_or_default()
+}
+
+fn push_case_insensitive_unique(mut values: Vec<String>, value: String) -> Vec<String> {
+    if !values
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&value))
+    {
+        values.push(value);
+    }
+    values
 }
 
 fn resolve_workspace_repository(
@@ -466,7 +458,7 @@ async fn update_start_states(
         updates.push(StartStateUpdate {
             id: WorkItemId::from(item.id.clone()),
             label,
-            target_state: state,
+            target_state: WorkItemState::from(state),
             changed,
         });
     }
@@ -513,20 +505,24 @@ mod tests {
         )
         .expect("project config");
 
+        let front = [WorkspaceRepositoryName::from("front")];
+        let gesco_front = [WorkspaceRepositoryName::from("gesco-front")];
+        let all_repositories: [WorkspaceRepositoryName; 0] = [];
+
         assert_eq!(
-            resolve_ado_repositories(Some(&project), Some("front")),
+            resolve_ado_repositories(Some(&project), &front),
             ["gesco-front"]
         );
         assert_eq!(
-            resolve_workspace_repositories(Some(&project), Some("gesco-front")),
+            resolve_workspace_repositories(Some(&project), &gesco_front),
             ["front"]
         );
         assert_eq!(
-            resolve_workspace_repositories(Some(&project), Some("front")),
+            resolve_workspace_repositories(Some(&project), &front),
             ["front"]
         );
         assert_eq!(
-            resolve_workspace_repositories(Some(&project), None),
+            resolve_workspace_repositories(Some(&project), &all_repositories),
             ["front", "back"]
         );
     }
