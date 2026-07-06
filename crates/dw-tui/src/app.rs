@@ -2480,7 +2480,7 @@ mod tests {
         };
         let second = TuiAction {
             label: "Doctor".into(),
-            request: TuiActionRequest::Doctor,
+            request: TuiActionRequest::Doctor { fix: false },
             description: "Doctor".into(),
             kind: ActionRisk::Safe,
         };

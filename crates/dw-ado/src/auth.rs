@@ -13,7 +13,6 @@ pub const DEFAULT_ADO_SCOPE: &str = "499b84ac-1321-427f-aa17-267ca6975798/.defau
 
 const KEYRING_SERVICE: &str = "dw.azure-devops";
 const KEYRING_USER: &str = "oauth-refresh-token";
-const LEGACY_KEYRING_USER: &str = "msal-refresh-token";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdoAuthOptions {
@@ -256,9 +255,7 @@ pub async fn status(auth: Option<AdoAuthOptions>) -> Result<AdoAuthStatus, AdoAu
 }
 
 pub fn logout() -> Result<bool, AdoAuthError> {
-    let current = delete_keyring_credential(KEYRING_USER)?;
-    let legacy = delete_keyring_credential(LEGACY_KEYRING_USER)?;
-    Ok(current || legacy)
+    delete_keyring_credential(KEYRING_USER)
 }
 
 async fn refresh_access_token(
@@ -350,10 +347,7 @@ fn store_refresh_token(refresh_token: &str) -> Result<(), AdoAuthError> {
 }
 
 fn read_refresh_token() -> Result<Option<String>, AdoAuthError> {
-    read_keyring_password(KEYRING_USER)?.map_or_else(
-        || read_keyring_password(LEGACY_KEYRING_USER),
-        |value| Ok(Some(value)),
-    )
+    read_keyring_password(KEYRING_USER)
 }
 
 fn read_keyring_password(user: &str) -> Result<Option<String>, AdoAuthError> {

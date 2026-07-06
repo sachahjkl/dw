@@ -228,7 +228,7 @@ impl FormState {
             FormTemplate::TaskStart => TuiActionRequest::TaskStart(dw_task::start::StartArgs {
                 work_item_ids: value("Work item")
                     .as_deref()
-                    .map(dw_core::WorkItemId::parse_many)
+                    .map(parse_work_item_ids)
                     .unwrap_or_default(),
                 root: Some(dw_core::DevWorkflowRoot::from(root)),
                 project: value("Project").map(dw_core::ProjectKey::from),
@@ -271,7 +271,7 @@ impl FormState {
                     project: value("Project").map(dw_core::ProjectKey::from),
                     work_item_ids: value("Work item")
                         .as_deref()
-                        .map(dw_core::WorkItemId::parse_many)
+                        .map(parse_work_item_ids)
                         .unwrap_or_default(),
                     r#continue: enabled("Continue"),
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
@@ -283,7 +283,7 @@ impl FormState {
                 project: value("Project").map(dw_core::ProjectKey::from),
                 work_item_ids: value("Work item")
                     .as_deref()
-                    .map(dw_core::WorkItemId::parse_many)
+                    .map(parse_work_item_ids)
                     .unwrap_or_default(),
                 selected_workspaces: None,
                 mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
@@ -294,14 +294,14 @@ impl FormState {
                 TuiActionRequest::TaskAddWorkItem(dw_task::work_item::AddWorkItemArgs {
                     work_item_ids: value("Work items")
                         .as_deref()
-                        .map(dw_core::WorkItemId::parse_many)
+                        .map(parse_work_item_ids)
                         .unwrap_or_default(),
                     workspace: value("Workspace").map(dw_core::WorkspacePath::from),
                     root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: value("Project").map(dw_core::ProjectKey::from),
                     workspace_work_item_ids: value("Workspace work item")
                         .as_deref()
-                        .map(dw_core::WorkItemId::parse_many)
+                        .map(parse_work_item_ids)
                         .unwrap_or_default(),
                     r#continue: enabled("Continue"),
                     skip_ado: enabled("Skip ADO"),
@@ -315,14 +315,14 @@ impl FormState {
                 TuiActionRequest::TaskRemoveWorkItem(dw_task::work_item::RemoveWorkItemArgs {
                     work_item_ids: value("Work items")
                         .as_deref()
-                        .map(dw_core::WorkItemId::parse_many)
+                        .map(parse_work_item_ids)
                         .unwrap_or_default(),
                     workspace: value("Workspace").map(dw_core::WorkspacePath::from),
                     root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: value("Project").map(dw_core::ProjectKey::from),
                     workspace_work_item_ids: value("Workspace work item")
                         .as_deref()
-                        .map(dw_core::WorkItemId::parse_many)
+                        .map(parse_work_item_ids)
                         .unwrap_or_default(),
                     r#continue: enabled("Continue"),
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
@@ -344,7 +344,7 @@ impl FormState {
                     project: value("Project").map(dw_core::ProjectKey::from),
                     work_item_ids: value("Work item")
                         .as_deref()
-                        .map(dw_core::WorkItemId::parse_many)
+                        .map(parse_work_item_ids)
                         .unwrap_or_default(),
                     r#continue: enabled("Continue"),
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
@@ -363,7 +363,7 @@ impl FormState {
             }
             FormTemplate::AdoSetState => {
                 TuiActionRequest::AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs {
-                    ids: dw_core::WorkItemId::parse_many(&value("Work item IDs")?),
+                    ids: parse_work_item_ids(&value("Work item IDs")?),
                     root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: value("Project").map(dw_core::ProjectKey::from),
                     state: dw_core::WorkItemState::parse(value("Destination state")?).ok()?,
@@ -396,13 +396,13 @@ impl FormState {
                     .map(|agent| agent.parse::<dw_core::Agent>())
                     .transpose()
                     .ok()?;
-                TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
+                TuiActionRequest::TaskOpen(dw_task::open::OpenWorkspaceArgs {
                     workspace: value("Workspace").map(dw_core::WorkspacePath::from),
                     root: Some(dw_core::DevWorkflowRoot::from(root)),
                     project: value("Project").map(dw_core::ProjectKey::from),
                     work_item_ids: value("Work item")
                         .as_deref()
-                        .map(dw_core::WorkItemId::parse_many)
+                        .map(parse_work_item_ids)
                         .unwrap_or_default(),
                     pull_request: None,
                     r#continue: enabled("Continue"),
@@ -955,6 +955,15 @@ fn parse_workspace_repository_names(value: Option<&str>) -> Vec<dw_core::Workspa
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(dw_core::WorkspaceRepositoryName::from)
+        .collect()
+}
+
+fn parse_work_item_ids(input: &str) -> Vec<dw_core::WorkItemId> {
+    input
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(dw_core::WorkItemId::from)
         .collect()
 }
 

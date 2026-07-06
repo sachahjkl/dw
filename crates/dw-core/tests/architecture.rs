@@ -539,6 +539,42 @@ fn input_dialogue_protocol_uses_typed_prompt_identifiers_and_choice_values() {
 }
 
 #[test]
+fn core_domain_ids_do_not_parse_adapter_csv_arguments() {
+    let repo = repo_root();
+    let core = repo.join("crates/dw-core/src/lib.rs");
+    let text = fs::read_to_string(&core).expect("read core lib");
+    assert!(
+        !text.contains("parse_many"),
+        "{} should keep CSV/list argument parsing in adapters",
+        core.display()
+    );
+}
+
+#[test]
+fn no_explicit_legacy_compatibility_paths_remain_in_core_flows() {
+    let repo = repo_root();
+    for relative in [
+        "crates/dw-ado/src/auth.rs",
+        "crates/dw-workspace/src/lib.rs",
+    ] {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read source file");
+        for forbidden in [
+            "LEGACY_KEYRING_USER",
+            "msal-refresh-token",
+            "legacy_child_task_ids",
+        ] {
+            assert!(
+                !text.contains(forbidden),
+                "{} contains explicit legacy compatibility path `{}`",
+                path.display(),
+                forbidden
+            );
+        }
+    }
+}
+
+#[test]
 fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
     let repo = repo_root();
     let checked: &[(&str, &[&str])] = &[
@@ -938,7 +974,6 @@ fn ado_changelog_contract_uses_typed_root_repository_and_format() {
         "pub format: ChangelogOutputFormat",
         "pub enum ChangelogOutputFormat",
         "impl FromStr for ChangelogOutputFormat",
-        "pub fn as_ado_format(self) -> ChangelogFormat",
     ] {
         assert!(
             text.contains(required),
@@ -1159,20 +1194,8 @@ fn app_and_tui_core_requests_use_typed_config_agent_and_secret_values() {
         (
             "crates/dw-tui/src/model.rs",
             &[
-                "Agent",
-                "ConfigColorMode",
-                "ConfigRootPath",
-                "DevWorkflowRoot",
-                "EnvironmentVariableName",
-                "SecretKey",
-                "root: Option<DevWorkflowRoot>",
-                "mode: ConfigColorMode",
-                "path: ConfigRootPath",
-                "agent: Agent",
-                "agent: Option<Agent>",
-                "key: SecretKey",
-                "key: SecretKey",
-                "env: EnvironmentVariableName",
+                "pub type TuiActionRequest = DwActionRequest",
+                "DwActionRequest",
             ],
             &[
                 "ConfigShow { root: Option<String> }",
@@ -2273,6 +2296,23 @@ fn tui_internal_actions_are_typed_requests_not_cli_argv() {
             );
         }
     }
+}
+
+#[test]
+fn tui_actions_reuse_central_dw_action_request() {
+    let repo = repo_root();
+    let model = repo.join("crates/dw-tui/src/model.rs");
+    let text = fs::read_to_string(&model).expect("read tui model");
+    assert!(
+        text.contains("pub type TuiActionRequest = DwActionRequest;"),
+        "{} should reuse the central typed action request",
+        model.display()
+    );
+    assert!(
+        !text.contains("pub enum TuiActionRequest"),
+        "{} should not duplicate the central typed action request enum",
+        model.display()
+    );
 }
 
 #[test]

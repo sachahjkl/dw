@@ -275,7 +275,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 project: project.map(ProjectKey::from),
                 work_item_ids: work_item
                     .as_deref()
-                    .map(WorkItemId::parse_many)
+                    .map(parse_work_item_ids)
                     .unwrap_or_default(),
             };
             if json {
@@ -354,7 +354,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             let args = resolve_start_args_interactively(dw_task::start::StartArgs {
                 work_item_ids: work_item_id
                     .as_deref()
-                    .map(WorkItemId::parse_many)
+                    .map(parse_work_item_ids)
                     .unwrap_or_default(),
                 root: root.map(DevWorkflowRoot::from),
                 project: project.map(ProjectKey::from),
@@ -523,7 +523,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 project: project.map(ProjectKey::from),
                 work_item_ids: work_item
                     .as_deref()
-                    .map(WorkItemId::parse_many)
+                    .map(parse_work_item_ids)
                     .unwrap_or_default(),
                 selected_workspaces: None,
                 mode: ExecutionMode::Preview,
@@ -1224,11 +1224,11 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 )
             } else if from_pr {
                 dw_ado_commands::commands::changelog::ChangelogSource::PullRequests(
-                    PullRequestId::parse_many(&ids),
+                    parse_pull_request_ids(&ids),
                 )
             } else {
                 dw_ado_commands::commands::changelog::ChangelogSource::WorkItems(
-                    WorkItemId::parse_many(&ids),
+                    parse_work_item_ids(&ids),
                 )
             };
             (
@@ -1265,7 +1265,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 anyhow::bail!("ado set-state --json requiert --yes pour rester déterministe.");
             }
             let args = dw_ado_commands::commands::set_state::SetStateArgs {
-                ids: WorkItemId::parse_many(&id),
+                ids: parse_work_item_ids(&id),
                 root: root.map(DevWorkflowRoot::from),
                 project: project.map(ProjectKey::from),
                 state: dw_core::WorkItemState::parse(state)?,
@@ -1288,7 +1288,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
         } => (
             dw_app::DwActionRequest::AdoWorkItem(
                 dw_ado_commands::commands::work_item::WorkItemArgs {
-                    ids: WorkItemId::parse_many(&id),
+                    ids: parse_work_item_ids(&id),
                     root: root.map(DevWorkflowRoot::from),
                     project: project.map(ProjectKey::from),
                 },
@@ -1305,7 +1305,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             json,
         } => (
             dw_app::DwActionRequest::AdoContext(dw_ado_commands::commands::context::ContextArgs {
-                ids: WorkItemId::parse_many(&id),
+                ids: parse_work_item_ids(&id),
                 root: root.map(DevWorkflowRoot::from),
                 project: project.map(ProjectKey::from),
                 summary,
@@ -1333,7 +1333,7 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                     root: root.map(DevWorkflowRoot::from),
                     organization,
                     project: project.map(ProjectKey::from),
-                    ids: WorkItemId::parse_many(&id),
+                    ids: parse_work_item_ids(&id),
                     summary,
                     comments,
                     include_comments,
@@ -1493,6 +1493,24 @@ fn parse_workspace_repository_names(value: Option<&str>) -> Vec<WorkspaceReposit
         .collect()
 }
 
+fn parse_work_item_ids(input: &str) -> Vec<WorkItemId> {
+    input
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(WorkItemId::from)
+        .collect()
+}
+
+fn parse_pull_request_ids(input: &str) -> Vec<PullRequestId> {
+    input
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(PullRequestId::from)
+        .collect()
+}
+
 fn parse_agent(value: String) -> Result<Agent> {
     value
         .parse::<Agent>()
@@ -1510,7 +1528,7 @@ fn parse_workspace_filter_work_item_ids(
     }
     Ok(option
         .or(positional)
-        .map(WorkItemId::parse_many)
+        .map(parse_work_item_ids)
         .unwrap_or_default())
 }
 
@@ -1684,7 +1702,7 @@ async fn resolve_add_work_item_ids_interactively(
     skip_ado: bool,
 ) -> Result<Option<Vec<WorkItemId>>> {
     if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
-        return Ok(Some(WorkItemId::parse_many(&ids)));
+        return Ok(Some(parse_work_item_ids(&ids)));
     }
     if skip_ado || !std::io::stdin().is_terminal() {
         anyhow::bail!("Work items à ajouter manquants. Fournir `dw task add-work-item <ids>`.");
@@ -1707,7 +1725,7 @@ fn resolve_remove_work_item_ids_interactively(
     choices_args: dw_task::work_item::WorkItemChoicesArgs,
 ) -> Result<Option<Vec<WorkItemId>>> {
     if let Some(ids) = explicit.filter(|ids| !ids.trim().is_empty()) {
-        return Ok(Some(WorkItemId::parse_many(&ids)));
+        return Ok(Some(parse_work_item_ids(&ids)));
     }
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("Work items à retirer manquants. Fournir `dw task remove-work-item <ids>`.");

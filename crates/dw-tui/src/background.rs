@@ -137,8 +137,8 @@ impl BackgroundJobs {
         }
         self.cancel_data_loads();
         let generation = self.start_job(BackgroundKind::Snapshot);
-        self.spawn_blocking(move |sender| {
-            let snapshot = TuiSnapshot::load(root.as_deref());
+        self.spawn_async(move |sender| async move {
+            let snapshot = TuiSnapshot::load_background(root.as_deref()).await;
             let _ = sender.send(BackgroundResult::Snapshot {
                 generation,
                 snapshot: Box::new(snapshot),
@@ -351,18 +351,6 @@ impl BackgroundJobs {
         }
     }
 
-    fn spawn_blocking<F>(&self, work: F)
-    where
-        F: FnOnce(Sender<BackgroundResult>) + Send + 'static,
-    {
-        let sender = self.sender.clone();
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn_blocking(move || work(sender));
-        } else {
-            work(sender);
-        }
-    }
-
     fn spawn_async<F, Fut>(&self, work: F)
     where
         F: FnOnce(Sender<BackgroundResult>) -> Fut + Send + 'static,
@@ -445,7 +433,7 @@ mod tests {
         };
         let second = crate::model::TuiAction {
             label: "Second".into(),
-            request: crate::model::TuiActionRequest::Doctor,
+            request: crate::model::TuiActionRequest::Doctor { fix: false },
             description: "Doctor".into(),
             kind: crate::model::ActionRisk::Safe,
         };

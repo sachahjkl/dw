@@ -271,7 +271,7 @@ pub fn selected_ado_action(
         AdoItemAction::OpenAgent => {
             let workspace =
                 snapshot.selected_work_item_workspace(selected_project, selected_item)?;
-            TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
+            TuiActionRequest::TaskOpen(dw_task::open::OpenWorkspaceArgs {
                 workspace: Some(workspace.path.clone()),
                 project: None,
                 work_item_ids: Vec::new(),
@@ -380,7 +380,7 @@ pub fn selected_pull_request_action(
             })
         }
         PullRequestAction::OpenAgent => {
-            TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
+            TuiActionRequest::TaskOpen(dw_task::open::OpenWorkspaceArgs {
                 workspace: Some(dw_core::WorkspacePath::from(item.workspace.clone()?)),
                 project: None,
                 work_item_ids: Vec::new(),
@@ -622,7 +622,7 @@ mod tests {
             selected_ado_action(&snapshot, 0, 0, AdoItemAction::OpenAgent).expect("open action");
 
         match &action.request {
-            TuiActionRequest::AgentOpen(args) => {
+            TuiActionRequest::TaskOpen(args) => {
                 assert_eq!(
                     args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
                     Some("/tmp/ws-42")
@@ -662,7 +662,7 @@ mod tests {
             selected_ado_action(&snapshot, 0, 0, AdoItemAction::OpenAgent).expect("open action");
 
         match &action.request {
-            TuiActionRequest::AgentOpen(args) => {
+            TuiActionRequest::TaskOpen(args) => {
                 assert_eq!(
                     args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
                     Some("/tmp/ws-42")
@@ -747,7 +747,7 @@ mod tests {
             .expect("open action");
 
         match &action.request {
-            TuiActionRequest::AgentOpen(args) => {
+            TuiActionRequest::TaskOpen(args) => {
                 assert_eq!(
                     args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
                     Some("/tmp/ws-pr")
@@ -935,7 +935,7 @@ mod tests {
 
         assert!(matches!(
             open.request,
-            TuiActionRequest::AgentOpen(ref args)
+            TuiActionRequest::TaskOpen(ref args)
                 if args.workspace.as_ref().map(dw_core::WorkspacePath::as_str) == Some("/tmp/ws")
         ));
         assert!(matches!(open.kind, ActionRisk::OpensExternal));

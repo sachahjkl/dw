@@ -1,8 +1,7 @@
 use crate::{load_auth_options, resolve_ado_options};
 use anyhow::{Context, Result};
-use dw_ado::auth::require_token;
 use dw_ado::{
-    ChangelogFormat, extract_work_item_ids_from_commit_messages,
+    auth::require_token, extract_work_item_ids_from_commit_messages,
     get_work_item_ids_from_pull_requests, group_work_items_by_parent, load_changelog_items,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
@@ -69,14 +68,6 @@ pub enum ChangelogOutputFormat {
 }
 
 impl ChangelogOutputFormat {
-    pub fn as_ado_format(self) -> ChangelogFormat {
-        match self {
-            Self::Raw => ChangelogFormat::Raw,
-            Self::Markdown => ChangelogFormat::Markdown,
-            Self::Html => ChangelogFormat::Html,
-        }
-    }
-
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Raw => "raw",

@@ -15,7 +15,7 @@ use dw_contracts::{
     TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightIssueCode,
     TaskPreflightIssueDetail, TaskPreflightReport, TaskPreflightSeverity, TaskPreflightStaleReason,
 };
-use dw_core::{AdoActionEvent, DbActionEvent, GitOperation, TaskActionEvent};
+use dw_core::{AdoActionEvent, DbActionEvent, GitOperation, TaskActionEvent, Timestamp};
 use dw_db::{QueryResult, SqlGuardResult};
 use dw_doctor::{DoctorCheck, DoctorCheckDetail, DoctorCheckKind, DoctorRemediation, DoctorReport};
 use dw_secret::command::{SecretDeleteReport, SecretGetReport, SecretSetReport};
@@ -1054,12 +1054,7 @@ pub fn ado_changelog_lines(
     if report.resolved_empty {
         return vec![theme.warning("Aucun work item résolu dans Azure DevOps.")];
     }
-    let format = report.format.as_ado_format();
-    let document = if report.group_by_parent {
-        dw_ado::render_grouped_changelog(&report.groups, format, &report.options, report.table)
-    } else {
-        dw_ado::render_flat_changelog(&report.items, format, &report.options, report.table)
-    };
+    let document = render_changelog_document(report);
     if report.format == dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw {
         document
             .lines()
@@ -1068,6 +1063,322 @@ pub fn ado_changelog_lines(
     } else {
         document.lines().map(str::to_owned).collect()
     }
+}
+
+fn render_changelog_document(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    if report.group_by_parent {
+        render_grouped_changelog(report)
+    } else {
+        render_flat_changelog(report)
+    }
+}
+
+fn render_flat_changelog(report: &dw_ado_commands::commands::changelog::ChangelogReport) -> String {
+    match report.format {
+        dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw => report
+            .items
+            .iter()
+            .map(render_raw_changelog_item)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        dw_ado_commands::commands::changelog::ChangelogOutputFormat::Markdown if report.table => {
+            render_flat_markdown_changelog_table(report)
+        }
+        dw_ado_commands::commands::changelog::ChangelogOutputFormat::Markdown => {
+            render_flat_markdown_changelog(report)
+        }
+        dw_ado_commands::commands::changelog::ChangelogOutputFormat::Html => {
+            render_flat_html_changelog(report)
+        }
+    }
+}
+
+fn render_grouped_changelog(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    match report.format {
+        dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw => {
+            render_grouped_raw_changelog(report)
+        }
+        dw_ado_commands::commands::changelog::ChangelogOutputFormat::Markdown if report.table => {
+            render_grouped_markdown_changelog_table(report)
+        }
+        dw_ado_commands::commands::changelog::ChangelogOutputFormat::Markdown => {
+            render_grouped_markdown_changelog(report)
+        }
+        dw_ado_commands::commands::changelog::ChangelogOutputFormat::Html => {
+            render_grouped_html_changelog(report)
+        }
+    }
+}
+
+fn render_grouped_raw_changelog(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    report
+        .groups
+        .iter()
+        .map(|group| {
+            let mut lines = vec![render_raw_changelog_item(&group.parent)];
+            lines.extend(
+                group
+                    .items
+                    .iter()
+                    .map(|item| format!("  - {}", render_raw_changelog_item(item))),
+            );
+            lines.join("\n")
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn render_flat_markdown_changelog(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    std::iter::once("# Changelog".to_string())
+        .chain(std::iter::once(String::new()))
+        .chain(
+            report
+                .items
+                .iter()
+                .map(|item| format!("- {}", render_markdown_changelog_line(item, report))),
+        )
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn render_flat_markdown_changelog_table(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    let mut lines = vec![
+        "# Changelog".into(),
+        String::new(),
+        "| Work Item | Type | Etat | Titre |".into(),
+        "| --- | --- | --- | --- |".into(),
+    ];
+    lines.extend(report.items.iter().map(|item| {
+        format!(
+            "| {} | {} | {} | {} |",
+            render_markdown_changelog_link(item, report),
+            escape_markdown_table_cell(item.kind.as_deref()),
+            escape_markdown_table_cell(item.state.as_deref()),
+            escape_markdown_table_cell(item.title.as_deref())
+        )
+    }));
+    lines.join("\n")
+}
+
+fn render_grouped_markdown_changelog(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    let mut output = String::from("# Changelog\n\n");
+    for (index, group) in report.groups.iter().enumerate() {
+        output.push_str(&format!(
+            "## {}\n",
+            render_markdown_changelog_line(&group.parent, report)
+        ));
+        for item in &group.items {
+            output.push_str(&format!(
+                "- {}\n",
+                render_markdown_changelog_line(item, report)
+            ));
+        }
+        if index < report.groups.len() - 1 {
+            output.push('\n');
+        }
+    }
+    output.trim_end().to_string()
+}
+
+fn render_grouped_markdown_changelog_table(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    let mut output = String::from("# Changelog\n\n");
+    for (index, group) in report.groups.iter().enumerate() {
+        output.push_str(&format!(
+            "## {}\n\n",
+            render_markdown_changelog_line(&group.parent, report)
+        ));
+        output.push_str("| Work Item | Type | Etat | Titre |\n");
+        output.push_str("| --- | --- | --- | --- |\n");
+        let rows = if group.items.is_empty() {
+            vec![&group.parent]
+        } else {
+            group.items.iter().collect::<Vec<_>>()
+        };
+        for item in rows {
+            output.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                render_markdown_changelog_link(item, report),
+                escape_markdown_table_cell(item.kind.as_deref()),
+                escape_markdown_table_cell(item.state.as_deref()),
+                escape_markdown_table_cell(item.title.as_deref())
+            ));
+        }
+        if index < report.groups.len() - 1 {
+            output.push('\n');
+        }
+    }
+    output.trim_end().to_string()
+}
+
+fn render_flat_html_changelog(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    let mut output = String::from("<h1>Changelog</h1>\n<ul>\n");
+    for item in &report.items {
+        output.push_str(&format!(
+            "  <li>{}</li>\n",
+            render_html_changelog_line(item, report)
+        ));
+    }
+    output.push_str("</ul>");
+    output
+}
+
+fn render_grouped_html_changelog(
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    let mut output = String::from("<h1>Changelog</h1>\n");
+    for group in &report.groups {
+        output.push_str(&format!(
+            "<h2>{}</h2>\n",
+            render_html_changelog_line(&group.parent, report)
+        ));
+        if group.items.is_empty() {
+            continue;
+        }
+        output.push_str("<ul>\n");
+        for item in &group.items {
+            output.push_str(&format!(
+                "  <li>{}</li>\n",
+                render_html_changelog_line(item, report)
+            ));
+        }
+        output.push_str("</ul>\n");
+    }
+    output.trim_end().to_string()
+}
+
+fn render_raw_changelog_item(item: &dw_ado::WorkItemSnapshot) -> String {
+    let mut line = format!("#{}", item.id);
+    if let Some(kind) = item
+        .kind
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" [{kind}]"));
+    }
+    if let Some(state) = item
+        .state
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" {state}"));
+    }
+    if let Some(title) = item
+        .title
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" - {title}"));
+    }
+    line
+}
+
+fn render_markdown_changelog_line(
+    item: &dw_ado::WorkItemSnapshot,
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    let mut line = render_markdown_changelog_link(item, report);
+    if let Some(kind) = item
+        .kind
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" [{kind}]"));
+    }
+    if let Some(state) = item
+        .state
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" {state}"));
+    }
+    if let Some(title) = item
+        .title
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" - {title}"));
+    }
+    line
+}
+
+fn render_markdown_changelog_link(
+    item: &dw_ado::WorkItemSnapshot,
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    format!(
+        "[#{}]({})",
+        item.id,
+        dw_ado::work_item_web_url(&report.options, item.id.as_str())
+    )
+}
+
+fn render_html_changelog_line(
+    item: &dw_ado::WorkItemSnapshot,
+    report: &dw_ado_commands::commands::changelog::ChangelogReport,
+) -> String {
+    let mut line = format!(
+        "<a href=\"{}\">#{}</a>",
+        html_escape(&dw_ado::work_item_web_url(
+            &report.options,
+            item.id.as_str()
+        )),
+        html_escape(item.id.as_str())
+    );
+    if let Some(kind) = item
+        .kind
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" [{}]", html_escape(kind)));
+    }
+    if let Some(state) = item
+        .state
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" {}", html_escape(state)));
+    }
+    if let Some(title) = item
+        .title
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        line.push_str(&format!(" - {}", html_escape(title)));
+    }
+    line
+}
+
+fn escape_markdown_table_cell(value: Option<&str>) -> String {
+    value
+        .unwrap_or_default()
+        .replace('|', "\\|")
+        .replace("\r\n", "<br />")
+        .replace('\n', "<br />")
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 pub fn db_guard_lines(result: &SqlGuardResult, theme: &TerminalTheme) -> Vec<String> {
@@ -2227,8 +2538,8 @@ pub fn doctor_report_lines(report: &DoctorReport, theme: &TerminalTheme) -> Vec<
     lines
 }
 
-fn created_date(value: &str) -> &str {
-    value.get(..10).unwrap_or(value)
+fn created_date(value: &Timestamp) -> &str {
+    value.as_str().get(..10).unwrap_or_else(|| value.as_str())
 }
 
 fn format_current_work_items(items: &[dw_workspace::WorkspaceWorkItem]) -> String {

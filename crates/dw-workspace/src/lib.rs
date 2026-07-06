@@ -12,7 +12,7 @@ use dw_contracts::{
 use dw_core::{
     AiContextFilePath, BranchName, CommitMessage, GitAnchorName, GitRemoteUrl, HandoffFilePath,
     HandoffParseError, ProjectKey, ProjectRootPath, RepositoryPath, SecretKey, TaskId, TaskSlug,
-    TaskSubjectName, WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName,
+    TaskSubjectName, Timestamp, WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName,
     WorkspaceOperationError, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
@@ -55,7 +55,7 @@ pub struct WorkspaceManifest {
     #[serde(rename = "branchName")]
     pub branch_name: BranchName,
     #[serde(rename = "createdAt")]
-    pub created_at: String,
+    pub created_at: Timestamp,
     pub repositories: Vec<WorkspaceRepositoryName>,
     pub status: WorkspaceManifestStatus,
     #[serde(rename = "workItemType")]
@@ -146,7 +146,7 @@ pub struct TaskListItem {
     #[serde(rename = "branchName")]
     pub branch_name: BranchName,
     #[serde(rename = "createdAt")]
-    pub created_at: String,
+    pub created_at: Timestamp,
     #[serde(rename = "workItemType")]
     pub work_item_type: Option<WorkItemTypeName>,
     #[serde(rename = "workItemTitle")]
@@ -740,7 +740,7 @@ pub fn task_current(start_path: &str) -> Result<TaskCurrentItem, WorkspaceError>
         primary_work_item_id: manifest.primary_work_item_id(),
         work_items: manifest.parent_work_items(),
         task_id: manifest.task_id.clone(),
-        child_task_ids: manifest.legacy_child_task_ids(),
+        child_task_ids: manifest.child_task_ids_by_repository(),
         child_tasks: manifest.normalized_child_tasks(),
         branch: manifest.branch_name.clone(),
         repositories: manifest.repositories.clone(),
@@ -1498,7 +1498,7 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
         kind: plan.kind.clone(),
         slug: plan.slug.clone(),
         branch_name: plan.branch_name.clone(),
-        created_at: current_timestamp_string(),
+        created_at: current_timestamp(),
         repositories: plan.repositories.clone(),
         status: WorkspaceManifestStatus::Created,
         work_item_type: first.kind.clone(),
@@ -1904,7 +1904,7 @@ impl WorkspaceManifest {
         normalized
     }
 
-    pub fn legacy_child_task_ids(&self) -> BTreeMap<WorkspaceRepositoryName, WorkItemId> {
+    pub fn child_task_ids_by_repository(&self) -> BTreeMap<WorkspaceRepositoryName, WorkItemId> {
         let mut result = BTreeMap::new();
         for task in self.normalized_child_tasks() {
             result.entry(task.repository).or_insert(task.id);
@@ -2509,8 +2509,8 @@ fn write_text(path: &Path, content: &str) -> Result<(), WorkspaceError> {
         .map_err(|_| WorkspaceError::MissingWorkspace(path.display().to_string()))
 }
 
-fn current_timestamp_string() -> String {
-    chrono::Utc::now().to_rfc3339()
+fn current_timestamp() -> Timestamp {
+    Timestamp::from(chrono::Utc::now().to_rfc3339())
 }
 
 fn build_stale_context_issues(

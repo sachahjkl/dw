@@ -90,10 +90,7 @@ where
 {
     let mut events = Vec::new();
     let display_label = action.display_label();
-    let request = action_request(action).map_err(|error| {
-        CapturedActionRunError::from_error(display_label.clone(), vec![], error)
-    })?;
-    let action_run = dw_app::spawn_action(request);
+    let action_run = dw_app::spawn_action(action.request.clone());
     let mut event_stream = action_run.events;
     let result = action_run.result;
 
@@ -119,84 +116,9 @@ where
     })
 }
 
-fn action_request(action: &TuiAction) -> Result<DwActionRequest> {
-    match &action.request {
-        TuiActionRequest::Version => Ok(DwActionRequest::Version),
-        TuiActionRequest::Doctor => Ok(DwActionRequest::Doctor { fix: false }),
-        TuiActionRequest::Guide => Ok(DwActionRequest::Guide),
-        TuiActionRequest::Refresh(args) => Ok(DwActionRequest::Refresh(args.clone())),
-        TuiActionRequest::ConfigShow { root } => {
-            Ok(DwActionRequest::ConfigShow { root: root.clone() })
-        }
-        TuiActionRequest::ConfigInit(args) => Ok(DwActionRequest::ConfigInit(args.clone())),
-        TuiActionRequest::ConfigDoctor { root } => {
-            Ok(DwActionRequest::ConfigDoctor { root: root.clone() })
-        }
-        TuiActionRequest::ConfigSetColor { mode } => {
-            Ok(DwActionRequest::ConfigSetColor { mode: *mode })
-        }
-        TuiActionRequest::ConfigSetRoot { path } => {
-            Ok(DwActionRequest::ConfigSetRoot { path: path.clone() })
-        }
-        TuiActionRequest::AgentConfig { root } => {
-            Ok(DwActionRequest::AgentConfig { root: root.clone() })
-        }
-        TuiActionRequest::AgentSetDefault { root, agent } => Ok(DwActionRequest::AgentSetDefault {
-            root: root.clone(),
-            agent: *agent,
-        }),
-        TuiActionRequest::AgentDoctor { agent } => {
-            Ok(DwActionRequest::AgentDoctor { agent: *agent })
-        }
-        TuiActionRequest::AgentOpen(args) => Ok(DwActionRequest::TaskOpen(args.clone())),
-        TuiActionRequest::DbGuard(args) => Ok(DwActionRequest::DbGuard(args.clone())),
-        TuiActionRequest::DbSchema(args) => Ok(DwActionRequest::DbSchema(args.clone())),
-        TuiActionRequest::DbDescribe(args) => Ok(DwActionRequest::DbDescribe(args.clone())),
-        TuiActionRequest::DbQuery(args) => Ok(DwActionRequest::DbQuery(args.clone())),
-        TuiActionRequest::AdoAssigned(args) => Ok(DwActionRequest::AdoAssigned(args.clone())),
-        TuiActionRequest::AdoPrs(args) => Ok(DwActionRequest::AdoPrs(args.clone())),
-        TuiActionRequest::AdoChangelog(args) => Ok(DwActionRequest::AdoChangelog(args.clone())),
-        TuiActionRequest::AdoContext(args) => Ok(DwActionRequest::AdoContext(args.clone())),
-        TuiActionRequest::AdoAiContext(args) => Ok(DwActionRequest::AdoAiContext(args.clone())),
-        TuiActionRequest::AdoWorkItem(args) => Ok(DwActionRequest::AdoWorkItem(args.clone())),
-        TuiActionRequest::AdoSetState(args) => Ok(DwActionRequest::AdoSetState(args.clone())),
-        TuiActionRequest::TaskStart(args) => Ok(DwActionRequest::TaskStart(args.clone())),
-        TuiActionRequest::TaskStartPr(args) => Ok(DwActionRequest::TaskStartPr(args.clone())),
-        TuiActionRequest::TaskPreflight(args) => Ok(DwActionRequest::TaskPreflight(args.clone())),
-        TuiActionRequest::TaskHandoffValidate(args) => {
-            Ok(DwActionRequest::TaskHandoffValidate(args.clone()))
-        }
-        TuiActionRequest::TaskSync(args) => Ok(DwActionRequest::TaskSync(args.clone())),
-        TuiActionRequest::TaskRename(args) => Ok(DwActionRequest::TaskRename(args.clone())),
-        TuiActionRequest::TaskRepoLatest(args) => Ok(DwActionRequest::TaskRepoLatest(args.clone())),
-        TuiActionRequest::TaskCommit(args) => Ok(DwActionRequest::TaskCommit(args.clone())),
-        TuiActionRequest::TaskAddRepo(args) => Ok(DwActionRequest::TaskAddRepo(args.clone())),
-        TuiActionRequest::TaskTeardown(args) => Ok(DwActionRequest::TaskTeardown(args.clone())),
-        TuiActionRequest::TaskFinish(args) => Ok(DwActionRequest::TaskFinish(args.clone())),
-        TuiActionRequest::TaskPrune(args) => Ok(DwActionRequest::TaskPrune(args.clone())),
-        TuiActionRequest::TaskCreateChildTask(args) => {
-            Ok(DwActionRequest::TaskCreateChildTask(args.clone()))
-        }
-        TuiActionRequest::TaskAddWorkItem(args) => {
-            Ok(DwActionRequest::TaskAddWorkItem(args.clone()))
-        }
-        TuiActionRequest::TaskRemoveWorkItem(args) => {
-            Ok(DwActionRequest::TaskRemoveWorkItem(args.clone()))
-        }
-        TuiActionRequest::SecretGet { key } => Ok(DwActionRequest::SecretGet { key: key.clone() }),
-        TuiActionRequest::SecretSetFromEnv { key, env } => Ok(DwActionRequest::SecretSetFromEnv {
-            key: key.clone(),
-            env: env.clone(),
-        }),
-        TuiActionRequest::SecretDelete { key } => {
-            Ok(DwActionRequest::SecretDelete { key: key.clone() })
-        }
-    }
-}
-
 async fn external_launch_plan(action: &TuiAction) -> Result<ExternalLaunchPlan> {
     match &action.request {
-        TuiActionRequest::AgentOpen(args) => {
+        TuiActionRequest::TaskOpen(args) => {
             let action_run = dw_app::spawn_action(DwActionRequest::TaskOpen(args.clone()));
             let mut events = action_run.events;
             while events.recv().await.is_some() {}

@@ -1,15 +1,16 @@
-use dw_app::DwActionResult;
+use dw_app::{DwActionRequest, DwActionResult, TaskActionResult};
 use dw_config::{
     ConfigDoctorReport, ConfigShow, DatabasesConfig, ProjectsConfig, WorkflowConfig, config_doctor,
     load_databases_config, load_projects_config, load_user_settings, load_workflow_config,
     project_choices, repository_config, resolve_project, resolve_root, root_status,
 };
 use dw_core::{
-    AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DatabaseKey, DevWorkflowRoot,
-    DwActionEvent, EnvironmentVariableName, ProjectKey, PullRequestId, SecretKey, WorkItemId,
-    WorkItemState, WorkspaceRepositoryName,
+    AdoRepositoryName, Agent, ConfigColorMode, DatabaseKey, DevWorkflowRoot, DwActionEvent,
+    ProjectKey, PullRequestId, WorkItemId, WorkItemState, WorkspaceRepositoryName,
 };
-use dw_workspace::{TaskListItem, plan_task_prune, task_list};
+use dw_workspace::TaskListItem;
+#[cfg(test)]
+use dw_workspace::{plan_task_prune, task_list};
 
 const GUIDE_DETAIL_LINE_COUNT: usize = 29;
 
@@ -181,74 +182,7 @@ pub enum ActionEffect {
     InitializedRoot(String),
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum TuiActionRequest {
-    Version,
-    Doctor,
-    Guide,
-    Refresh(dw_config::command::RefreshCommandArgs),
-    ConfigShow {
-        root: Option<DevWorkflowRoot>,
-    },
-    ConfigInit(dw_config::command::InitCommandArgs),
-    ConfigDoctor {
-        root: Option<DevWorkflowRoot>,
-    },
-    ConfigSetColor {
-        mode: ConfigColorMode,
-    },
-    ConfigSetRoot {
-        path: ConfigRootPath,
-    },
-    AgentConfig {
-        root: Option<DevWorkflowRoot>,
-    },
-    AgentSetDefault {
-        root: Option<DevWorkflowRoot>,
-        agent: Agent,
-    },
-    AgentDoctor {
-        agent: Option<Agent>,
-    },
-    AgentOpen(dw_task::open::OpenWorkspaceArgs),
-    DbGuard(dw_db::commands::GuardArgs),
-    DbSchema(dw_db::commands::SchemaArgs),
-    DbDescribe(dw_db::commands::DescribeArgs),
-    DbQuery(dw_db::commands::QueryArgs),
-    AdoAssigned(dw_ado_commands::commands::assigned::AssignedArgs),
-    AdoPrs(dw_ado_commands::commands::prs::PrsArgs),
-    AdoChangelog(dw_ado_commands::commands::changelog::ChangelogArgs),
-    AdoContext(dw_ado_commands::commands::context::ContextArgs),
-    AdoAiContext(dw_ado_commands::commands::context::AiContextArgs),
-    AdoWorkItem(dw_ado_commands::commands::work_item::WorkItemArgs),
-    AdoSetState(dw_ado_commands::commands::set_state::SetStateArgs),
-    TaskStart(dw_task::start::StartArgs),
-    TaskStartPr(dw_task::start::StartPrArgs),
-    TaskPreflight(dw_task::validate::PreflightArgs),
-    TaskHandoffValidate(dw_task::validate::HandoffValidateArgs),
-    TaskSync(dw_task::lifecycle::SyncArgs),
-    TaskRename(dw_task::lifecycle::RenameArgs),
-    TaskRepoLatest(dw_task::repo::RepoLatestArgs),
-    TaskCommit(dw_task::repo::CommitArgs),
-    TaskAddRepo(dw_task::repo::AddRepoArgs),
-    TaskTeardown(dw_task::repo::TeardownArgs),
-    TaskFinish(dw_task::finish::FinishArgs),
-    TaskPrune(dw_task::prune::PruneArgs),
-    TaskCreateChildTask(dw_task::lifecycle::CreateChildTaskArgs),
-    TaskAddWorkItem(dw_task::work_item::AddWorkItemArgs),
-    TaskRemoveWorkItem(dw_task::work_item::RemoveWorkItemArgs),
-    SecretGet {
-        key: SecretKey,
-    },
-    SecretSetFromEnv {
-        key: SecretKey,
-        env: EnvironmentVariableName,
-    },
-    SecretDelete {
-        key: SecretKey,
-    },
-}
+pub type TuiActionRequest = DwActionRequest;
 
 #[derive(Debug, Clone)]
 pub struct DetailPanel {
@@ -404,7 +338,7 @@ impl TuiAction {
             TuiActionRequest::TaskPrune(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
-            TuiActionRequest::AgentOpen(args) => {
+            TuiActionRequest::TaskOpen(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
             TuiActionRequest::ConfigShow { root: value }
@@ -425,7 +359,7 @@ impl TuiAction {
     pub fn action_kind(&self) -> ActionKind {
         match &self.request {
             TuiActionRequest::Version => ActionKind::Version,
-            TuiActionRequest::Doctor => ActionKind::Doctor,
+            TuiActionRequest::Doctor { .. } => ActionKind::Doctor,
             TuiActionRequest::Guide => ActionKind::Guide,
             TuiActionRequest::Refresh(_) => ActionKind::Refresh,
             TuiActionRequest::ConfigShow { .. } => ActionKind::ConfigShow,
@@ -436,7 +370,7 @@ impl TuiAction {
             TuiActionRequest::AgentConfig { .. } => ActionKind::AgentConfig,
             TuiActionRequest::AgentSetDefault { .. } => ActionKind::AgentSetDefault,
             TuiActionRequest::AgentDoctor { .. } => ActionKind::AgentDoctor,
-            TuiActionRequest::AgentOpen(_) => ActionKind::AgentOpen,
+            TuiActionRequest::TaskOpen(_) => ActionKind::AgentOpen,
             TuiActionRequest::DbGuard(_) => ActionKind::DbGuard,
             TuiActionRequest::DbSchema(_) => ActionKind::DbSchema,
             TuiActionRequest::DbDescribe(_) => ActionKind::DbDescribe,
@@ -466,6 +400,7 @@ impl TuiAction {
             TuiActionRequest::SecretGet { .. } => ActionKind::SecretGet,
             TuiActionRequest::SecretSetFromEnv { .. } => ActionKind::SecretSetFromEnv,
             TuiActionRequest::SecretDelete { .. } => ActionKind::SecretDelete,
+            _ => unreachable!("unsupported TUI action request: {:?}", self.request),
         }
     }
 
@@ -529,7 +464,7 @@ impl TuiAction {
     pub fn opens_result_after_success(&self) -> bool {
         matches!(
             self.request,
-            TuiActionRequest::Doctor
+            TuiActionRequest::Doctor { .. }
                 | TuiActionRequest::Refresh(_)
                 | TuiActionRequest::ConfigInit(_)
                 | TuiActionRequest::AdoAssigned(_)
@@ -580,7 +515,7 @@ impl TuiAction {
     pub fn is_workspace_action(&self) -> bool {
         matches!(
             self.request,
-            TuiActionRequest::AgentOpen(_)
+            TuiActionRequest::TaskOpen(_)
                 | TuiActionRequest::TaskStart(_)
                 | TuiActionRequest::TaskStartPr(_)
                 | TuiActionRequest::TaskPreflight(_)
@@ -623,7 +558,7 @@ impl TuiAction {
 
     pub fn workspace_path(&self) -> Option<&str> {
         match &self.request {
-            TuiActionRequest::AgentOpen(args) => {
+            TuiActionRequest::TaskOpen(args) => {
                 args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
             }
             TuiActionRequest::TaskPreflight(args) => {
@@ -765,6 +700,7 @@ impl TuiSnapshot {
         }
     }
 
+    #[cfg(test)]
     pub fn load(root: Option<&str>) -> Self {
         let root = resolve_root(root);
         let needs_init = !root_status(Some(&root)).initialized;
@@ -775,6 +711,37 @@ impl TuiSnapshot {
         let config_doctor = config_doctor(Some(&root));
         let workspaces = task_list(&root, None, None);
         let prune_candidates = plan_task_prune(&root, None, None).len();
+        let actions = build_actions(&root, &projects, &databases, &workspaces);
+        let color_mode = load_user_settings().color.unwrap_or(ConfigColorMode::Auto);
+        Self {
+            root,
+            needs_init,
+            projects,
+            workflow,
+            databases,
+            database_entries,
+            config_doctor,
+            workspaces,
+            assigned: Vec::new(),
+            assigned_loaded: false,
+            pull_requests: Vec::new(),
+            pull_requests_loaded: false,
+            prune_candidates,
+            actions,
+            color_mode,
+        }
+    }
+
+    pub async fn load_background(root: Option<&str>) -> Self {
+        let root = resolve_root(root);
+        let needs_init = !root_status(Some(&root)).initialized;
+        let projects = load_projects_config(&root);
+        let workflow = load_workflow_config(&root);
+        let databases = load_databases_config(&root);
+        let database_entries = database_entries_for_tui(&databases);
+        let config_doctor = config_doctor(Some(&root));
+        let workspaces = load_workspaces_via_app(&root).await;
+        let prune_candidates = load_prune_candidate_count_via_app(&root).await;
         let actions = build_actions(&root, &projects, &databases, &workspaces);
         let color_mode = load_user_settings().color.unwrap_or(ConfigColorMode::Auto);
         Self {
@@ -893,6 +860,44 @@ impl TuiSnapshot {
                 .with_help("Choose an assigned work item outside final states")
             })
             .collect()
+    }
+}
+
+async fn load_workspaces_via_app(root: &str) -> Vec<TaskListItem> {
+    match dw_app::run_action(
+        DwActionRequest::TaskList {
+            root: Some(DevWorkflowRoot::from(root)),
+            project: None,
+            work_item_ids: Vec::new(),
+        },
+        |_| {},
+    )
+    .await
+    {
+        Ok(DwActionResult::Task(result)) => match *result {
+            TaskActionResult::List(report) => report.items,
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+async fn load_prune_candidate_count_via_app(root: &str) -> usize {
+    let args = dw_task::prune::PruneArgs {
+        root: Some(DevWorkflowRoot::from(root)),
+        project: None,
+        work_item_ids: Vec::new(),
+        selected_workspaces: None,
+        mode: dw_core::ExecutionMode::Preview,
+        yes: false,
+        no_sync: true,
+    };
+    match dw_app::run_action(DwActionRequest::TaskPrune(args), |_| {}).await {
+        Ok(DwActionResult::Task(result)) => match *result {
+            TaskActionResult::PrunePlan(report) => report.candidates.len(),
+            _ => 0,
+        },
+        _ => 0,
     }
 }
 
@@ -1271,7 +1276,7 @@ pub fn build_actions(
         },
         TuiAction {
             label: "Doctor".into(),
-            request: TuiActionRequest::Doctor,
+            request: TuiActionRequest::Doctor { fix: false },
             description: "Check the machine and configuration".into(),
             kind: ActionRisk::Safe,
         },
@@ -1379,7 +1384,7 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
     match action {
         WorkspaceAction::Open => TuiAction {
             label: "Open workspace".into(),
-            request: TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
+            request: TuiActionRequest::TaskOpen(dw_task::open::OpenWorkspaceArgs {
                 workspace: Some(workspace_arg),
                 root: None,
                 project: None,
@@ -1701,7 +1706,7 @@ mod tests {
     fn action_execution_mode_keeps_external_actions_attached() {
         let external = TuiAction {
             label: "Open".into(),
-            request: TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
+            request: TuiActionRequest::TaskOpen(dw_task::open::OpenWorkspaceArgs {
                 workspace: Some(dw_core::WorkspacePath::from("/tmp/ws")),
                 root: None,
                 project: None,
