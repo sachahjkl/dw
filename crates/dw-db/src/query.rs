@@ -2,7 +2,10 @@ use crate::config::{DatabaseConnectionConfig, DatabaseDefaults, DatabaseProvider
 use crate::guard::validate_read_only_sql;
 #[cfg(test)]
 use dw_core::DatabaseEnvironmentName;
-use dw_core::{DatabaseConnectionString, SecretKey, SecretValue};
+use dw_core::{
+    DatabaseCellValue, DatabaseColumnName, DatabaseConnectionString, SecretKey, SecretValue,
+    SqlGuardReason,
+};
 use dw_secret::{KeyringSecretStore, SecretError, SecretStore};
 use serde::Serialize;
 use std::time::Duration;
@@ -14,8 +17,8 @@ use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct QueryResult {
-    pub columns: Vec<String>,
-    pub rows: Vec<Vec<Option<String>>>,
+    pub columns: Vec<DatabaseColumnName>,
+    pub rows: Vec<Vec<Option<DatabaseCellValue>>>,
     pub truncated: bool,
 }
 
@@ -24,7 +27,7 @@ pub enum DbError {
     #[error("Provider DB non supporté: {provider}")]
     UnsupportedProvider { provider: DatabaseProvider },
     #[error("Requête bloquée: {reason}")]
-    BlockedQuery { reason: String },
+    BlockedQuery { reason: SqlGuardReason },
     #[error(
         "Connection string SQL introuvable. Renseigner connectionString, connectionStringEnvironmentVariable ou credentialKey."
     )]
@@ -119,7 +122,9 @@ pub async fn query_sql_server(
     let guard = validate_read_only_sql(sql);
     if !guard.is_allowed {
         return Err(DbError::BlockedQuery {
-            reason: guard.reason.unwrap_or_else(|| "raison inconnue".into()),
+            reason: guard
+                .reason
+                .unwrap_or_else(|| SqlGuardReason::from("raison inconnue")),
         });
     }
 
@@ -194,7 +199,7 @@ async fn read_query_result(
         }
         rows.push(
             row.cells()
-                .map(|(_, value)| column_data_to_string(value))
+                .map(|(_, value)| column_data_to_cell_value(value))
                 .collect(),
         );
     }
@@ -206,33 +211,49 @@ async fn read_query_result(
     })
 }
 
-fn row_columns(row: &Row) -> Vec<String> {
+fn row_columns(row: &Row) -> Vec<DatabaseColumnName> {
     row.columns()
         .iter()
-        .map(|column| column.name().to_string())
+        .map(|column| DatabaseColumnName::from(column.name()))
         .collect()
 }
 
-fn column_data_to_string(value: &ColumnData<'_>) -> Option<String> {
+fn column_data_to_cell_value(value: &ColumnData<'_>) -> Option<DatabaseCellValue> {
     match value {
-        ColumnData::U8(value) => value.map(|value| value.to_string()),
-        ColumnData::I16(value) => value.map(|value| value.to_string()),
-        ColumnData::I32(value) => value.map(|value| value.to_string()),
-        ColumnData::I64(value) => value.map(|value| value.to_string()),
-        ColumnData::F32(value) => value.map(|value| value.to_string()),
-        ColumnData::F64(value) => value.map(|value| value.to_string()),
-        ColumnData::Bit(value) => value.map(|value| value.to_string()),
-        ColumnData::String(value) => value.as_ref().map(|value| value.to_string()),
-        ColumnData::Guid(value) => value.map(|value| value.to_string()),
-        ColumnData::Binary(value) => value.as_ref().map(|value| hex_bytes(value)),
-        ColumnData::Numeric(value) => value.as_ref().map(|value| value.to_string()),
-        ColumnData::Xml(value) => value.as_ref().map(|value| value.to_string()),
-        ColumnData::DateTime(value) => value.map(|value| format!("{value:?}")),
-        ColumnData::SmallDateTime(value) => value.map(|value| format!("{value:?}")),
-        ColumnData::Time(value) => value.map(|value| format!("{value:?}")),
-        ColumnData::Date(value) => value.map(|value| format!("{value:?}")),
-        ColumnData::DateTime2(value) => value.map(|value| format!("{value:?}")),
-        ColumnData::DateTimeOffset(value) => value.map(|value| format!("{value:?}")),
+        ColumnData::U8(value) => value.map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::I16(value) => value.map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::I32(value) => value.map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::I64(value) => value.map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::F32(value) => value.map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::F64(value) => value.map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::Bit(value) => value.map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::String(value) => value
+            .as_ref()
+            .map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::Guid(value) => value.map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::Binary(value) => value
+            .as_ref()
+            .map(|value| DatabaseCellValue::from(hex_bytes(value))),
+        ColumnData::Numeric(value) => value
+            .as_ref()
+            .map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::Xml(value) => value
+            .as_ref()
+            .map(|value| DatabaseCellValue::from(value.to_string())),
+        ColumnData::DateTime(value) => {
+            value.map(|value| DatabaseCellValue::from(format!("{value:?}")))
+        }
+        ColumnData::SmallDateTime(value) => {
+            value.map(|value| DatabaseCellValue::from(format!("{value:?}")))
+        }
+        ColumnData::Time(value) => value.map(|value| DatabaseCellValue::from(format!("{value:?}"))),
+        ColumnData::Date(value) => value.map(|value| DatabaseCellValue::from(format!("{value:?}"))),
+        ColumnData::DateTime2(value) => {
+            value.map(|value| DatabaseCellValue::from(format!("{value:?}")))
+        }
+        ColumnData::DateTimeOffset(value) => {
+            value.map(|value| DatabaseCellValue::from(format!("{value:?}")))
+        }
     }
 }
 

@@ -1151,10 +1151,17 @@ pub fn db_query_output(
 }
 
 pub fn db_query_tsv(result: &QueryResult) -> String {
-    let mut lines = vec![result.columns.join("\t")];
+    let mut lines = vec![
+        result
+            .columns
+            .iter()
+            .map(|column| column.as_str())
+            .collect::<Vec<_>>()
+            .join("\t"),
+    ];
     lines.extend(result.rows.iter().map(|row| {
         row.iter()
-            .map(|value| value.clone().unwrap_or_else(|| "NULL".into()))
+            .map(|value| value.as_ref().map(|value| value.as_str()).unwrap_or("NULL"))
             .collect::<Vec<_>>()
             .join("\t")
     }));
@@ -2886,14 +2893,26 @@ fn doctor_remediation_label(remediation: &DoctorRemediation) -> String {
 
 fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) -> String {
     let columns = if result.columns.is_empty() {
-        vec!["Result".to_string()]
+        vec!["Result"]
     } else {
-        result.columns.clone()
+        result
+            .columns
+            .iter()
+            .map(|column| column.as_str())
+            .collect()
     };
     let rows = if result.columns.is_empty() && result.rows.is_empty() {
         Vec::new()
     } else {
-        result.rows.clone()
+        result
+            .rows
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|value| value.as_ref().map(|value| value.as_str()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
     };
     let widths = db_column_widths(&columns, &rows);
     let mut lines = Vec::new();
@@ -2907,19 +2926,13 @@ fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) -> Str
     lines.push(db_row(
         &columns
             .iter()
-            .map(|column| Some(column.as_str()))
+            .map(|column| Some(*column))
             .collect::<Vec<_>>(),
         &widths,
         Some(theme),
     ));
     lines.push(db_separator(&widths));
-    lines.extend(rows.iter().map(|row| {
-        let cells = row
-            .iter()
-            .map(|value| value.as_deref())
-            .collect::<Vec<Option<&str>>>();
-        db_row(&cells, &widths, None)
-    }));
+    lines.extend(rows.iter().map(|row| db_row(row, &widths, None)));
     lines.push(db_separator(&widths));
     if result.truncated {
         lines.push(theme.warning(&format!(
@@ -2948,7 +2961,11 @@ fn render_sql_guard(result: &SqlGuardResult, theme: &TerminalTheme) -> String {
         lines.push("Message   : Requête bloquée avant exécution.".into());
         lines.push(format!(
             "Raison    : {}",
-            result.reason.as_deref().unwrap_or("raison inconnue")
+            result
+                .reason
+                .as_ref()
+                .map(|reason| reason.as_str())
+                .unwrap_or("raison inconnue")
         ));
         lines.push(format!(
             "À faire   : {}",
@@ -2978,7 +2995,7 @@ fn db_guard_status_label(result: &SqlGuardResult, theme: &TerminalTheme) -> Stri
     }
 }
 
-fn db_column_widths(columns: &[String], rows: &[Vec<Option<String>>]) -> Vec<usize> {
+fn db_column_widths(columns: &[&str], rows: &[Vec<Option<&str>>]) -> Vec<usize> {
     columns
         .iter()
         .enumerate()
@@ -2986,7 +3003,7 @@ fn db_column_widths(columns: &[String], rows: &[Vec<Option<String>>]) -> Vec<usi
             let row_width = rows
                 .iter()
                 .filter_map(|row| row.get(index))
-                .map(|value| db_display_cell(value.as_deref()).chars().count())
+                .map(|value| db_display_cell(*value).chars().count())
                 .max()
                 .unwrap_or(0);
             column

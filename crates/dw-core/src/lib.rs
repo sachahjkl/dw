@@ -869,6 +869,9 @@ impl fmt::Display for DatabaseTableName {
 }
 
 string_newtype!(DatabaseConnectionString);
+string_newtype!(DatabaseColumnName);
+string_newtype!(DatabaseCellValue);
+string_newtype!(SqlGuardReason);
 string_newtype!(CommitMessage);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

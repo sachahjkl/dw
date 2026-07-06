@@ -137,7 +137,11 @@ async fn execute_db_query(
     if !guard.is_allowed {
         return Err(anyhow::anyhow!(
             "Requête bloquée: {}",
-            guard.reason.unwrap_or_else(|| "raison inconnue".into())
+            guard
+                .reason
+                .as_ref()
+                .map(|reason| reason.as_str())
+                .unwrap_or("raison inconnue")
         ));
     }
 

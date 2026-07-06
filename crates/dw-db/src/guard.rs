@@ -1,3 +1,4 @@
+use dw_core::SqlGuardReason;
 use serde::Serialize;
 
 const FORBIDDEN_TOKENS: &[&str] = &[
@@ -8,7 +9,7 @@ const FORBIDDEN_TOKENS: &[&str] = &[
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SqlGuardResult {
     pub is_allowed: bool,
-    pub reason: Option<String>,
+    pub reason: Option<SqlGuardReason>,
 }
 
 impl SqlGuardResult {
@@ -19,7 +20,7 @@ impl SqlGuardResult {
         }
     }
 
-    fn blocked(reason: impl Into<String>) -> Self {
+    fn blocked(reason: impl Into<SqlGuardReason>) -> Self {
         Self {
             is_allowed: false,
             reason: Some(reason.into()),
