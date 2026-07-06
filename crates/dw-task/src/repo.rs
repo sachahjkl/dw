@@ -1,7 +1,8 @@
 use anyhow::Result;
 use dw_config::{load_projects_config, resolve_project, resolve_root};
 use dw_core::{
-    BranchName, DevWorkflowRoot, RepositoryPath, WorkspacePath, WorkspaceRepositoryName,
+    BranchName, DevWorkflowRoot, ProjectKey, RepositoryPath, WorkItemId, WorkspacePath,
+    WorkspaceRepositoryName,
 };
 use dw_git::{
     RepositoryStatus, WorktreePrepareRequest, WorktreePrepareResult, commit_repository,
@@ -10,7 +11,7 @@ use dw_git::{
 use dw_workspace::{
     WorkspaceError, WorkspaceManifest, WorkspaceTeardownStep, build_commit_message,
     execute_task_add_repo, execute_task_teardown, plan_task_add_repo, plan_task_commit,
-    plan_task_repo_latest, plan_task_teardown, resolve_workspace,
+    plan_task_repo_latest, plan_task_teardown, resolve_workspace_by_work_item_ids,
     resolve_workspace_for_workspace_command,
 };
 use serde::{Deserialize, Serialize};
@@ -52,10 +53,9 @@ pub struct AddRepoChoicesArgs {
 pub struct TeardownArgs {
     pub workspace: Option<WorkspacePath>,
     pub root: Option<DevWorkflowRoot>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
-    pub positional_work_item: Option<String>,
     pub mode: dw_core::ExecutionMode,
     pub yes: bool,
 }
@@ -275,12 +275,11 @@ pub fn execute_add_repo(plan: &AddRepoPlanReport) -> Result<AddRepoExecutionRepo
 
 pub fn teardown_plan(args: TeardownArgs) -> Result<TeardownPlanReport> {
     let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
-    let workspace = match resolve_workspace(
+    let workspace = match resolve_workspace_by_work_item_ids(
         &root,
         args.workspace.as_ref().map(WorkspacePath::as_str),
-        args.project.as_deref(),
-        args.work_item.as_deref(),
-        args.positional_work_item.as_deref(),
+        args.project.as_ref().map(ProjectKey::as_str),
+        &args.work_item_ids,
         args.r#continue,
     ) {
         Ok(workspace) => workspace,

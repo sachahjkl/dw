@@ -522,10 +522,12 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             let report = dw_task::repo::teardown_plan(dw_task::repo::TeardownArgs {
                 workspace: workspace.map(WorkspacePath::from),
                 root: root.map(DevWorkflowRoot::from),
-                project,
-                work_item,
+                project: project.map(ProjectKey::from),
+                work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 r#continue,
-                positional_work_item,
                 mode: dw_core::ExecutionMode::Preview,
                 yes: false,
             })?;

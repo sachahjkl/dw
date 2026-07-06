@@ -268,10 +268,12 @@ impl FormState {
                 TuiActionRequest::TaskTeardown(dw_task::repo::TeardownArgs {
                     workspace: value("Workspace").map(dw_core::WorkspacePath::from),
                     root: Some(dw_core::DevWorkflowRoot::from(root)),
-                    project: value("Project"),
-                    work_item: value("Work item"),
+                    project: value("Project").map(dw_core::ProjectKey::from),
+                    work_item_ids: value("Work item")
+                        .as_deref()
+                        .map(dw_core::WorkItemId::parse_many)
+                        .unwrap_or_default(),
                     r#continue: enabled("Continue"),
-                    positional_work_item: None,
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                     yes: enabled("Execute"),
                 })
