@@ -1,7 +1,10 @@
 use dw_ado_commands::auth::{
     AuthLoginMode, AuthLoginReport, AuthLogoutReport, AuthStatusReport, expiration_line,
 };
-use dw_agent::command::{AgentDoctorCheck, AgentDoctorReport};
+use dw_agent::{
+    AgentContextReport,
+    command::{AgentDoctorCheck, AgentDoctorReport},
+};
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
 use dw_contracts::{
     TaskHandoffValidationDetail, TaskHandoffValidationItem, TaskHandoffValidationReport,
@@ -241,6 +244,52 @@ pub fn agent_config_updated_lines(
         format!("Agent par défaut: {}", theme.bold(&agent.to_string())),
         format!("Root DevWorkflow: {}", theme.path(&root.to_string())),
     ]
+}
+
+pub fn agent_context_markdown(report: &AgentContextReport) -> String {
+    format!(
+        r#"# Contexte agent DevWorkflow
+
+Tu travailles dans un environnement géré par DevWorkflow.
+
+Utilise les actions DevWorkflow pour les opérations du workflow:
+
+- Diagnostic local vérifie les prérequis.
+- Authentification Azure DevOps connecte l'environnement quand la connexion silencieuse est indisponible.
+- Liste ADO assignée affiche les work items assignés pour le projet courant.
+- Lecture work item ADO charge le résumé d'un work item.
+- Contexte IA ADO lit le contexte work item structuré et déterministe pour usage IA.
+- Workspace courant affiche le workspace task actif et la branche.
+- Synchronisation task rafraîchit `task.json` depuis ADO quand le contexte local peut être obsolète.
+- Préflight task vérifie les blocages et alertes déterministes avant implémentation ou découpage en child tasks.
+- Validation handoff vérifie les contrats handoff avant finalisation task ou exécution de sub-agents.
+- Ouverture task ouvre ou reprend une session agent pour un workspace.
+- Création child task crée des child tasks ADO après rédaction du plan.
+- Commit task crée un commit intermédiaire sans push ni PR.
+- Finalisation task est le flow commit/push/PR attendu en fin de travail.
+- Actions DB schema, describe et query sont les points d'entrée SQL et restent read-only par défaut.
+
+Root configuré courant:
+
+```text
+{}
+```
+
+Règles importantes:
+
+1. Les work items Azure DevOps sont la source de vérité.
+2. Utiliser les actions DevWorkflow pour toute opération ADO, nommage Git, PR et worktree.
+3. Ne pas utiliser les outils MCP Azure DevOps.
+4. Lire le work item ADO avant de coder, puis charger le contexte IA ADO avant d'agir sur le contexte ADO.
+5. Avant de travailler, vérifier que le setup initial requis par l'environnement est fait: `pnpm install`, validation des builds pnpm si nécessaire, `npm install` en fallback, ou `dotnet restore` selon le projet.
+6. Mettre à jour `plan.md` avant d'implémenter.
+7. Écrire tout texte utilisateur/projet en français.
+8. Ne pas normaliser les labels métier ni le vocabulaire de domaine issus d'ADO, des screenshots, mockups ou textes projet.
+9. Traiter les screenshots, mockups et attachments comme sources factuelles.
+10. Les branches, commits et titres de PR sont créés par DevWorkflow; ne pas les créer manuellement.
+"#,
+        report.root
+    )
 }
 
 pub fn ado_prs_lines(report: &dw_ado_commands::commands::prs::PrsReport) -> Vec<String> {

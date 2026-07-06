@@ -1,24 +1,6 @@
 use crate::{AgentOpenRequest, build_open_launch};
 use anyhow::Result;
 use dw_core::{Agent, DevWorkflowRoot, WorkspacePath};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OpenAgentArgs {
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
-    pub positional_work_item: Option<String>,
-    pub r#continue: bool,
-    pub repo: Option<String>,
-    pub agent: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AgentAction {
-    Open(OpenAgentArgs),
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentDoctorReport {
@@ -86,23 +68,6 @@ fn command_available(file_name: &str, arguments: &[&str]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn open_args_preserve_resolution_inputs() {
-        let args = OpenAgentArgs {
-            workspace: Some("/tmp/work".into()),
-            root: None,
-            project: None,
-            work_item: None,
-            positional_work_item: None,
-            r#continue: false,
-            repo: Some("front".into()),
-            agent: Some("codex".into()),
-        };
-
-        assert_eq!(args.workspace.as_deref(), Some("/tmp/work"));
-        assert_eq!(args.agent.as_deref(), Some("codex"));
-    }
 
     #[test]
     fn agent_report_counts_availability() {

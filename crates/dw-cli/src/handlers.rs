@@ -1865,7 +1865,14 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
     match command {
         AgentCommand::Context => {
             let root = dw_config::resolve_root(None);
-            println!("{}", dw_agent::agent_context(&root));
+            let root = DevWorkflowRoot::from(root);
+            let report = dw_agent::agent_context(&root);
+            print_lines(
+                &dw_cli_adapter::render::agent_context_markdown(&report)
+                    .lines()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>(),
+            );
         }
         AgentCommand::Open {
             workspace,
