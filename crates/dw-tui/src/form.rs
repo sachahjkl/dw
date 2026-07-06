@@ -277,9 +277,12 @@ impl FormState {
                 })
             }
             FormTemplate::TaskPrune => TuiActionRequest::TaskPrune(dw_task::prune::PruneArgs {
-                root: Some(root.into()),
-                project: value("Project"),
-                work_item: value("Work item"),
+                root: Some(dw_core::DevWorkflowRoot::from(root)),
+                project: value("Project").map(dw_core::ProjectKey::from),
+                work_item_ids: value("Work item")
+                    .as_deref()
+                    .map(dw_core::WorkItemId::parse_many)
+                    .unwrap_or_default(),
                 mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
                 yes: enabled("Execute"),
                 no_sync: enabled("No sync"),

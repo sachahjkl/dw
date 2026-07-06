@@ -3,18 +3,20 @@ use anyhow::Result;
 use dw_ado::auth::require_token;
 use dw_ado::{get_work_item_snapshots_authenticated, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
+use dw_core::{DevWorkflowRoot, ProjectKey, WorkItemId, WorkspacePath};
 use dw_git::{worktree_prune, worktree_remove};
 use dw_workspace::{
     WorkspaceSummary, WorkspaceWorkItem, display_work_items, execute_task_sync,
-    execute_task_teardown, filter_workspaces, find_workspaces, plan_task_prune, plan_task_teardown,
+    execute_task_teardown, filter_workspaces_by_work_item_ids, find_workspaces,
+    plan_task_prune_by_work_item_ids, plan_task_teardown,
 };
 use serde::Serialize;
 
 #[derive(Debug, Clone)]
 pub struct PruneArgs {
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub mode: dw_core::ExecutionMode,
     pub yes: bool,
     pub no_sync: bool,
@@ -22,16 +24,17 @@ pub struct PruneArgs {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PrunePlanReport {
-    pub root: String,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub root: DevWorkflowRoot,
+    pub project: Option<ProjectKey>,
+    #[serde(rename = "workItemIds")]
+    pub work_item_ids: Vec<WorkItemId>,
     pub sync: Vec<PruneSyncReport>,
     pub candidates: Vec<WorkspaceSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PruneSyncReport {
-    pub workspace: String,
+    pub workspace: WorkspacePath,
     pub status: PruneSyncStatus,
     pub detail: PruneSyncDetail,
 }
@@ -53,50 +56,48 @@ pub enum PruneSyncDetail {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PruneExecutionReport {
-    pub root: String,
-    pub deleted: Vec<String>,
+    pub root: DevWorkflowRoot,
+    pub deleted: Vec<WorkspacePath>,
 }
 
 pub async fn plan(args: PruneArgs) -> Result<PrunePlanReport> {
     let PruneArgs {
         root,
         project,
-        work_item,
+        work_item_ids,
         no_sync,
         mode: _,
         yes: _,
     } = args;
 
-    let root = resolve_root(root.as_deref());
+    let root = resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
+    let root_path = DevWorkflowRoot::from(root.clone());
+    let project_filter = project.as_ref().map(ProjectKey::as_str);
     let sync = if no_sync {
         Vec::new()
     } else {
-        let workspaces = filter_workspaces(
-            find_workspaces(&root),
-            project.as_deref(),
-            work_item.as_deref(),
-        );
+        let workspaces = filter_workspaces(find_workspaces(&root), project_filter, &work_item_ids);
         sync_workspaces(&root, &workspaces).await
     };
 
-    let candidates = plan_task_prune(&root, project.as_deref(), work_item.as_deref());
+    let candidates = plan_task_prune(&root, project_filter, &work_item_ids);
     Ok(PrunePlanReport {
-        root,
+        root: root_path,
         project,
-        work_item,
+        work_item_ids,
         sync,
         candidates,
     })
 }
 
 pub fn execute(
-    root: &str,
+    root: &DevWorkflowRoot,
     selected_candidates: Vec<WorkspaceSummary>,
 ) -> Result<PruneExecutionReport> {
-    let projects = load_projects_config(root);
+    let projects = load_projects_config(root.as_str());
     let mut deleted = Vec::new();
     for candidate in selected_candidates {
-        let (_manifest, steps) = plan_task_teardown(root, &projects, &candidate.path)?;
+        let (_manifest, steps) = plan_task_teardown(root.as_str(), &projects, &candidate.path)?;
         execute_task_teardown(&candidate.path, &steps, |git_dir, args| match args {
             ["worktree", "remove", "--force", target] => {
                 worktree_remove(git_dir, target).map_err(|error| error.to_string())
@@ -104,12 +105,28 @@ pub fn execute(
             ["worktree", "prune"] => worktree_prune(git_dir).map_err(|error| error.to_string()),
             _ => Err(format!("commande git non supportée: {}", args.join(" "))),
         })?;
-        deleted.push(candidate.path);
+        deleted.push(WorkspacePath::from(candidate.path));
     }
     Ok(PruneExecutionReport {
-        root: root.into(),
+        root: root.clone(),
         deleted,
     })
+}
+
+fn filter_workspaces(
+    workspaces: Vec<WorkspaceSummary>,
+    project: Option<&str>,
+    work_item_ids: &[WorkItemId],
+) -> Vec<WorkspaceSummary> {
+    filter_workspaces_by_work_item_ids(workspaces, project, work_item_ids)
+}
+
+fn plan_task_prune(
+    root: &str,
+    project: Option<&str>,
+    work_item_ids: &[WorkItemId],
+) -> Vec<WorkspaceSummary> {
+    plan_task_prune_by_work_item_ids(root, project, work_item_ids)
 }
 
 async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<PruneSyncReport> {
@@ -121,7 +138,7 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
             return workspaces
                 .iter()
                 .map(|workspace| PruneSyncReport {
-                    workspace: workspace.path.clone(),
+                    workspace: WorkspacePath::from(workspace.path.clone()),
                     status: PruneSyncStatus::Skipped,
                     detail: PruneSyncDetail::AuthUnavailable {
                         error: error.to_string(),
@@ -159,12 +176,12 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
 
         match result {
             Ok(work_items) => reports.push(PruneSyncReport {
-                workspace: workspace.path.clone(),
+                workspace: WorkspacePath::from(workspace.path.clone()),
                 status: PruneSyncStatus::Synced,
                 detail: PruneSyncDetail::Synced { work_items },
             }),
             Err(error) => reports.push(PruneSyncReport {
-                workspace: workspace.path.clone(),
+                workspace: WorkspacePath::from(workspace.path.clone()),
                 status: PruneSyncStatus::Skipped,
                 detail: PruneSyncDetail::SyncFailed {
                     error: error.to_string(),
@@ -209,9 +226,9 @@ mod tests {
         .expect("manifest should be written");
 
         let report = plan(PruneArgs {
-            root: Some(root.display().to_string()),
-            project: Some("ha".into()),
-            work_item: None,
+            root: Some(DevWorkflowRoot::from(root.display().to_string())),
+            project: Some(ProjectKey::from("ha")),
+            work_item_ids: Vec::new(),
             mode: dw_core::ExecutionMode::Preview,
             yes: false,
             no_sync: true,

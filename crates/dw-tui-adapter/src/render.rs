@@ -2821,7 +2821,7 @@ mod tests {
         let report = dw_task::prune::PrunePlanReport {
             root: "/tmp/dw".into(),
             project: Some("ha".into()),
-            work_item: None,
+            work_item_ids: Vec::new(),
             sync: Vec::new(),
             candidates: vec![dw_workspace::WorkspaceSummary {
                 path: "/tmp/dw/projects/ha/workspaces/feat-1-done".into(),

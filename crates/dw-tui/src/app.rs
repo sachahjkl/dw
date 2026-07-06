@@ -548,9 +548,9 @@ impl App {
                 primary_action: TuiAction {
                     label: "Prune preview".into(),
                     request: TuiActionRequest::TaskPrune(dw_task::prune::PruneArgs {
-                        root: Some(self.snapshot.root.clone()),
+                        root: Some(dw_core::DevWorkflowRoot::from(self.snapshot.root.clone())),
                         project: None,
-                        work_item: None,
+                        work_item_ids: Vec::new(),
                         mode: dw_core::ExecutionMode::Preview,
                         yes: false,
                         no_sync: true,

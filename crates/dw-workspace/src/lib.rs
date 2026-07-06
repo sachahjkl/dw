@@ -505,7 +505,24 @@ pub fn plan_task_prune(
     project: Option<&str>,
     work_item: Option<&str>,
 ) -> Vec<WorkspaceSummary> {
-    filter_workspaces(find_workspaces(root), project, work_item)
+    let requested_work_items = parse_work_item_selection(work_item);
+    plan_task_prune_by_requested_ids(root, project, requested_work_items.as_deref())
+}
+
+pub fn plan_task_prune_by_work_item_ids(
+    root: &str,
+    project: Option<&str>,
+    work_item_ids: &[WorkItemId],
+) -> Vec<WorkspaceSummary> {
+    plan_task_prune_by_requested_ids(root, project, Some(work_item_ids))
+}
+
+fn plan_task_prune_by_requested_ids(
+    root: &str,
+    project: Option<&str>,
+    requested_work_items: Option<&[WorkItemId]>,
+) -> Vec<WorkspaceSummary> {
+    filter_workspaces_by_requested_ids(find_workspaces(root), project, requested_work_items)
         .into_iter()
         .filter(|workspace| {
             workspace

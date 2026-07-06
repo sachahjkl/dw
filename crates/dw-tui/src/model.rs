@@ -356,6 +356,9 @@ impl TuiAction {
             TuiActionRequest::TaskCommit(args) => args.root = Some(root),
             TuiActionRequest::TaskFinish(args) => args.root = Some(root),
             TuiActionRequest::TaskTeardown(args) => args.root = Some(root),
+            TuiActionRequest::TaskPrune(args) => {
+                args.root = Some(dw_core::DevWorkflowRoot::from(root))
+            }
             TuiActionRequest::AgentOpen(args) => args.root = Some(root),
             _ => {}
         }
@@ -1665,7 +1668,7 @@ mod tests {
             request: TuiActionRequest::TaskPrune(dw_task::prune::PruneArgs {
                 root: None,
                 project: None,
-                work_item: None,
+                work_item_ids: Vec::new(),
                 mode: dw_core::ExecutionMode::Execute,
                 yes: true,
                 no_sync: false,

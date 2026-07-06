@@ -7,12 +7,11 @@ use dw_cli_adapter::{
     repositories_prompt_spec,
 };
 use dw_core::{
-    AdoActionEvent, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
-    PullRequestId, WorkItemId, WorkspaceRepositoryName,
+    AdoActionEvent, DevWorkflowRoot, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind,
+    PromptSpec, PullRequestId, WorkItemId, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
-use std::collections::HashSet;
 use std::io::{IsTerminal, Write};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -376,9 +375,12 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
         } => {
             let report = dw_task::prune::plan(dw_task::prune::PruneArgs {
-                root,
-                project,
-                work_item,
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                work_item_ids: work_item
+                    .as_deref()
+                    .map(WorkItemId::parse_many)
+                    .unwrap_or_default(),
                 mode: ExecutionMode::from_execute(execute),
                 yes,
                 no_sync,
@@ -1280,6 +1282,18 @@ fn resolve_prune_selection(
     report: &dw_task::prune::PrunePlanReport,
     yes: bool,
 ) -> Result<Vec<dw_workspace::WorkspaceSummary>> {
+    #[derive(Clone)]
+    struct PruneSelectionChoice {
+        index: usize,
+        label: String,
+    }
+
+    impl std::fmt::Display for PruneSelectionChoice {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(&self.label)
+        }
+    }
+
     if yes {
         return Ok(report.candidates.clone());
     }
@@ -1290,20 +1304,21 @@ fn resolve_prune_selection(
     let choices = report
         .candidates
         .iter()
-        .map(dw_task::prune::prune_candidate_choice)
+        .enumerate()
+        .map(|(index, candidate)| PruneSelectionChoice {
+            index,
+            label: dw_task::prune::prune_candidate_choice(candidate),
+        })
         .collect::<Vec<_>>();
-    let selected = MultiSelect::new("Workspaces à supprimer", choices)
+    let selected_choices = MultiSelect::new("Workspaces à supprimer", choices)
         .prompt_skippable()?
-        .unwrap_or_default()
-        .into_iter()
-        .collect::<HashSet<_>>();
+        .unwrap_or_default();
 
-    Ok(report
-        .candidates
-        .iter()
-        .filter(|candidate| selected.contains(&dw_task::prune::prune_candidate_choice(candidate)))
-        .cloned()
-        .collect())
+    let selected = selected_choices
+        .into_iter()
+        .map(|choice| report.candidates[choice.index].clone())
+        .collect();
+    Ok(selected)
 }
 
 fn resolve_add_repo_selection(

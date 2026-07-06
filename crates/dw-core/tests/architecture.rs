@@ -501,6 +501,18 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             ],
         ),
         (
+            "crates/dw-task/src/prune.rs",
+            &[
+                "pub root: Option<String>",
+                "pub root: String",
+                "pub project: Option<String>",
+                "pub work_item: Option<String>",
+                "pub work_item_ids: Vec<String>",
+                "pub workspace: String",
+                "pub deleted: Vec<String>",
+            ],
+        ),
+        (
             "crates/dw-ado-commands/src/commands/changelog.rs",
             &["pub ids: String", "pub git_to: Option<String>"],
         ),
@@ -537,6 +549,30 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn task_prune_contract_uses_typed_paths_and_ids() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-task/src/prune.rs");
+    let text = fs::read_to_string(&path).expect("read prune source");
+    for required in [
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "WorkItemId",
+        "WorkspacePath",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub project: Option<ProjectKey>",
+        "pub work_item_ids: Vec<WorkItemId>",
+        "pub deleted: Vec<WorkspacePath>",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed prune contract token `{}`",
+            path.display(),
+            required
+        );
     }
 }
 
