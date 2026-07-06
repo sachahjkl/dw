@@ -644,13 +644,6 @@ fn filter_workspaces_by_requested_ids(
         .collect()
 }
 
-pub fn task_status(root: &str) -> Vec<String> {
-    find_workspaces(root)
-        .into_iter()
-        .map(|workspace| workspace.path.to_string())
-        .collect()
-}
-
 pub fn task_list(root: &str, project: Option<&str>, work_item: Option<&str>) -> Vec<TaskListItem> {
     filter_workspaces(find_workspaces(root), project, work_item)
         .into_iter()
@@ -2720,7 +2713,7 @@ artifacts:
     }
 
     #[test]
-    fn task_status_lists_detected_workspace_paths() {
+    fn task_list_returns_detected_workspace_paths() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
         let workspace = root.join("projects/ha/workspaces/feat-123-demo");
@@ -2742,8 +2735,12 @@ artifacts:
         )
         .expect("manifest should be written");
 
-        let result = task_status(root.to_str().expect("utf8 path"));
-        assert_eq!(result, vec![workspace.display().to_string()]);
+        let result = task_list(root.to_str().expect("utf8 path"), None, None);
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].path,
+            WorkspacePath::from(workspace.display().to_string())
+        );
     }
 
     #[test]
