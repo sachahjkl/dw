@@ -374,7 +374,9 @@ impl TuiAction {
             TuiActionRequest::TaskPrune(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
-            TuiActionRequest::AgentOpen(args) => args.root = Some(root),
+            TuiActionRequest::AgentOpen(args) => {
+                args.root = Some(dw_core::DevWorkflowRoot::from(root))
+            }
             _ => {}
         }
         self
@@ -587,7 +589,9 @@ impl TuiAction {
 
     pub fn workspace_path(&self) -> Option<&str> {
         match &self.request {
-            TuiActionRequest::AgentOpen(args) => args.workspace.as_deref(),
+            TuiActionRequest::AgentOpen(args) => {
+                args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
+            }
             TuiActionRequest::TaskPreflight(args) => {
                 args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
             }
@@ -1353,11 +1357,10 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::Open => TuiAction {
             label: "Open workspace".into(),
             request: TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
-                workspace: Some(workspace_arg),
+                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
                 root: None,
                 project: None,
-                work_item: None,
-                positional_work_item: None,
+                work_item_ids: Vec::new(),
                 pull_request: None,
                 r#continue: false,
                 repo: None,
@@ -1680,11 +1683,10 @@ mod tests {
         let external = TuiAction {
             label: "Open".into(),
             request: TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
-                workspace: Some("/tmp/ws".into()),
+                workspace: Some(dw_core::WorkspacePath::from("/tmp/ws")),
                 root: None,
                 project: None,
-                work_item: None,
-                positional_work_item: None,
+                work_item_ids: Vec::new(),
                 pull_request: None,
                 r#continue: false,
                 repo: None,

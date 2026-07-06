@@ -477,7 +477,18 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
         ),
         (
             "crates/dw-task/src/open.rs",
-            &["pub pull_request: Option<String>", "work_item_ids.join("],
+            &[
+                "pub workspace: Option<String>",
+                "pub root: Option<String>",
+                "pub project: Option<String>",
+                "pub work_item: Option<String>",
+                "pub positional_work_item",
+                "pub pull_request: Option<String>",
+                "pub repo: Option<String>",
+                "pub agent: Option<String>",
+                "work_item_ids.join(",
+                "resolve_workspace(",
+            ],
         ),
         (
             "crates/dw-task/src/work_item.rs",
@@ -594,6 +605,37 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn task_open_contract_uses_typed_workspace_filters_repositories_and_agent() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-task/src/open.rs");
+    let text = fs::read_to_string(&path).expect("read open source");
+    for required in [
+        "AgentName",
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "PullRequestId",
+        "WorkItemId",
+        "WorkspacePath",
+        "WorkspaceRepositoryName",
+        "pub workspace: Option<WorkspacePath>",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub project: Option<ProjectKey>",
+        "pub work_item_ids: Vec<WorkItemId>",
+        "pub pull_request: Option<PullRequestId>",
+        "pub repo: Option<WorkspaceRepositoryName>",
+        "pub agent: Option<AgentName>",
+        "resolve_workspace_by_work_item_ids",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed open contract token `{}`",
+            path.display(),
+            required
+        );
     }
 }
 

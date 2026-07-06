@@ -175,7 +175,7 @@ async fn handle_auth(command: AuthCommand) -> Result<()> {
 async fn handle_task(command: TaskCommand) -> Result<()> {
     match command {
         TaskCommand::Status { root } => {
-            let report = dw_task::open::status_report(root);
+            let report = dw_task::open::status_report(root.map(DevWorkflowRoot::from));
             print_lines(&dw_cli_adapter::render::task_status_lines(&report));
         }
         TaskCommand::List {
@@ -184,7 +184,14 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             work_item,
             json,
         } => {
-            let report = dw_task::open::list_report(root, project, work_item);
+            let report = dw_task::open::list_report(
+                root.map(DevWorkflowRoot::from),
+                project.map(ProjectKey::from),
+                work_item
+                    .as_deref()
+                    .map(WorkItemId::parse_many)
+                    .unwrap_or_default(),
+            );
             if json {
                 print_json(&report.items)?;
             } else if report.items.is_empty() {
@@ -214,15 +221,17 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             root,
         } => {
             let args = resolve_open_args_interactively(dw_task::open::OpenWorkspaceArgs {
-                workspace,
-                project,
-                work_item,
-                positional_work_item,
+                workspace: workspace.map(WorkspacePath::from),
+                project: project.map(ProjectKey::from),
+                work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 pull_request: pull_request.map(PullRequestId::from),
                 r#continue,
-                repo,
-                agent,
-                root,
+                repo: repo.map(WorkspaceRepositoryName::from),
+                agent: agent.map(dw_core::AgentName::from),
+                root: root.map(DevWorkflowRoot::from),
             })?;
             let launch = dw_task::open::resolve_open_launch_async(args).await?;
             if json {
@@ -1480,17 +1489,18 @@ fn resolve_open_args_interactively(
         return Ok(args);
     }
 
-    let root = dw_config::resolve_root(args.root.as_deref());
-    let work_item = args
-        .work_item
-        .as_deref()
-        .or(args.positional_work_item.as_deref());
-    let items = dw_workspace::task_list(&root, args.project.as_deref(), work_item);
+    let root = dw_config::resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
+    let work_item = args.work_item_ids.first().map(WorkItemId::as_str);
+    let items = dw_workspace::task_list(
+        &root,
+        args.project.as_ref().map(ProjectKey::as_str),
+        work_item,
+    );
     if items.is_empty() {
         anyhow::bail!("Aucun workspace task trouvé.");
     }
     if items.len() == 1 {
-        args.workspace = Some(items[0].path.clone());
+        args.workspace = Some(WorkspacePath::from(items[0].path.clone()));
         return Ok(args);
     }
 
@@ -1516,7 +1526,7 @@ fn resolve_open_args_interactively(
     args.workspace = options
         .into_iter()
         .find(|(label, _)| *label == selected)
-        .map(|(_, path)| path);
+        .map(|(_, path)| WorkspacePath::from(path));
     if args.workspace.is_none() {
         anyhow::bail!("Sélection workspace invalide");
     }
@@ -1842,15 +1852,17 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
         } => {
             let launch = dw_task::open::resolve_open_launch(resolve_open_args_interactively(
                 dw_task::open::OpenWorkspaceArgs {
-                    workspace,
-                    root,
-                    project,
-                    work_item,
-                    positional_work_item,
+                    workspace: workspace.map(WorkspacePath::from),
+                    root: root.map(DevWorkflowRoot::from),
+                    project: project.map(ProjectKey::from),
+                    work_item_ids: parse_workspace_filter_work_item_ids(
+                        work_item.as_deref(),
+                        positional_work_item.as_deref(),
+                    )?,
                     pull_request: None,
                     r#continue,
-                    repo,
-                    agent,
+                    repo: repo.map(WorkspaceRepositoryName::from),
+                    agent: agent.map(dw_core::AgentName::from),
                 },
             )?)?;
             dw_task::open::run_external_launch(&launch)?;

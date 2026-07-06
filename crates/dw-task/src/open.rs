@@ -3,56 +3,65 @@ use anyhow::Result;
 use dw_ado::{auth::require_token, get_work_item_ids_from_pull_requests, run_blocking_ado};
 use dw_agent::{AgentOpenRequest, build_open_launch_plan};
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::{ExternalLaunchPlan, PullRequestId};
+use dw_core::{
+    AgentName, DevWorkflowRoot, ExternalLaunchPlan, ProjectKey, PullRequestId, WorkItemId,
+    WorkspacePath, WorkspaceRepositoryName,
+};
 use dw_workspace::{
-    TaskCurrentItem, TaskListItem, read_manifest_path, resolve_open_target, resolve_workspace,
+    TaskCurrentItem, TaskListItem, read_manifest_path, resolve_open_target,
     resolve_workspace_by_work_item_ids, task_current, task_list,
 };
 
 #[derive(Debug, Clone)]
 pub struct OpenWorkspaceArgs {
-    pub workspace: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
-    pub positional_work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub pull_request: Option<PullRequestId>,
     pub r#continue: bool,
-    pub repo: Option<String>,
-    pub agent: Option<String>,
-    pub root: Option<String>,
+    pub repo: Option<WorkspaceRepositoryName>,
+    pub agent: Option<AgentName>,
+    pub root: Option<DevWorkflowRoot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TaskStatusReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub items: Vec<TaskListItem>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct TaskListReport {
-    pub root: String,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub root: DevWorkflowRoot,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub items: Vec<TaskListItem>,
 }
 
-pub fn status_report(root: Option<String>) -> TaskStatusReport {
-    let root = resolve_root(root.as_deref());
+pub fn status_report(root: Option<DevWorkflowRoot>) -> TaskStatusReport {
+    let root = resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
     let items = task_list(&root, None, None);
-    TaskStatusReport { root, items }
+    TaskStatusReport {
+        root: DevWorkflowRoot::from(root),
+        items,
+    }
 }
 
 pub fn list_report(
-    root: Option<String>,
-    project: Option<String>,
-    work_item: Option<String>,
+    root: Option<DevWorkflowRoot>,
+    project: Option<ProjectKey>,
+    work_item_ids: Vec<WorkItemId>,
 ) -> TaskListReport {
-    let root = resolve_root(root.as_deref());
-    let items = task_list(&root, project.as_deref(), work_item.as_deref());
+    let root = resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
+    let items = task_list(
+        &root,
+        project.as_ref().map(ProjectKey::as_str),
+        work_item_ids.first().map(WorkItemId::as_str),
+    );
     TaskListReport {
-        root,
+        root: DevWorkflowRoot::from(root),
         project,
-        work_item,
+        work_item_ids,
         items,
     }
 }
@@ -66,8 +75,7 @@ pub fn resolve_open_launch(args: OpenWorkspaceArgs) -> Result<ExternalLaunchPlan
     let OpenWorkspaceArgs {
         workspace,
         project,
-        work_item,
-        positional_work_item,
+        work_item_ids,
         pull_request,
         r#continue,
         repo,
@@ -79,13 +87,12 @@ pub fn resolve_open_launch(args: OpenWorkspaceArgs) -> Result<ExternalLaunchPlan
             "opening by PR requires the async resolver; use resolve_open_launch_async"
         ));
     }
-    let root = resolve_root(root.as_deref());
-    let workspace = resolve_workspace(
+    let root = resolve_root(root.as_ref().map(DevWorkflowRoot::as_str));
+    let workspace = resolve_workspace_by_work_item_ids(
         &root,
-        workspace.as_deref(),
-        project.as_deref(),
-        work_item.as_deref(),
-        positional_work_item.as_deref(),
+        workspace.as_ref().map(WorkspacePath::as_str),
+        project.as_ref().map(ProjectKey::as_str),
+        &work_item_ids,
         r#continue,
     )?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
@@ -96,9 +103,10 @@ pub fn resolve_open_launch(args: OpenWorkspaceArgs) -> Result<ExternalLaunchPlan
         &workspace,
         &manifest,
         project_config.as_ref(),
-        repo.as_deref(),
+        repo.as_ref().map(WorkspaceRepositoryName::as_str),
     )?;
     let selected_agent = agent
+        .map(|agent| agent.to_string())
         .or_else(|| {
             project_config
                 .as_ref()
@@ -117,20 +125,23 @@ pub fn resolve_open_launch(args: OpenWorkspaceArgs) -> Result<ExternalLaunchPlan
 
 pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<ExternalLaunchPlan> {
     if let Some(pull_request) = args.pull_request.take() {
-        let root = resolve_root(args.root.as_deref());
+        let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
         let project = args.project.clone().ok_or_else(|| {
             anyhow::anyhow!("task open --pr requires --project to resolve Azure DevOps settings.")
         })?;
         let projects = load_projects_config(&root);
         let workflow = load_workflow_config(&root);
-        let project_config = resolve_project(&projects, &project);
-        let repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_deref());
+        let project_config = resolve_project(&projects, project.as_str());
+        let repositories = resolve_ado_repositories(
+            project_config.as_ref(),
+            args.repo.as_ref().map(WorkspaceRepositoryName::as_str),
+        );
         if repositories.is_empty() {
             return Err(anyhow::anyhow!(
                 "task open --pr requires --repo, or a project with configured Azure DevOps repositories."
             ));
         }
-        let options = resolve_ado_options(&projects, &workflow, &project)?;
+        let options = resolve_ado_options(&projects, &workflow, project.as_str())?;
         let token = require_token(load_auth_options(Some(&root))?).await?;
         let work_item_ids = run_blocking_ado({
             let options = options.clone();
@@ -158,17 +169,19 @@ pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<Ex
             .into_iter()
             .map(dw_core::WorkItemId::from)
             .collect::<Vec<_>>();
-        args.workspace = Some(resolve_workspace_by_work_item_ids(
-            &root,
-            args.workspace.as_deref(),
-            Some(&project),
-            &resolved_work_item_ids,
-            args.r#continue,
-        )?);
-        args.root = Some(root);
+        args.workspace = Some(
+            resolve_workspace_by_work_item_ids(
+                &root,
+                args.workspace.as_ref().map(WorkspacePath::as_str),
+                Some(project.as_str()),
+                &resolved_work_item_ids,
+                args.r#continue,
+            )?
+            .into(),
+        );
+        args.root = Some(DevWorkflowRoot::from(root));
         args.project = Some(project);
-        args.work_item = None;
-        args.positional_work_item = None;
+        args.work_item_ids = Vec::new();
     }
 
     resolve_open_launch(args)

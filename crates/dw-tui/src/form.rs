@@ -392,15 +392,17 @@ impl FormState {
             }),
             FormTemplate::AgentOpen => {
                 TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
-                    workspace: value("Workspace"),
-                    root: Some(root.into()),
-                    project: value("Project"),
-                    work_item: value("Work item"),
-                    positional_work_item: None,
+                    workspace: value("Workspace").map(dw_core::WorkspacePath::from),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
+                    project: value("Project").map(dw_core::ProjectKey::from),
+                    work_item_ids: value("Work item")
+                        .as_deref()
+                        .map(dw_core::WorkItemId::parse_many)
+                        .unwrap_or_default(),
                     pull_request: None,
                     r#continue: enabled("Continue"),
-                    repo: value("Repository"),
-                    agent: value("Agent"),
+                    repo: value("Repository").map(dw_core::WorkspaceRepositoryName::from),
+                    agent: value("Agent").map(dw_core::AgentName::from),
                 })
             }
             FormTemplate::Secret => {

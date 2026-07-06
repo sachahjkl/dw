@@ -2386,9 +2386,9 @@ mod tests {
     #[test]
     fn task_list_lines_render_table_and_paths() {
         let report = TaskListReport {
-            root: "/tmp/dw".into(),
+            root: dw_core::DevWorkflowRoot::from("/tmp/dw"),
             project: None,
-            work_item: None,
+            work_item_ids: Vec::new(),
             items: vec![dw_workspace::TaskListItem {
                 path: "/tmp/ws".into(),
                 project: "ha".into(),

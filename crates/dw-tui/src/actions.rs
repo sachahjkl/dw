@@ -271,15 +271,14 @@ pub fn selected_ado_action(
             let workspace =
                 snapshot.selected_work_item_workspace(selected_project, selected_item)?;
             TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
-                workspace: Some(workspace.path.clone()),
+                workspace: Some(dw_core::WorkspacePath::from(workspace.path.clone())),
                 project: None,
-                work_item: None,
-                positional_work_item: None,
+                work_item_ids: Vec::new(),
                 pull_request: None,
                 r#continue: false,
                 repo: None,
                 agent: None,
-                root: Some(snapshot.root.clone()),
+                root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
             })
         }
         AdoItemAction::Context => {
@@ -378,15 +377,16 @@ pub fn selected_pull_request_action(
         }
         PullRequestAction::OpenAgent => {
             TuiActionRequest::AgentOpen(dw_task::open::OpenWorkspaceArgs {
-                workspace: Some(item.workspace.clone()?),
+                workspace: Some(dw_core::WorkspacePath::from(item.workspace.clone()?)),
                 project: None,
-                work_item: None,
-                positional_work_item: None,
+                work_item_ids: Vec::new(),
                 pull_request: None,
                 r#continue: false,
-                repo: Some(item.repository.clone()),
+                repo: Some(dw_core::WorkspaceRepositoryName::from(
+                    item.repository.clone(),
+                )),
                 agent: None,
-                root: Some(snapshot.root.clone()),
+                root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
             })
         }
         PullRequestAction::FinishPreview | PullRequestAction::FinishExecute => {
@@ -618,8 +618,14 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::AgentOpen(args) => {
-                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws-42"));
-                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+                assert_eq!(
+                    args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
+                    Some("/tmp/ws-42")
+                );
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/dw")
+                );
             }
             _ => panic!("expected agent open request"),
         }
@@ -652,7 +658,10 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::AgentOpen(args) => {
-                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws-42"));
+                assert_eq!(
+                    args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
+                    Some("/tmp/ws-42")
+                );
             }
             _ => panic!("expected agent open request"),
         }
@@ -726,9 +735,20 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::AgentOpen(args) => {
-                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws-pr"));
-                assert_eq!(args.repo.as_deref(), Some("front"));
-                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+                assert_eq!(
+                    args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
+                    Some("/tmp/ws-pr")
+                );
+                assert_eq!(
+                    args.repo
+                        .as_ref()
+                        .map(dw_core::WorkspaceRepositoryName::as_str),
+                    Some("front")
+                );
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/dw")
+                );
             }
             _ => panic!("expected agent open request"),
         }
@@ -896,7 +916,8 @@ mod tests {
 
         assert!(matches!(
             open.request,
-            TuiActionRequest::AgentOpen(ref args) if args.workspace.as_deref() == Some("/tmp/ws")
+            TuiActionRequest::AgentOpen(ref args)
+                if args.workspace.as_ref().map(dw_core::WorkspacePath::as_str) == Some("/tmp/ws")
         ));
         assert!(matches!(open.kind, ActionRisk::OpensExternal));
         assert_eq!(preflight.workspace_path(), Some("/tmp/ws"));
