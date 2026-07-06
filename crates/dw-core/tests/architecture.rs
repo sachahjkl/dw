@@ -2141,6 +2141,47 @@ fn domain_progress_contracts_are_structured_not_line_helpers() {
 }
 
 #[test]
+fn workspace_teardown_contract_is_typed_not_string_protocol() {
+    let repo = repo_root();
+    let text = fs::read_to_string(repo.join("crates/dw-workspace/src/lib.rs"))
+        .expect("read workspace source file");
+
+    for forbidden in [
+        "pub repository: String,\n    pub action: String,\n    pub target: String",
+        "pub action: String",
+        "pub target: String",
+        "pub git_dir: Option<String>",
+        "step.action == \"worktree remove\"",
+        "step.action == \"worktree prune\"",
+        "action: \"worktree remove\"",
+        "action: \"worktree prune\"",
+        "action: \"delete directory\"",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "workspace teardown contains forbidden string protocol token `{}`",
+            forbidden
+        );
+    }
+
+    for required in [
+        "pub subject: WorkspaceTeardownSubject",
+        "pub action: WorkspaceTeardownAction",
+        "pub enum WorkspaceTeardownSubject",
+        "pub enum WorkspaceTeardownAction",
+        "WorktreeRemove {\n        #[serde(rename = \"worktreePath\")]\n        worktree_path: RepositoryPath",
+        "WorktreePrune {\n        #[serde(rename = \"gitDir\")]\n        git_dir: RepositoryPath",
+        "DeleteWorkspace {\n        workspace: WorkspacePath",
+    ] {
+        assert!(
+            text.contains(required),
+            "workspace teardown should contain typed contract token `{}`",
+            required
+        );
+    }
+}
+
+#[test]
 fn migrated_ado_command_modules_do_not_render_or_prompt() {
     let repo = repo_root();
     for relative in [

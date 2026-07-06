@@ -18,6 +18,7 @@ use dw_git::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -237,11 +238,69 @@ pub struct TaskAddRepoPlan {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceTeardownStep {
-    pub repository: String,
-    pub action: String,
-    pub target: String,
-    #[serde(rename = "gitDir")]
-    pub git_dir: Option<String>,
+    pub subject: WorkspaceTeardownSubject,
+    pub action: WorkspaceTeardownAction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum WorkspaceTeardownSubject {
+    Workspace,
+    Repository { repository: WorkspaceRepositoryName },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum WorkspaceTeardownAction {
+    WorktreeRemove {
+        #[serde(rename = "worktreePath")]
+        worktree_path: RepositoryPath,
+        #[serde(rename = "gitDir")]
+        git_dir: RepositoryPath,
+    },
+    WorktreePrune {
+        #[serde(rename = "gitDir")]
+        git_dir: RepositoryPath,
+    },
+    DeleteWorkspace {
+        workspace: WorkspacePath,
+    },
+}
+
+impl WorkspaceTeardownStep {
+    pub fn repository_name(&self) -> Option<&WorkspaceRepositoryName> {
+        match &self.subject {
+            WorkspaceTeardownSubject::Workspace => None,
+            WorkspaceTeardownSubject::Repository { repository } => Some(repository),
+        }
+    }
+
+    pub fn target_path(&self) -> &str {
+        match &self.action {
+            WorkspaceTeardownAction::WorktreeRemove { worktree_path, .. } => worktree_path.as_str(),
+            WorkspaceTeardownAction::WorktreePrune { git_dir } => git_dir.as_str(),
+            WorkspaceTeardownAction::DeleteWorkspace { workspace } => workspace.as_str(),
+        }
+    }
+}
+
+impl fmt::Display for WorkspaceTeardownSubject {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Workspace => formatter.write_str("workspace"),
+            Self::Repository { repository } => repository.fmt(formatter),
+        }
+    }
+}
+
+impl fmt::Display for WorkspaceTeardownAction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::WorktreeRemove { .. } => formatter.write_str("worktree remove"),
+            Self::WorktreePrune { .. } => formatter.write_str("worktree prune"),
+            Self::DeleteWorkspace { .. } => formatter.write_str("delete directory"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1156,31 +1215,37 @@ pub fn plan_task_teardown(
             .join(anchor_name)
             .display()
             .to_string();
+        let git_dir = RepositoryPath::from(git_dir);
         steps.push(WorkspaceTeardownStep {
-            repository: repository_key.to_string(),
-            action: "worktree remove".into(),
-            target: Path::new(workspace.as_str())
-                .join(folder)
-                .display()
-                .to_string(),
-            git_dir: Some(git_dir.clone()),
+            subject: WorkspaceTeardownSubject::Repository {
+                repository: repository_key.clone(),
+            },
+            action: WorkspaceTeardownAction::WorktreeRemove {
+                worktree_path: RepositoryPath::from(
+                    Path::new(workspace.as_str())
+                        .join(folder)
+                        .display()
+                        .to_string(),
+                ),
+                git_dir: git_dir.clone(),
+            },
         });
 
         if !repository.url.trim().is_empty() {
             steps.push(WorkspaceTeardownStep {
-                repository: repository_key.to_string(),
-                action: "worktree prune".into(),
-                target: git_dir.clone(),
-                git_dir: Some(git_dir),
+                subject: WorkspaceTeardownSubject::Repository {
+                    repository: repository_key.clone(),
+                },
+                action: WorkspaceTeardownAction::WorktreePrune { git_dir },
             });
         }
     }
 
     steps.push(WorkspaceTeardownStep {
-        repository: "workspace".into(),
-        action: "delete directory".into(),
-        target: workspace.to_string(),
-        git_dir: None,
+        subject: WorkspaceTeardownSubject::Workspace,
+        action: WorkspaceTeardownAction::DeleteWorkspace {
+            workspace: workspace.clone(),
+        },
     });
 
     Ok((manifest, steps))
@@ -1194,30 +1259,41 @@ pub fn execute_task_teardown<F>(
 where
     F: FnMut(&str, &[&str]) -> Result<(), String>,
 {
-    for step in steps.iter().filter(|step| step.action == "worktree remove") {
-        let git_dir = require_git_dir(step)?;
+    for step in steps
+        .iter()
+        .filter(|step| matches!(step.action, WorkspaceTeardownAction::WorktreeRemove { .. }))
+    {
+        let git_dir = teardown_git_dir(step)?;
         if !Path::new(git_dir).exists() {
             return Err(WorkspaceError::TeardownFailed {
-                repository: step.repository.clone(),
+                repository: step.subject.to_string(),
                 message: format!("gitDir introuvable {git_dir}"),
             });
         }
-        run_git_dir(git_dir, &["worktree", "remove", "--force", &step.target]).map_err(
-            |message| WorkspaceError::TeardownFailed {
-                repository: step.repository.clone(),
-                message,
-            },
-        )?;
+        let WorkspaceTeardownAction::WorktreeRemove { worktree_path, .. } = &step.action else {
+            unreachable!("filtered to worktree remove");
+        };
+        run_git_dir(
+            git_dir,
+            &["worktree", "remove", "--force", worktree_path.as_str()],
+        )
+        .map_err(|message| WorkspaceError::TeardownFailed {
+            repository: step.subject.to_string(),
+            message,
+        })?;
     }
 
-    for step in steps.iter().filter(|step| step.action == "worktree prune") {
-        let git_dir = require_git_dir(step)?;
+    for step in steps
+        .iter()
+        .filter(|step| matches!(step.action, WorkspaceTeardownAction::WorktreePrune { .. }))
+    {
+        let git_dir = teardown_git_dir(step)?;
         if !Path::new(git_dir).exists() {
             continue;
         }
         run_git_dir(git_dir, &["worktree", "prune"]).map_err(|message| {
             WorkspaceError::TeardownFailed {
-                repository: step.repository.clone(),
+                repository: step.subject.to_string(),
                 message,
             }
         })?;
@@ -2274,14 +2350,26 @@ fn distinct_non_empty_owned(values: Vec<String>) -> Vec<String> {
     result
 }
 
-fn require_git_dir(step: &WorkspaceTeardownStep) -> Result<&str, WorkspaceError> {
-    step.git_dir
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| WorkspaceError::TeardownFailed {
-            repository: step.repository.clone(),
+fn teardown_git_dir(step: &WorkspaceTeardownStep) -> Result<&str, WorkspaceError> {
+    let git_dir = match &step.action {
+        WorkspaceTeardownAction::WorktreeRemove { git_dir, .. }
+        | WorkspaceTeardownAction::WorktreePrune { git_dir } => git_dir.as_str(),
+        WorkspaceTeardownAction::DeleteWorkspace { .. } => {
+            return Err(WorkspaceError::TeardownFailed {
+                repository: step.subject.to_string(),
+                message: "gitDir incompatible avec suppression workspace".into(),
+            });
+        }
+    };
+
+    if git_dir.trim().is_empty() {
+        return Err(WorkspaceError::TeardownFailed {
+            repository: step.subject.to_string(),
             message: "gitDir manquant".into(),
-        })
+        });
+    }
+
+    Ok(git_dir)
 }
 
 fn collect_manifests(root: &Path, entries: &mut Vec<WorkspaceSummary>) {
@@ -3837,21 +3925,34 @@ artifacts:
         let anchor = root.join("projects/ha/repositories/front.git");
 
         assert!(steps.iter().any(|step| {
-            step.repository == "front"
-                && step.action == "worktree remove"
-                && step.target == workspace.join("front").display().to_string()
-                && step.git_dir.as_deref() == Some(anchor.to_str().expect("utf8 path"))
+            step.subject
+                == WorkspaceTeardownSubject::Repository {
+                    repository: WorkspaceRepositoryName::from("front"),
+                }
+                && step.action
+                    == WorkspaceTeardownAction::WorktreeRemove {
+                        worktree_path: RepositoryPath::from(
+                            workspace.join("front").display().to_string(),
+                        ),
+                        git_dir: RepositoryPath::from(anchor.display().to_string()),
+                    }
         }));
         assert!(steps.iter().any(|step| {
-            step.repository == "front"
-                && step.action == "worktree prune"
-                && step.target == anchor.display().to_string()
-                && step.git_dir.as_deref() == Some(anchor.to_str().expect("utf8 path"))
+            step.subject
+                == WorkspaceTeardownSubject::Repository {
+                    repository: WorkspaceRepositoryName::from("front"),
+                }
+                && step.action
+                    == WorkspaceTeardownAction::WorktreePrune {
+                        git_dir: RepositoryPath::from(anchor.display().to_string()),
+                    }
         }));
         assert!(steps.iter().any(|step| {
-            step.repository == "workspace"
-                && step.action == "delete directory"
-                && step.target == workspace.display().to_string()
+            step.subject == WorkspaceTeardownSubject::Workspace
+                && step.action
+                    == WorkspaceTeardownAction::DeleteWorkspace {
+                        workspace: WorkspacePath::from(workspace.display().to_string()),
+                    }
         }));
     }
 
@@ -3865,22 +3966,29 @@ artifacts:
         fs::create_dir_all(&anchor).expect("anchor should exist");
         let steps = vec![
             WorkspaceTeardownStep {
-                repository: "front".into(),
-                action: "worktree remove".into(),
-                target: workspace.join("front").display().to_string(),
-                git_dir: Some(anchor.display().to_string()),
+                subject: WorkspaceTeardownSubject::Repository {
+                    repository: WorkspaceRepositoryName::from("front"),
+                },
+                action: WorkspaceTeardownAction::WorktreeRemove {
+                    worktree_path: RepositoryPath::from(
+                        workspace.join("front").display().to_string(),
+                    ),
+                    git_dir: RepositoryPath::from(anchor.display().to_string()),
+                },
             },
             WorkspaceTeardownStep {
-                repository: "front".into(),
-                action: "worktree prune".into(),
-                target: anchor.display().to_string(),
-                git_dir: Some(anchor.display().to_string()),
+                subject: WorkspaceTeardownSubject::Repository {
+                    repository: WorkspaceRepositoryName::from("front"),
+                },
+                action: WorkspaceTeardownAction::WorktreePrune {
+                    git_dir: RepositoryPath::from(anchor.display().to_string()),
+                },
             },
             WorkspaceTeardownStep {
-                repository: "workspace".into(),
-                action: "delete directory".into(),
-                target: workspace.display().to_string(),
-                git_dir: None,
+                subject: WorkspaceTeardownSubject::Workspace,
+                action: WorkspaceTeardownAction::DeleteWorkspace {
+                    workspace: WorkspacePath::from(workspace.display().to_string()),
+                },
             },
         ];
         let mut calls: Vec<(String, Vec<String>)> = Vec::new();
@@ -3923,16 +4031,18 @@ artifacts:
         let missing_anchor = temp.path().join("missing/front.git");
         let steps = vec![
             WorkspaceTeardownStep {
-                repository: "front".into(),
-                action: "worktree prune".into(),
-                target: missing_anchor.display().to_string(),
-                git_dir: Some(missing_anchor.display().to_string()),
+                subject: WorkspaceTeardownSubject::Repository {
+                    repository: WorkspaceRepositoryName::from("front"),
+                },
+                action: WorkspaceTeardownAction::WorktreePrune {
+                    git_dir: RepositoryPath::from(missing_anchor.display().to_string()),
+                },
             },
             WorkspaceTeardownStep {
-                repository: "workspace".into(),
-                action: "delete directory".into(),
-                target: workspace.display().to_string(),
-                git_dir: None,
+                subject: WorkspaceTeardownSubject::Workspace,
+                action: WorkspaceTeardownAction::DeleteWorkspace {
+                    workspace: WorkspacePath::from(workspace.display().to_string()),
+                },
             },
         ];
         let mut calls = 0;

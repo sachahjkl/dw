@@ -1129,7 +1129,9 @@ pub fn task_teardown_plan_lines(
     for step in &report.steps {
         lines.push(format!(
             "- [{}] {}: {}",
-            step.repository, step.action, step.target
+            step.subject,
+            step.action,
+            step.target_path()
         ));
     }
     if !execute {
@@ -1152,7 +1154,9 @@ pub fn task_teardown_execution_lines(
     for step in &report.steps {
         lines.push(format!(
             "- [{}] {}: {}",
-            step.repository, step.action, step.target
+            step.subject,
+            step.action,
+            step.target_path()
         ));
     }
     lines.push(format!("Workspace supprimé: {}", report.workspace));
@@ -2948,10 +2952,13 @@ mod tests {
         let report = dw_task::repo::TeardownPlanReport {
             workspace: Some(dw_core::WorkspacePath::from("/tmp/ws")),
             steps: vec![dw_workspace::WorkspaceTeardownStep {
-                repository: "front".into(),
-                action: "remove-worktree".into(),
-                target: "/tmp/ws/front".into(),
-                git_dir: Some("/tmp/project/repositories/front/.git".into()),
+                subject: dw_workspace::WorkspaceTeardownSubject::Repository {
+                    repository: dw_core::WorkspaceRepositoryName::from("front"),
+                },
+                action: dw_workspace::WorkspaceTeardownAction::WorktreeRemove {
+                    worktree_path: dw_core::RepositoryPath::from("/tmp/ws/front"),
+                    git_dir: dw_core::RepositoryPath::from("/tmp/project/repositories/front/.git"),
+                },
             }],
         };
 
@@ -2964,7 +2971,7 @@ mod tests {
         assert_eq!(execute[0], "Suppression workspace exécutée");
         assert_eq!(execute[2], "Actions   : 1");
         assert_eq!(execute[3], "Actions appliquées");
-        assert!(dry_run.contains(&"- [front] remove-worktree: /tmp/ws/front".into()));
+        assert!(dry_run.contains(&"- [front] worktree remove: /tmp/ws/front".into()));
         assert!(dry_run.contains(&"À faire   : dw task teardown --execute".into()));
         assert!(dry_run.contains(&"Non-TTY   : ajouter --yes pour confirmer sans prompt".into()));
         assert!(!execute.contains(&"À faire   : dw task teardown --execute".into()));
