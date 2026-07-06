@@ -17,6 +17,15 @@ pub fn print_lines(lines: &[String]) {
     }
 }
 
+pub fn print_db_action_output(output: &render::DbActionRenderedOutput) {
+    match output {
+        render::DbActionRenderedOutput::Lines(lines) => print_lines(lines),
+        render::DbActionRenderedOutput::Query(output) => println!("{}", output.as_str()),
+        render::DbActionRenderedOutput::Json(json) => println!("{json}"),
+        render::DbActionRenderedOutput::Empty => {}
+    }
+}
+
 pub trait PromptUi {
     fn select_value(&mut self, spec: &PromptSpec) -> Result<PromptChoiceValue>;
     fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<PromptChoiceValue>>;

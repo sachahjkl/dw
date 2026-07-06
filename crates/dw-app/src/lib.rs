@@ -285,16 +285,19 @@ pub async fn run_action(
             AgentActionResult::Doctor(dw_agent::command::agent_doctor(agent)?),
         )),
         DwActionRequest::DbGuard(args) => Ok(DwActionResult::Db(DbActionResult::Guard(
-            dw_db::commands::guard(args),
+            dw_db::commands::guard_with_events(args, |event| emit(DwActionEvent::Db(event))),
         ))),
         DwActionRequest::DbSchema(args) => Ok(DwActionResult::Db(DbActionResult::Schema(
-            dw_db::commands::schema(args).await?,
+            dw_db::commands::schema_with_events(args, |event| emit(DwActionEvent::Db(event)))
+                .await?,
         ))),
         DwActionRequest::DbDescribe(args) => Ok(DwActionResult::Db(DbActionResult::Describe(
-            dw_db::commands::describe(args).await?,
+            dw_db::commands::describe_with_events(args, |event| emit(DwActionEvent::Db(event)))
+                .await?,
         ))),
         DwActionRequest::DbQuery(args) => Ok(DwActionResult::Db(DbActionResult::Query(
-            dw_db::commands::query(args).await?,
+            dw_db::commands::query_with_events(args, |event| emit(DwActionEvent::Db(event)))
+                .await?,
         ))),
         DwActionRequest::AdoAssigned(args) => {
             let report =

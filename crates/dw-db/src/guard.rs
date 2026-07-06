@@ -1,9 +1,11 @@
+use serde::Serialize;
+
 const FORBIDDEN_TOKENS: &[&str] = &[
     "insert", "update", "delete", "merge", "drop", "alter", "truncate", "exec", "execute",
     "create", "grant", "revoke",
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct SqlGuardResult {
     pub is_allowed: bool,
     pub reason: Option<String>,

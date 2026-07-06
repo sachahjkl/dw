@@ -15,7 +15,7 @@ use dw_contracts::{
     TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightIssueCode,
     TaskPreflightIssueDetail, TaskPreflightReport, TaskPreflightSeverity, TaskPreflightStaleReason,
 };
-use dw_core::{AdoActionEvent, GitOperation, TaskActionEvent};
+use dw_core::{AdoActionEvent, DbActionEvent, GitOperation, TaskActionEvent};
 use dw_db::{QueryResult, SqlGuardResult};
 use dw_doctor::{DoctorCheck, DoctorCheckDetail, DoctorCheckKind, DoctorRemediation, DoctorReport};
 use dw_secret::command::{SecretDeleteReport, SecretGetReport, SecretSetReport};
@@ -715,6 +715,36 @@ pub fn task_action_event_line(event: &TaskActionEvent) -> String {
     }
 }
 
+pub fn db_action_event_line(event: &DbActionEvent) -> String {
+    match event {
+        DbActionEvent::GuardingQuery => "DB garde: validation read-only".into(),
+        DbActionEvent::ResolvingConnection { database } => match database {
+            Some(database) => format!("DB connexion: {database}"),
+            None => "DB connexion: base résolue".into(),
+        },
+        DbActionEvent::ExecutingReadOnlyQuery { max_rows } => match max_rows {
+            Some(max_rows) => format!("DB requête: exécution read-only max_rows={max_rows}"),
+            None => "DB requête: exécution read-only".into(),
+        },
+    }
+}
+
+pub fn db_spinner_frame(
+    event: Option<&DbActionEvent>,
+    frame: &str,
+    theme: &TerminalTheme,
+) -> String {
+    let message = event
+        .map(db_action_event_line)
+        .unwrap_or_else(|| "DB: préparation".into());
+    let line = format!("{frame} {message}");
+    format!("\r{}", theme.style_line(&line, false))
+}
+
+pub fn db_spinner_clear_sequence() -> &'static str {
+    "\r\x1b[2K"
+}
+
 fn format_ids<T: Display>(ids: &[T]) -> String {
     if ids.is_empty() {
         "aucun".into()
@@ -935,6 +965,49 @@ impl DbQueryRenderedOutput {
             Self::Table(text) | Self::Tsv(text) => text,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DbActionRenderedOutput {
+    Lines(Vec<String>),
+    Query(DbQueryRenderedOutput),
+    Json(String),
+    Empty,
+}
+
+pub fn db_action_output(
+    result: &DbActionResult,
+    json: bool,
+    stdout_is_terminal: bool,
+    theme: &TerminalTheme,
+) -> serde_json::Result<DbActionRenderedOutput> {
+    if json {
+        return match result {
+            DbActionResult::Guard(report) => {
+                serde_json::to_string_pretty(report).map(DbActionRenderedOutput::Json)
+            }
+            DbActionResult::Schema(report) | DbActionResult::Query(report) => {
+                serde_json::to_string_pretty(report).map(DbActionRenderedOutput::Json)
+            }
+            DbActionResult::Describe(Some(report)) => {
+                serde_json::to_string_pretty(report).map(DbActionRenderedOutput::Json)
+            }
+            DbActionResult::Describe(None) => Ok(DbActionRenderedOutput::Empty),
+        };
+    }
+
+    Ok(match result {
+        DbActionResult::Guard(report) => {
+            DbActionRenderedOutput::Lines(db_guard_lines(report, theme))
+        }
+        DbActionResult::Schema(report) | DbActionResult::Query(report) => {
+            DbActionRenderedOutput::Query(db_query_output(report, stdout_is_terminal, theme))
+        }
+        DbActionResult::Describe(Some(report)) => {
+            DbActionRenderedOutput::Query(db_query_output(report, stdout_is_terminal, theme))
+        }
+        DbActionResult::Describe(None) => DbActionRenderedOutput::Empty,
+    })
 }
 
 pub fn db_query_output(

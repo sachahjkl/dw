@@ -2,8 +2,8 @@ use crate::cli::*;
 use crate::version::informational_version;
 use anyhow::Result;
 use dw_cli_adapter::{
-    PromptUi, confirm_risk_prompt_spec, print_json, print_lines, project_prompt_spec,
-    repositories_prompt_spec,
+    PromptUi, confirm_risk_prompt_spec, print_db_action_output, print_json, print_lines,
+    project_prompt_spec, repositories_prompt_spec,
 };
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
@@ -1780,48 +1780,41 @@ fn prompt_choice_value_from_label(spec: &PromptSpec, selected: &str) -> Result<P
 }
 
 async fn handle_db(command: DbCommand) -> Result<()> {
-    match command {
-        DbCommand::Guard { sql } => {
-            let result = dw_db::commands::guard(dw_db::commands::GuardArgs {
+    let (request, json) = match command {
+        DbCommand::Guard { sql } => (
+            dw_app::DwActionRequest::DbGuard(dw_db::commands::GuardArgs {
                 sql: dw_core::SqlQuery::from(sql),
-            });
-            print_lines(&dw_cli_adapter::render::db_guard_lines(
-                &result,
-                &TerminalTheme::stdout_auto(),
-            ));
-        }
+            }),
+            false,
+        ),
         DbCommand::Schema {
             project,
             database,
             env,
             json,
-        } => {
-            let result = dw_db::commands::schema(dw_db::commands::SchemaArgs {
+        } => (
+            dw_app::DwActionRequest::DbSchema(dw_db::commands::SchemaArgs {
                 project: project.map(dw_core::ProjectKey::from),
                 database: database.map(dw_core::DatabaseKey::from),
                 env: env.map(dw_core::DatabaseEnvironmentName::from),
-            })
-            .await?;
-            print_db_result(&result, json)?;
-        }
+            }),
+            json,
+        ),
         DbCommand::Describe {
             table,
             project,
             database,
             env,
             json,
-        } => {
-            let result = dw_db::commands::describe(dw_db::commands::DescribeArgs {
+        } => (
+            dw_app::DwActionRequest::DbDescribe(dw_db::commands::DescribeArgs {
                 table: table.map(dw_core::DatabaseTableName::from),
                 project: project.map(dw_core::ProjectKey::from),
                 database: database.map(dw_core::DatabaseKey::from),
                 env: env.map(dw_core::DatabaseEnvironmentName::from),
-            })
-            .await?;
-            if let Some(result) = result {
-                print_db_result(&result, json)?;
-            }
-        }
+            }),
+            json,
+        ),
         DbCommand::Query {
             sql,
             project,
@@ -1830,19 +1823,78 @@ async fn handle_db(command: DbCommand) -> Result<()> {
             max_rows,
             json,
             sql_parts,
-        } => {
-            let result = dw_db::commands::query(dw_db::commands::QueryArgs {
+        } => (
+            dw_app::DwActionRequest::DbQuery(dw_db::commands::QueryArgs {
                 sql: dw_core::SqlQuery::from(resolve_query_sql(sql, sql_parts)?),
                 project: project.map(dw_core::ProjectKey::from),
                 database: database.map(dw_core::DatabaseKey::from),
                 env: env.map(dw_core::DatabaseEnvironmentName::from),
                 max_rows,
-            })
-            .await?;
-            print_db_result(&result, json)?;
+            }),
+            json,
+        ),
+    };
+
+    let result = execute_db_cli_action(request).await?;
+    let dw_app::DwActionResult::Db(result) = result else {
+        anyhow::bail!("Résultat DB inattendu: {result:?}");
+    };
+    let output = dw_cli_adapter::render::db_action_output(
+        &result,
+        json,
+        std::io::stdout().is_terminal(),
+        &TerminalTheme::stdout_auto(),
+    )?;
+    print_db_action_output(&output);
+    Ok(())
+}
+
+async fn execute_db_cli_action(request: dw_app::DwActionRequest) -> Result<dw_app::DwActionResult> {
+    let action = dw_app::spawn_action(request);
+    let result = action.result;
+    let mut events = action.events;
+    let interactive = std::io::stderr().is_terminal();
+    let theme = TerminalTheme::stdout_auto();
+    let frames = ["|", "/", "-", "\\"];
+    let mut frame = 0_usize;
+    let mut seen_events = Vec::new();
+    let mut current = None;
+
+    while !result.is_finished() {
+        while let Ok(event) = events.try_recv() {
+            let DwActionEvent::Db(event) = event else {
+                continue;
+            };
+            if !interactive {
+                write_db_event_line(&event, &theme)?;
+            }
+            current = Some(event.clone());
+            seen_events.push(event);
+        }
+        if interactive {
+            write_db_spinner_frame(current.as_ref(), frames[frame % frames.len()], &theme)?;
+            frame = frame.wrapping_add(1);
+        }
+        tokio::time::sleep(Duration::from_millis(120)).await;
+    }
+
+    while let Ok(event) = events.try_recv() {
+        let DwActionEvent::Db(event) = event else {
+            continue;
+        };
+        if !interactive {
+            write_db_event_line(&event, &theme)?;
+        }
+        seen_events.push(event);
+    }
+    if interactive {
+        write_db_spinner_clear()?;
+        for event in seen_events {
+            write_db_event_line(&event, &theme)?;
         }
     }
-    Ok(())
+
+    result.await?
 }
 
 fn resolve_query_sql(sql: Option<String>, sql_parts: Vec<String>) -> Result<String> {
@@ -1866,17 +1918,30 @@ fn resolve_query_sql(sql: Option<String>, sql_parts: Vec<String>) -> Result<Stri
     }
 }
 
-fn print_db_result(result: &dw_db::QueryResult, json: bool) -> Result<()> {
-    if json {
-        print_json(result)?;
-    } else {
-        let output = dw_cli_adapter::render::db_query_output(
-            result,
-            std::io::stdout().is_terminal(),
-            &TerminalTheme::stdout_auto(),
-        );
-        println!("{}", output.as_str());
-    }
+fn write_db_event_line(event: &dw_core::DbActionEvent, theme: &TerminalTheme) -> Result<()> {
+    eprintln!(
+        "{}",
+        theme.style_line(&dw_cli_adapter::render::db_action_event_line(event), false)
+    );
+    Ok(())
+}
+
+fn write_db_spinner_frame(
+    event: Option<&dw_core::DbActionEvent>,
+    frame: &str,
+    theme: &TerminalTheme,
+) -> Result<()> {
+    eprint!(
+        "{}",
+        dw_cli_adapter::render::db_spinner_frame(event, frame, theme)
+    );
+    std::io::stderr().flush()?;
+    Ok(())
+}
+
+fn write_db_spinner_clear() -> Result<()> {
+    eprint!("{}", dw_cli_adapter::render::db_spinner_clear_sequence());
+    std::io::stderr().flush()?;
     Ok(())
 }
 

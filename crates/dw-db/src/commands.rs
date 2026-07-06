@@ -4,7 +4,9 @@ use crate::{
 };
 use anyhow::Result;
 use dw_config::{load_databases_config, resolve_root};
-use dw_core::{DatabaseEnvironmentName, DatabaseKey, DatabaseTableName, ProjectKey, SqlQuery};
+use dw_core::{
+    DatabaseEnvironmentName, DatabaseKey, DatabaseTableName, DbActionEvent, ProjectKey, SqlQuery,
+};
 
 #[derive(Debug, Clone)]
 pub struct GuardArgs {
@@ -52,11 +54,18 @@ impl DbQueryKind {
     }
 }
 
-pub fn guard(args: GuardArgs) -> crate::SqlGuardResult {
+pub fn guard_with_events(
+    args: GuardArgs,
+    mut emit: impl FnMut(DbActionEvent),
+) -> crate::SqlGuardResult {
+    emit(DbActionEvent::GuardingQuery);
     validate_read_only_sql(args.sql.as_str())
 }
 
-pub async fn schema(args: SchemaArgs) -> Result<QueryResult> {
+pub async fn schema_with_events(
+    args: SchemaArgs,
+    mut emit: impl FnMut(DbActionEvent),
+) -> Result<QueryResult> {
     execute_db_query(
         args.project.as_ref(),
         args.database.as_ref(),
@@ -64,11 +73,15 @@ pub async fn schema(args: SchemaArgs) -> Result<QueryResult> {
         schema_sql(),
         Some(0),
         DbQueryKind::Schema,
+        &mut emit,
     )
     .await
 }
 
-pub async fn describe(args: DescribeArgs) -> Result<Option<QueryResult>> {
+pub async fn describe_with_events(
+    args: DescribeArgs,
+    mut emit: impl FnMut(DbActionEvent),
+) -> Result<Option<QueryResult>> {
     let Some(table) = resolve_describe_table(
         args.table,
         args.project.as_ref(),
@@ -88,12 +101,16 @@ pub async fn describe(args: DescribeArgs) -> Result<Option<QueryResult>> {
             &sql,
             Some(0),
             DbQueryKind::Describe,
+            &mut emit,
         )
         .await?,
     ))
 }
 
-pub async fn query(args: QueryArgs) -> Result<QueryResult> {
+pub async fn query_with_events(
+    args: QueryArgs,
+    mut emit: impl FnMut(DbActionEvent),
+) -> Result<QueryResult> {
     execute_db_query(
         args.project.as_ref(),
         args.database.as_ref(),
@@ -101,6 +118,7 @@ pub async fn query(args: QueryArgs) -> Result<QueryResult> {
         args.sql.as_str(),
         args.max_rows,
         DbQueryKind::Query,
+        &mut emit,
     )
     .await
 }
@@ -112,7 +130,9 @@ async fn execute_db_query(
     sql: &str,
     max_rows_override: Option<usize>,
     kind: DbQueryKind,
+    emit: &mut impl FnMut(DbActionEvent),
 ) -> Result<QueryResult> {
+    emit(DbActionEvent::GuardingQuery);
     let guard = validate_read_only_sql(sql);
     if !guard.is_allowed {
         return Err(anyhow::anyhow!(
@@ -126,6 +146,9 @@ async fn execute_db_query(
     let env_database = env.map(|value| DatabaseKey::from(value.as_str()));
     let (project, database) =
         resolve_database_selection(&config, project, database.or(env_database.as_ref()))?;
+    emit(DbActionEvent::ResolvingConnection {
+        database: Some(database.clone()),
+    });
     let resolved = resolve_connection(
         &config,
         DatabaseSelection {
@@ -135,6 +158,9 @@ async fn execute_db_query(
     )
     .map_err(anyhow::Error::from)?;
     let _ = kind.label();
+    emit(DbActionEvent::ExecutingReadOnlyQuery {
+        max_rows: max_rows_override,
+    });
     query_sql_server(
         &resolved.connection,
         &resolved.defaults,
