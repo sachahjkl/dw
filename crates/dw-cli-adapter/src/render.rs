@@ -2256,7 +2256,7 @@ mod tests {
     #[test]
     fn upgrade_event_line_renders_one_step_per_action() {
         let line = upgrade_event_line(&dw_upgrade::UpgradeEvent::DownloadingAsset {
-            file_name: "dw-linux-x64.tar.gz".into(),
+            file_name: dw_core::UpgradeFileName::from("dw-linux-x64.tar.gz"),
         });
 
         assert!(line.contains("Upgrade [download"));

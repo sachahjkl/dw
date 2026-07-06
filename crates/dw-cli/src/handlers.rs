@@ -77,6 +77,7 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
 
 async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> {
     let (sender, receiver) = mpsc::channel();
+    let rid = rid.map(dw_core::RuntimeIdentifier::from);
     let task = tokio::spawn(async move {
         dw_upgrade::handle_upgrade_with_events(check, rid, move |event| {
             let _ = sender.send(event);

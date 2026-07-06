@@ -784,21 +784,29 @@ fn config_action_event_line(event: &ConfigActionEvent) -> String {
     match event {
         ConfigActionEvent::Reading { root } => format!(
             "Config [read] {}",
-            root.as_deref().unwrap_or("resolved root")
+            root.as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "resolved root".into())
         ),
         ConfigActionEvent::Writing { field } => format!("Config [write] {field}"),
         ConfigActionEvent::Validating { root } => format!(
             "Config [validate] {}",
-            root.as_deref().unwrap_or("resolved root")
+            root.as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "resolved root".into())
         ),
     }
 }
 
 fn agent_action_event_line(event: &AgentActionEvent) -> String {
     match event {
-        AgentActionEvent::Checking { agent } => {
-            format!("Agent [check] {}", agent.as_deref().unwrap_or("all"))
-        }
+        AgentActionEvent::Checking { agent } => format!(
+            "Agent [check] {}",
+            agent
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "all".into())
+        ),
         AgentActionEvent::ResolvingDefault { root } => format!("Agent [default] root={root}"),
     }
 }
@@ -808,7 +816,10 @@ fn db_action_event_line(event: &DbActionEvent) -> String {
         DbActionEvent::GuardingQuery => "DB [guard-query]".into(),
         DbActionEvent::ResolvingConnection { database } => format!(
             "DB [resolve-connection] {}",
-            database.as_deref().unwrap_or("default")
+            database
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "default".into())
         ),
         DbActionEvent::ExecutingReadOnlyQuery { max_rows } => match max_rows {
             Some(max_rows) => format!("DB [query] max_rows={max_rows}"),
@@ -839,11 +850,14 @@ fn upgrade_action_event_line(event: &UpgradeActionEvent) -> String {
         UpgradeActionEvent::DownloadingAsset { file_name } => {
             format!("Upgrade [download] {file_name}")
         }
-        UpgradeActionEvent::VerifyingChecksum { file_name } => {
-            format!("Upgrade [checksum] {file_name}")
+        UpgradeActionEvent::VerifyingChecksum {
+            file_name,
+            expected_sha256,
+        } => {
+            format!("Upgrade [checksum] {file_name} {expected_sha256}")
         }
-        UpgradeActionEvent::PreparingExecutable { file_name } => {
-            format!("Upgrade [prepare] {file_name}")
+        UpgradeActionEvent::PreparingExecutable { file_name, rid } => {
+            format!("Upgrade [prepare] {file_name} {rid}")
         }
         UpgradeActionEvent::ReplacingExecutable { executable_path } => {
             format!("Upgrade [replace] {executable_path}")

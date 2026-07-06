@@ -355,6 +355,23 @@ fn action_events_use_domain_id_types_not_primitive_id_strings() {
         "project: String",
         "project: Option<String>",
         "state: String",
+        "Reading { root: Option<String> }",
+        "Writing { field: String }",
+        "Validating { root: Option<String> }",
+        "Checking { agent: Option<String> }",
+        "ResolvingDefault { root: String }",
+        "ResolvingConnection { database: Option<String> }",
+        "Reading { key: String }",
+        "Writing { key: String }",
+        "Deleting { key: String }",
+        "FetchingRelease { owner: String, repository: String }",
+        "FetchingManifest { asset_name: String }",
+        "SelectingAsset { rid: String }",
+        "DownloadingAsset { file_name: String }",
+        "VerifyingChecksum { file_name: String }",
+        "PreparingExecutable { file_name: String }",
+        "ReplacingExecutable { executable_path: String }",
+        "Completed { version: String }",
         "LoadingWorkItem {\n        id: String",
         "LoadingWorkItemContext {\n        id: String",
         "UpdatingWorkItemState {\n        ids: Vec<WorkItemId>,\n        state: String",
@@ -373,6 +390,19 @@ fn action_events_use_domain_id_types_not_primitive_id_strings() {
         "PullRequestId",
         "AdoRepositoryName",
         "ProjectKey",
+        "DevWorkflowRoot",
+        "ConfigWriteField",
+        "Agent",
+        "DatabaseKey",
+        "SecretKey",
+        "UpgradeOwner",
+        "UpgradeRepositoryName",
+        "UpgradeAssetName",
+        "RuntimeIdentifier",
+        "UpgradeFileName",
+        "Sha256Digest",
+        "ExecutablePath",
+        "SemanticVersion",
     ] {
         assert!(
             text.contains(required),
@@ -1134,6 +1164,89 @@ fn config_color_and_set_reports_are_domain_typed() {
             assert!(
                 !text.contains(token),
                 "{} contains forbidden string config contract `{}`",
+                path.display(),
+                token
+            );
+        }
+    }
+}
+
+#[test]
+fn upgrade_events_use_typed_payloads_not_string_fields() {
+    let repo = repo_root();
+    let checked: &[(&str, &[&str], &[&str])] = &[
+        (
+            "crates/dw-core/src/lib.rs",
+            &[
+                "owner: UpgradeOwner",
+                "repository: UpgradeRepositoryName",
+                "asset_name: UpgradeAssetName",
+                "rid: RuntimeIdentifier",
+                "file_name: UpgradeFileName",
+                "expected_sha256: Sha256Digest",
+                "executable_path: ExecutablePath",
+                "version: SemanticVersion",
+            ],
+            &[
+                "FetchingRelease { owner: String",
+                "repository: String }",
+                "FetchingManifest { asset_name: String }",
+                "SelectingAsset { rid: String }",
+                "DownloadingAsset { file_name: String }",
+                "VerifyingChecksum { file_name: String",
+                "expected_sha256: String",
+                "PreparingExecutable { file_name: String",
+                "ReplacingExecutable { executable_path: String }",
+                "Completed { version: String }",
+            ],
+        ),
+        (
+            "crates/dw-upgrade/src/lib.rs",
+            &[
+                "handle_upgrade(check: bool, rid: Option<RuntimeIdentifier>)",
+                "handle_upgrade_with_events(\n    check: bool,\n    rid: Option<RuntimeIdentifier>",
+                "owner: UpgradeOwner",
+                "repository: UpgradeRepositoryName",
+                "asset_name: UpgradeAssetName",
+                "rid: RuntimeIdentifier",
+                "file_name: UpgradeFileName",
+                "expected_sha256: Sha256Digest",
+                "executable_path: ExecutablePath",
+                "version: SemanticVersion",
+            ],
+            &[
+                "FetchingRelease { owner: String",
+                "repository: String }",
+                "FetchingManifest { asset_name: String }",
+                "ReleaseAvailable { version: String }",
+                "SelectingAsset { rid: String }",
+                "DownloadingAsset { file_name: String }",
+                "VerifyingChecksum { file_name: String",
+                "expected_sha256: String",
+                "PreparingExecutable { file_name: String",
+                "ReplacingExecutable { executable_path: String }",
+                "Installed { version: String }",
+                "handle_upgrade(check: bool, rid: Option<String>)",
+                "handle_upgrade_with_events(\n    check: bool,\n    rid: Option<String>",
+            ],
+        ),
+    ];
+
+    for (path, required, forbidden) in checked {
+        let path = repo.join(path);
+        let text = fs::read_to_string(&path).expect("read source file");
+        for token in *required {
+            assert!(
+                text.contains(token),
+                "{} should expose typed upgrade event token `{}`",
+                path.display(),
+                token
+            );
+        }
+        for token in *forbidden {
+            assert!(
+                !text.contains(token),
+                "{} contains forbidden string upgrade event token `{}`",
                 path.display(),
                 token
             );
