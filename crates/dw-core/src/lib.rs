@@ -1117,6 +1117,8 @@ string_newtype!(UpgradeFileName);
 string_newtype!(Sha256Digest);
 string_newtype!(ExecutablePath);
 string_newtype!(SemanticVersion);
+string_newtype!(UpgradeReleaseTag);
+string_newtype!(GitCommitSha);
 string_newtype!(AgentExecutableName);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

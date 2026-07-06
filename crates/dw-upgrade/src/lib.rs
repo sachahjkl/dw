@@ -1,8 +1,8 @@
 use anyhow::{Result, anyhow};
 use dw_config::{WorkflowConfig, load_user_settings, load_workflow_config, resolve_root};
 use dw_core::{
-    ExecutablePath, RuntimeIdentifier, SemanticVersion, Sha256Digest, UpgradeAssetName,
-    UpgradeFileName, UpgradeOwner, UpgradeRepositoryName,
+    ExecutablePath, GitCommitSha, RuntimeIdentifier, SemanticVersion, Sha256Digest,
+    UpgradeAssetName, UpgradeFileName, UpgradeOwner, UpgradeReleaseTag, UpgradeRepositoryName,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -19,10 +19,10 @@ const WINDOWS_PE_SIGNATURE: [u8; 2] = [0x4D, 0x5A];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UpdateOptions {
-    pub(crate) owner: String,
-    pub(crate) repository: String,
+    pub(crate) owner: UpgradeOwner,
+    pub(crate) repository: UpgradeRepositoryName,
     pub(crate) include_prerelease: bool,
-    pub(crate) asset_name: String,
+    pub(crate) asset_name: UpgradeAssetName,
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,24 +65,24 @@ pub enum UpgradeReport {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UpgradeCheckReport {
-    pub release_tag: String,
-    pub version: String,
-    pub commit: String,
+    pub release_tag: UpgradeReleaseTag,
+    pub version: SemanticVersion,
+    pub commit: GitCommitSha,
     pub assets: Vec<UpgradeAssetSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UpgradeAssetSummary {
-    pub rid: String,
-    pub file_name: String,
-    pub sha256: String,
+    pub rid: RuntimeIdentifier,
+    pub file_name: UpgradeFileName,
+    pub sha256: Sha256Digest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct UpgradeInstallReport {
-    pub version: String,
-    pub commit: String,
-    pub executable_path: String,
+    pub version: SemanticVersion,
+    pub commit: GitCommitSha,
+    pub executable_path: ExecutablePath,
     pub deferred_windows_replacement: bool,
 }
 
@@ -178,13 +178,13 @@ pub async fn handle_upgrade_with_events(
     let workflow = load_workflow_config(&root);
     let options = resolve_updates(&workflow)?;
     emit(UpgradeEvent::FetchingRelease {
-        owner: UpgradeOwner::from(options.owner.clone()),
-        repository: UpgradeRepositoryName::from(options.repository.clone()),
+        owner: options.owner.clone(),
+        repository: options.repository.clone(),
     });
     let client = reqwest::Client::builder().user_agent("dw/1.0").build()?;
     let release = get_latest_release(&client, &options).await?;
     emit(UpgradeEvent::FetchingManifest {
-        asset_name: UpgradeAssetName::from(options.asset_name.clone()),
+        asset_name: options.asset_name.clone(),
     });
     let manifest = download_manifest(&client, &release, &options.asset_name).await?;
 
@@ -212,14 +212,15 @@ pub(crate) fn resolve_updates(workflow: &WorkflowConfig) -> Result<UpdateOptions
         ));
     }
     Ok(UpdateOptions {
-        owner,
-        repository,
+        owner: UpgradeOwner::from(owner),
+        repository: UpgradeRepositoryName::from(repository),
         include_prerelease: value
             .and_then(|value| value.get("includePrerelease"))
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false),
-        asset_name: string_property(value, "assetName")
-            .unwrap_or_else(|| DEFAULT_MANIFEST_ASSET.into()),
+        asset_name: UpgradeAssetName::from(
+            string_property(value, "assetName").unwrap_or_else(|| DEFAULT_MANIFEST_ASSET.into()),
+        ),
     })
 }
 
@@ -258,12 +259,12 @@ async fn get_latest_release(
 async fn download_manifest(
     client: &reqwest::Client,
     release: &GitHubRelease,
-    asset_name: &str,
+    asset_name: &UpgradeAssetName,
 ) -> Result<ReleaseManifest> {
     let asset = release
         .assets
         .iter()
-        .find(|asset| asset.name.eq_ignore_ascii_case(asset_name))
+        .find(|asset| asset.name.eq_ignore_ascii_case(asset_name.as_str()))
         .ok_or_else(|| anyhow!("Asset release introuvable: {asset_name}"))?;
     let response = client.get(&asset.browser_download_url).send().await?;
     let status = response.status().as_u16();
@@ -334,25 +335,25 @@ async fn run_upgrade(
         version: SemanticVersion::from(manifest.version.clone()),
     });
     Ok(UpgradeReport::Installed(UpgradeInstallReport {
-        version: manifest.version.clone(),
-        commit: manifest.commit.clone(),
-        executable_path: replacement.executable_path.display().to_string(),
+        version: SemanticVersion::from(manifest.version.clone()),
+        commit: GitCommitSha::from(manifest.commit.clone()),
+        executable_path: ExecutablePath::from(replacement.executable_path.display().to_string()),
         deferred_windows_replacement: replacement.deferred_windows_replacement,
     }))
 }
 
 fn upgrade_check_report(release: &GitHubRelease, manifest: &ReleaseManifest) -> UpgradeCheckReport {
     UpgradeCheckReport {
-        release_tag: release.tag_name.clone(),
-        version: manifest.version.clone(),
-        commit: manifest.commit.clone(),
+        release_tag: UpgradeReleaseTag::from(release.tag_name.clone()),
+        version: SemanticVersion::from(manifest.version.clone()),
+        commit: GitCommitSha::from(manifest.commit.clone()),
         assets: manifest
             .assets
             .iter()
             .map(|asset| UpgradeAssetSummary {
-                rid: asset.rid.clone(),
-                file_name: asset.file_name.clone(),
-                sha256: asset.sha256.clone(),
+                rid: RuntimeIdentifier::from(asset.rid.clone()),
+                file_name: UpgradeFileName::from(asset.file_name.clone()),
+                sha256: Sha256Digest::from(asset.sha256.clone()),
             })
             .collect(),
     }
@@ -673,10 +674,10 @@ mod tests {
     fn resolve_updates_falls_back_to_defaults() {
         let options = resolve_updates(&WorkflowConfig::default()).expect("updates");
 
-        assert_eq!(options.owner, "sachahjkl");
-        assert_eq!(options.repository, "dw");
+        assert_eq!(options.owner, UpgradeOwner::from("sachahjkl"));
+        assert_eq!(options.repository, UpgradeRepositoryName::from("dw"));
         assert!(!options.include_prerelease);
-        assert_eq!(options.asset_name, "release.json");
+        assert_eq!(options.asset_name, UpgradeAssetName::from("release.json"));
     }
 
     #[test]
@@ -693,10 +694,10 @@ mod tests {
 
         let options = resolve_updates(&workflow).expect("updates");
 
-        assert_eq!(options.owner, "owner");
-        assert_eq!(options.repository, "repo");
+        assert_eq!(options.owner, UpgradeOwner::from("owner"));
+        assert_eq!(options.repository, UpgradeRepositoryName::from("repo"));
         assert!(options.include_prerelease);
-        assert_eq!(options.asset_name, "custom.json");
+        assert_eq!(options.asset_name, UpgradeAssetName::from("custom.json"));
     }
 
     #[test]
@@ -726,12 +727,15 @@ mod tests {
 
         let report = upgrade_check_report(&release, &manifest);
 
-        assert_eq!(report.release_tag, "v2026.07.03");
-        assert_eq!(report.version, "2026.07.03");
-        assert_eq!(report.commit, "abcdef0");
+        assert_eq!(report.release_tag, UpgradeReleaseTag::from("v2026.07.03"));
+        assert_eq!(report.version, SemanticVersion::from("2026.07.03"));
+        assert_eq!(report.commit, GitCommitSha::from("abcdef0"));
         assert_eq!(report.assets.len(), 1);
-        assert_eq!(report.assets[0].rid, "linux-x64");
-        assert_eq!(report.assets[0].file_name, "dw-linux-x64.tar.gz");
+        assert_eq!(report.assets[0].rid, RuntimeIdentifier::from("linux-x64"));
+        assert_eq!(
+            report.assets[0].file_name,
+            UpgradeFileName::from("dw-linux-x64.tar.gz")
+        );
     }
 
     #[test]
