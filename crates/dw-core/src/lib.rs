@@ -41,13 +41,13 @@ macro_rules! string_newtype {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoreContext {
-    pub root: String,
-    pub config_dir: Option<String>,
-    pub environment: BTreeMap<String, String>,
+    pub root: DevWorkflowRoot,
+    pub config_dir: Option<ConfigRootPath>,
+    pub environment: BTreeMap<EnvironmentVariableName, EnvironmentVariableValue>,
 }
 
 impl CoreContext {
-    pub fn new(root: impl Into<String>) -> Self {
+    pub fn new(root: impl Into<DevWorkflowRoot>) -> Self {
         Self {
             root: root.into(),
             config_dir: None,
@@ -1151,6 +1151,7 @@ string_newtype!(GitCommitSha);
 string_newtype!(AgentExecutableName);
 string_newtype!(ExternalProgramName);
 string_newtype!(ExternalLaunchArgument);
+string_newtype!(ExternalLaunchEnvironmentValue);
 string_newtype!(AdoDeviceVerificationUri);
 string_newtype!(AdoDeviceUserCode);
 
@@ -1248,6 +1249,8 @@ impl fmt::Display for EnvironmentVariableName {
         formatter.write_str(&self.0)
     }
 }
+
+string_newtype!(EnvironmentVariableValue);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -1662,8 +1665,8 @@ pub struct ActionSummary {
 pub struct ExternalLaunchPlan {
     pub program: ExternalProgramName,
     pub arguments: Vec<ExternalLaunchArgument>,
-    pub environment: BTreeMap<String, String>,
-    pub working_directory: Option<String>,
+    pub environment: BTreeMap<EnvironmentVariableName, ExternalLaunchEnvironmentValue>,
+    pub working_directory: Option<WorkspacePath>,
 }
 
 impl ExternalLaunchPlan {
@@ -1675,6 +1678,13 @@ impl ExternalLaunchPlan {
         self.arguments
             .iter()
             .map(ExternalLaunchArgument::as_str)
+            .collect()
+    }
+
+    pub fn environment_strings(&self) -> Vec<(&str, &str)> {
+        self.environment
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect()
     }
 

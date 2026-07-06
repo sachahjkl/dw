@@ -1,8 +1,9 @@
 pub mod command;
 
 use dw_core::{
-    Agent, AgentExecutableName, DevWorkflowRoot, ExternalLaunchArgument, ExternalProgramName,
-    ProjectKey, WorkItemId, WorkItemTitle, WorkItemTypeName, WorkspacePath,
+    Agent, AgentExecutableName, DevWorkflowRoot, EnvironmentVariableName, ExternalLaunchArgument,
+    ExternalLaunchEnvironmentValue, ExternalProgramName, ProjectKey, WorkItemId, WorkItemTitle,
+    WorkItemTypeName, WorkspacePath,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -14,7 +15,7 @@ pub struct AgentLaunch {
     #[serde(rename = "fileName")]
     pub file_name: AgentExecutableName,
     pub arguments: Vec<ExternalLaunchArgument>,
-    pub environment: BTreeMap<String, String>,
+    pub environment: BTreeMap<EnvironmentVariableName, ExternalLaunchEnvironmentValue>,
     #[serde(rename = "workingDirectory")]
     pub working_directory: WorkspacePath,
 }
@@ -73,7 +74,7 @@ impl From<AgentLaunch> for dw_core::ExternalLaunchPlan {
             program: ExternalProgramName::from(launch.file_name.to_string()),
             arguments: launch.arguments,
             environment: launch.environment,
-            working_directory: Some(launch.working_directory.to_string()),
+            working_directory: Some(launch.working_directory),
         }
     }
 }
@@ -96,8 +97,16 @@ struct Claude;
 struct Codex;
 struct Copilot;
 
-fn arg(value: impl Into<String>) -> ExternalLaunchArgument {
-    ExternalLaunchArgument::from(value.into())
+fn arg(value: impl Into<ExternalLaunchArgument>) -> ExternalLaunchArgument {
+    value.into()
+}
+
+fn env_value(value: impl Into<ExternalLaunchEnvironmentValue>) -> ExternalLaunchEnvironmentValue {
+    value.into()
+}
+
+fn env_name(value: impl Into<EnvironmentVariableName>) -> EnvironmentVariableName {
+    value.into()
 }
 
 impl AgentAdapter for Opencode {
@@ -110,8 +119,8 @@ impl AgentAdapter for Opencode {
                 vec![arg(request.workspace.to_string())]
             },
             environment: BTreeMap::from([(
-                "OPENCODE_CONFIG".into(),
-                format!("{}/config/opencode/opencode.jsonc", request.root),
+                env_name("OPENCODE_CONFIG"),
+                env_value(format!("{}/config/opencode/opencode.jsonc", request.root)),
             )]),
             working_directory: request.workspace.clone(),
         }
