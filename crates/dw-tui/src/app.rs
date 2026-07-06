@@ -18,7 +18,7 @@ use crate::model::{
     ActionEffect, ActionRisk, AdoAssignedProject, CockpitItem, CockpitSeverity, DetailPanel,
     TuiAction, TuiActionRequest, TuiPullRequest, TuiSnapshot, View, WorkspaceAction,
 };
-use crate::ui_text::guide_detail_lines;
+use crate::ui_text::{guide_detail_lines, history_journal_lines};
 use crate::{runner, ui};
 
 pub const MENU_SECTIONS: &[MenuSection] = &[
@@ -778,7 +778,7 @@ impl App {
 
     fn scroll_current_context_down(&mut self) {
         if self.history.output_open {
-            self.history.scroll_output_down();
+            self.scroll_history_output_down();
         } else if let Some(detail) = self.detail.as_mut() {
             detail.scroll_down();
         } else if self.options_open {
@@ -1032,15 +1032,28 @@ impl App {
                 self.history.scroll_output_up();
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.history.scroll_output_down();
+                self.scroll_history_output_down();
             }
             KeyCode::Left | KeyCode::Char('[') => self.history.select_previous_entry(),
             KeyCode::Right | KeyCode::Char(']') => self.history.select_next_entry(),
             KeyCode::Home => self.history.scroll_output_home(),
-            KeyCode::End => self.history.scroll_output_end(),
+            KeyCode::End => self.scroll_history_output_end(),
             _ => {}
         }
         Ok(())
+    }
+
+    fn scroll_history_output_down(&mut self) {
+        self.history.output_scroll =
+            (self.history.output_scroll + 1).min(self.history_output_max_scroll());
+    }
+
+    fn scroll_history_output_end(&mut self) {
+        self.history.output_scroll = self.history_output_max_scroll();
+    }
+
+    fn history_output_max_scroll(&self) -> usize {
+        history_journal_lines(self).len().saturating_sub(1)
     }
 
     fn handle_state_key(&mut self, key: KeyEvent) -> Result<()> {
@@ -1615,9 +1628,9 @@ impl App {
             id: ActionRunId::new(0),
             request_label: ActionRunLabel::new(result.display_label.clone()),
             status: ActionRunStatus::Succeeded,
-            record: ActionRunRecord::failed(ActionRunErrorMessage::new(
-                "External launch completed.",
-            )),
+            record: ActionRunRecord::ExternalLaunch {
+                plan: Box::new(result.launch.clone()),
+            },
         });
         self.messages.push(format!(
             "Last launch: {} -> {}",
@@ -1676,7 +1689,9 @@ impl App {
                 self.continue_action_queue();
             }
             Err(error) => {
-                let record = ActionRunRecord::failed(ActionRunErrorMessage::new(error.clone()));
+                let events = self.history.running_events(run_id);
+                let record =
+                    ActionRunRecord::failed(events, ActionRunErrorMessage::new(error.clone()));
                 if !self
                     .history
                     .finish_running(run_id, ActionRunStatus::Failed, record.clone())
@@ -3125,7 +3140,7 @@ mod tests {
 
         app.handle_history_output_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
             .expect("down");
-        assert_eq!(app.history.output_scroll, 0);
+        assert_eq!(app.history.output_scroll, 1);
 
         app.handle_history_output_key(KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE))
             .expect("previous");
@@ -3141,7 +3156,12 @@ mod tests {
 
         app.handle_history_output_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE))
             .expect("end");
-        assert_eq!(app.history.output_scroll, 2);
+        assert_eq!(
+            app.history.output_scroll,
+            crate::ui_text::history_journal_lines(&app)
+                .len()
+                .saturating_sub(1)
+        );
 
         app.handle_history_output_key(KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE))
             .expect("next");
@@ -3239,7 +3259,7 @@ mod tests {
         let entry = app.history.selected_entry().expect("entry");
         assert_eq!(entry.status, ActionRunStatus::Succeeded);
         assert_eq!(
-            crate::history::preview_lines(&crate::ui_text::history_entry_rendered_lines(entry)),
+            crate::ui_text::history_entry_preview_lines(entry),
             [
                 "Task [resolve-pr-work-items] PR #42",
                 "Dev Workflow 2026.07.04"

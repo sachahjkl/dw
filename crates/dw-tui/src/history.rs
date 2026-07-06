@@ -1,5 +1,5 @@
 use dw_app::DwActionResult;
-use dw_core::DwActionEvent;
+use dw_core::{DwActionEvent, ExternalLaunchPlan};
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -81,7 +81,11 @@ pub enum ActionRunRecord {
         events: Vec<DwActionEvent>,
         result: Box<DwActionResult>,
     },
+    ExternalLaunch {
+        plan: Box<ExternalLaunchPlan>,
+    },
     Failed {
+        events: Vec<DwActionEvent>,
         error: ActionRunErrorMessage,
     },
 }
@@ -99,14 +103,16 @@ impl ActionRunRecord {
         Self::Running { events: Vec::new() }
     }
 
-    pub fn failed(error: ActionRunErrorMessage) -> Self {
-        Self::Failed { error }
+    pub fn failed(events: Vec<DwActionEvent>, error: ActionRunErrorMessage) -> Self {
+        Self::Failed { events, error }
     }
 
     pub fn events(&self) -> &[DwActionEvent] {
         match self {
-            Self::Running { events } | Self::Completed { events, .. } => events,
-            Self::Failed { .. } => &[],
+            Self::Running { events }
+            | Self::Completed { events, .. }
+            | Self::Failed { events, .. } => events,
+            Self::ExternalLaunch { .. } => &[],
         }
     }
 }
@@ -187,16 +193,8 @@ impl HistoryState {
         self.output_scroll = self.output_scroll.saturating_sub(1);
     }
 
-    pub fn scroll_output_down(&mut self) {
-        self.output_scroll = (self.output_scroll + 1).min(self.output_max_scroll());
-    }
-
     pub fn scroll_output_home(&mut self) {
         self.output_scroll = 0;
-    }
-
-    pub fn scroll_output_end(&mut self) {
-        self.output_scroll = self.output_max_scroll();
     }
 
     pub fn select_previous_entry(&mut self) {
@@ -215,42 +213,14 @@ impl HistoryState {
         self.entries.get(self.selected_entry)
     }
 
-    pub fn output_max_scroll(&self) -> usize {
-        self.selected_entry()
-            .map(|entry| entry.record.events().len().saturating_sub(1))
+    pub fn running_events(&self, id: ActionRunId) -> Vec<DwActionEvent> {
+        self.entries
+            .iter()
+            .rev()
+            .find(|entry| entry.id == id && entry.status.is_running())
+            .map(|entry| entry.record.events().to_vec())
             .unwrap_or_default()
     }
-}
-
-#[cfg(test)]
-pub fn preview_lines(lines: &[String]) -> Vec<String> {
-    lines
-        .iter()
-        .filter(|line| !line.trim().is_empty())
-        .cloned()
-        .rev()
-        .take(3)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect()
-}
-
-pub fn capped_lines(mut lines: Vec<String>) -> Vec<String> {
-    cap_rendered_lines(&mut lines);
-    lines
-}
-
-fn cap_rendered_lines(lines: &mut Vec<String>) {
-    const MAX_OUTPUT_LINES: usize = 160;
-    if lines.len() <= MAX_OUTPUT_LINES {
-        return;
-    }
-    let omitted = lines.len() - MAX_OUTPUT_LINES;
-    let mut kept = Vec::with_capacity(MAX_OUTPUT_LINES + 1);
-    kept.push(format!("... {omitted} previous lines hidden ..."));
-    kept.extend(lines.drain(omitted..));
-    *lines = kept;
 }
 
 fn cap_events(events: &mut Vec<DwActionEvent>) {
@@ -265,32 +235,6 @@ fn cap_events(events: &mut Vec<DwActionEvent>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn preview_lines_keeps_last_non_empty_lines() {
-        let preview = preview_lines(&[
-            "one".into(),
-            String::new(),
-            "two".into(),
-            "three".into(),
-            "four".into(),
-        ]);
-
-        assert_eq!(preview, ["two", "three", "four"]);
-    }
-
-    #[test]
-    fn capped_lines_caps_long_action_output() {
-        let output = (0..170)
-            .map(|index| format!("line {index}"))
-            .collect::<Vec<_>>();
-
-        let lines = capped_lines(output);
-
-        assert_eq!(lines.len(), 161);
-        assert!(lines[0].contains("previous lines hidden"));
-        assert_eq!(lines.last().map(String::as_str), Some("line 169"));
-    }
 
     #[test]
     fn history_state_caps_entries_and_controls_output_modal() {
@@ -324,12 +268,6 @@ mod tests {
         assert_eq!(history.entries.len(), 20);
         assert_eq!(history.selected_entry, 19);
         assert!(history.open_output());
-
-        history.scroll_output_down();
-        assert_eq!(history.output_scroll, 1);
-
-        history.scroll_output_end();
-        assert_eq!(history.output_scroll, 2);
 
         history.select_previous_entry();
         assert_eq!(history.selected_entry, 18);

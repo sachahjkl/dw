@@ -3,7 +3,7 @@ use crate::app::App;
 use crate::form::FormState;
 #[cfg(test)]
 use crate::history::{ActionRunErrorMessage, ActionRunId, ActionRunLabel};
-use crate::history::{ActionRunRecord, ActionRunStatus, RunHistoryEntry, capped_lines};
+use crate::history::{ActionRunRecord, ActionRunStatus, RunHistoryEntry};
 #[cfg(test)]
 use crate::model::View;
 use crate::model::{ActionRisk, TuiAction};
@@ -166,7 +166,7 @@ pub(crate) fn options_summary_lines(app: &App) -> Vec<String> {
     ]
 }
 
-pub(crate) fn history_output_lines(app: &App) -> Vec<String> {
+pub(crate) fn history_journal_lines(app: &App) -> Vec<String> {
     let Some(entry) = app.history.selected_entry() else {
         return vec![
             "No operation in Journal.".into(),
@@ -220,9 +220,47 @@ pub(crate) fn history_entry_rendered_lines(entry: &RunHistoryEntry) -> Vec<Strin
             lines.extend(result_lines);
             lines
         }
-        ActionRunRecord::Failed { error } => vec![error.to_string()],
+        ActionRunRecord::ExternalLaunch { plan } => {
+            dw_tui_adapter::render::task_open_launch_lines(plan)
+        }
+        ActionRunRecord::Failed { events, error } => {
+            let mut lines = events
+                .iter()
+                .map(dw_tui_adapter::render::action_event_line)
+                .collect::<Vec<_>>();
+            if !lines.is_empty() {
+                lines.push(String::new());
+            }
+            lines.push(error.to_string());
+            lines
+        }
     };
-    capped_lines(lines)
+    capped_history_lines(lines)
+}
+
+#[cfg(test)]
+pub(crate) fn history_entry_preview_lines(entry: &RunHistoryEntry) -> Vec<String> {
+    history_entry_rendered_lines(entry)
+        .into_iter()
+        .filter(|line| !line.trim().is_empty())
+        .rev()
+        .take(3)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
+}
+
+fn capped_history_lines(mut lines: Vec<String>) -> Vec<String> {
+    const MAX_OUTPUT_LINES: usize = 160;
+    if lines.len() <= MAX_OUTPUT_LINES {
+        return lines;
+    }
+    let omitted = lines.len() - MAX_OUTPUT_LINES;
+    let mut kept = Vec::with_capacity(MAX_OUTPUT_LINES + 1);
+    kept.push(format!("... {omitted} previous lines hidden ..."));
+    kept.extend(lines.drain(omitted..));
+    kept
 }
 
 pub(crate) fn option_active(
@@ -581,12 +619,12 @@ mod tests {
     }
 
     #[test]
-    fn history_output_lines_explain_running_capture() {
+    fn history_journal_lines_explain_running_capture() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.history
             .start_running(ActionRunId::new(1), ActionRunLabel::new("Task finish"));
 
-        let lines = history_output_lines(&app);
+        let lines = history_journal_lines(&app);
 
         assert!(lines[1].contains("running"));
         assert!(lines[2].contains("Output is being captured"));
@@ -594,10 +632,10 @@ mod tests {
     }
 
     #[test]
-    fn history_output_lines_explain_empty_journal() {
+    fn history_journal_lines_explain_empty_journal() {
         let app = App::new_ready(Some("/tmp/missing-dw-root".into()));
 
-        let lines = history_output_lines(&app);
+        let lines = history_journal_lines(&app);
 
         assert!(lines[0].contains("No operation"));
         assert!(lines[1].contains("background"));
@@ -605,18 +643,24 @@ mod tests {
     }
 
     #[test]
-    fn history_output_lines_render_failed_record_error() {
+    fn history_journal_lines_render_failed_record_events_and_error() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
         app.history.push(RunHistoryEntry {
             id: ActionRunId::new(1),
             request_label: ActionRunLabel::new("Doctor"),
             status: ActionRunStatus::Failed,
-            record: ActionRunRecord::failed(ActionRunErrorMessage::new("boom")),
+            record: ActionRunRecord::failed(
+                vec![dw_core::DwActionEvent::Started {
+                    action_id: "prepare".into(),
+                }],
+                ActionRunErrorMessage::new("boom"),
+            ),
         });
 
-        let lines = history_output_lines(&app);
+        let lines = history_journal_lines(&app);
 
         assert_eq!(lines[2], "Output captured.");
+        assert!(lines.iter().any(|line| line.contains("prepare")));
         assert!(lines.iter().any(|line| line == "boom"));
     }
 

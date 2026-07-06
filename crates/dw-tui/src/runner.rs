@@ -15,6 +15,7 @@ pub struct ActionRunResult {
     pub display_label: String,
     pub status_label: String,
     pub success: bool,
+    pub launch: ExternalLaunchPlan,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +51,7 @@ pub async fn run_attached(action: &TuiAction) -> Result<ActionRunResult> {
         display_label: action.display_label(),
         status_label: "ok".into(),
         success: true,
+        launch,
     })
 }
 

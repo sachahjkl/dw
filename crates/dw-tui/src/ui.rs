@@ -15,7 +15,7 @@ use crate::model::{
 };
 use crate::ui_text::{
     action_builder_preview_lines, confirmation_lines, form_preview_lines, help_lines,
-    history_output_lines, option_active, options_summary_lines, state_modal_lines,
+    history_journal_lines, option_active, options_summary_lines, state_modal_lines,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2041,7 +2041,7 @@ fn menu_row(
 fn render_history_output(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let popup = centered_rect(82, 72, area);
     frame.render_widget(Clear, popup);
-    let lines = history_output_lines(app);
+    let lines = history_journal_lines(app);
     let block = Block::default().title("Journal").borders(Borders::ALL);
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
