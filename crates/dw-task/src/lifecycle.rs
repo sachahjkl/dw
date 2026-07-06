@@ -89,7 +89,7 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
     )?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     let projects = load_projects_config(&root);
-    let mut options = dw_config::resolve_project(&projects, &manifest.project)
+    let mut options = dw_config::resolve_project(&projects, manifest.project.as_str())
         .and_then(|project| project.azure_dev_ops)
         .ok_or_else(|| {
             anyhow::anyhow!(
@@ -98,7 +98,7 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
             )
         })?;
     if options.project.trim().is_empty() {
-        options.project = manifest.project.clone();
+        options.project = manifest.project.to_string();
     }
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let requested_ids = manifest
@@ -110,9 +110,13 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
     let requested_ids_for_fetch = requested_ids.clone();
     let token_for_fetch = token.clone();
     let snapshots = run_blocking_ado(move || {
+        let requested_id_values = requested_ids_for_fetch
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>();
         get_work_item_snapshots_authenticated(
             &options_for_fetch,
-            &requested_ids_for_fetch,
+            &requested_id_values,
             &token_for_fetch,
         )
     })
@@ -121,7 +125,7 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
 
     Ok(SyncReport {
         workspace,
-        requested_ids: requested_ids.into_iter().map(WorkItemId::from).collect(),
+        requested_ids,
         snapshots,
         manifest: updated,
     })
@@ -162,24 +166,24 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
     )?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     let parent = manifest.parent_work_items()[0].clone();
-    if !requires_child_tasks(parent.kind.as_deref()) {
+    if !requires_child_tasks(parent.kind.as_ref().map(|kind| kind.as_str())) {
         return Err(anyhow::anyhow!(
             "Cette commande est réservée aux User Story et Anomalie."
         ));
     }
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let mut options = resolve_ado_options(&projects, &workflow, &manifest.project)?;
+    let mut options = resolve_ado_options(&projects, &workflow, manifest.project.as_str())?;
     if options.project.trim().is_empty() {
-        options.project = manifest.project.clone();
+        options.project = manifest.project.to_string();
     }
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let task_title = WorkItemTitle::from(child_task_title(args.repo.as_str(), args.title.as_str()));
     let parent_snapshot = WorkItemSnapshot {
-        id: parent.id.clone(),
-        kind: parent.kind.clone(),
-        state: parent.state.clone(),
-        title: parent.title.clone(),
+        id: parent.id.to_string(),
+        kind: parent.kind.as_ref().map(ToString::to_string),
+        state: parent.state.as_ref().map(ToString::to_string),
+        title: parent.title.as_ref().map(ToString::to_string),
         url: None,
     };
     let task_title_for_create = task_title.clone();

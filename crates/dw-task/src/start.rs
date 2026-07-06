@@ -132,7 +132,7 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
     let planned_work_item_ids = if args.with_active_children && !ado_work_items.is_empty() {
         ado_work_items
             .iter()
-            .map(|item| WorkItemId::from(item.id.clone()))
+            .map(|item| item.id.clone())
             .collect::<Vec<_>>()
     } else {
         args.work_item_ids.clone()
@@ -172,7 +172,7 @@ pub async fn execute_start(
                 .work_item_ids
                 .iter()
                 .map(|id| WorkspaceWorkItem {
-                    id: id.to_string(),
+                    id: id.clone(),
                     kind: None,
                     title: None,
                     state: None,
@@ -431,13 +431,17 @@ async fn update_start_states(
 
     let mut updates = Vec::new();
     for item in work_items {
-        let Some(state) = start_state(item.kind.as_deref(), start_options) else {
+        let Some(state) = start_state(
+            item.kind.as_ref().map(WorkItemTypeName::as_str),
+            start_options,
+        ) else {
             continue;
         };
         let label = display_workspace_work_item(item);
         let changed = !item
             .state
-            .as_deref()
+            .as_ref()
+            .map(WorkItemState::as_str)
             .is_some_and(|current| current.eq_ignore_ascii_case(&state));
         if changed {
             let options_for_update = options.clone();
@@ -447,7 +451,7 @@ async fn update_start_states(
             run_blocking_ado(move || {
                 update_work_item_state_authenticated(
                     &options_for_update,
-                    &id_for_update,
+                    id_for_update.as_str(),
                     &state_for_update,
                     "task start",
                     &token_for_update,
@@ -456,7 +460,7 @@ async fn update_start_states(
             .await?;
         }
         updates.push(StartStateUpdate {
-            id: WorkItemId::from(item.id.clone()),
+            id: item.id.clone(),
             label,
             target_state: WorkItemState::from(state),
             changed,

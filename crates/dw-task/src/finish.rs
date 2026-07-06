@@ -145,7 +145,7 @@ pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
     )?;
     let projects = load_projects_config(&root);
     let (manifest, targets, handoff) = plan_task_finish(&projects, &workspace)?;
-    let project_config = resolve_project(&projects, &manifest.project);
+    let project_config = resolve_project(&projects, manifest.project.as_str());
     let targets = targets
         .into_iter()
         .map(|target| {
@@ -278,7 +278,10 @@ pub async fn execute_finish_with_events(
                 },
             );
             commit_repository(target.target.path.as_str(), &plan.commit_message)?;
-            push_repository(target.target.path.as_str(), &plan.manifest.branch_name)?;
+            push_repository(
+                target.target.path.as_str(),
+                plan.manifest.branch_name.as_str(),
+            )?;
             git_actions.push(FinishGitAction {
                 repository: target.target.repository.clone(),
                 operation: GitOperation::CommitAndPush,
@@ -310,7 +313,10 @@ pub async fn execute_finish_with_events(
                     operation: GitOperation::Push,
                 },
             );
-            push_repository(target.target.path.as_str(), &plan.manifest.branch_name)?;
+            push_repository(
+                target.target.path.as_str(),
+                plan.manifest.branch_name.as_str(),
+            )?;
             git_actions.push(FinishGitAction {
                 repository: target.target.repository.clone(),
                 operation: GitOperation::Push,
@@ -349,9 +355,9 @@ pub async fn execute_finish_with_events(
             pull_request_candidate_count: plan.pull_request_candidates.len(),
         },
     );
-    let mut options = resolve_ado_options(&projects, &workflow, &plan.manifest.project)?;
+    let mut options = resolve_ado_options(&projects, &workflow, plan.manifest.project.as_str())?;
     if options.project.trim().is_empty() {
-        options.project = plan.manifest.project.clone();
+        options.project = plan.manifest.project.to_string();
     }
     let token = require_token(load_auth_options(Some(plan.root.as_str()))?).await?;
     let source_ref = format!("refs/heads/{}", plan.manifest.branch_name);
@@ -420,7 +426,12 @@ pub async fn execute_finish_with_events(
                 &handoff_summary,
             ),
             is_draft: !plan.ready,
-            work_item_ids: plan.manifest.all_known_work_item_ids(),
+            work_item_ids: plan
+                .manifest
+                .all_known_work_item_ids()
+                .into_iter()
+                .map(|id| id.to_string())
+                .collect(),
         };
         let options_for_create = options.clone();
         let token_for_create = token.clone();
@@ -439,7 +450,7 @@ pub async fn execute_finish_with_events(
                         &options_for_link,
                         &repository_for_link,
                         pull_request_id,
-                        &id_for_link,
+                        id_for_link.as_str(),
                         &token_for_link,
                     )
                 })
@@ -449,7 +460,7 @@ pub async fn execute_finish_with_events(
                         &mut events,
                         &mut emit,
                         TaskActionEvent::PullRequestWorkItemLinkSkipped {
-                            work_item_id: WorkItemId::from(id),
+                            work_item_id: id,
                             error: error.to_string(),
                         },
                     );
@@ -465,7 +476,7 @@ pub async fn execute_finish_with_events(
             &mut events,
             &mut emit,
             TaskActionEvent::UpdatingFinishWorkItemStates {
-                work_item_ids: ids.iter().cloned().map(WorkItemId::from).collect(),
+                work_item_ids: ids.clone(),
             },
         );
         for id in ids {
@@ -475,15 +486,17 @@ pub async fn execute_finish_with_events(
             let item = run_blocking_ado(move || {
                 get_work_item_snapshot_authenticated(
                     &options_for_fetch,
-                    &id_for_fetch,
+                    id_for_fetch.as_str(),
                     &token_for_fetch,
                 )
             })
             .await?;
             let state = finish_state(
-                item.kind
-                    .as_deref()
-                    .or(plan.manifest.work_item_type.as_deref()),
+                item.kind.as_deref().or(plan
+                    .manifest
+                    .work_item_type
+                    .as_ref()
+                    .map(|kind| kind.as_str())),
                 &finish_options,
             );
             let label = work_item_label(&item);
@@ -522,7 +535,7 @@ pub async fn execute_finish_with_events(
             run_blocking_ado(move || {
                 update_work_item_state_authenticated(
                     &options_for_update,
-                    &id_for_update,
+                    id_for_update.as_str(),
                     &state_for_update,
                     "task finish: PR ouverte",
                     &token_for_update,

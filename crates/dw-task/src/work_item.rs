@@ -93,9 +93,9 @@ pub async fn add_work_item_choices_report(
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let mut options = resolve_ado_options(&projects, &workflow, &manifest.project)?;
+    let mut options = resolve_ado_options(&projects, &workflow, manifest.project.as_str())?;
     if options.project.trim().is_empty() {
-        options.project = manifest.project.clone();
+        options.project = manifest.project.to_string();
     }
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let items = query_assigned_work_items(&options, 50, &token).await?;
@@ -104,16 +104,16 @@ pub async fn add_work_item_choices_report(
         .filter(|item| !manifest.matches_work_item(&item.id))
         .filter(|item| !dw_workspace::is_final_state(item.kind.as_deref(), item.state.as_deref()))
         .map(|item| WorkspaceWorkItem {
-            id: item.id,
-            kind: item.kind,
-            title: item.title,
-            state: item.state,
+            id: WorkItemId::from(item.id),
+            kind: item.kind.map(WorkItemTypeName::from),
+            title: item.title.map(WorkItemTitle::from),
+            state: item.state.map(WorkItemState::from),
         })
         .collect::<Vec<_>>();
 
     Ok(WorkItemChoicesReport {
         workspace,
-        project: ProjectKey::from(manifest.project),
+        project: manifest.project,
         choices,
     })
 }
@@ -126,7 +126,7 @@ pub fn removable_work_item_choices_report(
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     Ok(WorkItemChoicesReport {
         workspace,
-        project: ProjectKey::from(manifest.project.clone()),
+        project: manifest.project.clone(),
         choices: removable_work_item_choices(&manifest),
     })
 }
@@ -181,9 +181,10 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
     } else {
         let projects = load_projects_config(&root);
         let workflow = load_workflow_config(&root);
-        let mut options = resolve_ado_options(&projects, &workflow, &current_manifest.project)?;
+        let mut options =
+            resolve_ado_options(&projects, &workflow, current_manifest.project.as_str())?;
         if options.project.trim().is_empty() {
-            options.project = current_manifest.project.clone();
+            options.project = current_manifest.project.to_string();
         }
         let token = require_token(load_auth_options(Some(&root))?).await?;
         let options = options.clone();

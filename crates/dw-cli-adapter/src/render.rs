@@ -970,7 +970,13 @@ pub fn task_prune_plan_lines(report: &dw_task::prune::PrunePlanReport) -> Vec<St
         ));
         lines.push(format!(
             "Repositories: {}",
-            candidate.manifest.repositories.join(", ")
+            candidate
+                .manifest
+                .repositories
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     lines
@@ -1303,7 +1309,10 @@ pub fn task_start_execution_lines(report: &dw_task::start::StartExecutionReport)
             "ADO task créée [{}]: #{} {}",
             task.repository,
             task.id,
-            task.title.as_deref().unwrap_or("(sans titre)")
+            task.title
+                .as_ref()
+                .map(|title| title.as_str())
+                .unwrap_or("(sans titre)")
         ));
     }
     for update in &report.state_updates {
@@ -1545,12 +1554,19 @@ fn format_current_work_items(items: &[dw_workspace::WorkspaceWorkItem]) -> Strin
     items
         .iter()
         .map(|item| {
-            let title = item.title.clone().unwrap_or_else(|| "(sans titre)".into());
-            let metadata = [item.kind.as_deref(), item.state.as_deref()]
-                .into_iter()
-                .flatten()
-                .filter(|value| !value.trim().is_empty())
-                .collect::<Vec<_>>();
+            let title = item
+                .title
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "(sans titre)".into());
+            let metadata = [
+                item.kind.as_ref().map(|kind| kind.as_str()),
+                item.state.as_ref().map(|state| state.as_str()),
+            ]
+            .into_iter()
+            .flatten()
+            .filter(|value| !value.trim().is_empty())
+            .collect::<Vec<_>>();
             if metadata.is_empty() {
                 format!("#{} {}", item.id, title)
             } else {
@@ -1970,9 +1986,18 @@ fn work_item_line(item: &dw_workspace::WorkspaceWorkItem) -> String {
     format!(
         "#{} [{} / {}] {}",
         item.id,
-        item.kind.as_deref().unwrap_or("type inconnu"),
-        item.state.as_deref().unwrap_or("état inconnu"),
-        item.title.as_deref().unwrap_or("(sans titre)")
+        item.kind
+            .as_ref()
+            .map(|kind| kind.as_str())
+            .unwrap_or("type inconnu"),
+        item.state
+            .as_ref()
+            .map(|state| state.as_str())
+            .unwrap_or("état inconnu"),
+        item.title
+            .as_ref()
+            .map(|title| title.as_str())
+            .unwrap_or("(sans titre)")
     )
 }
 

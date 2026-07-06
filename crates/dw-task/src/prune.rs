@@ -152,16 +152,16 @@ async fn sync_workspaces(root: &str, workspaces: &[WorkspaceSummary]) -> Vec<Pru
     for workspace in workspaces {
         let result: Result<Vec<WorkspaceWorkItem>> = async {
             let mut options =
-                resolve_ado_options(&projects, &workflow, &workspace.manifest.project)?;
+                resolve_ado_options(&projects, &workflow, workspace.manifest.project.as_str())?;
             if options.project.trim().is_empty() {
-                options.project = workspace.manifest.project.clone();
+                options.project = workspace.manifest.project.to_string();
             }
             let token = require_token(auth_options.clone()).await?;
             let ids = workspace
                 .manifest
                 .parent_work_items()
                 .into_iter()
-                .map(|item| item.id)
+                .map(|item| item.id.to_string())
                 .collect::<Vec<_>>();
             let options_for_fetch = options.clone();
             let token_for_fetch = token.clone();
@@ -204,7 +204,13 @@ pub fn prune_candidate_choice(candidate: &WorkspaceSummary) -> String {
     format!(
         "{} - {} - {}",
         prune_candidate_label(candidate),
-        candidate.manifest.repositories.join(", "),
+        candidate
+            .manifest
+            .repositories
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
         candidate.path
     )
 }

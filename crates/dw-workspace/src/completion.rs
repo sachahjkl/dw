@@ -20,7 +20,13 @@ pub fn repository_values(
     if let Some(workspace) = workspace
         && let Ok(manifest) = read_manifest_path(&format!("{workspace}/task.json"))
     {
-        return dedup_preserving_order(manifest.repositories);
+        return dedup_preserving_order(
+            manifest
+                .repositories
+                .into_iter()
+                .map(|repository| repository.to_string())
+                .collect(),
+        );
     }
     dedup_preserving_order(values)
 }

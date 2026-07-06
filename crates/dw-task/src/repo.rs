@@ -153,7 +153,7 @@ pub fn repo_latest_plan(args: RepoLatestArgs) -> Result<RepoLatestPlanReport> {
 
     Ok(RepoLatestPlanReport {
         workspace,
-        branch_name: BranchName::from(manifest.branch_name),
+        branch_name: manifest.branch_name,
         targets,
     })
 }
@@ -199,7 +199,7 @@ pub fn commit_plan(args: CommitArgs) -> Result<CommitPlanReport> {
 
     Ok(CommitPlanReport {
         workspace,
-        branch_name: BranchName::from(manifest.branch_name.clone()),
+        branch_name: manifest.branch_name.clone(),
         message: build_commit_message(&manifest, args.message.as_deref()),
         targets: statuses,
     })
@@ -330,7 +330,7 @@ pub fn add_repo_choices_for_manifest(
     projects: &dw_config::ProjectsConfig,
     manifest: &dw_workspace::WorkspaceManifest,
 ) -> Vec<WorkspaceRepositoryName> {
-    resolve_project(projects, &manifest.project)
+    resolve_project(projects, manifest.project.as_str())
         .map(|project| {
             project
                 .repositories
@@ -339,7 +339,7 @@ pub fn add_repo_choices_for_manifest(
                     !manifest
                         .repositories
                         .iter()
-                        .any(|existing| existing.eq_ignore_ascii_case(repository))
+                        .any(|existing| existing.as_str().eq_ignore_ascii_case(repository))
                 })
                 .cloned()
                 .map(WorkspaceRepositoryName::from)

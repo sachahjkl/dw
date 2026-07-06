@@ -4,7 +4,9 @@ use dw_ado::{
     create_child_task_authenticated, get_related_work_item_ids,
     get_work_item_snapshots_authenticated, is_final_state,
 };
-use dw_core::{WorkItemId, WorkspaceRepositoryName};
+use dw_core::{
+    WorkItemId, WorkItemState, WorkItemTitle, WorkItemTypeName, WorkspaceRepositoryName,
+};
 use dw_workspace::{WorkspaceChildTask, WorkspaceWorkItem};
 
 pub fn load_start_work_items(
@@ -22,7 +24,7 @@ pub fn load_start_work_items(
         return Ok(selected_ids
             .into_iter()
             .map(|id| dw_workspace::WorkspaceWorkItem {
-                id,
+                id: WorkItemId::from(id),
                 kind: None,
                 title: None,
                 state: None,
@@ -50,17 +52,21 @@ pub fn create_start_child_tasks(
         return Ok(Vec::new());
     };
     let parent_snapshot = WorkItemSnapshot {
-        id: parent.id.clone(),
-        kind: parent.kind.clone(),
-        state: parent.state.clone(),
-        title: parent.title.clone(),
+        id: parent.id.to_string(),
+        kind: parent.kind.as_ref().map(ToString::to_string),
+        state: parent.state.as_ref().map(ToString::to_string),
+        title: parent.title.as_ref().map(ToString::to_string),
         url: None,
     };
     let mut created = Vec::new();
     for repository in repositories {
         let title = child_task_title(
             repository.as_str(),
-            parent.title.as_deref().unwrap_or(parent.id.as_str()),
+            parent
+                .title
+                .as_ref()
+                .map(WorkItemTitle::as_str)
+                .unwrap_or(parent.id.as_str()),
         );
         let result = create_child_task_authenticated(
             options,
@@ -71,9 +77,9 @@ pub fn create_start_child_tasks(
             token,
         )?;
         created.push(WorkspaceChildTask {
-            repository: repository.to_string(),
-            id: result.id,
-            title: Some(result.title),
+            repository: repository.clone(),
+            id: WorkItemId::from(result.id),
+            title: Some(WorkItemTitle::from(result.title)),
         });
     }
     Ok(created)
@@ -122,10 +128,10 @@ pub fn merge_start_snapshots(
     snapshots
         .into_iter()
         .map(|snapshot| dw_workspace::WorkspaceWorkItem {
-            id: snapshot.id,
-            kind: snapshot.kind,
-            title: snapshot.title,
-            state: snapshot.state,
+            id: WorkItemId::from(snapshot.id),
+            kind: snapshot.kind.map(WorkItemTypeName::from),
+            title: snapshot.title.map(WorkItemTitle::from),
+            state: snapshot.state.map(WorkItemState::from),
         })
         .collect()
 }

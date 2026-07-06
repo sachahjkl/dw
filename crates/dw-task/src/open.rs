@@ -98,7 +98,7 @@ pub fn resolve_open_launch(args: OpenWorkspaceArgs) -> Result<ExternalLaunchPlan
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let project_config = resolve_project(&projects, &manifest.project);
+    let project_config = resolve_project(&projects, manifest.project.as_str());
     let target = resolve_open_target(
         &workspace,
         &manifest,

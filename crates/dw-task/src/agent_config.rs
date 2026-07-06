@@ -1,5 +1,5 @@
 use anyhow::Result;
-use dw_core::{ProjectKey, WorkItemId, WorkItemTitle, WorkItemTypeName, WorkspacePath};
+use dw_core::WorkspacePath;
 
 pub fn write_workspace_agent_configs(
     workspace: &str,
@@ -11,12 +11,12 @@ pub fn write_workspace_agent_configs(
             .parent_work_items()
             .into_iter()
             .map(|item| dw_agent::WorkspaceWorkItemRef {
-                id: WorkItemId::from(item.id),
-                kind: item.kind.map(WorkItemTypeName::from),
-                title: item.title.map(WorkItemTitle::from),
+                id: item.id,
+                kind: item.kind,
+                title: item.title,
             })
             .collect(),
-        project: ProjectKey::from(manifest.project.clone()),
+        project: manifest.project.clone(),
     });
     for file in config_files {
         let path = std::path::Path::new(workspace).join(file.relative_path);
