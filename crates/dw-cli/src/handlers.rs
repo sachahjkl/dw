@@ -396,20 +396,27 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
             positional_work_item,
         } => {
-            let report = dw_task::validate::preflight_report(dw_task::validate::PreflightArgs {
-                workspace: workspace.map(WorkspacePath::from),
-                root: root.map(DevWorkflowRoot::from),
-                project: project.map(ProjectKey::from),
-                work_item_ids: parse_workspace_filter_work_item_ids(
-                    work_item.as_deref(),
-                    positional_work_item.as_deref(),
-                )?,
-                r#continue,
-                ai_context_files: ai_context_file
-                    .into_iter()
-                    .map(dw_core::AiContextFilePath::from)
-                    .collect(),
-            })?;
+            let report = match *execute_task_cli_action(dw_app::DwActionRequest::TaskPreflight(
+                dw_task::validate::PreflightArgs {
+                    workspace: workspace.map(WorkspacePath::from),
+                    root: root.map(DevWorkflowRoot::from),
+                    project: project.map(ProjectKey::from),
+                    work_item_ids: parse_workspace_filter_work_item_ids(
+                        work_item.as_deref(),
+                        positional_work_item.as_deref(),
+                    )?,
+                    r#continue,
+                    ai_context_files: ai_context_file
+                        .into_iter()
+                        .map(dw_core::AiContextFilePath::from)
+                        .collect(),
+                },
+            ))
+            .await?
+            {
+                dw_app::TaskActionResult::Preflight(report) => report,
+                result => anyhow::bail!("Résultat task preflight inattendu: {result:?}"),
+            };
             if json {
                 print_json(&report)?;
             } else {
@@ -425,18 +432,24 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
             positional_work_item,
         } => {
-            let report = dw_task::validate::handoff_validation_report(
-                dw_task::validate::HandoffValidateArgs {
-                    workspace: workspace.map(WorkspacePath::from),
-                    root: root.map(DevWorkflowRoot::from),
-                    project: project.map(ProjectKey::from),
-                    work_item_ids: parse_workspace_filter_work_item_ids(
-                        work_item.as_deref(),
-                        positional_work_item.as_deref(),
-                    )?,
-                    r#continue,
-                },
-            )?;
+            let report =
+                match *execute_task_cli_action(dw_app::DwActionRequest::TaskHandoffValidate(
+                    dw_task::validate::HandoffValidateArgs {
+                        workspace: workspace.map(WorkspacePath::from),
+                        root: root.map(DevWorkflowRoot::from),
+                        project: project.map(ProjectKey::from),
+                        work_item_ids: parse_workspace_filter_work_item_ids(
+                            work_item.as_deref(),
+                            positional_work_item.as_deref(),
+                        )?,
+                        r#continue,
+                    },
+                ))
+                .await?
+                {
+                    dw_app::TaskActionResult::HandoffValidate(report) => report,
+                    result => anyhow::bail!("Résultat task handoff validate inattendu: {result:?}"),
+                };
             if json {
                 print_json(&report)?;
             } else {
@@ -655,17 +668,23 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             positional_work_item,
             json,
         } => {
-            let report = dw_task::lifecycle::sync_report(dw_task::lifecycle::SyncArgs {
-                workspace: workspace.map(WorkspacePath::from),
-                root: root.map(DevWorkflowRoot::from),
-                project: project.map(ProjectKey::from),
-                work_item_ids: parse_workspace_filter_work_item_ids(
-                    work_item.as_deref(),
-                    positional_work_item.as_deref(),
-                )?,
-                r#continue,
-            })
-            .await?;
+            let report = match *execute_task_cli_action(dw_app::DwActionRequest::TaskSync(
+                dw_task::lifecycle::SyncArgs {
+                    workspace: workspace.map(WorkspacePath::from),
+                    root: root.map(DevWorkflowRoot::from),
+                    project: project.map(ProjectKey::from),
+                    work_item_ids: parse_workspace_filter_work_item_ids(
+                        work_item.as_deref(),
+                        positional_work_item.as_deref(),
+                    )?,
+                    r#continue,
+                },
+            ))
+            .await?
+            {
+                dw_app::TaskActionResult::Sync(report) => report,
+                result => anyhow::bail!("Résultat task sync inattendu: {result:?}"),
+            };
             if json {
                 print_json(&report)?;
             } else {
@@ -721,21 +740,27 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             positional_work_item,
             json,
         } => {
-            let report = dw_task::lifecycle::create_child_task_report(
-                dw_task::lifecycle::CreateChildTaskArgs {
-                    repo: dw_core::WorkspaceRepositoryName::from(repo),
-                    title: dw_core::WorkItemTitle::from(title),
-                    workspace: workspace.map(WorkspacePath::from),
-                    root: root.map(DevWorkflowRoot::from),
-                    project: project.map(ProjectKey::from),
-                    work_item_ids: parse_workspace_filter_work_item_ids(
-                        work_item.as_deref(),
-                        positional_work_item.as_deref(),
-                    )?,
-                    r#continue,
-                },
+            let report = match *execute_task_cli_action(
+                dw_app::DwActionRequest::TaskCreateChildTask(
+                    dw_task::lifecycle::CreateChildTaskArgs {
+                        repo: dw_core::WorkspaceRepositoryName::from(repo),
+                        title: dw_core::WorkItemTitle::from(title),
+                        workspace: workspace.map(WorkspacePath::from),
+                        root: root.map(DevWorkflowRoot::from),
+                        project: project.map(ProjectKey::from),
+                        work_item_ids: parse_workspace_filter_work_item_ids(
+                            work_item.as_deref(),
+                            positional_work_item.as_deref(),
+                        )?,
+                        r#continue,
+                    },
+                ),
             )
-            .await?;
+            .await?
+            {
+                dw_app::TaskActionResult::CreateChildTask(report) => report,
+                result => anyhow::bail!("Résultat task create-child-task inattendu: {result:?}"),
+            };
             if json {
                 print_json(&report)?;
             } else {
@@ -948,6 +973,15 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+async fn execute_task_cli_action(
+    request: dw_app::DwActionRequest,
+) -> Result<Box<dw_app::TaskActionResult>> {
+    match execute_cli_action(request).await? {
+        dw_app::DwActionResult::Task(result) => Ok(result),
+        result => anyhow::bail!("Résultat task inattendu: {result:?}"),
+    }
 }
 
 async fn handle_ado(command: AdoCommand) -> Result<()> {
