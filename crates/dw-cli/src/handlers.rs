@@ -19,9 +19,7 @@ use std::time::Duration;
 pub(crate) async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Version => {
-            print_lines(&dw_cli_adapter::render::version_lines(
-                &informational_version(),
-            ));
+            run_cli_action(dw_app::DwActionRequest::Version).await?;
         }
         Command::Guide => {
             print_lines(&dw_cli_adapter::render::guide_lines(
@@ -30,13 +28,22 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
             ));
         }
         Command::Doctor { fix } => {
-            let report = dw_doctor::run_doctor(fix)?;
-            print_lines(&dw_cli_adapter::render::doctor_report_lines(
-                &report,
-                &TerminalTheme::stdout_auto(),
-            ));
-            if !report.passed() {
-                return Err(anyhow::anyhow!("doctor a détecté des points à corriger."));
+            if fix {
+                let report = dw_doctor::run_doctor(true)?;
+                print_lines(&dw_cli_adapter::render::doctor_report_lines(
+                    &report,
+                    &TerminalTheme::stdout_auto(),
+                ));
+                if !report.passed() {
+                    return Err(anyhow::anyhow!("doctor a détecté des points à corriger."));
+                }
+            } else {
+                let result = run_cli_action(dw_app::DwActionRequest::Doctor).await?;
+                if let dw_app::DwActionResult::Doctor(report) = result
+                    && !report.passed()
+                {
+                    return Err(anyhow::anyhow!("doctor a détecté des points à corriger."));
+                }
             }
         }
         Command::Init {
@@ -45,30 +52,31 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
             dry_run,
             no_save,
         } => {
-            let report = dw_config::command::init(dw_config::command::InitCommandArgs {
-                root,
-                profile,
-                no_save,
-                dry_run,
-            })?;
-            print_lines(&dw_cli_adapter::render::init_report_lines(&report));
+            run_cli_action(dw_app::DwActionRequest::ConfigInit(
+                dw_config::command::InitCommandArgs {
+                    root,
+                    profile,
+                    no_save,
+                    dry_run,
+                },
+            ))
+            .await?;
         }
         Command::Refresh { root, profile } => {
-            let report = dw_config::command::refresh(dw_config::command::RefreshCommandArgs {
-                root,
-                profile,
-            })?;
-            print_lines(&dw_cli_adapter::render::refresh_report_lines(&report));
+            run_cli_action(dw_app::DwActionRequest::Refresh(
+                dw_config::command::RefreshCommandArgs { root, profile },
+            ))
+            .await?;
         }
         Command::Tui { root } => dw_tui::run_tui(root)?,
-        Command::Agent { command } => handle_agent(command)?,
+        Command::Agent { command } => handle_agent(command).await?,
         Command::Auth { command } => handle_auth(command).await?,
         Command::Completion { command } => handle_completion(command)?,
-        Command::Config { command } => handle_config(command)?,
+        Command::Config { command } => handle_config(command).await?,
 
         Command::Ado { command } => handle_ado(command).await?,
         Command::Db { command } => handle_db(command).await?,
-        Command::Secret { command } => handle_secret(command)?,
+        Command::Secret { command } => handle_secret(command).await?,
         Command::Upgrade { check, rid } => {
             handle_upgrade_command(check, rid).await?;
         }
@@ -76,6 +84,36 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn run_cli_action(request: dw_app::DwActionRequest) -> Result<dw_app::DwActionResult> {
+    let result = execute_cli_action(request).await?;
+    print_lines(&dw_cli_adapter::render::action_result_lines(
+        &result,
+        &TerminalTheme::stdout_auto(),
+    ));
+    Ok(result)
+}
+
+async fn execute_cli_action(request: dw_app::DwActionRequest) -> Result<dw_app::DwActionResult> {
+    let action = dw_app::spawn_action(request);
+    let result = action.result;
+    let mut events = action.events;
+    while let Some(event) = events.recv().await {
+        print_cli_action_event(&event);
+    }
+    result.await?
+}
+
+fn print_cli_action_event(event: &DwActionEvent) {
+    match event {
+        DwActionEvent::Ado(event) => print_ado_action_event(event.clone()),
+        DwActionEvent::Task(event) => {
+            print_lines(&[dw_cli_adapter::render::task_action_event_line(event)]);
+        }
+        DwActionEvent::Upgrade(event) => print_upgrade_event_line(event),
+        _ => {}
+    }
 }
 
 async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> {
@@ -1842,8 +1880,19 @@ fn print_db_result(result: &dw_db::QueryResult, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn handle_secret(command: SecretCommand) -> Result<()> {
+async fn handle_secret(command: SecretCommand) -> Result<()> {
     match command {
+        SecretCommand::Set {
+            key,
+            value,
+            from_env: Some(from_env),
+        } if value.is_none() => {
+            run_cli_action(dw_app::DwActionRequest::SecretSetFromEnv {
+                key: SecretKey::from(key),
+                env: EnvironmentVariableName::from(from_env),
+            })
+            .await?;
+        }
         SecretCommand::Set {
             key,
             value,
@@ -1871,18 +1920,22 @@ fn handle_secret(command: SecretCommand) -> Result<()> {
             print_lines(&dw_cli_adapter::render::secret_set_lines(&report));
         }
         SecretCommand::Get { key } => {
-            let report = dw_secret::command::get_secret(&SecretKey::from(key))?;
-            print_lines(&dw_cli_adapter::render::secret_get_lines(&report));
+            run_cli_action(dw_app::DwActionRequest::SecretGet {
+                key: SecretKey::from(key),
+            })
+            .await?;
         }
         SecretCommand::Delete { key } => {
-            let report = dw_secret::command::delete_secret_key(&SecretKey::from(key))?;
-            print_lines(&dw_cli_adapter::render::secret_delete_lines(&report));
+            run_cli_action(dw_app::DwActionRequest::SecretDelete {
+                key: SecretKey::from(key),
+            })
+            .await?;
         }
     }
     Ok(())
 }
 
-fn handle_agent(command: AgentCommand) -> Result<()> {
+async fn handle_agent(command: AgentCommand) -> Result<()> {
     match command {
         AgentCommand::Context => {
             let root = dw_config::resolve_root(None);
@@ -1923,80 +1976,89 @@ fn handle_agent(command: AgentCommand) -> Result<()> {
             dw_task::open::run_external_launch(&launch)?;
         }
         AgentCommand::Config { root } | AgentCommand::Show { root } => {
-            let root = dw_config::resolve_root(root.as_deref());
-            let root = DevWorkflowRoot::from(root);
-            let agent = dw_config::default_agent(&root);
-            print_lines(&dw_cli_adapter::render::agent_config_lines(
-                &root,
-                &agent,
-                &TerminalTheme::stdout_auto(),
-            ));
+            run_cli_action(dw_app::DwActionRequest::AgentConfig {
+                root: root.map(DevWorkflowRoot::from),
+            })
+            .await?;
         }
         AgentCommand::SetDefault { root, agent } => {
-            let root = dw_config::resolve_root(root.as_deref());
-            let root = DevWorkflowRoot::from(root);
-            let agent = dw_config::set_default_agent(&root, agent.parse::<Agent>()?)?;
-            print_lines(&dw_cli_adapter::render::agent_config_updated_lines(
-                &root,
-                &agent,
-                &TerminalTheme::stdout_auto(),
-            ));
+            run_cli_action(dw_app::DwActionRequest::AgentSetDefault {
+                root: root.map(DevWorkflowRoot::from),
+                agent: agent.parse::<Agent>()?,
+            })
+            .await?;
         }
         AgentCommand::Doctor { agent } => {
-            let report = dw_agent::command::agent_doctor(
-                agent.as_deref().map(str::parse::<Agent>).transpose()?,
-            )?;
-            print_lines(&dw_cli_adapter::render::agent_doctor_lines(
-                &report,
-                &TerminalTheme::stdout_auto(),
-            ));
+            run_cli_action(dw_app::DwActionRequest::AgentDoctor {
+                agent: agent.as_deref().map(str::parse::<Agent>).transpose()?,
+            })
+            .await?;
         }
     }
     Ok(())
 }
 
-fn handle_config(command: ConfigCommand) -> Result<()> {
+async fn handle_config(command: ConfigCommand) -> Result<()> {
     match command {
         ConfigCommand::Show { root, json } => {
-            let root = root.map(DevWorkflowRoot::from);
-            let report = dw_config::command::show(root.as_ref());
-            if json {
-                print_json(&report)?;
-            } else {
-                print_lines(&dw_cli_adapter::render::config_show_lines(
-                    &report,
-                    &TerminalTheme::stdout_auto(),
-                ));
+            let result = execute_cli_action(dw_app::DwActionRequest::ConfigShow {
+                root: root.map(DevWorkflowRoot::from),
+            })
+            .await?;
+            match result {
+                dw_app::DwActionResult::Config(dw_app::ConfigActionResult::Show(report))
+                    if json =>
+                {
+                    print_json(&report)?;
+                }
+                result => {
+                    print_lines(&dw_cli_adapter::render::action_result_lines(
+                        &result,
+                        &TerminalTheme::stdout_auto(),
+                    ));
+                }
             }
         }
         ConfigCommand::Doctor { root, json } => {
-            let root = root.map(DevWorkflowRoot::from);
-            let report = dw_config::command::doctor(root.as_ref());
-            if json {
-                print_json(&report)?;
-            } else {
-                print_lines(&dw_cli_adapter::render::config_doctor_lines(
-                    &report,
-                    &TerminalTheme::stdout_auto(),
-                ));
-            }
-            if !report.passed {
-                std::process::exit(1);
+            let result = execute_cli_action(dw_app::DwActionRequest::ConfigDoctor {
+                root: root.map(DevWorkflowRoot::from),
+            })
+            .await?;
+            match result {
+                dw_app::DwActionResult::Config(dw_app::ConfigActionResult::Doctor(report)) => {
+                    if json {
+                        print_json(&report)?;
+                    } else {
+                        print_lines(&dw_cli_adapter::render::action_result_lines(
+                            &dw_app::DwActionResult::Config(dw_app::ConfigActionResult::Doctor(
+                                report.clone(),
+                            )),
+                            &TerminalTheme::stdout_auto(),
+                        ));
+                    }
+                    if !report.passed {
+                        std::process::exit(1);
+                    }
+                }
+                result => {
+                    print_lines(&dw_cli_adapter::render::action_result_lines(
+                        &result,
+                        &TerminalTheme::stdout_auto(),
+                    ));
+                }
             }
         }
         ConfigCommand::SetRoot { path } => {
-            let report = dw_config::command::set_root(&ConfigRootPath::from(path))?;
-            print_lines(&[
-                "Configuration mise à jour".into(),
-                format!("Root      : {}", report.path),
-            ]);
+            run_cli_action(dw_app::DwActionRequest::ConfigSetRoot {
+                path: ConfigRootPath::from(path),
+            })
+            .await?;
         }
         ConfigCommand::SetColor { mode } => {
-            let report = dw_config::command::set_color(&mode.parse::<ConfigColorMode>()?)?;
-            print_lines(&[
-                "Configuration mise à jour".into(),
-                format!("Couleur   : {}", report.mode),
-            ]);
+            run_cli_action(dw_app::DwActionRequest::ConfigSetColor {
+                mode: mode.parse::<ConfigColorMode>()?,
+            })
+            .await?;
         }
     }
     Ok(())

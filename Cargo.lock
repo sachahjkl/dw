@@ -1042,6 +1042,7 @@ dependencies = [
  "dw-ado",
  "dw-ado-commands",
  "dw-agent",
+ "dw-app",
  "dw-config",
  "dw-contracts",
  "dw-core",
