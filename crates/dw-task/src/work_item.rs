@@ -4,7 +4,7 @@ use dw_ado::WorkItemSnapshot;
 use dw_ado::auth::require_token;
 use dw_ado::{get_work_item_snapshots_authenticated, query_assigned_work_items, run_blocking_ado};
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::WorkItemId;
+use dw_core::{ProjectKey, WorkItemId, WorkspacePath};
 use dw_workspace::{
     WorkspaceManifest, WorkspaceWorkItem, execute_work_item_update, plan_add_work_item_snapshots,
     plan_add_work_items, plan_remove_work_items, read_manifest_path, resolve_workspace,
@@ -58,15 +58,15 @@ pub enum WorkItemUpdateAction {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkItemChoicesReport {
-    pub workspace: String,
-    pub project: String,
+    pub workspace: WorkspacePath,
+    pub project: ProjectKey,
     pub choices: Vec<WorkspaceWorkItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkItemUpdatePlanReport {
     pub action: WorkItemUpdateAction,
-    pub workspace: String,
+    pub workspace: WorkspacePath,
     #[serde(rename = "requestedIds")]
     pub requested_ids: Vec<WorkItemId>,
     #[serde(rename = "skippedExistingIds")]
@@ -81,7 +81,7 @@ pub struct WorkItemUpdateExecutionReport {
     pub plan: dw_workspace::TaskWorkItemUpdatePlan,
     pub manifest: WorkspaceManifest,
     #[serde(rename = "newWorkspace")]
-    pub new_workspace: String,
+    pub new_workspace: WorkspacePath,
 }
 
 pub async fn add_work_item_choices_report(
@@ -111,8 +111,8 @@ pub async fn add_work_item_choices_report(
         .collect::<Vec<_>>();
 
     Ok(WorkItemChoicesReport {
-        workspace,
-        project: manifest.project,
+        workspace: WorkspacePath::from(workspace),
+        project: ProjectKey::from(manifest.project),
         choices,
     })
 }
@@ -124,8 +124,8 @@ pub fn removable_work_item_choices_report(
     let workspace = resolve_workspace_from_args(&root, &args)?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
     Ok(WorkItemChoicesReport {
-        workspace,
-        project: manifest.project.clone(),
+        workspace: WorkspacePath::from(workspace),
+        project: ProjectKey::from(manifest.project.clone()),
         choices: removable_work_item_choices(&manifest),
     })
 }
@@ -136,8 +136,6 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
             "Work items à ajouter manquants. Fournir au moins un identifiant."
         ));
     }
-    let requested_id_values = work_item_id_values(&args.work_item_ids);
-    let work_item_selection = requested_id_values.join(",");
     let root = resolve_root(args.root.as_deref());
     let workspace = resolve_workspace(
         &root,
@@ -162,7 +160,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
     if missing_ids.is_empty() {
         return Ok(WorkItemUpdatePlanReport {
             action: WorkItemUpdateAction::Add,
-            workspace,
+            workspace: WorkspacePath::from(workspace),
             requested_ids,
             skipped_existing_ids,
             snapshots: Vec::new(),
@@ -174,7 +172,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
         let (_manifest, plan) = plan_add_work_items(
             &root,
             &workspace,
-            &work_item_selection,
+            &missing_ids,
             args.type_name.as_deref(),
             args.title.as_deref(),
             args.state.as_deref(),
@@ -203,7 +201,7 @@ pub async fn add_plan(args: AddWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
 
     Ok(WorkItemUpdatePlanReport {
         action: WorkItemUpdateAction::Add,
-        workspace,
+        workspace: WorkspacePath::from(workspace),
         requested_ids,
         skipped_existing_ids,
         snapshots,
@@ -217,7 +215,6 @@ pub fn remove_plan(args: RemoveWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
             "Work items à retirer manquants. Fournir au moins un identifiant."
         ));
     }
-    let work_item_selection = work_item_id_values(&args.work_item_ids).join(",");
     let root = resolve_root(args.root.as_deref());
     let workspace = resolve_workspace(
         &root,
@@ -228,11 +225,11 @@ pub fn remove_plan(args: RemoveWorkItemArgs) -> Result<WorkItemUpdatePlanReport>
         args.r#continue,
     )?;
     let requested_ids = args.work_item_ids.clone();
-    let (_manifest, plan) = plan_remove_work_items(&root, &workspace, &work_item_selection)?;
+    let (_manifest, plan) = plan_remove_work_items(&root, &workspace, &args.work_item_ids)?;
 
     Ok(WorkItemUpdatePlanReport {
         action: WorkItemUpdateAction::Remove,
-        workspace,
+        workspace: WorkspacePath::from(workspace),
         requested_ids,
         skipped_existing_ids: Vec::new(),
         snapshots: Vec::new(),
@@ -253,7 +250,7 @@ pub fn execute_update(
         action: report.action,
         plan: plan.clone(),
         manifest: updated,
-        new_workspace,
+        new_workspace: WorkspacePath::from(new_workspace),
     }))
 }
 

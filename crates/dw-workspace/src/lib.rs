@@ -751,7 +751,7 @@ pub fn ensure_work_item_reference(message: &str, manifest: &WorkspaceManifest) -
 pub fn plan_add_work_items(
     root: &str,
     workspace: &str,
-    ids: &str,
+    ids: &[WorkItemId],
     kind: Option<&str>,
     title: Option<&str>,
     state: Option<&str>,
@@ -759,7 +759,7 @@ pub fn plan_add_work_items(
     let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
     let mut work_items = manifest.parent_work_items();
     let mut added_ids = Vec::new();
-    for id in parse_work_item_selection(Some(ids)).unwrap_or_default() {
+    for id in ids {
         if manifest.matches_work_item(id.as_str())
             || work_items
                 .iter()
@@ -767,7 +767,7 @@ pub fn plan_add_work_items(
         {
             continue;
         }
-        added_ids.push(id.to_string());
+        added_ids.push(id.clone());
         work_items.push(WorkspaceWorkItem {
             id: id.to_string(),
             kind: kind.map(ToOwned::to_owned),
@@ -795,7 +795,7 @@ pub fn plan_add_work_item_snapshots(
         {
             continue;
         }
-        added_ids.push(snapshot.id.clone());
+        added_ids.push(WorkItemId::from(snapshot.id.clone()));
         work_items.push(WorkspaceWorkItem {
             id: snapshot.id.clone(),
             kind: snapshot.kind.clone(),
@@ -810,16 +810,14 @@ pub fn plan_add_work_item_snapshots(
 pub fn plan_remove_work_items(
     root: &str,
     workspace: &str,
-    ids: &str,
+    ids: &[WorkItemId],
 ) -> Result<(WorkspaceManifest, TaskWorkItemUpdatePlan), WorkspaceError> {
     let manifest = read_manifest(&Path::new(workspace).join("task.json"))?;
-    let selection = parse_work_item_selection(Some(ids)).unwrap_or_default();
     let work_items = manifest
         .parent_work_items()
         .into_iter()
         .filter(|item| {
-            !selection
-                .iter()
+            !ids.iter()
                 .any(|id| id.as_str().eq_ignore_ascii_case(&item.id))
         })
         .collect::<Vec<_>>();
@@ -2045,7 +2043,7 @@ fn reject_work_item_conflicts(
     root: &str,
     current_workspace: &str,
     project: &str,
-    ids: &[String],
+    ids: &[WorkItemId],
 ) -> Result<(), WorkspaceError> {
     if ids.is_empty() {
         return Ok(());
@@ -2057,7 +2055,7 @@ fn reject_work_item_conflicts(
         .filter(|workspace| workspace.manifest.project.eq_ignore_ascii_case(project))
         .filter(|workspace| {
             ids.iter()
-                .any(|id| workspace.manifest.matches_work_item(id))
+                .any(|id| workspace.manifest.matches_work_item(id.as_str()))
         })
         .map(|workspace| workspace.path)
         .collect::<Vec<_>>();
@@ -3239,7 +3237,7 @@ artifacts:
         let (_manifest, plan) = plan_add_work_items(
             temp.path().to_str().expect("utf8 path"),
             workspace.to_str().expect("utf8 path"),
-            "55206",
+            &[WorkItemId::from("55206")],
             Some("Bug"),
             Some("Secondaire"),
             Some("En developpement"),
@@ -3332,7 +3330,7 @@ artifacts:
         let (manifest, plan) = plan_add_work_items(
             temp.path().to_str().expect("utf8 path"),
             workspace.to_str().expect("utf8 path"),
-            "55206",
+            &[WorkItemId::from("55206")],
             None,
             None,
             None,
@@ -3370,7 +3368,7 @@ artifacts:
         let error = plan_remove_work_items(
             temp.path().to_str().expect("utf8 path"),
             workspace.to_str().expect("utf8 path"),
-            "11010",
+            &[WorkItemId::from("11010")],
         )
         .expect_err("removing every parent should fail");
 

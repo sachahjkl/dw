@@ -484,6 +484,12 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             &[
                 "pub work_item_ids: Option<String>",
                 "parse_work_item_ids as parse_workspace_work_item_ids",
+                "work_item_ids.join(",
+                "work_item_id_values(&args.work_item_ids).join",
+                "let work_item_selection",
+                "pub workspace: String",
+                "pub project: String",
+                "pub new_workspace: String",
             ],
         ),
         (
