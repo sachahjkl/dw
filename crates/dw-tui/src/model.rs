@@ -352,7 +352,9 @@ impl TuiAction {
             TuiActionRequest::TaskPreflight(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
-            TuiActionRequest::TaskSync(args) => args.root = Some(root),
+            TuiActionRequest::TaskSync(args) => {
+                args.root = Some(dw_core::DevWorkflowRoot::from(root))
+            }
             TuiActionRequest::TaskRepoLatest(args) => {
                 args.root = Some(dw_core::DevWorkflowRoot::from(root))
             }
@@ -592,8 +594,12 @@ impl TuiAction {
             TuiActionRequest::TaskHandoffValidate(args) => {
                 args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
             }
-            TuiActionRequest::TaskSync(args) => args.workspace.as_deref(),
-            TuiActionRequest::TaskRename(args) => args.workspace.as_deref(),
+            TuiActionRequest::TaskSync(args) => {
+                args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
+            }
+            TuiActionRequest::TaskRename(args) => {
+                args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
+            }
             TuiActionRequest::TaskRepoLatest(args) => {
                 args.workspace.as_ref().map(dw_core::WorkspacePath::as_str)
             }
@@ -1376,12 +1382,11 @@ pub fn workspace_action(workspace: &TaskListItem, action: WorkspaceAction) -> Tu
         WorkspaceAction::Sync => TuiAction {
             label: "Sync ADO metadata".into(),
             request: TuiActionRequest::TaskSync(dw_task::lifecycle::SyncArgs {
-                workspace: Some(workspace_arg),
+                workspace: Some(dw_core::WorkspacePath::from(workspace_arg)),
                 root: None,
                 project: None,
-                work_item: None,
+                work_item_ids: Vec::new(),
                 r#continue: false,
-                positional_work_item: None,
             }),
             description: "Refresh task.json from Azure DevOps".into(),
             kind: ActionRisk::Safe,

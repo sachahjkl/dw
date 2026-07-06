@@ -583,12 +583,14 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             json,
         } => {
             let report = dw_task::lifecycle::sync_report(dw_task::lifecycle::SyncArgs {
-                workspace,
-                root,
-                project,
-                work_item,
+                workspace: workspace.map(WorkspacePath::from),
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 r#continue,
-                positional_work_item,
             })
             .await?;
             if json {
@@ -610,13 +612,15 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
         } => {
             let report = dw_task::lifecycle::rename_plan(dw_task::lifecycle::RenameArgs {
                 slug,
-                workspace,
-                root,
-                project,
-                work_item,
+                workspace: workspace.map(WorkspacePath::from),
+                root: root.map(DevWorkflowRoot::from),
+                project: project.map(ProjectKey::from),
+                work_item_ids: parse_workspace_filter_work_item_ids(
+                    work_item.as_deref(),
+                    positional_work_item.as_deref(),
+                )?,
                 r#continue,
                 mode: dw_core::ExecutionMode::Preview,
-                positional_work_item,
             })?;
             if execute {
                 let execution = dw_task::lifecycle::execute_rename(&report)?;
@@ -648,12 +652,14 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 dw_task::lifecycle::CreateChildTaskArgs {
                     repo: dw_core::WorkspaceRepositoryName::from(repo),
                     title,
-                    workspace,
-                    root,
-                    project,
-                    work_item,
+                    workspace: workspace.map(WorkspacePath::from),
+                    root: root.map(DevWorkflowRoot::from),
+                    project: project.map(ProjectKey::from),
+                    work_item_ids: parse_workspace_filter_work_item_ids(
+                        work_item.as_deref(),
+                        positional_work_item.as_deref(),
+                    )?,
                     r#continue,
-                    positional_work_item,
                 },
             )
             .await?;

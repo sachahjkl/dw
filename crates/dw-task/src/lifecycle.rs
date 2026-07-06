@@ -6,45 +6,42 @@ use dw_ado::{
     get_work_item_snapshots_authenticated, run_blocking_ado,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_root};
-use dw_core::{WorkItemId, WorkspacePath, WorkspaceRepositoryName};
+use dw_core::{DevWorkflowRoot, ProjectKey, WorkItemId, WorkspacePath, WorkspaceRepositoryName};
 use dw_workspace::{
     WorkspaceManifest, execute_add_child_task, execute_task_rename, execute_task_sync,
-    plan_task_rename, read_manifest_path, requires_child_tasks, resolve_workspace,
+    plan_task_rename, read_manifest_path, requires_child_tasks, resolve_workspace_by_work_item_ids,
 };
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct SyncArgs {
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
-    pub positional_work_item: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct RenameArgs {
     pub slug: String,
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
     pub mode: dw_core::ExecutionMode,
-    pub positional_work_item: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CreateChildTaskArgs {
     pub repo: WorkspaceRepositoryName,
     pub title: String,
-    pub workspace: Option<String>,
-    pub root: Option<String>,
-    pub project: Option<String>,
-    pub work_item: Option<String>,
+    pub workspace: Option<WorkspacePath>,
+    pub root: Option<DevWorkflowRoot>,
+    pub project: Option<ProjectKey>,
+    pub work_item_ids: Vec<WorkItemId>,
     pub r#continue: bool,
-    pub positional_work_item: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -79,13 +76,12 @@ pub struct CreateChildTaskReport {
 }
 
 pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
-    let root = resolve_root(args.root.as_deref());
-    let workspace = resolve_workspace(
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
+    let workspace = resolve_workspace_by_work_item_ids(
         &root,
-        args.workspace.as_deref(),
-        args.project.as_deref(),
-        args.work_item.as_deref(),
-        args.positional_work_item.as_deref(),
+        args.workspace.as_ref().map(WorkspacePath::as_str),
+        args.project.as_ref().map(ProjectKey::as_str),
+        &args.work_item_ids,
         args.r#continue,
     )?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;
@@ -129,14 +125,13 @@ pub async fn sync_report(args: SyncArgs) -> Result<SyncReport> {
 }
 
 pub fn rename_plan(args: RenameArgs) -> Result<RenamePlanReport> {
-    let root = resolve_root(args.root.as_deref());
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
     let projects = load_projects_config(&root);
-    let workspace = resolve_workspace(
+    let workspace = resolve_workspace_by_work_item_ids(
         &root,
-        args.workspace.as_deref(),
-        args.project.as_deref(),
-        args.work_item.as_deref(),
-        args.positional_work_item.as_deref(),
+        args.workspace.as_ref().map(WorkspacePath::as_str),
+        args.project.as_ref().map(ProjectKey::as_str),
+        &args.work_item_ids,
         args.r#continue,
     )?;
     let (_manifest, plan) = plan_task_rename(&root, &projects, &workspace, &args.slug)?;
@@ -154,13 +149,12 @@ pub fn execute_rename(report: &RenamePlanReport) -> Result<RenameExecutionReport
 }
 
 pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<CreateChildTaskReport> {
-    let root = resolve_root(args.root.as_deref());
-    let workspace = resolve_workspace(
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
+    let workspace = resolve_workspace_by_work_item_ids(
         &root,
-        args.workspace.as_deref(),
-        args.project.as_deref(),
-        args.work_item.as_deref(),
-        args.positional_work_item.as_deref(),
+        args.workspace.as_ref().map(WorkspacePath::as_str),
+        args.project.as_ref().map(ProjectKey::as_str),
+        &args.work_item_ids,
         args.r#continue,
     )?;
     let manifest = read_manifest_path(&format!("{workspace}/task.json"))?;

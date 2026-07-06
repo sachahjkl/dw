@@ -338,13 +338,15 @@ impl FormState {
             FormTemplate::TaskRename => {
                 TuiActionRequest::TaskRename(dw_task::lifecycle::RenameArgs {
                     slug: value("Slug")?,
-                    workspace: value("Workspace"),
-                    root: Some(root.into()),
-                    project: value("Project"),
-                    work_item: value("Work item"),
+                    workspace: value("Workspace").map(dw_core::WorkspacePath::from),
+                    root: Some(dw_core::DevWorkflowRoot::from(root)),
+                    project: value("Project").map(dw_core::ProjectKey::from),
+                    work_item_ids: value("Work item")
+                        .as_deref()
+                        .map(dw_core::WorkItemId::parse_many)
+                        .unwrap_or_default(),
                     r#continue: enabled("Continue"),
                     mode: dw_core::ExecutionMode::from_execute(enabled("Execute")),
-                    positional_work_item: None,
                 })
             }
             FormTemplate::AdoAssigned => {

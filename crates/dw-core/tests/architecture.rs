@@ -501,9 +501,15 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
         (
             "crates/dw-task/src/lifecycle.rs",
             &[
+                "pub workspace: Option<String>",
+                "pub root: Option<String>",
+                "pub project: Option<String>",
+                "pub work_item: Option<String>",
+                "pub positional_work_item",
                 "pub repo: String",
                 "pub workspace: String",
                 "pub repository: String",
+                "resolve_workspace(",
             ],
         ),
         (
@@ -588,6 +594,34 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 forbidden
             );
         }
+    }
+}
+
+#[test]
+fn task_lifecycle_contract_uses_typed_workspace_filters_and_repositories() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-task/src/lifecycle.rs");
+    let text = fs::read_to_string(&path).expect("read lifecycle source");
+    for required in [
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "WorkItemId",
+        "WorkspacePath",
+        "WorkspaceRepositoryName",
+        "pub workspace: Option<WorkspacePath>",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub project: Option<ProjectKey>",
+        "pub work_item_ids: Vec<WorkItemId>",
+        "pub repo: WorkspaceRepositoryName",
+        "pub requested_ids: Vec<WorkItemId>",
+        "resolve_workspace_by_work_item_ids",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed lifecycle contract token `{}`",
+            path.display(),
+            required
+        );
     }
 }
 

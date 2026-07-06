@@ -927,8 +927,14 @@ mod tests {
 
         match &action.request {
             TuiActionRequest::TaskSync(args) => {
-                assert_eq!(args.workspace.as_deref(), Some("/tmp/ws"));
-                assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
+                assert_eq!(
+                    args.workspace.as_ref().map(dw_core::WorkspacePath::as_str),
+                    Some("/tmp/ws")
+                );
+                assert_eq!(
+                    args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
+                    Some("/tmp/dw")
+                );
             }
             _ => panic!("expected sync request"),
         }
