@@ -10,7 +10,9 @@ use dw_core::{ActionEvent, ExecutionMode, PromptKind, PromptSpec};
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
 use std::collections::HashSet;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
+use std::sync::mpsc;
+use std::time::Duration;
 
 pub(crate) async fn run(cli: Cli) -> Result<()> {
     match cli.command {
@@ -61,12 +63,81 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
         Command::Db { command } => handle_db(command).await?,
         Command::Secret { command } => handle_secret(command)?,
         Command::Upgrade { check, rid } => {
-            let report = dw_upgrade::handle_upgrade(check, rid)?;
-            print_lines(&dw_cli_adapter::render::upgrade_report_lines(&report));
+            handle_upgrade_command(check, rid).await?;
         }
         Command::Task { command } => handle_task(command).await?,
     }
 
+    Ok(())
+}
+
+async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> {
+    let (sender, receiver) = mpsc::channel();
+    let task = tokio::spawn(async move {
+        dw_upgrade::handle_upgrade_with_events(check, rid, move |event| {
+            let _ = sender.send(event);
+        })
+        .await
+    });
+    let interactive = std::io::stderr().is_terminal();
+    let theme = TerminalTheme::stdout_auto();
+    let frames = ["|", "/", "-", "\\"];
+    let mut frame = 0_usize;
+    let mut events = Vec::new();
+    let mut current = None;
+
+    while !task.is_finished() {
+        while let Ok(event) = receiver.try_recv() {
+            if !interactive {
+                print_lines(&[dw_cli_adapter::render::upgrade_event_line(&event)]);
+            }
+            current = Some(event.clone());
+            events.push(event);
+        }
+        if interactive {
+            render_upgrade_spinner(current.as_ref(), frames[frame % frames.len()], &theme)?;
+            frame = frame.wrapping_add(1);
+        }
+        tokio::time::sleep(Duration::from_millis(120)).await;
+    }
+
+    while let Ok(event) = receiver.try_recv() {
+        if !interactive {
+            print_lines(&[dw_cli_adapter::render::upgrade_event_line(&event)]);
+        }
+        events.push(event);
+    }
+    if interactive {
+        clear_upgrade_spinner()?;
+        print_lines(
+            &events
+                .iter()
+                .map(dw_cli_adapter::render::upgrade_event_line)
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    let report = task.await??;
+    print_lines(&dw_cli_adapter::render::upgrade_report_lines(&report));
+    Ok(())
+}
+
+fn render_upgrade_spinner(
+    event: Option<&dw_upgrade::UpgradeEvent>,
+    frame: &str,
+    theme: &TerminalTheme,
+) -> Result<()> {
+    let message = event
+        .map(dw_cli_adapter::render::upgrade_event_line)
+        .unwrap_or_else(|| "Upgrade [starting          ] Préparation".into());
+    eprint!("\r{} {}", theme.cyan(frame), message);
+    std::io::stderr().flush()?;
+    Ok(())
+}
+
+fn clear_upgrade_spinner() -> Result<()> {
+    eprint!("\r\x1b[2K");
+    std::io::stderr().flush()?;
     Ok(())
 }
 

@@ -528,6 +528,29 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     }
 }
 
+pub fn upgrade_event_line(event: &dw_upgrade::UpgradeEvent) -> String {
+    format!(
+        "Upgrade [{:<18}] {}",
+        upgrade_step_label(event.step),
+        event.message
+    )
+}
+
+fn upgrade_step_label(step: dw_upgrade::UpgradeStep) -> &'static str {
+    match step {
+        dw_upgrade::UpgradeStep::CheckHost => "host",
+        dw_upgrade::UpgradeStep::ResolveConfig => "config",
+        dw_upgrade::UpgradeStep::FetchRelease => "release",
+        dw_upgrade::UpgradeStep::FetchManifest => "manifest",
+        dw_upgrade::UpgradeStep::SelectAsset => "asset",
+        dw_upgrade::UpgradeStep::DownloadAsset => "download",
+        dw_upgrade::UpgradeStep::VerifyChecksum => "checksum",
+        dw_upgrade::UpgradeStep::PrepareExecutable => "prepare",
+        dw_upgrade::UpgradeStep::ReplaceExecutable => "replace",
+        dw_upgrade::UpgradeStep::Complete => "done",
+    }
+}
+
 pub fn task_status_lines(report: &TaskStatusReport) -> Vec<String> {
     let mut lines = vec![
         "Workspaces task".into(),
@@ -1965,6 +1988,18 @@ mod tests {
         HANDOFF_VALIDATION_VERSION, PREFLIGHT_VERSION, TaskHandoffValidationItem,
         TaskPreflightIssue,
     };
+
+    #[test]
+    fn upgrade_event_line_renders_one_step_per_action() {
+        let line = upgrade_event_line(&dw_upgrade::UpgradeEvent {
+            step: dw_upgrade::UpgradeStep::DownloadAsset,
+            message: "Téléchargement de dw-linux-x64.tar.gz".into(),
+        });
+
+        assert!(line.contains("Upgrade [download"));
+        assert!(line.contains("Téléchargement de dw-linux-x64.tar.gz"));
+        assert!(!line.contains("download/checksum"));
+    }
 
     #[test]
     fn task_list_lines_render_table_and_paths() {

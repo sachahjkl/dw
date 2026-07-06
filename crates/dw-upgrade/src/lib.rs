@@ -88,25 +88,87 @@ struct ReplacementReport {
     deferred_windows_replacement: bool,
 }
 
-pub fn handle_upgrade(check: bool, rid: Option<String>) -> Result<UpgradeReport> {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UpgradeEvent {
+    pub step: UpgradeStep,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UpgradeStep {
+    CheckHost,
+    ResolveConfig,
+    FetchRelease,
+    FetchManifest,
+    SelectAsset,
+    DownloadAsset,
+    VerifyChecksum,
+    PrepareExecutable,
+    ReplaceExecutable,
+    Complete,
+}
+
+pub async fn handle_upgrade(check: bool, rid: Option<String>) -> Result<UpgradeReport> {
+    handle_upgrade_with_events(check, rid, |_| {}).await
+}
+
+pub async fn handle_upgrade_with_events(
+    check: bool,
+    rid: Option<String>,
+    mut emit: impl FnMut(UpgradeEvent),
+) -> Result<UpgradeReport> {
+    emit_event(
+        &mut emit,
+        UpgradeStep::CheckHost,
+        "Vérification de l'installation courante",
+    );
     ensure_supported_host(std::env::current_exe().ok().as_deref())?;
+    emit_event(
+        &mut emit,
+        UpgradeStep::ResolveConfig,
+        "Lecture de la configuration de mise à jour",
+    );
     let root = resolve_root(load_user_settings().root.as_deref());
     let workflow = load_workflow_config(&root);
     let options = resolve_updates(&workflow)?;
-    let client = reqwest::blocking::Client::builder()
-        .user_agent("dw/1.0")
-        .build()?;
-    let release = get_latest_release(&client, &options)?;
-    let manifest = download_manifest(&client, &release, &options.asset_name)?;
+    emit_event(
+        &mut emit,
+        UpgradeStep::FetchRelease,
+        format!(
+            "Recherche de la dernière release {}/{}",
+            options.owner, options.repository
+        ),
+    );
+    let client = reqwest::Client::builder().user_agent("dw/1.0").build()?;
+    let release = get_latest_release(&client, &options).await?;
+    emit_event(
+        &mut emit,
+        UpgradeStep::FetchManifest,
+        format!("Téléchargement du manifeste {}", options.asset_name),
+    );
+    let manifest = download_manifest(&client, &release, &options.asset_name).await?;
 
     if check {
+        emit_event(
+            &mut emit,
+            UpgradeStep::Complete,
+            format!("Release disponible: {}", manifest.version),
+        );
         return Ok(UpgradeReport::Check(upgrade_check_report(
             &release, &manifest,
         )));
     }
 
     let rid = rid.unwrap_or_else(default_rid);
-    run_upgrade(&client, &manifest, &rid)
+    run_upgrade(&client, &manifest, &rid, emit).await
+}
+
+fn emit_event(emit: &mut impl FnMut(UpgradeEvent), step: UpgradeStep, message: impl Into<String>) {
+    emit(UpgradeEvent {
+        step,
+        message: message.into(),
+    });
 }
 
 pub(crate) fn resolve_updates(workflow: &WorkflowConfig) -> Result<UpdateOptions> {
@@ -131,8 +193,8 @@ pub(crate) fn resolve_updates(workflow: &WorkflowConfig) -> Result<UpdateOptions
     })
 }
 
-fn get_latest_release(
-    client: &reqwest::blocking::Client,
+async fn get_latest_release(
+    client: &reqwest::Client,
     options: &UpdateOptions,
 ) -> Result<GitHubRelease> {
     let url = if options.include_prerelease {
@@ -146,9 +208,9 @@ fn get_latest_release(
             options.owner, options.repository
         )
     };
-    let response = client.get(url).send()?;
+    let response = client.get(url).send().await?;
     let status = response.status().as_u16();
-    let body = response.text()?;
+    let body = response.text().await?;
     if !(200..300).contains(&status) {
         return Err(anyhow!("GitHub Releases HTTP {status}: {body}"));
     }
@@ -163,8 +225,8 @@ fn get_latest_release(
     }
 }
 
-fn download_manifest(
-    client: &reqwest::blocking::Client,
+async fn download_manifest(
+    client: &reqwest::Client,
     release: &GitHubRelease,
     asset_name: &str,
 ) -> Result<ReleaseManifest> {
@@ -173,9 +235,9 @@ fn download_manifest(
         .iter()
         .find(|asset| asset.name.eq_ignore_ascii_case(asset_name))
         .ok_or_else(|| anyhow!("Asset release introuvable: {asset_name}"))?;
-    let response = client.get(&asset.browser_download_url).send()?;
+    let response = client.get(&asset.browser_download_url).send().await?;
     let status = response.status().as_u16();
-    let body = response.text()?;
+    let body = response.text().await?;
     if !(200..300).contains(&status) {
         return Err(anyhow!(
             "Téléchargement release.json impossible HTTP {status}: {body}"
@@ -184,11 +246,17 @@ fn download_manifest(
     Ok(serde_json::from_str(&body)?)
 }
 
-fn run_upgrade(
-    client: &reqwest::blocking::Client,
+async fn run_upgrade(
+    client: &reqwest::Client,
     manifest: &ReleaseManifest,
     rid: &str,
+    mut emit: impl FnMut(UpgradeEvent),
 ) -> Result<UpgradeReport> {
+    emit_event(
+        &mut emit,
+        UpgradeStep::SelectAsset,
+        format!("Sélection de l'artefact {rid}"),
+    );
     let asset = manifest
         .assets
         .iter()
@@ -200,8 +268,19 @@ fn run_upgrade(
         ));
     }
     let executable_path = std::env::current_exe()?;
-    let temp_asset = download_asset(client, asset)?;
-    let hash = file_sha256(&temp_asset)?;
+    emit_event(
+        &mut emit,
+        UpgradeStep::DownloadAsset,
+        format!("Téléchargement de {}", asset.file_name),
+    );
+    let temp_asset = download_asset(client, asset).await?;
+    emit_event(
+        &mut emit,
+        UpgradeStep::VerifyChecksum,
+        "Vérification SHA256",
+    );
+    let hash_path = temp_asset.clone();
+    let hash = tokio::task::spawn_blocking(move || file_sha256(&hash_path)).await??;
     if !hash.eq_ignore_ascii_case(&asset.sha256) {
         let _ = fs::remove_file(&temp_asset);
         return Err(anyhow!(
@@ -211,8 +290,31 @@ fn run_upgrade(
             hash
         ));
     }
-    let replacement = prepare_replacement_executable(&asset.file_name, &temp_asset, rid)?;
-    let replacement = replace_executable(&executable_path, &replacement)?;
+    emit_event(
+        &mut emit,
+        UpgradeStep::PrepareExecutable,
+        "Préparation du nouveau binaire",
+    );
+    let asset_file_name = asset.file_name.clone();
+    let temp_asset_for_prepare = temp_asset.clone();
+    let rid_for_prepare = rid.to_owned();
+    let replacement = tokio::task::spawn_blocking(move || {
+        prepare_replacement_executable(&asset_file_name, &temp_asset_for_prepare, &rid_for_prepare)
+    })
+    .await??;
+    emit_event(
+        &mut emit,
+        UpgradeStep::ReplaceExecutable,
+        format!("Remplacement de {}", executable_path.display()),
+    );
+    let replacement =
+        tokio::task::spawn_blocking(move || replace_executable(&executable_path, &replacement))
+            .await??;
+    emit_event(
+        &mut emit,
+        UpgradeStep::Complete,
+        format!("Version installée: {}", manifest.version),
+    );
     Ok(UpgradeReport::Installed(UpgradeInstallReport {
         version: manifest.version.clone(),
         commit: manifest.commit.clone(),
@@ -238,10 +340,10 @@ fn upgrade_check_report(release: &GitHubRelease, manifest: &ReleaseManifest) -> 
     }
 }
 
-fn download_asset(client: &reqwest::blocking::Client, asset: &ReleaseAsset) -> Result<PathBuf> {
-    let response = client.get(&asset.url).send()?;
+async fn download_asset(client: &reqwest::Client, asset: &ReleaseAsset) -> Result<PathBuf> {
+    let response = client.get(&asset.url).send().await?;
     let status = response.status().as_u16();
-    let body = response.bytes()?;
+    let body = response.bytes().await?;
     if !(200..300).contains(&status) {
         return Err(anyhow!("Téléchargement upgrade impossible HTTP {status}."));
     }
@@ -399,19 +501,36 @@ fn replace_windows_executable(
             .map(|extension| format!("{extension}."))
             .unwrap_or_default()
     ));
-    fs::write(
-        &script,
-        windows_replacement_script(
-            &replacement.display().to_string(),
-            &executable_path.display().to_string(),
-            &backup.display().to_string(),
-            std::process::id(),
-        ),
-    )?;
-    ProcessCommand::new("cmd.exe")
+    let script_content = windows_replacement_script(
+        &replacement.display().to_string(),
+        &executable_path.display().to_string(),
+        &backup.display().to_string(),
+        std::process::id(),
+    )
+    .replace('\n', "\r\n");
+    fs::write(&script, script_content)?;
+    let script = script.canonicalize().unwrap_or(script);
+    if !script.is_file() {
+        return Err(anyhow!(
+            "Script de remplacement Windows introuvable après création: {}",
+            script.display()
+        ));
+    }
+    let command = std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into());
+    ProcessCommand::new(&command)
+        .arg("/d")
+        .arg("/s")
         .arg("/c")
-        .arg(&script)
-        .spawn()?;
+        .arg(windows_replacement_command(&script))
+        .current_dir(script.parent().unwrap_or_else(|| Path::new(".")))
+        .spawn()
+        .map_err(|error| {
+            anyhow!(
+                "Impossible de lancer le script de remplacement Windows {} via {}: {error}",
+                script.display(),
+                PathBuf::from(&command).display()
+            )
+        })?;
     Ok(ReplacementReport {
         executable_path: executable_path.to_path_buf(),
         deferred_windows_replacement: true,
@@ -456,6 +575,10 @@ del /f /q "%BACKUP%" >nul 2>nul
 del /f /q "%~f0" >nul 2>nul
 "#
     )
+}
+
+pub(crate) fn windows_replacement_command(script: &Path) -> String {
+    format!("call \"{}\"", script.display())
 }
 
 fn unique_upgrade_suffix() -> String {
@@ -603,6 +726,18 @@ mod tests {
         assert!(script.contains("copy /Y \"%NEW%\" \"%TARGET%\""));
         assert!(script.contains("move /Y \"%BACKUP%\" \"%TARGET%\""));
         assert!(!script.contains("move /Y \"new.exe\" \"dw.exe\""));
+    }
+
+    #[test]
+    fn windows_replacement_command_calls_quoted_script_path() {
+        let command = windows_replacement_command(Path::new(
+            r"C:\Users\me\AppData\Local\Temp\dw upgrade.cmd",
+        ));
+
+        assert_eq!(
+            command,
+            r#"call "C:\Users\me\AppData\Local\Temp\dw upgrade.cmd""#
+        );
     }
 
     #[test]
