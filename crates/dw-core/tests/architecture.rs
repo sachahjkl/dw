@@ -838,12 +838,26 @@ fn db_command_contracts_use_typed_query_connection_and_table_values() {
         "resolve_connection_string(connection: &DatabaseConnectionConfig) -> Result<String, String>",
         ") -> Result<QueryResult, String>",
         "provider.eq_ignore_ascii_case",
+        "mod render",
+        "render_query_result_tsv",
     ] {
         assert!(
             !query.contains(forbidden),
             "dw-db query contains primitive contract token `{forbidden}`"
         );
     }
+
+    let lib = fs::read_to_string(repo.join("crates/dw-db/src/lib.rs")).expect("read db lib source");
+    for forbidden in ["mod render", "render_query_result_tsv"] {
+        assert!(
+            !lib.contains(forbidden),
+            "dw-db lib exposes forbidden rendering token `{forbidden}`"
+        );
+    }
+    assert!(
+        !repo.join("crates/dw-db/src/render.rs").exists(),
+        "dw-db must not contain a domain rendering module"
+    );
 }
 
 #[test]

@@ -1816,7 +1816,7 @@ fn print_db_result(result: &dw_db::QueryResult, json: bool) -> Result<()> {
             dw_cli_adapter::render::db_query_table(result, &TerminalTheme::stdout_auto())
         );
     } else {
-        println!("{}", dw_db::render_query_result_tsv(result));
+        println!("{}", dw_cli_adapter::render::db_query_tsv(result));
     }
     Ok(())
 }

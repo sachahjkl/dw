@@ -667,6 +667,22 @@ pub fn db_query_table(result: &QueryResult, theme: &TerminalTheme) -> String {
     render_query_result_table(result, theme)
 }
 
+pub fn db_query_tsv(result: &QueryResult) -> String {
+    let mut lines = vec![result.columns.join("\t")];
+    lines.extend(result.rows.iter().map(|row| {
+        row.iter()
+            .map(|value| value.clone().unwrap_or_else(|| "NULL".into()))
+            .collect::<Vec<_>>()
+            .join("\t")
+    }));
+    lines.push(if result.truncated {
+        format!("-- {} rows (truncated)", result.rows.len())
+    } else {
+        format!("-- {} rows", result.rows.len())
+    });
+    lines.join("\n")
+}
+
 pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     match report {
         dw_upgrade::UpgradeReport::Check(report) => {
@@ -3211,6 +3227,20 @@ mod tests {
 
         assert_eq!(lines[0], "Plan task start");
         assert!(lines.contains(&"Relancer avec --execute pour créer le workspace.".into()));
+    }
+
+    #[test]
+    fn db_query_tsv_renders_null_and_truncation() {
+        let result = QueryResult {
+            columns: vec!["Id".into(), "Name".into()],
+            rows: vec![vec![Some("1".into()), None]],
+            truncated: true,
+        };
+
+        assert_eq!(
+            db_query_tsv(&result),
+            "Id\tName\n1\tNULL\n-- 1 rows (truncated)"
+        );
     }
 
     fn workspace_manifest_with_items(

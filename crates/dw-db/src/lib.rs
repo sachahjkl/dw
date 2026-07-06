@@ -2,7 +2,6 @@ pub mod commands;
 mod config;
 mod guard;
 mod query;
-mod render;
 
 pub use config::{
     DatabaseConnectionConfig, DatabaseDefaults, DatabaseProvider, DatabaseSelection, DbConfigError,
@@ -13,4 +12,3 @@ pub use query::{
     DbError, QueryResult, describe_table_sql, query_sql_server, resolve_connection_string,
     schema_sql,
 };
-pub use render::render_query_result_tsv;
