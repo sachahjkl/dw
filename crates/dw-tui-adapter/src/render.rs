@@ -969,45 +969,60 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     match report {
         dw_upgrade::UpgradeReport::Check(report) => {
             let mut lines = vec![
-                "dw upgrade --check".into(),
-                format!("✓ 1. Release found       {}", report.release_tag),
-                format!(
-                    "✓ 2. Target version      {}+{}",
-                    report.version, report.commit
-                ),
-                format!("✓ 3. Artifacts available {}", report.assets.len()),
+                "Upgrade available".into(),
+                format!("  Release : {}", report.release_tag),
+                format!("  Version : {}+{}", report.version, report.commit),
+                String::new(),
+                "Run".into(),
+                "  ✓ GitHub release resolved".into(),
+                "  ✓ Manifest read".into(),
+                format!("  ✓ {} compatible artifact(s)", report.assets.len()),
             ];
             lines.extend(report.assets.iter().map(|asset| {
-                format!("   • {:14} {} {}", asset.rid, asset.file_name, asset.sha256)
+                format!(
+                    "    • {:14} {} {}",
+                    asset.rid, asset.file_name, asset.sha256
+                )
             }));
             lines
         }
         dw_upgrade::UpgradeReport::Installed(report) => {
-            let mut lines = vec![
-                "dw upgrade".into(),
-                "✓ 1. Release resolved".into(),
-                format!(
-                    "✓ 2. Version prepared    {}+{}",
-                    report.version, report.commit
-                ),
-                "✓ 3. Binary downloaded".into(),
-                "✓ 4. Integrity verified".into(),
-            ];
+            let mut lines = upgrade_install_summary_header(
+                "Upgrade ready",
+                &report.version,
+                &report.commit,
+                &report.executable_path,
+            );
+            lines.extend([
+                String::new(),
+                "Run".into(),
+                "  ✓ GitHub release resolved".into(),
+                "  ✓ Artifact selected".into(),
+                "  ✓ Binary downloaded".into(),
+                "  ✓ SHA256 verified".into(),
+                "  ✓ Executable prepared".into(),
+            ]);
             if report.deferred_windows_replacement {
-                lines.push("↪ 5. Replacement scheduled after dw exits".into());
-                lines.push(format!(
-                    "   Active binary will be replaced: {}",
-                    report.executable_path
-                ));
+                lines.push("  → Replacement scheduled after dw exits".into());
             } else {
-                lines.push(format!(
-                    "✓ 5. Binary replaced     {}",
-                    report.executable_path
-                ));
+                lines.push("  ✓ Active binary replaced".into());
             }
             lines
         }
     }
+}
+
+fn upgrade_install_summary_header(
+    title: &str,
+    version: &dw_core::SemanticVersion,
+    commit: &dw_core::GitCommitSha,
+    executable_path: &dw_core::ExecutablePath,
+) -> Vec<String> {
+    vec![
+        title.into(),
+        format!("  Version : {version}+{commit}"),
+        format!("  Binary  : {executable_path}"),
+    ]
 }
 
 pub fn upgrade_event_line(event: &dw_core::UpgradeActionEvent) -> String {
