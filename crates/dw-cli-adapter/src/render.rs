@@ -884,65 +884,175 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     }
 }
 
-pub fn upgrade_event_line(event: &dw_upgrade::UpgradeEvent) -> String {
+pub fn upgrade_event_line(event: &dw_core::UpgradeActionEvent) -> String {
     format!(
         "Upgrade [{:<18}] {}",
-        upgrade_step_label(event.step()),
+        upgrade_step_label(event),
         upgrade_event_message(event)
     )
 }
 
-fn upgrade_event_message(event: &dw_upgrade::UpgradeEvent) -> String {
+pub fn upgrade_spinner_frame(
+    event: Option<&dw_core::UpgradeActionEvent>,
+    frame: &str,
+    theme: &TerminalTheme,
+) -> String {
+    let message = event
+        .map(|event| upgrade_event_frame_line(event, theme))
+        .unwrap_or_else(|| "Upgrade [starting          ] Préparation".into());
+    format!("\r{} {message}", theme.cyan(frame))
+}
+
+pub fn upgrade_spinner_clear_sequence() -> &'static str {
+    "\r\x1b[2K"
+}
+
+fn upgrade_event_message(event: &dw_core::UpgradeActionEvent) -> String {
     match event {
-        dw_upgrade::UpgradeEvent::CheckingHost => "Vérification de l'installation courante".into(),
-        dw_upgrade::UpgradeEvent::ResolvingConfig => {
+        dw_core::UpgradeActionEvent::CheckingHost => {
+            "Vérification de l'installation courante".into()
+        }
+        dw_core::UpgradeActionEvent::ResolvingConfig => {
             "Lecture de la configuration de mise à jour".into()
         }
-        dw_upgrade::UpgradeEvent::FetchingRelease { owner, repository } => {
+        dw_core::UpgradeActionEvent::FetchingRelease { owner, repository } => {
             format!("Recherche de la dernière release {owner}/{repository}")
         }
-        dw_upgrade::UpgradeEvent::FetchingManifest { asset_name } => {
+        dw_core::UpgradeActionEvent::FetchingManifest { asset_name } => {
             format!("Téléchargement du manifeste {asset_name}")
         }
-        dw_upgrade::UpgradeEvent::ReleaseAvailable { version } => {
-            format!("Release disponible: {version}")
-        }
-        dw_upgrade::UpgradeEvent::SelectingAsset { rid } => {
+        dw_core::UpgradeActionEvent::SelectingAsset { rid } => {
             format!("Sélection de l'artefact {rid}")
         }
-        dw_upgrade::UpgradeEvent::DownloadingAsset { file_name } => {
+        dw_core::UpgradeActionEvent::DownloadingAsset { file_name } => {
             format!("Téléchargement de {file_name}")
         }
-        dw_upgrade::UpgradeEvent::VerifyingChecksum {
+        dw_core::UpgradeActionEvent::DownloadedAssetBytes {
+            file_name,
+            received,
+            total,
+        } => upgrade_download_progress_line(file_name, *received, *total, &TerminalTheme::plain()),
+        dw_core::UpgradeActionEvent::VerifyingChecksum {
             file_name,
             expected_sha256,
         } => {
             format!("Vérification SHA256 de {file_name} ({expected_sha256})")
         }
-        dw_upgrade::UpgradeEvent::PreparingExecutable { file_name, rid } => {
+        dw_core::UpgradeActionEvent::PreparingExecutable { file_name, rid } => {
             format!("Préparation de {file_name} pour {rid}")
         }
-        dw_upgrade::UpgradeEvent::ReplacingExecutable { executable_path } => {
+        dw_core::UpgradeActionEvent::ReplacingExecutable { executable_path } => {
             format!("Remplacement de {executable_path}")
         }
-        dw_upgrade::UpgradeEvent::Installed { version } => {
-            format!("Version installée: {version}")
+        dw_core::UpgradeActionEvent::Completed { version } => {
+            format!("Upgrade terminé: {version}")
         }
     }
 }
 
-fn upgrade_step_label(step: dw_upgrade::UpgradeStep) -> &'static str {
-    match step {
-        dw_upgrade::UpgradeStep::CheckHost => "host",
-        dw_upgrade::UpgradeStep::ResolveConfig => "config",
-        dw_upgrade::UpgradeStep::FetchRelease => "release",
-        dw_upgrade::UpgradeStep::FetchManifest => "manifest",
-        dw_upgrade::UpgradeStep::SelectAsset => "asset",
-        dw_upgrade::UpgradeStep::DownloadAsset => "download",
-        dw_upgrade::UpgradeStep::VerifyChecksum => "checksum",
-        dw_upgrade::UpgradeStep::PrepareExecutable => "prepare",
-        dw_upgrade::UpgradeStep::ReplaceExecutable => "replace",
-        dw_upgrade::UpgradeStep::Complete => "done",
+fn upgrade_event_frame_line(event: &dw_core::UpgradeActionEvent, theme: &TerminalTheme) -> String {
+    match event {
+        dw_core::UpgradeActionEvent::DownloadedAssetBytes {
+            file_name,
+            received,
+            total,
+        } => upgrade_download_progress_line(file_name, *received, *total, theme),
+        event => upgrade_event_line(event),
+    }
+}
+
+fn upgrade_step_label(event: &dw_core::UpgradeActionEvent) -> &'static str {
+    match event {
+        dw_core::UpgradeActionEvent::CheckingHost => "host",
+        dw_core::UpgradeActionEvent::ResolvingConfig => "config",
+        dw_core::UpgradeActionEvent::FetchingRelease { .. } => "release",
+        dw_core::UpgradeActionEvent::FetchingManifest { .. } => "manifest",
+        dw_core::UpgradeActionEvent::SelectingAsset { .. } => "asset",
+        dw_core::UpgradeActionEvent::DownloadingAsset { .. } => "download",
+        dw_core::UpgradeActionEvent::DownloadedAssetBytes { .. } => "download",
+        dw_core::UpgradeActionEvent::VerifyingChecksum { .. } => "checksum",
+        dw_core::UpgradeActionEvent::PreparingExecutable { .. } => "prepare",
+        dw_core::UpgradeActionEvent::ReplacingExecutable { .. } => "replace",
+        dw_core::UpgradeActionEvent::Completed { .. } => "done",
+    }
+}
+
+pub fn upgrade_event_is_transient(event: &dw_core::UpgradeActionEvent) -> bool {
+    matches!(
+        event,
+        dw_core::UpgradeActionEvent::DownloadedAssetBytes { .. }
+    )
+}
+
+pub fn upgrade_download_progress_line(
+    file_name: &dw_core::UpgradeFileName,
+    received: dw_core::ByteCount,
+    total: Option<dw_core::ByteCount>,
+    theme: &TerminalTheme,
+) -> String {
+    let received_bytes = received.as_u64();
+    let size = match total {
+        Some(total) => format!(
+            "{} / {}",
+            human_bytes(received_bytes),
+            human_bytes(total.as_u64())
+        ),
+        None => human_bytes(received_bytes),
+    };
+    let bar = upgrade_download_progress_bar(received, total, theme);
+    match total.and_then(|total| progress_percent(received, total)) {
+        Some(percent) => {
+            format!("Upgrade [download          ] {bar} {percent:>3}% {size} {file_name}")
+        }
+        None => format!("Upgrade [download          ] {bar} {size} {file_name}"),
+    }
+}
+
+fn upgrade_download_progress_bar(
+    received: dw_core::ByteCount,
+    total: Option<dw_core::ByteCount>,
+    theme: &TerminalTheme,
+) -> String {
+    const WIDTH: usize = 28;
+    let filled = total
+        .and_then(|total| {
+            let total = total.as_u64();
+            (total > 0).then(|| {
+                ((received.as_u64().min(total) as f64 / total as f64) * WIDTH as f64).round()
+                    as usize
+            })
+        })
+        .unwrap_or(0)
+        .min(WIDTH);
+    let empty = WIDTH - filled;
+    let raw = format!("[{}{}]", "█".repeat(filled), "░".repeat(empty));
+    if total.is_some() {
+        theme.success(&raw)
+    } else {
+        theme.cyan("[····························]")
+    }
+}
+
+fn progress_percent(received: dw_core::ByteCount, total: dw_core::ByteCount) -> Option<u64> {
+    let total = total.as_u64();
+    (received.as_u64().min(total) * 100).checked_div(total)
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut value = bytes as f64;
+    let mut unit = UNITS[0];
+    for &next in UNITS.iter().skip(1) {
+        if value < 1024.0 {
+            break;
+        }
+        value /= 1024.0;
+        unit = next;
+    }
+    if unit == "B" {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {unit}")
     }
 }
 
@@ -2595,13 +2705,29 @@ mod tests {
 
     #[test]
     fn upgrade_event_line_renders_one_step_per_action() {
-        let line = upgrade_event_line(&dw_upgrade::UpgradeEvent::DownloadingAsset {
+        let line = upgrade_event_line(&dw_core::UpgradeActionEvent::DownloadingAsset {
             file_name: dw_core::UpgradeFileName::from("dw-linux-x64.tar.gz"),
         });
 
         assert!(line.contains("Upgrade [download"));
         assert!(line.contains("Téléchargement de dw-linux-x64.tar.gz"));
         assert!(!line.contains("download/checksum"));
+    }
+
+    #[test]
+    fn upgrade_spinner_frame_renders_current_event_and_clear_sequence() {
+        let theme = TerminalTheme::plain();
+        let frame = upgrade_spinner_frame(
+            Some(&dw_core::UpgradeActionEvent::DownloadingAsset {
+                file_name: dw_core::UpgradeFileName::from("dw-linux-x64.tar.gz"),
+            }),
+            "|",
+            &theme,
+        );
+
+        assert_eq!(upgrade_spinner_clear_sequence(), "\r\x1b[2K");
+        assert!(frame.starts_with("\r| Upgrade [download"));
+        assert!(frame.contains("Téléchargement de dw-linux-x64.tar.gz"));
     }
 
     #[test]

@@ -56,6 +56,32 @@ impl CoreContext {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ByteCount(u64);
+
+impl ByteCount {
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for ByteCount {
+    fn from(value: u64) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for ByteCount {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ActionRisk {
@@ -1591,6 +1617,11 @@ pub enum UpgradeActionEvent {
     },
     DownloadingAsset {
         file_name: UpgradeFileName,
+    },
+    DownloadedAssetBytes {
+        file_name: UpgradeFileName,
+        received: ByteCount,
+        total: Option<ByteCount>,
     },
     VerifyingChecksum {
         file_name: UpgradeFileName,

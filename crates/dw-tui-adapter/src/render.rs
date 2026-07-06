@@ -4,7 +4,7 @@ use dw_ado_commands::auth::{
 use dw_agent::command::{AgentDoctorCheck, AgentDoctorReport};
 use dw_app::{
     AdoActionResult, AgentActionResult, AppActionResult, ConfigActionResult, DbActionResult,
-    DwActionResult, SecretActionResult, TaskActionResult,
+    DwActionResult, SecretActionResult, TaskActionResult, UpgradeActionResult,
 };
 use dw_config::{ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, InitReport, RefreshReport};
 use dw_contracts::{
@@ -638,6 +638,9 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             SecretActionResult::Set(report) => secret_set_lines(report),
             SecretActionResult::Delete(report) => secret_delete_lines(report),
         },
+        DwActionResult::Upgrade(UpgradeActionResult::Report(report)) => {
+            upgrade_report_lines(report)
+        }
     }
 }
 
@@ -868,6 +871,14 @@ fn upgrade_action_event_line(event: &UpgradeActionEvent) -> String {
         UpgradeActionEvent::DownloadingAsset { file_name } => {
             format!("Upgrade [download] {file_name}")
         }
+        UpgradeActionEvent::DownloadedAssetBytes {
+            file_name,
+            received,
+            total,
+        } => match total {
+            Some(total) => format!("Upgrade [download] {file_name} {received}/{total} bytes"),
+            None => format!("Upgrade [download] {file_name} {received} bytes"),
+        },
         UpgradeActionEvent::VerifyingChecksum {
             file_name,
             expected_sha256,
@@ -916,63 +927,71 @@ pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
     }
 }
 
-pub fn upgrade_event_line(event: &dw_upgrade::UpgradeEvent) -> String {
+pub fn upgrade_event_line(event: &dw_core::UpgradeActionEvent) -> String {
     format!(
         "Upgrade [{:<18}] {}",
-        upgrade_step_label(event.step()),
+        upgrade_step_label(event),
         upgrade_event_message(event)
     )
 }
 
-fn upgrade_event_message(event: &dw_upgrade::UpgradeEvent) -> String {
+fn upgrade_event_message(event: &dw_core::UpgradeActionEvent) -> String {
     match event {
-        dw_upgrade::UpgradeEvent::CheckingHost => "Checking current installation".into(),
-        dw_upgrade::UpgradeEvent::ResolvingConfig => "Reading upgrade configuration".into(),
-        dw_upgrade::UpgradeEvent::FetchingRelease { owner, repository } => {
+        dw_core::UpgradeActionEvent::CheckingHost => "Checking current installation".into(),
+        dw_core::UpgradeActionEvent::ResolvingConfig => "Reading upgrade configuration".into(),
+        dw_core::UpgradeActionEvent::FetchingRelease { owner, repository } => {
             format!("Fetching latest release {owner}/{repository}")
         }
-        dw_upgrade::UpgradeEvent::FetchingManifest { asset_name } => {
+        dw_core::UpgradeActionEvent::FetchingManifest { asset_name } => {
             format!("Downloading manifest {asset_name}")
         }
-        dw_upgrade::UpgradeEvent::ReleaseAvailable { version } => {
-            format!("Release available: {version}")
-        }
-        dw_upgrade::UpgradeEvent::SelectingAsset { rid } => {
+        dw_core::UpgradeActionEvent::SelectingAsset { rid } => {
             format!("Selecting artifact {rid}")
         }
-        dw_upgrade::UpgradeEvent::DownloadingAsset { file_name } => {
+        dw_core::UpgradeActionEvent::DownloadingAsset { file_name } => {
             format!("Downloading {file_name}")
         }
-        dw_upgrade::UpgradeEvent::VerifyingChecksum {
+        dw_core::UpgradeActionEvent::DownloadedAssetBytes {
+            file_name,
+            received,
+            total,
+        } => match total {
+            Some(total) => {
+                format!("Downloading {file_name}: {received} / {total} bytes")
+            }
+            None => format!("Downloading {file_name}: {received} bytes"),
+        },
+        dw_core::UpgradeActionEvent::VerifyingChecksum {
             file_name,
             expected_sha256,
         } => {
             format!("Verifying SHA256 for {file_name} ({expected_sha256})")
         }
-        dw_upgrade::UpgradeEvent::PreparingExecutable { file_name, rid } => {
+        dw_core::UpgradeActionEvent::PreparingExecutable { file_name, rid } => {
             format!("Preparing {file_name} for {rid}")
         }
-        dw_upgrade::UpgradeEvent::ReplacingExecutable { executable_path } => {
+        dw_core::UpgradeActionEvent::ReplacingExecutable { executable_path } => {
             format!("Replacing {executable_path}")
         }
-        dw_upgrade::UpgradeEvent::Installed { version } => {
-            format!("Installed version: {version}")
+        dw_core::UpgradeActionEvent::Completed { version } => {
+            format!("Upgrade completed: {version}")
         }
     }
 }
 
-fn upgrade_step_label(step: dw_upgrade::UpgradeStep) -> &'static str {
-    match step {
-        dw_upgrade::UpgradeStep::CheckHost => "host",
-        dw_upgrade::UpgradeStep::ResolveConfig => "config",
-        dw_upgrade::UpgradeStep::FetchRelease => "release",
-        dw_upgrade::UpgradeStep::FetchManifest => "manifest",
-        dw_upgrade::UpgradeStep::SelectAsset => "asset",
-        dw_upgrade::UpgradeStep::DownloadAsset => "download",
-        dw_upgrade::UpgradeStep::VerifyChecksum => "checksum",
-        dw_upgrade::UpgradeStep::PrepareExecutable => "prepare",
-        dw_upgrade::UpgradeStep::ReplaceExecutable => "replace",
-        dw_upgrade::UpgradeStep::Complete => "done",
+fn upgrade_step_label(event: &dw_core::UpgradeActionEvent) -> &'static str {
+    match event {
+        dw_core::UpgradeActionEvent::CheckingHost => "host",
+        dw_core::UpgradeActionEvent::ResolvingConfig => "config",
+        dw_core::UpgradeActionEvent::FetchingRelease { .. } => "release",
+        dw_core::UpgradeActionEvent::FetchingManifest { .. } => "manifest",
+        dw_core::UpgradeActionEvent::SelectingAsset { .. } => "asset",
+        dw_core::UpgradeActionEvent::DownloadingAsset { .. } => "download",
+        dw_core::UpgradeActionEvent::DownloadedAssetBytes { .. } => "download",
+        dw_core::UpgradeActionEvent::VerifyingChecksum { .. } => "checksum",
+        dw_core::UpgradeActionEvent::PreparingExecutable { .. } => "prepare",
+        dw_core::UpgradeActionEvent::ReplacingExecutable { .. } => "replace",
+        dw_core::UpgradeActionEvent::Completed { .. } => "done",
     }
 }
 

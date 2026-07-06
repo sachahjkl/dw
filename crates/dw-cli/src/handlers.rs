@@ -7,14 +7,13 @@ use dw_cli_adapter::{
 };
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
-    EnvironmentVariableName, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
-    PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId, WorkItemTypeName,
-    WorkspacePath, WorkspaceRepositoryName,
+    DwActionEvent, EnvironmentVariableName, ExecutionMode, ProjectKey, PromptChoiceValue,
+    PromptKind, PromptSpec, PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId,
+    WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
 use std::io::{IsTerminal, Write};
-use std::sync::mpsc;
 use std::time::Duration;
 
 pub(crate) async fn run(cli: Cli) -> Result<()> {
@@ -80,72 +79,90 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
 }
 
 async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> {
-    let (sender, receiver) = mpsc::channel();
     let rid = rid.map(dw_core::RuntimeIdentifier::from);
-    let task = tokio::spawn(async move {
-        dw_upgrade::handle_upgrade_with_events(check, rid, move |event| {
-            let _ = sender.send(event);
-        })
-        .await
-    });
+    let action = dw_app::spawn_action(dw_app::DwActionRequest::Upgrade { check, rid });
+    let result = action.result;
+    let mut events = action.events;
     let interactive = std::io::stderr().is_terminal();
     let theme = TerminalTheme::stdout_auto();
     let frames = ["|", "/", "-", "\\"];
     let mut frame = 0_usize;
-    let mut events = Vec::new();
+    let mut seen_events = Vec::new();
     let mut current = None;
 
-    while !task.is_finished() {
-        while let Ok(event) = receiver.try_recv() {
+    while !result.is_finished() {
+        while let Ok(event) = events.try_recv() {
+            let DwActionEvent::Upgrade(event) = event else {
+                continue;
+            };
             if !interactive {
-                print_lines(&[dw_cli_adapter::render::upgrade_event_line(&event)]);
+                print_upgrade_event_line(&event);
             }
             current = Some(event.clone());
-            events.push(event);
+            if !dw_cli_adapter::render::upgrade_event_is_transient(&event) {
+                seen_events.push(event);
+            }
         }
         if interactive {
-            render_upgrade_spinner(current.as_ref(), frames[frame % frames.len()], &theme)?;
+            write_upgrade_spinner_frame(current.as_ref(), frames[frame % frames.len()], &theme)?;
             frame = frame.wrapping_add(1);
         }
         tokio::time::sleep(Duration::from_millis(120)).await;
     }
 
-    while let Ok(event) = receiver.try_recv() {
+    while let Ok(event) = events.try_recv() {
+        let DwActionEvent::Upgrade(event) = event else {
+            continue;
+        };
         if !interactive {
-            print_lines(&[dw_cli_adapter::render::upgrade_event_line(&event)]);
+            print_upgrade_event_line(&event);
         }
-        events.push(event);
+        if !dw_cli_adapter::render::upgrade_event_is_transient(&event) {
+            seen_events.push(event);
+        }
     }
     if interactive {
-        clear_upgrade_spinner()?;
+        write_upgrade_spinner_clear()?;
         print_lines(
-            &events
+            &seen_events
                 .iter()
                 .map(dw_cli_adapter::render::upgrade_event_line)
                 .collect::<Vec<_>>(),
         );
     }
 
-    let report = task.await??;
+    let report = match result.await?? {
+        dw_app::DwActionResult::Upgrade(dw_app::UpgradeActionResult::Report(report)) => report,
+        result => anyhow::bail!("Résultat upgrade inattendu: {result:?}"),
+    };
     print_lines(&dw_cli_adapter::render::upgrade_report_lines(&report));
     Ok(())
 }
 
-fn render_upgrade_spinner(
-    event: Option<&dw_upgrade::UpgradeEvent>,
+fn print_upgrade_event_line(event: &dw_core::UpgradeActionEvent) {
+    if !dw_cli_adapter::render::upgrade_event_is_transient(event) {
+        print_lines(&[dw_cli_adapter::render::upgrade_event_line(event)]);
+    }
+}
+
+fn write_upgrade_spinner_frame(
+    event: Option<&dw_core::UpgradeActionEvent>,
     frame: &str,
     theme: &TerminalTheme,
 ) -> Result<()> {
-    let message = event
-        .map(dw_cli_adapter::render::upgrade_event_line)
-        .unwrap_or_else(|| "Upgrade [starting          ] Préparation".into());
-    eprint!("\r{} {}", theme.cyan(frame), message);
+    eprint!(
+        "{}",
+        dw_cli_adapter::render::upgrade_spinner_frame(event, frame, theme)
+    );
     std::io::stderr().flush()?;
     Ok(())
 }
 
-fn clear_upgrade_spinner() -> Result<()> {
-    eprint!("\r\x1b[2K");
+fn write_upgrade_spinner_clear() -> Result<()> {
+    eprint!(
+        "{}",
+        dw_cli_adapter::render::upgrade_spinner_clear_sequence()
+    );
     std::io::stderr().flush()?;
     Ok(())
 }

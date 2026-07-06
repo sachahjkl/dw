@@ -1,8 +1,10 @@
 use anyhow::Result;
 use dw_core::{
     Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DwActionEvent,
-    EnvironmentVariableName, SecretKey, TaskActionEvent,
+    EnvironmentVariableName, RuntimeIdentifier, SecretKey, TaskActionEvent,
 };
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone)]
 pub enum DwActionRequest {
@@ -69,6 +71,10 @@ pub enum DwActionRequest {
     SecretDelete {
         key: SecretKey,
     },
+    Upgrade {
+        check: bool,
+        rid: Option<RuntimeIdentifier>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +87,7 @@ pub enum DwActionResult {
     Task(Box<TaskActionResult>),
     Secret(SecretActionResult),
     Doctor(dw_doctor::DoctorReport),
+    Upgrade(UpgradeActionResult),
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +183,54 @@ pub enum SecretActionResult {
     Get(dw_secret::command::SecretGetReport),
     Set(dw_secret::command::SecretSetReport),
     Delete(dw_secret::command::SecretDeleteReport),
+}
+
+#[derive(Debug, Clone)]
+pub enum UpgradeActionResult {
+    Report(dw_upgrade::UpgradeReport),
+}
+
+pub struct DwActionRun {
+    pub events: mpsc::Receiver<DwActionEvent>,
+    pub result: JoinHandle<Result<DwActionResult>>,
+}
+
+pub fn spawn_action(request: DwActionRequest) -> DwActionRun {
+    match request {
+        DwActionRequest::Upgrade { check, rid } => spawn_upgrade_action(check, rid),
+        request => spawn_callback_action(request),
+    }
+}
+
+fn spawn_callback_action(request: DwActionRequest) -> DwActionRun {
+    let (sender, receiver) = mpsc::channel(64);
+    let result = tokio::spawn(async move {
+        run_action(request, |event| {
+            let _ = sender.try_send(event);
+        })
+        .await
+    });
+    DwActionRun {
+        events: receiver,
+        result,
+    }
+}
+
+fn spawn_upgrade_action(check: bool, rid: Option<RuntimeIdentifier>) -> DwActionRun {
+    let upgrade = dw_upgrade::spawn_upgrade(check, rid);
+    let (sender, receiver) = mpsc::channel(64);
+    let result = tokio::spawn(async move {
+        let mut upgrade_events = upgrade.events;
+        while let Some(event) = upgrade_events.recv().await {
+            let _ = sender.send(DwActionEvent::Upgrade(event)).await;
+        }
+        let report = upgrade.result.await??;
+        Ok(DwActionResult::Upgrade(UpgradeActionResult::Report(report)))
+    });
+    DwActionRun {
+        events: receiver,
+        result,
+    }
 }
 
 pub async fn run_action(
@@ -451,6 +506,10 @@ pub async fn run_action(
         DwActionRequest::SecretDelete { key } => Ok(DwActionResult::Secret(
             SecretActionResult::Delete(dw_secret::command::delete_secret_key(&key)?),
         )),
+        DwActionRequest::Upgrade { check, rid } => {
+            let report = dw_upgrade::handle_upgrade(check, rid).await?;
+            Ok(DwActionResult::Upgrade(UpgradeActionResult::Report(report)))
+        }
     }
 }
 

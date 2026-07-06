@@ -1,16 +1,19 @@
 use anyhow::{Result, anyhow};
 use dw_config::{WorkflowConfig, load_user_settings, load_workflow_config, resolve_root};
 use dw_core::{
-    ExecutablePath, GitCommitSha, RuntimeIdentifier, SemanticVersion, Sha256Digest,
-    UpgradeAssetName, UpgradeFileName, UpgradeOwner, UpgradeReleaseTag, UpgradeRepositoryName,
+    ByteCount, ExecutablePath, GitCommitSha, RuntimeIdentifier, SemanticVersion, Sha256Digest,
+    UpgradeActionEvent, UpgradeAssetName, UpgradeFileName, UpgradeOwner, UpgradeReleaseTag,
+    UpgradeRepositoryName,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 const DEFAULT_OWNER: &str = "sachahjkl";
 const DEFAULT_REPOSITORY: &str = "dw";
@@ -92,113 +95,70 @@ struct ReplacementReport {
     deferred_windows_replacement: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum UpgradeStep {
-    CheckHost,
-    ResolveConfig,
-    FetchRelease,
-    FetchManifest,
-    SelectAsset,
-    DownloadAsset,
-    VerifyChecksum,
-    PrepareExecutable,
-    ReplaceExecutable,
-    Complete,
+pub struct UpgradeActionRun {
+    pub events: mpsc::Receiver<UpgradeActionEvent>,
+    pub result: JoinHandle<Result<UpgradeReport>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum UpgradeEvent {
-    CheckingHost,
-    ResolvingConfig,
-    FetchingRelease {
-        owner: UpgradeOwner,
-        repository: UpgradeRepositoryName,
-    },
-    FetchingManifest {
-        asset_name: UpgradeAssetName,
-    },
-    ReleaseAvailable {
-        version: SemanticVersion,
-    },
-    SelectingAsset {
-        rid: RuntimeIdentifier,
-    },
-    DownloadingAsset {
-        file_name: UpgradeFileName,
-    },
-    VerifyingChecksum {
-        file_name: UpgradeFileName,
-        expected_sha256: Sha256Digest,
-    },
-    PreparingExecutable {
-        file_name: UpgradeFileName,
-        rid: RuntimeIdentifier,
-    },
-    ReplacingExecutable {
-        executable_path: ExecutablePath,
-    },
-    Installed {
-        version: SemanticVersion,
-    },
-}
-
-impl UpgradeEvent {
-    pub fn step(&self) -> UpgradeStep {
-        match self {
-            Self::CheckingHost => UpgradeStep::CheckHost,
-            Self::ResolvingConfig => UpgradeStep::ResolveConfig,
-            Self::FetchingRelease { .. } => UpgradeStep::FetchRelease,
-            Self::FetchingManifest { .. } => UpgradeStep::FetchManifest,
-            Self::ReleaseAvailable { .. } => UpgradeStep::Complete,
-            Self::SelectingAsset { .. } => UpgradeStep::SelectAsset,
-            Self::DownloadingAsset { .. } => UpgradeStep::DownloadAsset,
-            Self::VerifyingChecksum { .. } => UpgradeStep::VerifyChecksum,
-            Self::PreparingExecutable { .. } => UpgradeStep::PrepareExecutable,
-            Self::ReplacingExecutable { .. } => UpgradeStep::ReplaceExecutable,
-            Self::Installed { .. } => UpgradeStep::Complete,
-        }
+pub fn spawn_upgrade(check: bool, rid: Option<RuntimeIdentifier>) -> UpgradeActionRun {
+    let (sender, receiver) = mpsc::channel(32);
+    let result = tokio::spawn(async move { handle_upgrade_with_events(check, rid, sender).await });
+    UpgradeActionRun {
+        events: receiver,
+        result,
     }
 }
 
 pub async fn handle_upgrade(check: bool, rid: Option<RuntimeIdentifier>) -> Result<UpgradeReport> {
-    handle_upgrade_with_events(check, rid, |_| {}).await
+    let (sender, _receiver) = mpsc::channel(1);
+    handle_upgrade_with_events(check, rid, sender).await
 }
 
-pub async fn handle_upgrade_with_events(
+async fn handle_upgrade_with_events(
     check: bool,
     rid: Option<RuntimeIdentifier>,
-    mut emit: impl FnMut(UpgradeEvent),
+    events: mpsc::Sender<UpgradeActionEvent>,
 ) -> Result<UpgradeReport> {
-    emit(UpgradeEvent::CheckingHost);
+    emit_upgrade_event(&events, UpgradeActionEvent::CheckingHost).await;
     ensure_supported_host(std::env::current_exe().ok().as_deref())?;
-    emit(UpgradeEvent::ResolvingConfig);
+    emit_upgrade_event(&events, UpgradeActionEvent::ResolvingConfig).await;
     let root = resolve_root(load_user_settings().root.as_deref());
     let workflow = load_workflow_config(&root);
     let options = resolve_updates(&workflow)?;
-    emit(UpgradeEvent::FetchingRelease {
-        owner: options.owner.clone(),
-        repository: options.repository.clone(),
-    });
+    emit_upgrade_event(
+        &events,
+        UpgradeActionEvent::FetchingRelease {
+            owner: options.owner.clone(),
+            repository: options.repository.clone(),
+        },
+    )
+    .await;
     let client = reqwest::Client::builder().user_agent("dw/1.0").build()?;
     let release = get_latest_release(&client, &options).await?;
-    emit(UpgradeEvent::FetchingManifest {
-        asset_name: options.asset_name.clone(),
-    });
+    emit_upgrade_event(
+        &events,
+        UpgradeActionEvent::FetchingManifest {
+            asset_name: options.asset_name.clone(),
+        },
+    )
+    .await;
     let manifest = download_manifest(&client, &release, &options.asset_name).await?;
 
     if check {
-        emit(UpgradeEvent::ReleaseAvailable {
-            version: SemanticVersion::from(manifest.version.clone()),
-        });
+        emit_upgrade_event(
+            &events,
+            UpgradeActionEvent::Completed {
+                version: SemanticVersion::from(manifest.version.clone()),
+            },
+        )
+        .await;
         return Ok(UpgradeReport::Check(upgrade_check_report(
             &release, &manifest,
         )));
     }
 
     let rid = rid.unwrap_or_else(|| RuntimeIdentifier::from(default_rid()));
-    run_upgrade(&client, &manifest, &rid, emit).await
+    run_upgrade(&client, &manifest, &rid, &events).await
 }
 
 pub(crate) fn resolve_updates(workflow: &WorkflowConfig) -> Result<UpdateOptions> {
@@ -281,9 +241,13 @@ async fn run_upgrade(
     client: &reqwest::Client,
     manifest: &ReleaseManifest,
     rid: &RuntimeIdentifier,
-    mut emit: impl FnMut(UpgradeEvent),
+    events: &mpsc::Sender<UpgradeActionEvent>,
 ) -> Result<UpgradeReport> {
-    emit(UpgradeEvent::SelectingAsset { rid: rid.clone() });
+    emit_upgrade_event(
+        events,
+        UpgradeActionEvent::SelectingAsset { rid: rid.clone() },
+    )
+    .await;
     let asset = manifest
         .assets
         .iter()
@@ -295,14 +259,22 @@ async fn run_upgrade(
         ));
     }
     let executable_path = std::env::current_exe()?;
-    emit(UpgradeEvent::DownloadingAsset {
-        file_name: UpgradeFileName::from(asset.file_name.clone()),
-    });
-    let temp_asset = download_asset(client, asset).await?;
-    emit(UpgradeEvent::VerifyingChecksum {
-        file_name: UpgradeFileName::from(asset.file_name.clone()),
-        expected_sha256: Sha256Digest::from(asset.sha256.clone()),
-    });
+    emit_upgrade_event(
+        events,
+        UpgradeActionEvent::DownloadingAsset {
+            file_name: UpgradeFileName::from(asset.file_name.clone()),
+        },
+    )
+    .await;
+    let temp_asset = download_asset(client, asset, events).await?;
+    emit_upgrade_event(
+        events,
+        UpgradeActionEvent::VerifyingChecksum {
+            file_name: UpgradeFileName::from(asset.file_name.clone()),
+            expected_sha256: Sha256Digest::from(asset.sha256.clone()),
+        },
+    )
+    .await;
     let hash_path = temp_asset.clone();
     let hash = tokio::task::spawn_blocking(move || file_sha256(&hash_path)).await??;
     if !hash.eq_ignore_ascii_case(&asset.sha256) {
@@ -314,10 +286,14 @@ async fn run_upgrade(
             hash
         ));
     }
-    emit(UpgradeEvent::PreparingExecutable {
-        file_name: UpgradeFileName::from(asset.file_name.clone()),
-        rid: rid.clone(),
-    });
+    emit_upgrade_event(
+        events,
+        UpgradeActionEvent::PreparingExecutable {
+            file_name: UpgradeFileName::from(asset.file_name.clone()),
+            rid: rid.clone(),
+        },
+    )
+    .await;
     let asset_file_name = asset.file_name.clone();
     let temp_asset_for_prepare = temp_asset.clone();
     let rid_for_prepare = rid.to_string();
@@ -325,21 +301,33 @@ async fn run_upgrade(
         prepare_replacement_executable(&asset_file_name, &temp_asset_for_prepare, &rid_for_prepare)
     })
     .await??;
-    emit(UpgradeEvent::ReplacingExecutable {
-        executable_path: ExecutablePath::from(executable_path.display().to_string()),
-    });
+    emit_upgrade_event(
+        events,
+        UpgradeActionEvent::ReplacingExecutable {
+            executable_path: ExecutablePath::from(executable_path.display().to_string()),
+        },
+    )
+    .await;
     let replacement =
         tokio::task::spawn_blocking(move || replace_executable(&executable_path, &replacement))
             .await??;
-    emit(UpgradeEvent::Installed {
-        version: SemanticVersion::from(manifest.version.clone()),
-    });
+    emit_upgrade_event(
+        events,
+        UpgradeActionEvent::Completed {
+            version: SemanticVersion::from(manifest.version.clone()),
+        },
+    )
+    .await;
     Ok(UpgradeReport::Installed(UpgradeInstallReport {
         version: SemanticVersion::from(manifest.version.clone()),
         commit: GitCommitSha::from(manifest.commit.clone()),
         executable_path: ExecutablePath::from(replacement.executable_path.display().to_string()),
         deferred_windows_replacement: replacement.deferred_windows_replacement,
     }))
+}
+
+async fn emit_upgrade_event(events: &mpsc::Sender<UpgradeActionEvent>, event: UpgradeActionEvent) {
+    let _ = events.send(event).await;
 }
 
 fn upgrade_check_report(release: &GitHubRelease, manifest: &ReleaseManifest) -> UpgradeCheckReport {
@@ -359,10 +347,14 @@ fn upgrade_check_report(release: &GitHubRelease, manifest: &ReleaseManifest) -> 
     }
 }
 
-async fn download_asset(client: &reqwest::Client, asset: &ReleaseAsset) -> Result<PathBuf> {
-    let response = client.get(&asset.url).send().await?;
+async fn download_asset(
+    client: &reqwest::Client,
+    asset: &ReleaseAsset,
+    events: &mpsc::Sender<UpgradeActionEvent>,
+) -> Result<PathBuf> {
+    let mut response = client.get(&asset.url).send().await?;
     let status = response.status().as_u16();
-    let body = response.bytes().await?;
+    let total = response.content_length().map(ByteCount::from);
     if !(200..300).contains(&status) {
         return Err(anyhow!("Téléchargement upgrade impossible HTTP {status}."));
     }
@@ -371,7 +363,23 @@ async fn download_asset(client: &reqwest::Client, asset: &ReleaseAsset) -> Resul
         std::process::id(),
         extension_suffix(&asset.file_name)
     ));
-    fs::write(&path, body)?;
+    let file_name = UpgradeFileName::from(asset.file_name.clone());
+    let mut file = fs::File::create(&path)?;
+    let mut received = 0_u64;
+    while let Some(chunk) = response.chunk().await? {
+        file.write_all(&chunk)?;
+        received += chunk.len() as u64;
+        emit_upgrade_event(
+            events,
+            UpgradeActionEvent::DownloadedAssetBytes {
+                file_name: file_name.clone(),
+                received: ByteCount::from(received),
+                total,
+            },
+        )
+        .await;
+    }
+    file.flush()?;
     Ok(path)
 }
 
