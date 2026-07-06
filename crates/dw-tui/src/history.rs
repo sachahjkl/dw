@@ -107,6 +107,7 @@ impl ActionRunRecord {
         Self::Failed { events, error }
     }
 
+    #[cfg(test)]
     pub fn events(&self) -> &[DwActionEvent] {
         match self {
             Self::Running { events }
@@ -211,15 +212,6 @@ impl HistoryState {
 
     pub fn selected_entry(&self) -> Option<&RunHistoryEntry> {
         self.entries.get(self.selected_entry)
-    }
-
-    pub fn running_events(&self, id: ActionRunId) -> Vec<DwActionEvent> {
-        self.entries
-            .iter()
-            .rev()
-            .find(|entry| entry.id == id && entry.status.is_running())
-            .map(|entry| entry.record.events().to_vec())
-            .unwrap_or_default()
     }
 }
 

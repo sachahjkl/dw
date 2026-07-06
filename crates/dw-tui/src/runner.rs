@@ -8,6 +8,7 @@ use dw_app::{DwActionRequest, DwActionResult};
 use dw_core::{DwActionEvent, ExternalLaunchPlan};
 use std::io;
 
+use crate::history::ActionRunErrorMessage;
 use crate::model::{TuiAction, TuiActionRequest};
 
 #[derive(Debug, Clone)]
@@ -25,6 +26,31 @@ pub struct CapturedActionRunResult {
     pub success: bool,
     pub events: Vec<DwActionEvent>,
     pub result: DwActionResult,
+}
+
+#[derive(Debug, Clone)]
+pub struct CapturedActionRunError {
+    pub display_label: String,
+    pub events: Vec<DwActionEvent>,
+    pub message: ActionRunErrorMessage,
+}
+
+impl CapturedActionRunError {
+    fn from_error(display_label: String, events: Vec<DwActionEvent>, error: anyhow::Error) -> Self {
+        Self {
+            display_label,
+            events,
+            message: ActionRunErrorMessage::new(format!("{error:#}")),
+        }
+    }
+
+    pub fn interrupted(display_label: String, message: impl Into<String>) -> Self {
+        Self {
+            display_label,
+            events: Vec::new(),
+            message: ActionRunErrorMessage::new(message),
+        }
+    }
 }
 
 pub fn install_terminal() -> Result<()> {
@@ -58,12 +84,15 @@ pub async fn run_attached(action: &TuiAction) -> Result<ActionRunResult> {
 pub async fn run_captured_streaming<F>(
     action: &TuiAction,
     mut on_event: F,
-) -> Result<CapturedActionRunResult>
+) -> std::result::Result<CapturedActionRunResult, CapturedActionRunError>
 where
     F: FnMut(DwActionEvent),
 {
     let mut events = Vec::new();
-    let request = action_request(action)?;
+    let display_label = action.display_label();
+    let request = action_request(action).map_err(|error| {
+        CapturedActionRunError::from_error(display_label.clone(), vec![], error)
+    })?;
     let action_run = dw_app::spawn_action(request);
     let mut event_stream = action_run.events;
     let result = action_run.result;
@@ -72,10 +101,17 @@ where
         on_event(event.clone());
         events.push(event);
     }
-    let result = result.await??;
+    let result = result
+        .await
+        .map_err(|error| {
+            CapturedActionRunError::from_error(display_label.clone(), events.clone(), error.into())
+        })?
+        .map_err(|error| {
+            CapturedActionRunError::from_error(display_label.clone(), events.clone(), error)
+        })?;
 
     Ok(CapturedActionRunResult {
-        display_label: action.display_label(),
+        display_label,
         status_label: "ok".into(),
         success: true,
         events,
@@ -220,8 +256,14 @@ mod tests {
 
         let result = run_captured_streaming(&action, |event| output.push(event)).await;
 
-        assert!(result.is_err());
+        let error = result.expect_err("missing root should fail");
         assert!(output.iter().any(|event| matches!(
+            event,
+            DwActionEvent::Task(dw_core::TaskActionEvent::ResolvingPullRequestWorkItems {
+                pull_request_id
+            }) if *pull_request_id == dw_core::PullRequestId::from("42")
+        )));
+        assert!(error.events.iter().any(|event| matches!(
             event,
             DwActionEvent::Task(dw_core::TaskActionEvent::ResolvingPullRequestWorkItems {
                 pull_request_id

@@ -6,7 +6,7 @@ use crate::history::ActionRunId;
 use crate::model::{
     self, ActionEffect, AdoAssignedProject, TuiAction, TuiPullRequest, TuiSnapshot,
 };
-use crate::runner::{self, CapturedActionRunResult};
+use crate::runner::{self, CapturedActionRunError, CapturedActionRunResult};
 use dw_core::DwActionEvent;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +43,7 @@ pub enum BackgroundResult {
         refresh_after_success: bool,
         open_after_success: bool,
         effect: Option<ActionEffect>,
-        result: Box<Result<CapturedActionRunResult, String>>,
+        result: Box<Result<CapturedActionRunResult, CapturedActionRunError>>,
     },
 }
 
@@ -274,6 +274,7 @@ impl BackgroundJobs {
         self.action_label = Some(label.clone());
         self.spawn_async(move |sender| async move {
             let output_sender = sender.clone();
+            let action_label = label.clone();
             let result = match tokio::spawn(async move {
                 runner::run_captured_streaming(&action, move |event| {
                     let _ = output_sender.send(BackgroundResult::ActionEvent {
@@ -283,16 +284,18 @@ impl BackgroundJobs {
                     });
                 })
                 .await
-                .map_err(|error| format!("{error:#}"))
             })
             .await
             {
                 Ok(result) => result,
-                Err(error) if error.is_panic() => Err(
-                    "TUI action interrupted by an internal panic. The action was stopped cleanly."
-                        .into(),
-                ),
-                Err(error) => Err(format!("TUI action interrupted: {error}")),
+                Err(error) if error.is_panic() => Err(CapturedActionRunError::interrupted(
+                    action_label.clone(),
+                    "TUI action interrupted by an internal panic. The action was stopped cleanly.",
+                )),
+                Err(error) => Err(CapturedActionRunError::interrupted(
+                    action_label,
+                    format!("TUI action interrupted: {error}"),
+                )),
             };
             let _ = sender.send(BackgroundResult::Action {
                 generation,

@@ -11,8 +11,7 @@ use crate::actions::{
 use crate::background::{ActionStart, BackgroundJobs, BackgroundKind, BackgroundResult};
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
 use crate::history::{
-    ActionRunErrorMessage, ActionRunId, ActionRunLabel, ActionRunRecord, ActionRunStatus,
-    HistoryState, RunHistoryEntry,
+    ActionRunId, ActionRunLabel, ActionRunRecord, ActionRunStatus, HistoryState, RunHistoryEntry,
 };
 use crate::model::{
     ActionEffect, ActionRisk, AdoAssignedProject, CockpitItem, CockpitSeverity, DetailPanel,
@@ -1281,7 +1280,13 @@ impl App {
                 Ok(true)
             }
             TuiActionRequest::ConfigShow { .. } => {
-                let result = runner::run_captured_streaming(action, |_| {}).await?;
+                let result = match runner::run_captured_streaming(action, |_| {}).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        self.accept_inline_action_error(error);
+                        return Ok(true);
+                    }
+                };
                 match result.result {
                     dw_app::DwActionResult::Config(dw_app::ConfigActionResult::Show(report)) => {
                         self.open_detail_panel(DetailPanel::config_show(&report));
@@ -1292,7 +1297,13 @@ impl App {
                 }
             }
             TuiActionRequest::ConfigDoctor { .. } => {
-                let result = runner::run_captured_streaming(action, |_| {}).await?;
+                let result = match runner::run_captured_streaming(action, |_| {}).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        self.accept_inline_action_error(error);
+                        return Ok(true);
+                    }
+                };
                 match result.result {
                     dw_app::DwActionResult::Config(dw_app::ConfigActionResult::Doctor(report)) => {
                         self.snapshot.config_doctor = report.clone();
@@ -1305,7 +1316,13 @@ impl App {
                 }
             }
             TuiActionRequest::AgentDoctor { .. } => {
-                let result = runner::run_captured_streaming(action, |_| {}).await?;
+                let result = match runner::run_captured_streaming(action, |_| {}).await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        self.accept_inline_action_error(error);
+                        return Ok(true);
+                    }
+                };
                 match result.result {
                     dw_app::DwActionResult::Agent(dw_app::AgentActionResult::Doctor(report)) => {
                         self.open_detail_panel(DetailPanel::agent_doctor(&report));
@@ -1318,6 +1335,19 @@ impl App {
             }
             _ => Ok(false),
         }
+    }
+
+    fn accept_inline_action_error(&mut self, error: runner::CapturedActionRunError) {
+        let label = error.display_label.clone();
+        let message = error.message.clone();
+        self.history.push(RunHistoryEntry {
+            id: ActionRunId::new(0),
+            request_label: ActionRunLabel::new(label.clone()),
+            status: ActionRunStatus::Failed,
+            record: ActionRunRecord::failed(error.events, error.message),
+        });
+        self.messages.push(format!("Failed: {label} -> {message}"));
+        self.open_latest_history_output();
     }
 
     async fn run_option_action(
@@ -1650,7 +1680,10 @@ impl App {
         refresh_after_success: bool,
         open_after_success: bool,
         effect: Option<ActionEffect>,
-        result: std::result::Result<runner::CapturedActionRunResult, String>,
+        result: std::result::Result<
+            runner::CapturedActionRunResult,
+            runner::CapturedActionRunError,
+        >,
     ) {
         match result {
             Ok(result) => {
@@ -1689,21 +1722,20 @@ impl App {
                 self.continue_action_queue();
             }
             Err(error) => {
-                let events = self.history.running_events(run_id);
-                let record =
-                    ActionRunRecord::failed(events, ActionRunErrorMessage::new(error.clone()));
+                let record = ActionRunRecord::failed(error.events.clone(), error.message.clone());
                 if !self
                     .history
                     .finish_running(run_id, ActionRunStatus::Failed, record.clone())
                 {
                     self.history.push(RunHistoryEntry {
                         id: run_id,
-                        request_label: ActionRunLabel::new(label.clone()),
+                        request_label: ActionRunLabel::new(error.display_label.clone()),
                         status: ActionRunStatus::Failed,
                         record,
                     });
                 }
-                self.messages.push(format!("Failed: {label} -> {error}"));
+                self.messages
+                    .push(format!("Failed: {label} -> {}", error.message));
                 self.open_latest_history_output();
                 self.continue_action_queue();
             }
