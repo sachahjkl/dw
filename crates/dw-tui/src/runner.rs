@@ -39,8 +39,8 @@ pub fn restore_terminal() -> Result<()> {
     Ok(())
 }
 
-pub fn run_attached(action: &TuiAction) -> Result<ActionRunResult> {
-    let launch = external_launch_plan(action)?;
+pub async fn run_attached(action: &TuiAction) -> Result<ActionRunResult> {
+    let launch = external_launch_plan(action).await?;
     restore_terminal().ok();
     let status = run_external_launch_plan(&launch);
     install_terminal().ok();
@@ -110,9 +110,7 @@ fn action_request(action: &TuiAction) -> Result<DwActionRequest> {
         TuiActionRequest::AgentDoctor { agent } => {
             Ok(DwActionRequest::AgentDoctor { agent: *agent })
         }
-        TuiActionRequest::AgentOpen(_) => {
-            anyhow::bail!("External action executed by run_attached.")
-        }
+        TuiActionRequest::AgentOpen(args) => Ok(DwActionRequest::TaskOpen(args.clone())),
         TuiActionRequest::DbGuard(args) => Ok(DwActionRequest::DbGuard(args.clone())),
         TuiActionRequest::DbSchema(args) => Ok(DwActionRequest::DbSchema(args.clone())),
         TuiActionRequest::DbDescribe(args) => Ok(DwActionRequest::DbDescribe(args.clone())),
@@ -158,9 +156,20 @@ fn action_request(action: &TuiAction) -> Result<DwActionRequest> {
     }
 }
 
-fn external_launch_plan(action: &TuiAction) -> Result<ExternalLaunchPlan> {
+async fn external_launch_plan(action: &TuiAction) -> Result<ExternalLaunchPlan> {
     match &action.request {
-        TuiActionRequest::AgentOpen(args) => dw_task::open::resolve_open_launch(args.clone()),
+        TuiActionRequest::AgentOpen(args) => {
+            let action_run = dw_app::spawn_action(DwActionRequest::TaskOpen(args.clone()));
+            let mut events = action_run.events;
+            while events.recv().await.is_some() {}
+            match action_run.result.await?? {
+                DwActionResult::Task(result) => match *result {
+                    dw_app::TaskActionResult::Open(plan) => Ok(plan),
+                    result => anyhow::bail!("Unexpected agent open result: {result:?}"),
+                },
+                result => anyhow::bail!("Unexpected external launch result: {result:?}"),
+            }
+        }
         _ => anyhow::bail!(
             "External action is not mapped to ExternalLaunchPlan: {}",
             action.display_label()

@@ -68,7 +68,7 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
             ))
             .await?;
         }
-        Command::Tui { root } => dw_tui::run_tui(root)?,
+        Command::Tui { root } => dw_tui::run_tui(root).await?,
         Command::Agent { command } => handle_agent(command).await?,
         Command::Auth { command } => handle_auth(command).await?,
         Command::Completion { command } => handle_completion(command)?,

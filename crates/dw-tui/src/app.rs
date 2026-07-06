@@ -28,14 +28,14 @@ pub const MENU_SECTIONS: &[MenuSection] = &[
     MenuSection::TerminalColor,
 ];
 
-pub fn run_tui(root: Option<String>) -> Result<()> {
+pub async fn run_tui(root: Option<String>) -> Result<()> {
     runner::install_terminal()?;
-    let result = run_tui_inner(root);
+    let result = run_tui_inner(root).await;
     runner::restore_terminal()?;
     result
 }
 
-fn run_tui_inner(root: Option<String>) -> Result<()> {
+async fn run_tui_inner(root: Option<String>) -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
     let mut app = App::new(root);
@@ -45,7 +45,7 @@ fn run_tui_inner(root: Option<String>) -> Result<()> {
         terminal.draw(|frame| ui::render(frame, &app))?;
         if event::poll(Duration::from_millis(200))? {
             match event::read()? {
-                Event::Key(key) => app.handle_key(key, &mut terminal)?,
+                Event::Key(key) => app.handle_key(key, &mut terminal).await?,
                 Event::Mouse(mouse) => app.handle_mouse(mouse.kind),
                 _ => {}
             }
@@ -601,23 +601,23 @@ impl App {
         items
     }
 
-    pub fn handle_key(
+    pub async fn handle_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         if self.snapshot.needs_init {
-            return self.handle_init_required_key(key, terminal);
+            return self.handle_init_required_key(key, terminal).await;
         }
 
         if self.form.is_some() {
-            return self.handle_form_key(key, terminal);
+            return self.handle_form_key(key, terminal).await;
         }
 
         if let Some(modal) = self.modal_stack.last().copied() {
             return match modal {
                 ModalKind::Menu => self.handle_options_key(key, terminal),
-                ModalKind::MenuSection => self.handle_menu_section_key(key, terminal),
+                ModalKind::MenuSection => self.handle_menu_section_key(key, terminal).await,
                 ModalKind::Help => self.handle_help_key(key),
                 ModalKind::State => self.handle_state_key(key),
                 ModalKind::History => self.handle_history_output_key(key),
@@ -630,10 +630,10 @@ impl App {
         }
 
         if self.confirmation.is_some() {
-            return self.handle_confirmation_key(key, terminal);
+            return self.handle_confirmation_key(key, terminal).await;
         }
 
-        if self.view == View::Composer && self.handle_action_builder_key(key, terminal)? {
+        if self.view == View::Composer && self.handle_action_builder_key(key, terminal).await? {
             return Ok(());
         }
 
@@ -666,22 +666,23 @@ impl App {
             KeyCode::Char('?') => self.open_help_modal(),
             _ => {}
         }
-        if self.handle_view_action_key(key, terminal)? {
+        if self.handle_view_action_key(key, terminal).await? {
             return Ok(());
         }
         if key.code == KeyCode::Enter {
             if self.view == View::Dashboard {
-                self.request_or_run_selected_cockpit_item(terminal)?;
+                self.request_or_run_selected_cockpit_item(terminal).await?;
             } else if self.view == View::Workspaces {
-                self.request_or_run_workspace_action(WorkspaceAction::Open, terminal)?;
+                self.request_or_run_workspace_action(WorkspaceAction::Open, terminal)
+                    .await?;
             } else {
-                self.request_or_run_selected_action(terminal)?;
+                self.request_or_run_selected_action(terminal).await?;
             }
         }
         Ok(())
     }
 
-    fn handle_init_required_key(
+    async fn handle_init_required_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -695,7 +696,8 @@ impl App {
                 if self.action_loading() {
                     self.messages.push("Init already running.".into());
                 } else {
-                    self.run_action(self.init_required_action(), terminal)?;
+                    self.run_action(self.init_required_action(), terminal)
+                        .await?;
                 }
             }
             _ => {}
@@ -820,87 +822,111 @@ impl App {
         }
     }
 
-    fn handle_view_action_key(
+    async fn handle_view_action_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<bool> {
         match (self.view, key.code) {
             (View::Ado, KeyCode::Enter | KeyCode::Char('n') | KeyCode::Char('s')) => {
-                self.request_or_run_ado_action(AdoItemAction::StartPreview, terminal)?
+                self.request_or_run_ado_action(AdoItemAction::StartPreview, terminal)
+                    .await?
             }
             (View::Ado, KeyCode::Char('x')) => {
-                self.request_or_run_ado_action(AdoItemAction::StartExecute, terminal)?
+                self.request_or_run_ado_action(AdoItemAction::StartExecute, terminal)
+                    .await?
             }
             (View::Ado, KeyCode::Char('c')) => {
-                self.request_or_run_ado_action(AdoItemAction::Context, terminal)?
+                self.request_or_run_ado_action(AdoItemAction::Context, terminal)
+                    .await?
             }
             (View::Ado, KeyCode::Char('w')) => {
-                self.request_or_run_ado_action(AdoItemAction::WorkItem, terminal)?
+                self.request_or_run_ado_action(AdoItemAction::WorkItem, terminal)
+                    .await?
             }
             (View::Ado, KeyCode::Char('e')) => {
-                self.request_or_run_ado_action(AdoItemAction::SetStartState, terminal)?
+                self.request_or_run_ado_action(AdoItemAction::SetStartState, terminal)
+                    .await?
             }
             (View::Ado, KeyCode::Char('E')) => self.open_ado_set_state_form(),
             (View::Ado, KeyCode::Char('o')) => {
-                self.request_or_run_ado_action(AdoItemAction::OpenAgent, terminal)?
+                self.request_or_run_ado_action(AdoItemAction::OpenAgent, terminal)
+                    .await?
             }
             (View::Ado, KeyCode::Char('u')) => self.open_selected_ado_url(),
             (View::Workspaces, KeyCode::Enter | KeyCode::Char('o')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::Open, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::Open, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('p')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::Preflight, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::Preflight, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('s')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::Sync, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::Sync, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('l')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::RepoLatest, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::RepoLatest, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('v')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::HandoffValidate, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::HandoffValidate, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('c')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::CommitPreview, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::CommitPreview, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('f')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::FinishPreview, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::FinishPreview, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('F')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::FinishExecute, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::FinishExecute, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('t')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::TeardownPreview, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::TeardownPreview, terminal)
+                    .await?
             }
             (View::Workspaces, KeyCode::Char('x')) => {
-                self.request_or_run_workspace_action(WorkspaceAction::TeardownExecute, terminal)?
+                self.request_or_run_workspace_action(WorkspaceAction::TeardownExecute, terminal)
+                    .await?
             }
             (View::PullRequests, KeyCode::Enter | KeyCode::Char('n') | KeyCode::Char('s')) => {
-                self.request_or_run_pull_request_action(PullRequestAction::StartPreview, terminal)?
+                self.request_or_run_pull_request_action(PullRequestAction::StartPreview, terminal)
+                    .await?
             }
             (View::PullRequests, KeyCode::Char('x')) => {
-                self.request_or_run_pull_request_action(PullRequestAction::StartExecute, terminal)?
+                self.request_or_run_pull_request_action(PullRequestAction::StartExecute, terminal)
+                    .await?
             }
             (View::PullRequests, KeyCode::Char('f')) => {
-                self.request_or_run_pull_request_action(PullRequestAction::FinishPreview, terminal)?
+                self.request_or_run_pull_request_action(PullRequestAction::FinishPreview, terminal)
+                    .await?
             }
             (View::PullRequests, KeyCode::Char('F')) => {
-                self.request_or_run_pull_request_action(PullRequestAction::FinishExecute, terminal)?
+                self.request_or_run_pull_request_action(PullRequestAction::FinishExecute, terminal)
+                    .await?
             }
             (View::PullRequests, KeyCode::Char('c')) => {
-                self.request_or_run_pull_request_action(PullRequestAction::Changelog, terminal)?
+                self.request_or_run_pull_request_action(PullRequestAction::Changelog, terminal)
+                    .await?
             }
             (View::PullRequests, KeyCode::Char('d')) => {
-                self.request_or_run_pull_request_action(PullRequestAction::DiffPreview, terminal)?
+                self.request_or_run_pull_request_action(PullRequestAction::DiffPreview, terminal)
+                    .await?
             }
             (View::PullRequests, KeyCode::Char('o')) => {
-                self.request_or_run_pull_request_action(PullRequestAction::OpenAgent, terminal)?
+                self.request_or_run_pull_request_action(PullRequestAction::OpenAgent, terminal)
+                    .await?
             }
             (View::PullRequests, KeyCode::Char('N')) => self.open_start_pr_form(),
             (View::PullRequests, KeyCode::Char('u')) => self.open_selected_pull_request_url(),
             (View::Db, KeyCode::Enter | KeyCode::Char('s')) => {
-                self.request_or_run_db_action(DatabaseAction::Schema, terminal)?
+                self.request_or_run_db_action(DatabaseAction::Schema, terminal)
+                    .await?
             }
             (View::Db, KeyCode::Char('d')) => self.open_db_describe_form(),
             (View::Db, KeyCode::Char('e')) => self.open_db_query_form(),
@@ -909,7 +935,7 @@ impl App {
         Ok(true)
     }
 
-    fn handle_form_key(
+    async fn handle_form_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -951,7 +977,7 @@ impl App {
                     let action = form.build_action(&self.snapshot.root);
                     self.form = None;
                     match action {
-                        Some(action) => self.request_or_run_action(action, terminal)?,
+                        Some(action) => self.request_or_run_action(action, terminal).await?,
                         None => self
                             .messages
                             .push("Incomplete form: no action generated.".into()),
@@ -1082,7 +1108,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_menu_section_key(
+    async fn handle_menu_section_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1093,11 +1119,11 @@ impl App {
             KeyCode::Char('m') => self.close_menu_modals(),
             KeyCode::Up | KeyCode::Char('k') => self.move_option_up(),
             KeyCode::Down | KeyCode::Char('j') => self.move_option_down(),
-            KeyCode::Enter => self.run_selected_option_action(terminal)?,
+            KeyCode::Enter => self.run_selected_option_action(terminal).await?,
             KeyCode::Char('?') => self.open_help_modal(),
             KeyCode::Char(key) => {
                 if let Some(action) = self.current_menu_option_by_key(key) {
-                    self.run_option_action(action, terminal)?;
+                    self.run_option_action(action, terminal).await?;
                 }
             }
             _ => {}
@@ -1105,7 +1131,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_confirmation_key(
+    async fn handle_confirmation_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1113,7 +1139,7 @@ impl App {
         match key.code {
             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
                 if let Some(action) = self.confirmation.take() {
-                    self.run_action(action, terminal)?;
+                    self.run_action(action, terminal).await?;
                 }
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
@@ -1125,7 +1151,7 @@ impl App {
         Ok(())
     }
 
-    fn request_or_run_selected_action(
+    async fn request_or_run_selected_action(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
@@ -1134,10 +1160,10 @@ impl App {
             return Ok(());
         };
 
-        self.request_or_run_action(action.clone(), terminal)
+        self.request_or_run_action(action.clone(), terminal).await
     }
 
-    fn request_or_run_selected_cockpit_item(
+    async fn request_or_run_selected_cockpit_item(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
@@ -1147,9 +1173,10 @@ impl App {
             return Ok(());
         };
         self.request_or_run_action(item.primary_action.clone(), terminal)
+            .await
     }
 
-    fn handle_action_builder_key(
+    async fn handle_action_builder_key(
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1187,7 +1214,7 @@ impl App {
                 KeyCode::Enter => {
                     let action = self.action_form.build_action(&self.snapshot.root);
                     match action {
-                        Some(action) => self.request_or_run_action(action, terminal)?,
+                        Some(action) => self.request_or_run_action(action, terminal).await?,
                         None => self
                             .messages
                             .push("Incomplete composer: no action generated.".into()),
@@ -1209,7 +1236,7 @@ impl App {
         }
     }
 
-    fn request_or_run_action(
+    async fn request_or_run_action(
         &mut self,
         action: TuiAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1230,7 +1257,7 @@ impl App {
             return Ok(());
         }
 
-        self.run_action(action, terminal)
+        self.run_action(action, terminal).await
     }
 
     fn run_inline_detail_action(&mut self, action: &TuiAction) -> bool {
@@ -1271,7 +1298,7 @@ impl App {
         }
     }
 
-    fn run_option_action(
+    async fn run_option_action(
         &mut self,
         option: QuickOptionAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1283,13 +1310,14 @@ impl App {
             actions::option_action(&self.snapshot.root, option),
             terminal,
         )
+        .await
     }
 
     fn run_core_quick_option(&mut self, option: QuickOptionAction) -> bool {
         self.run_inline_detail_action(&actions::option_action(&self.snapshot.root, option))
     }
 
-    fn run_selected_option_action(
+    async fn run_selected_option_action(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
@@ -1314,7 +1342,7 @@ impl App {
                     self.messages.push("No menu option selected.".into());
                     return Ok(());
                 };
-                self.run_option_action(option.action, terminal)?;
+                self.run_option_action(option.action, terminal).await?;
             }
         }
         Ok(())
@@ -1376,7 +1404,7 @@ impl App {
         self.sync_closed_modal(ModalKind::MenuSection);
     }
 
-    fn request_or_run_ado_action(
+    async fn request_or_run_ado_action(
         &mut self,
         action: AdoItemAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1394,10 +1422,10 @@ impl App {
             return Ok(());
         };
 
-        self.request_or_run_action(selected_action, terminal)
+        self.request_or_run_action(selected_action, terminal).await
     }
 
-    fn request_or_run_workspace_action(
+    async fn request_or_run_workspace_action(
         &mut self,
         action: WorkspaceAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1409,10 +1437,10 @@ impl App {
             return Ok(());
         };
 
-        self.request_or_run_action(selected_action, terminal)
+        self.request_or_run_action(selected_action, terminal).await
     }
 
-    fn request_or_run_pull_request_action(
+    async fn request_or_run_pull_request_action(
         &mut self,
         action: PullRequestAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1423,7 +1451,7 @@ impl App {
             return Ok(());
         };
 
-        self.request_or_run_action(selected_action, terminal)
+        self.request_or_run_action(selected_action, terminal).await
     }
 
     fn open_selected_ado_url(&mut self) {
@@ -1521,7 +1549,7 @@ impl App {
             .map(|action| action.display_label())
     }
 
-    fn request_or_run_db_action(
+    async fn request_or_run_db_action(
         &mut self,
         action: DatabaseAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1533,7 +1561,7 @@ impl App {
             return Ok(());
         };
 
-        self.request_or_run_action(selected_action, terminal)
+        self.request_or_run_action(selected_action, terminal).await
     }
 
     fn selected_pull_request_action(&self, action: PullRequestAction) -> Option<TuiAction> {
@@ -1550,7 +1578,7 @@ impl App {
         actions::pull_request_action_error(&self.snapshot, self.selected_pull_request, action)
     }
 
-    fn run_action(
+    async fn run_action(
         &mut self,
         action: TuiAction,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
@@ -1571,7 +1599,7 @@ impl App {
         }
 
         terminal.show_cursor().ok();
-        let result = runner::run_attached(&action)?;
+        let result = runner::run_attached(&action).await?;
         terminal.clear()?;
         self.history.push(RunHistoryEntry {
             id: ActionRunId::new(0),
