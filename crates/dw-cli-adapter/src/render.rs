@@ -57,6 +57,10 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
                 agent_config_updated_lines(root, agent, theme)
             }
             AgentActionResult::Doctor(report) => agent_doctor_lines(report, theme),
+            AgentActionResult::Context(report) => agent_context_markdown(report)
+                .lines()
+                .map(str::to_owned)
+                .collect(),
         },
         DwActionResult::Db(result) => match result {
             DbActionResult::Guard(report) => db_guard_lines(report, theme),

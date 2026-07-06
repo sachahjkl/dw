@@ -2208,15 +2208,7 @@ async fn handle_secret(command: SecretCommand) -> Result<()> {
 async fn handle_agent(command: AgentCommand) -> Result<()> {
     match command {
         AgentCommand::Context => {
-            let root = dw_config::resolve_root(None);
-            let root = DevWorkflowRoot::from(root);
-            let report = dw_agent::agent_context(&root);
-            print_lines(
-                &dw_cli_adapter::render::agent_context_markdown(&report)
-                    .lines()
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>(),
-            );
+            run_cli_action(dw_app::DwActionRequest::AgentContext).await?;
         }
         AgentCommand::Open {
             workspace,

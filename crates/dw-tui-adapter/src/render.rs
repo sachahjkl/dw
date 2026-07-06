@@ -1,7 +1,10 @@
 use dw_ado_commands::auth::{
     AuthLoginMode, AuthLoginReport, AuthLogoutReport, AuthStatusReport, AuthTokenExpiration,
 };
-use dw_agent::command::{AgentDoctorCheck, AgentDoctorReport};
+use dw_agent::{
+    AgentContextReport,
+    command::{AgentDoctorCheck, AgentDoctorReport},
+};
 use dw_app::{
     AdoActionResult, AgentActionResult, AppActionResult, ConfigActionResult, DbActionResult,
     DwActionResult, SecretActionResult, TaskActionResult, UpgradeActionResult,
@@ -256,6 +259,30 @@ pub fn agent_config_updated_lines(
         format!("Default agent: {}", theme.bold(&agent.to_string())),
         format!("Root DevWorkflow: {}", theme.path(&root.to_string())),
     ]
+}
+
+pub fn agent_context_markdown(report: &AgentContextReport) -> String {
+    format!(
+        r#"# DevWorkflow agent context
+
+Use DevWorkflow actions for workflow operations.
+
+Current configured root:
+
+```text
+{}
+```
+
+Important rules:
+
+1. Azure DevOps work items are the source of truth.
+2. Use DevWorkflow actions for ADO operations, Git naming, PRs and worktrees.
+3. Do not use Azure DevOps MCP tools directly.
+4. Read the ADO work item and structured AI context before acting on ADO context.
+5. Keep project/user-facing text in French unless the project context says otherwise.
+"#,
+        report.root
+    )
 }
 
 pub fn ado_prs_lines(report: &dw_ado_commands::commands::prs::PrsReport) -> Vec<String> {
@@ -573,6 +600,10 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
                 agent_config_updated_lines(root, agent, theme)
             }
             AgentActionResult::Doctor(report) => agent_doctor_lines(report, theme),
+            AgentActionResult::Context(report) => agent_context_markdown(report)
+                .lines()
+                .map(str::to_owned)
+                .collect(),
         },
         DwActionResult::Db(result) => match result {
             DbActionResult::Guard(report) => db_guard_lines(report, theme),

@@ -36,6 +36,7 @@ pub enum DwActionRequest {
     AgentDoctor {
         agent: Option<Agent>,
     },
+    AgentContext,
     DbGuard(dw_db::commands::GuardArgs),
     DbSchema(dw_db::commands::SchemaArgs),
     DbDescribe(dw_db::commands::DescribeArgs),
@@ -143,6 +144,7 @@ pub enum AgentActionResult {
     Config { root: DevWorkflowRoot, agent: Agent },
     SetDefault { root: DevWorkflowRoot, agent: Agent },
     Doctor(dw_agent::command::AgentDoctorReport),
+    Context(dw_agent::AgentContextReport),
 }
 
 #[derive(Debug, Clone)]
@@ -320,6 +322,13 @@ pub async fn run_action(
         DwActionRequest::AgentDoctor { agent } => Ok(DwActionResult::Agent(
             AgentActionResult::Doctor(dw_agent::command::agent_doctor(agent)?),
         )),
+        DwActionRequest::AgentContext => {
+            let root = dw_config::resolve_root(None);
+            let root = DevWorkflowRoot::from(root);
+            Ok(DwActionResult::Agent(AgentActionResult::Context(
+                dw_agent::agent_context(&root),
+            )))
+        }
         DwActionRequest::DbGuard(args) => Ok(DwActionResult::Db(DbActionResult::Guard(
             dw_db::commands::guard_with_events(args, |event| emit(DwActionEvent::Db(event))),
         ))),
