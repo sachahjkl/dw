@@ -75,7 +75,7 @@ mod tests {
             branch_name: "feat/42-demo".into(),
             created_at: "2026-07-03T10:00:00Z".into(),
             repositories: vec!["front".into(), "back".into()],
-            status: "created".into(),
+            status: crate::WorkspaceManifestStatus::Created,
             work_item_type: Some("User Story".into()),
             work_item_title: Some("Titre".into()),
             work_item_state: Some("New".into()),

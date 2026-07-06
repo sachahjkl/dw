@@ -379,7 +379,7 @@ mod tests {
             branch_name: "feat/42-demo".into(),
             created_at: "2026-07-03T10:00:00Z".into(),
             repositories: vec!["front".into()],
-            status: "created".into(),
+            status: dw_workspace::WorkspaceManifestStatus::Created,
             work_item_type: None,
             work_item_title: None,
             work_item_state: None,

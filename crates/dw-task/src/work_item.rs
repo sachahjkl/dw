@@ -433,7 +433,7 @@ mod tests {
             branch_name: "feature/1-parent".into(),
             created_at: "2026-01-01T00:00:00Z".into(),
             repositories: Vec::new(),
-            status: "active".into(),
+            status: dw_workspace::WorkspaceManifestStatus::Created,
             work_item_type: Some("User Story".into()),
             work_item_title: Some("Parent".into()),
             work_item_state: Some("Active".into()),

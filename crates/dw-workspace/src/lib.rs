@@ -53,7 +53,7 @@ pub struct WorkspaceManifest {
     #[serde(rename = "createdAt")]
     pub created_at: String,
     pub repositories: Vec<WorkspaceRepositoryName>,
-    pub status: String,
+    pub status: WorkspaceManifestStatus,
     #[serde(rename = "workItemType")]
     pub work_item_type: Option<WorkItemTypeName>,
     #[serde(rename = "workItemTitle")]
@@ -66,6 +66,26 @@ pub struct WorkspaceManifest {
     pub child_tasks: Option<Vec<WorkspaceChildTask>>,
     #[serde(rename = "workItems")]
     pub work_items: Option<Vec<WorkspaceWorkItem>>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceManifestStatus {
+    Created,
+}
+
+impl WorkspaceManifestStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Created => "created",
+        }
+    }
+}
+
+impl fmt::Display for WorkspaceManifestStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1461,7 +1481,7 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
         branch_name: plan.branch_name.clone(),
         created_at: current_timestamp_string(),
         repositories: plan.repositories.clone(),
-        status: "created".into(),
+        status: WorkspaceManifestStatus::Created,
         work_item_type: first.kind.clone(),
         work_item_title: first.title.clone(),
         work_item_state: first.state.clone(),

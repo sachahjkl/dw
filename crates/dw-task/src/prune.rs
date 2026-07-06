@@ -274,7 +274,7 @@ mod tests {
                 branch_name: "feat/1-done".into(),
                 created_at: "2026-07-02T10:00:00Z".into(),
                 repositories: vec!["front".into(), "back".into()],
-                status: "created".into(),
+                status: dw_workspace::WorkspaceManifestStatus::Created,
                 work_item_type: Some("User Story".into()),
                 work_item_title: Some("Done".into()),
                 work_item_state: Some("Valide".into()),
