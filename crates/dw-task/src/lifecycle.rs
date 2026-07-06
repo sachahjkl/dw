@@ -143,7 +143,7 @@ pub fn rename_plan(args: RenameArgs) -> Result<RenamePlanReport> {
 }
 
 pub fn execute_rename(report: &RenamePlanReport) -> Result<RenameExecutionReport> {
-    let manifest = read_manifest_path(&format!("{}/task.json", report.plan.workspace))?;
+    let manifest = read_manifest_path(&format!("{}/task.json", report.plan.workspace.as_str()))?;
     let updated = execute_task_rename(&manifest, &report.plan)?;
     Ok(RenameExecutionReport {
         plan: report.plan.clone(),

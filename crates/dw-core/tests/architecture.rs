@@ -1191,6 +1191,46 @@ fn task_repo_contract_uses_typed_paths_repositories_and_branches() {
 }
 
 #[test]
+fn workspace_rename_and_work_item_update_plans_use_typed_paths_slugs_and_branches() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-workspace/src/lib.rs");
+    let text = fs::read_to_string(&path).expect("read workspace source");
+    for forbidden in [
+        "pub struct TaskRenamePlan {\n    pub workspace: String",
+        "pub struct TaskRenamePlan {\n    pub workspace: WorkspacePath,\n    #[serde(rename = \"newWorkspace\")]\n    pub new_workspace: String",
+        "pub old_slug: String",
+        "pub new_slug: String",
+        "pub old_branch: String",
+        "pub new_branch: String",
+        "pub struct TaskWorkItemUpdatePlan {\n    pub workspace: String",
+        "pub struct TaskWorkItemUpdatePlan {\n    pub workspace: WorkspacePath,\n    #[serde(rename = \"newWorkspace\")]\n    pub new_workspace: String",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains primitive workspace plan token `{}`",
+            path.display(),
+            forbidden
+        );
+    }
+    for required in [
+        "pub workspace: WorkspacePath",
+        "pub new_workspace: WorkspacePath",
+        "pub old_slug: TaskSlug",
+        "pub new_slug: TaskSlug",
+        "pub old_branch: BranchName",
+        "pub new_branch: BranchName",
+        "-> Result<(WorkspaceManifest, WorkspacePath), WorkspaceError>",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed workspace plan token `{}`",
+            path.display(),
+            required
+        );
+    }
+}
+
+#[test]
 fn task_validate_contract_uses_typed_workspace_filters_and_ai_context_paths() {
     let repo = repo_root();
     let path = repo.join("crates/dw-task/src/validate.rs");

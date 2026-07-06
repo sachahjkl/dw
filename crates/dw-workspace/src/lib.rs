@@ -8,8 +8,8 @@ use dw_contracts::{
     TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightReport, TaskPreflightSeverity,
 };
 use dw_core::{
-    AiContextFilePath, BranchName, ProjectKey, ProjectRootPath, RepositoryPath, WorkItemId,
-    WorkspacePath, WorkspaceRepositoryName,
+    AiContextFilePath, BranchName, ProjectKey, ProjectRootPath, RepositoryPath, TaskSlug,
+    WorkItemId, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
@@ -176,17 +176,17 @@ pub struct TaskStartRepositoryPlan {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskRenamePlan {
-    pub workspace: String,
+    pub workspace: WorkspacePath,
     #[serde(rename = "newWorkspace")]
-    pub new_workspace: String,
+    pub new_workspace: WorkspacePath,
     #[serde(rename = "oldSlug")]
-    pub old_slug: String,
+    pub old_slug: TaskSlug,
     #[serde(rename = "newSlug")]
-    pub new_slug: String,
+    pub new_slug: TaskSlug,
     #[serde(rename = "oldBranch")]
-    pub old_branch: String,
+    pub old_branch: BranchName,
     #[serde(rename = "newBranch")]
-    pub new_branch: String,
+    pub new_branch: BranchName,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -205,13 +205,13 @@ pub struct TaskCommitTarget {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskWorkItemUpdatePlan {
-    pub workspace: String,
+    pub workspace: WorkspacePath,
     #[serde(rename = "newWorkspace")]
-    pub new_workspace: String,
+    pub new_workspace: WorkspacePath,
     #[serde(rename = "oldBranch")]
-    pub old_branch: String,
+    pub old_branch: BranchName,
     #[serde(rename = "newBranch")]
-    pub new_branch: String,
+    pub new_branch: BranchName,
     #[serde(rename = "workItems")]
     pub work_items: Vec<WorkspaceWorkItem>,
 }
@@ -611,12 +611,12 @@ pub fn plan_task_rename(
     Ok((
         manifest.clone(),
         TaskRenamePlan {
-            workspace: workspace.to_string(),
-            new_workspace,
-            old_slug: manifest.slug,
-            new_slug,
-            old_branch: manifest.branch_name,
-            new_branch,
+            workspace: WorkspacePath::from(workspace),
+            new_workspace: WorkspacePath::from(new_workspace),
+            old_slug: TaskSlug::from(manifest.slug),
+            new_slug: TaskSlug::from(new_slug),
+            old_branch: BranchName::from(manifest.branch_name),
+            new_branch: BranchName::from(new_branch),
         },
     ))
 }
@@ -626,19 +626,23 @@ pub fn execute_task_rename(
     plan: &TaskRenamePlan,
 ) -> Result<WorkspaceManifest, WorkspaceError> {
     let updated = WorkspaceManifest {
-        slug: plan.new_slug.clone(),
-        branch_name: plan.new_branch.clone(),
+        slug: plan.new_slug.to_string(),
+        branch_name: plan.new_branch.to_string(),
         ..manifest.clone()
     };
     write_text(
-        &Path::new(&plan.workspace).join("task.json"),
+        &Path::new(plan.workspace.as_str()).join("task.json"),
         &serde_json::to_string_pretty(&updated)
-            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.clone()))?,
+            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.to_string()))?,
     )?;
 
-    if !plan.workspace.eq_ignore_ascii_case(&plan.new_workspace) {
-        fs::rename(&plan.workspace, &plan.new_workspace)
-            .map_err(|_| WorkspaceError::MissingWorkspace(plan.new_workspace.clone()))?;
+    if !plan
+        .workspace
+        .as_str()
+        .eq_ignore_ascii_case(plan.new_workspace.as_str())
+    {
+        fs::rename(plan.workspace.as_str(), plan.new_workspace.as_str())
+            .map_err(|_| WorkspaceError::MissingWorkspace(plan.new_workspace.to_string()))?;
     }
 
     Ok(updated)
@@ -852,7 +856,7 @@ pub fn plan_remove_work_items(
 pub fn execute_work_item_update(
     manifest: &WorkspaceManifest,
     plan: &TaskWorkItemUpdatePlan,
-) -> Result<(WorkspaceManifest, String), WorkspaceError> {
+) -> Result<(WorkspaceManifest, WorkspacePath), WorkspaceError> {
     let first = plan
         .work_items
         .first()
@@ -863,15 +867,15 @@ pub fn execute_work_item_update(
         work_item_title: first.title.clone(),
         work_item_state: first.state.clone(),
         work_items: Some(plan.work_items.clone()),
-        branch_name: plan.new_branch.clone(),
+        branch_name: plan.new_branch.to_string(),
         ..manifest.clone()
     };
 
-    let workspace_path = Path::new(&plan.workspace);
+    let workspace_path = Path::new(plan.workspace.as_str());
     write_text(
         &workspace_path.join("task.json"),
         &serde_json::to_string_pretty(&updated)
-            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.clone()))?,
+            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.to_string()))?,
     )?;
     write_text(&workspace_path.join("plan.md"), &plan_markdown(&updated))?;
     for repository in &updated.repositories {
@@ -882,13 +886,13 @@ pub fn execute_work_item_update(
     }
 
     if plan.workspace != plan.new_workspace {
-        if Path::new(&plan.new_workspace).exists() {
+        if Path::new(plan.new_workspace.as_str()).exists() {
             return Err(WorkspaceError::WorkspaceConflict(
-                plan.new_workspace.clone(),
+                plan.new_workspace.to_string(),
             ));
         }
-        fs::rename(&plan.workspace, &plan.new_workspace)
-            .map_err(|_| WorkspaceError::MissingWorkspace(plan.new_workspace.clone()))?;
+        fs::rename(plan.workspace.as_str(), plan.new_workspace.as_str())
+            .map_err(|_| WorkspaceError::MissingWorkspace(plan.new_workspace.to_string()))?;
     }
 
     Ok((updated, plan.new_workspace.clone()))
@@ -2073,10 +2077,10 @@ fn build_work_item_update_plan(
         .to_string();
 
     Ok(TaskWorkItemUpdatePlan {
-        workspace: workspace.into(),
-        new_workspace,
-        old_branch: manifest.branch_name.clone(),
-        new_branch,
+        workspace: WorkspacePath::from(workspace),
+        new_workspace: WorkspacePath::from(new_workspace),
+        old_branch: BranchName::from(manifest.branch_name.clone()),
+        new_branch: BranchName::from(new_branch),
         work_items,
     })
 }
@@ -3294,8 +3298,12 @@ artifacts:
         )
         .expect("plan should build");
 
-        assert_eq!(plan.new_branch, "feat/11010-55206-demo");
-        assert!(plan.new_workspace.ends_with("feat-11010-55206-demo"));
+        assert_eq!(plan.new_branch.as_str(), "feat/11010-55206-demo");
+        assert!(
+            plan.new_workspace
+                .as_str()
+                .ends_with("feat-11010-55206-demo")
+        );
         assert_eq!(plan.work_items.len(), 2);
         assert_eq!(plan.work_items[1].title.as_deref(), Some("Secondaire"));
     }
@@ -3324,7 +3332,7 @@ artifacts:
         )
         .expect("plan should build");
 
-        assert_eq!(plan.new_branch, "feat/11010-55206-demo");
+        assert_eq!(plan.new_branch.as_str(), "feat/11010-55206-demo");
         assert_eq!(plan.work_items[1].kind.as_deref(), Some("Bug"));
         assert_eq!(plan.work_items[1].title.as_deref(), Some("Secondaire"));
         assert_eq!(
@@ -3393,12 +3401,12 @@ artifacts:
         assert_eq!(updated.branch_name, "feat/11010-55206-demo");
         assert!(!workspace.exists());
         assert!(
-            std::path::Path::new(&new_workspace)
+            std::path::Path::new(new_workspace.as_str())
                 .join("task.json")
                 .exists()
         );
         assert!(
-            std::path::Path::new(&new_workspace)
+            std::path::Path::new(new_workspace.as_str())
                 .join("handoff-front.md")
                 .exists()
         );

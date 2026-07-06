@@ -242,14 +242,14 @@ pub fn execute_update(
     let Some(plan) = &report.plan else {
         return Ok(None);
     };
-    let manifest = read_manifest_path(&format!("{}/task.json", plan.workspace))?;
+    let manifest = read_manifest_path(&format!("{}/task.json", plan.workspace.as_str()))?;
     let (updated, new_workspace) = execute_work_item_update(&manifest, plan)?;
-    write_workspace_agent_configs(&new_workspace, &updated)?;
+    write_workspace_agent_configs(new_workspace.as_str(), &updated)?;
     Ok(Some(WorkItemUpdateExecutionReport {
         action: report.action,
         plan: plan.clone(),
         manifest: updated,
-        new_workspace: WorkspacePath::from(new_workspace),
+        new_workspace,
     }))
 }
 
