@@ -5,20 +5,10 @@ use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
-pub const AGENT_DEFAULT_CHOICES: &[&str] = &[
-    "opencode",
-    "cursor",
-    "claude",
-    "codex",
-    "codex-cli",
-    "copilot",
-];
+pub const AGENT_DEFAULT_CHOICES: &[Agent] = &Agent::ALL;
 
-pub fn normalize_default_agent(agent: &str) -> Option<&'static str> {
-    AGENT_DEFAULT_CHOICES
-        .iter()
-        .copied()
-        .find(|item| item.eq_ignore_ascii_case(agent.trim()))
+pub fn normalize_default_agent(agent: &str) -> Option<Agent> {
+    agent.parse::<Agent>().ok()
 }
 
 pub fn load_workflow_config(root: &str) -> WorkflowConfig {

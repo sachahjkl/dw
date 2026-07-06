@@ -772,7 +772,7 @@ fn field_suggestions(label: &str, snapshot: &TuiSnapshot) -> Vec<String> {
         "From env" => environment_variable_suggestions(),
         "Agent" => dw_config::AGENT_DEFAULT_CHOICES
             .iter()
-            .map(|agent| (*agent).to_string())
+            .map(ToString::to_string)
             .collect(),
         "Type" => ["feature", "bugfix", "hotfix", "chore"]
             .into_iter()
@@ -1352,7 +1352,7 @@ mod tests {
             suggestions,
             dw_config::AGENT_DEFAULT_CHOICES
                 .iter()
-                .map(|agent| (*agent).to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
         );
         assert!(suggestions.contains(&"codex-cli".into()));

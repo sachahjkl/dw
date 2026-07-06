@@ -889,10 +889,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(
-            agents.into_iter().map(Agent::as_str).collect::<Vec<_>>(),
-            dw_config::AGENT_DEFAULT_CHOICES
-        );
+        assert_eq!(agents, dw_config::AGENT_DEFAULT_CHOICES.to_vec());
     }
 
     #[test]

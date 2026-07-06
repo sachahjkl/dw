@@ -254,7 +254,7 @@ fn positional_values_for_path(path: &[&str], root: &str) -> Option<Vec<String>> 
         ["agent", "set-default"] => Some(
             dw_config::AGENT_DEFAULT_CHOICES
                 .iter()
-                .map(|value| (*value).to_string())
+                .map(ToString::to_string)
                 .collect(),
         ),
         ["secret", "set"] | ["secret", "get"] | ["secret", "delete"] => {
@@ -783,7 +783,7 @@ mod tests {
             value_labels,
             dw_config::AGENT_DEFAULT_CHOICES
                 .iter()
-                .map(|value| (*value).to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
         );
         assert!(
@@ -873,7 +873,7 @@ mod tests {
             values,
             dw_config::AGENT_DEFAULT_CHOICES
                 .iter()
-                .map(|value| (*value).to_string())
+                .map(ToString::to_string)
                 .collect::<Vec<_>>()
         );
         assert!(values.contains(&"codex-cli".into()));

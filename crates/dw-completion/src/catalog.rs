@@ -382,7 +382,7 @@ fn workspace_resolution_options(extra: &[&'static str]) -> Vec<&'static str> {
 fn agent_values() -> Vec<String> {
     dw_config::AGENT_DEFAULT_CHOICES
         .iter()
-        .map(|value| (*value).to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
