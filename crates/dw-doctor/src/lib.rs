@@ -2,13 +2,14 @@ use anyhow::Result;
 use dw_config::{
     InitRequest, default_agent, init_root, load_user_settings, resolve_root, user_settings_path,
 };
-use dw_core::DevWorkflowRoot;
+use dw_core::{Agent, DevWorkflowRoot};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoctorReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub checks: Vec<DoctorCheck>,
 }
 
@@ -28,49 +29,180 @@ impl DoctorReport {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DoctorCheck {
-    pub name: String,
+    pub kind: DoctorCheckKind,
     pub passed: bool,
-    pub detail: Option<String>,
-    pub remediation: String,
+    pub detail: Option<DoctorCheckDetail>,
+    pub remediation: DoctorRemediation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DoctorCheckKind {
+    DevWorkflowRoot,
+    UserConfiguration,
+    DefaultAgent,
+    Git,
+    NodePackageManager,
+    OpenCode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DoctorCheckDetail {
+    Path {
+        path: DoctorPath,
+    },
+    Agent {
+        agent: Agent,
+    },
+    ProcessOutput {
+        line: DoctorOutputLine,
+    },
+    PackageManagerVersion {
+        manager: PackageManager,
+        version: DoctorOutputLine,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PackageManager {
+    Pnpm,
+    Npm,
+}
+
+impl PackageManager {
+    pub fn executable(self) -> &'static str {
+        match self {
+            Self::Pnpm => "pnpm",
+            Self::Npm => "npm",
+        }
+    }
+}
+
+impl fmt::Display for PackageManager {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.executable())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DoctorRemediation {
+    InitRoot { root: DevWorkflowRoot },
+    RunInit,
+    ConfigureDefaultAgent { agent: Agent },
+    InstallGit,
+    InstallNodePackageManager,
+    InstallOpenCode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DoctorPath(String);
+
+impl DoctorPath {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for DoctorPath {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for DoctorPath {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for DoctorPath {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DoctorOutputLine(String);
+
+impl DoctorOutputLine {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for DoctorOutputLine {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for DoctorOutputLine {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for DoctorOutputLine {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
 }
 
 pub fn run_doctor(fix: bool) -> Result<DoctorReport> {
     let settings = load_user_settings();
     let root = resolve_root(settings.root.as_deref());
+    let root = DevWorkflowRoot::from(root);
     let mut checks = vec![
         DoctorCheck {
-            name: "Root DevWorkflow".into(),
-            passed: Path::new(&root).is_dir(),
-            detail: Some(root.clone()),
-            remediation: format!("Initialiser le root DevWorkflow: {root}"),
+            kind: DoctorCheckKind::DevWorkflowRoot,
+            passed: Path::new(root.as_str()).is_dir(),
+            detail: Some(DoctorCheckDetail::Path {
+                path: DoctorPath::from(root.to_string()),
+            }),
+            remediation: DoctorRemediation::InitRoot { root: root.clone() },
         },
         DoctorCheck {
-            name: "Configuration utilisateur".into(),
+            kind: DoctorCheckKind::UserConfiguration,
             passed: Path::new(&user_settings_path()).is_file(),
-            detail: Some(user_settings_path()),
-            remediation: "Exécuter: dw init".into(),
+            detail: Some(DoctorCheckDetail::Path {
+                path: DoctorPath::from(user_settings_path()),
+            }),
+            remediation: DoctorRemediation::RunInit,
         },
         check_default_agent(&root),
         check_command(
             "git",
             &["--version"],
-            "Git",
-            "Installer Git puis relancer dw doctor",
+            DoctorCheckKind::Git,
+            DoctorRemediation::InstallGit,
             |_| true,
         ),
         check_node_package_manager(),
         check_command(
             "opencode",
             &["--version"],
-            "OpenCode",
-            "Installer OpenCode selon la procédure d'équipe, puis vérifier le PATH",
+            DoctorCheckKind::OpenCode,
+            DoctorRemediation::InstallOpenCode,
             |_| true,
         ),
     ];
 
-    if fix && !Path::new(&root).is_dir() {
+    if fix && !Path::new(root.as_str()).is_dir() {
         init_root(InitRequest {
-            root: Some(root.clone()),
+            root: Some(root.to_string()),
             profile: "business".into(),
             no_save: false,
             dry_run: false,
@@ -81,25 +213,27 @@ pub fn run_doctor(fix: bool) -> Result<DoctorReport> {
     Ok(DoctorReport { root, checks })
 }
 
-fn check_default_agent(root: &str) -> DoctorCheck {
-    let agent = default_agent(&DevWorkflowRoot::from(root));
+fn check_default_agent(root: &DevWorkflowRoot) -> DoctorCheck {
+    let agent = default_agent(root);
     DoctorCheck {
-        name: "Agent par défaut".into(),
+        kind: DoctorCheckKind::DefaultAgent,
         passed: true,
-        detail: Some(agent.to_string()),
-        remediation: "Configurer: dw agent config set-default opencode".into(),
+        detail: Some(DoctorCheckDetail::Agent { agent }),
+        remediation: DoctorRemediation::ConfigureDefaultAgent {
+            agent: dw_agent::DEFAULT_AGENT,
+        },
     }
 }
 
 fn check_command(
     file_name: &str,
     arguments: &[&str],
-    name: &str,
-    remediation: &str,
+    kind: DoctorCheckKind,
+    remediation: DoctorRemediation,
     validator: impl Fn(&str) -> bool,
 ) -> DoctorCheck {
     let Ok(output) = dw_process::output(file_name, arguments.iter().copied()) else {
-        return failed_check(name, remediation);
+        return failed_check(kind, remediation);
     };
     let combined = format!(
         "{}\n{}",
@@ -108,20 +242,22 @@ fn check_command(
     );
     if output.status.success() && validator(&combined) {
         DoctorCheck {
-            name: name.into(),
+            kind,
             passed: true,
-            detail: first_non_empty_line(&combined).or_else(|| Some(file_name.into())),
-            remediation: remediation.into(),
+            detail: first_non_empty_line(&combined)
+                .or_else(|| Some(DoctorOutputLine::from(file_name)))
+                .map(|line| DoctorCheckDetail::ProcessOutput { line }),
+            remediation,
         }
     } else {
-        failed_check(name, remediation)
+        failed_check(kind, remediation)
     }
 }
 
 fn check_node_package_manager() -> DoctorCheck {
-    let remediation = "Installer pnpm, ou Node.js/npm si pnpm est indisponible.";
-    for (file_name, detail_prefix) in [("pnpm", "pnpm"), ("npm", "npm")] {
-        let Ok(output) = dw_process::output(file_name, ["--version"]) else {
+    let remediation = DoctorRemediation::InstallNodePackageManager;
+    for manager in [PackageManager::Pnpm, PackageManager::Npm] {
+        let Ok(output) = dw_process::output(manager.executable(), ["--version"]) else {
             continue;
         };
         let combined = format!(
@@ -130,35 +266,34 @@ fn check_node_package_manager() -> DoctorCheck {
             String::from_utf8_lossy(&output.stderr)
         );
         if output.status.success() {
-            let detail = first_non_empty_line(&combined)
-                .map(|line| format!("{detail_prefix} {line}"))
-                .unwrap_or_else(|| detail_prefix.into());
+            let version = first_non_empty_line(&combined)
+                .unwrap_or_else(|| DoctorOutputLine::from(manager.executable()));
             return DoctorCheck {
-                name: "pnpm/npm".into(),
+                kind: DoctorCheckKind::NodePackageManager,
                 passed: true,
-                detail: Some(detail),
-                remediation: remediation.into(),
+                detail: Some(DoctorCheckDetail::PackageManagerVersion { manager, version }),
+                remediation,
             };
         }
     }
-    failed_check("pnpm/npm", remediation)
+    failed_check(DoctorCheckKind::NodePackageManager, remediation)
 }
 
-fn failed_check(name: &str, remediation: &str) -> DoctorCheck {
+fn failed_check(kind: DoctorCheckKind, remediation: DoctorRemediation) -> DoctorCheck {
     DoctorCheck {
-        name: name.into(),
+        kind,
         passed: false,
         detail: None,
-        remediation: remediation.into(),
+        remediation,
     }
 }
 
-fn first_non_empty_line(output: &str) -> Option<String> {
+fn first_non_empty_line(output: &str) -> Option<DoctorOutputLine> {
     output
         .lines()
         .map(str::trim)
         .find(|line| !line.is_empty())
-        .map(ToOwned::to_owned)
+        .map(DoctorOutputLine::from)
 }
 
 #[cfg(test)]
@@ -168,19 +303,21 @@ mod tests {
     #[test]
     fn doctor_report_counts_failures() {
         let report = DoctorReport {
-            root: "/tmp/dw".into(),
+            root: DevWorkflowRoot::from("/tmp/dw"),
             checks: vec![
                 DoctorCheck {
-                    name: "Root DevWorkflow".into(),
+                    kind: DoctorCheckKind::DevWorkflowRoot,
                     passed: true,
-                    detail: Some("/tmp/dw".into()),
-                    remediation: "dw init".into(),
+                    detail: Some(DoctorCheckDetail::Path {
+                        path: DoctorPath::from("/tmp/dw"),
+                    }),
+                    remediation: DoctorRemediation::RunInit,
                 },
                 DoctorCheck {
-                    name: "Git".into(),
+                    kind: DoctorCheckKind::Git,
                     passed: false,
                     detail: None,
-                    remediation: "Installer Git".into(),
+                    remediation: DoctorRemediation::InstallGit,
                 },
             ],
         };

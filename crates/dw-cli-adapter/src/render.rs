@@ -9,7 +9,7 @@ use dw_contracts::{
 };
 use dw_core::{AdoActionEvent, GitOperation, TaskActionEvent};
 use dw_db::{QueryResult, SqlGuardResult};
-use dw_doctor::{DoctorCheck, DoctorReport};
+use dw_doctor::{DoctorCheck, DoctorCheckDetail, DoctorCheckKind, DoctorRemediation, DoctorReport};
 use dw_secret::command::{SecretDeleteReport, SecretGetReport, SecretSetReport};
 use dw_task::open::{TaskListReport, TaskStatusReport};
 use dw_ui::TerminalTheme;
@@ -2072,20 +2072,61 @@ fn render_doctor_check_group(
         } else {
             theme.error("! À corriger")
         };
-        lines.push(format!("{:<8} {}", status, check.name));
-        if let Some(detail) = check
-            .detail
-            .as_ref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            lines.push(format!("         {}", theme.path(detail)));
+        lines.push(format!("{:<8} {}", status, doctor_check_label(check.kind)));
+        if let Some(detail) = doctor_check_detail(check.detail.as_ref()) {
+            lines.push(format!("         {}", theme.path(&detail)));
         }
         if !check.passed {
-            lines.push(format!("         {}", theme.command(&check.remediation)));
+            lines.push(format!(
+                "         {}",
+                theme.command(&doctor_remediation_label(&check.remediation))
+            ));
         }
     }
     lines.push(String::new());
     lines
+}
+
+fn doctor_check_label(kind: DoctorCheckKind) -> &'static str {
+    match kind {
+        DoctorCheckKind::DevWorkflowRoot => "Root DevWorkflow",
+        DoctorCheckKind::UserConfiguration => "Configuration utilisateur",
+        DoctorCheckKind::DefaultAgent => "Agent par défaut",
+        DoctorCheckKind::Git => "Git",
+        DoctorCheckKind::NodePackageManager => "pnpm/npm",
+        DoctorCheckKind::OpenCode => "OpenCode",
+    }
+}
+
+fn doctor_check_detail(detail: Option<&DoctorCheckDetail>) -> Option<String> {
+    match detail? {
+        DoctorCheckDetail::Path { path } => Some(path.to_string()),
+        DoctorCheckDetail::Agent { agent } => Some(agent.to_string()),
+        DoctorCheckDetail::ProcessOutput { line } => Some(line.to_string()),
+        DoctorCheckDetail::PackageManagerVersion { manager, version } => {
+            Some(format!("{manager} {version}"))
+        }
+    }
+    .filter(|value| !value.trim().is_empty())
+}
+
+fn doctor_remediation_label(remediation: &DoctorRemediation) -> String {
+    match remediation {
+        DoctorRemediation::InitRoot { root } => {
+            format!("Initialiser le root DevWorkflow: {root}")
+        }
+        DoctorRemediation::RunInit => "Exécuter: dw init".into(),
+        DoctorRemediation::ConfigureDefaultAgent { agent } => {
+            format!("Configurer: dw agent config set-default {agent}")
+        }
+        DoctorRemediation::InstallGit => "Installer Git puis relancer dw doctor".into(),
+        DoctorRemediation::InstallNodePackageManager => {
+            "Installer pnpm, ou Node.js/npm si pnpm est indisponible.".into()
+        }
+        DoctorRemediation::InstallOpenCode => {
+            "Installer OpenCode selon la procédure d'équipe, puis vérifier le PATH".into()
+        }
+    }
 }
 
 fn render_query_result_table(result: &QueryResult, theme: &TerminalTheme) -> String {

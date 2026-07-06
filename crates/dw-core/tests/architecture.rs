@@ -1425,6 +1425,51 @@ fn agent_contracts_use_core_domain_types() {
 }
 
 #[test]
+fn doctor_contracts_use_structured_domain_types() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-doctor/src/lib.rs");
+    let text = fs::read_to_string(&path).expect("read doctor source");
+    for required in [
+        "pub root: DevWorkflowRoot",
+        "pub kind: DoctorCheckKind",
+        "pub detail: Option<DoctorCheckDetail>",
+        "pub remediation: DoctorRemediation",
+        "pub enum DoctorCheckKind",
+        "pub enum DoctorCheckDetail",
+        "pub enum DoctorRemediation",
+        "Path {",
+        "path: DoctorPath",
+        "Agent {",
+        "agent: Agent",
+        "ProcessOutput {",
+        "line: DoctorOutputLine",
+        "PackageManagerVersion",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should contain structured doctor contract token `{}`",
+            path.display(),
+            required
+        );
+    }
+    for forbidden in [
+        "pub root: String",
+        "pub name: String",
+        "pub detail: Option<String>",
+        "pub remediation: String",
+        "name: \"",
+        "remediation: \"",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains forbidden string doctor contract token `{}`",
+            path.display(),
+            forbidden
+        );
+    }
+}
+
+#[test]
 fn task_lifecycle_contract_uses_typed_workspace_filters_and_repositories() {
     let repo = repo_root();
     let path = repo.join("crates/dw-task/src/lifecycle.rs");
