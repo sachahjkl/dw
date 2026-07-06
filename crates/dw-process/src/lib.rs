@@ -52,12 +52,23 @@ pub fn output(
     file_name: impl AsRef<OsStr>,
     arguments: impl IntoIterator<Item = impl AsRef<OsStr>>,
 ) -> std::io::Result<Output> {
+    output_in(file_name, arguments, None::<&Path>)
+}
+
+pub fn output_in(
+    file_name: impl AsRef<OsStr>,
+    arguments: impl IntoIterator<Item = impl AsRef<OsStr>>,
+    current_dir: Option<impl AsRef<Path>>,
+) -> std::io::Result<Output> {
+    let current_dir = current_dir.map(|path| path.as_ref().to_path_buf());
     let mut last_error = None;
     for candidate in command_candidates(file_name, arguments) {
-        match std::process::Command::new(&candidate.file_name)
-            .args(&candidate.arguments)
-            .output()
-        {
+        let mut command = std::process::Command::new(&candidate.file_name);
+        command.args(&candidate.arguments);
+        if let Some(current_dir) = &current_dir {
+            command.current_dir(current_dir);
+        }
+        match command.output() {
             Ok(output) => return Ok(output),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => last_error = Some(error),
             Err(error) => return Err(error),

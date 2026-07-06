@@ -9,8 +9,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 use thiserror::Error;
 
 use crate::{
@@ -40,11 +39,11 @@ pub struct VerificationResult {
     pub repository: WorkspaceRepositoryName,
     pub command: VerificationCommand,
     #[serde(rename = "exitCode")]
-    pub exit_code: i32,
+    pub exit_code: VerificationExitCode,
     #[serde(rename = "standardOutput")]
-    pub standard_output: String,
+    pub standard_output: VerificationOutputText,
     #[serde(rename = "standardError")]
-    pub standard_error: String,
+    pub standard_error: VerificationOutputText,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,6 +83,88 @@ impl From<&str> for VerificationCommand {
 impl fmt::Display for VerificationCommand {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct VerificationExitCode(i32);
+
+impl VerificationExitCode {
+    pub fn new(value: i32) -> Self {
+        Self(value)
+    }
+
+    pub fn success(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl From<i32> for VerificationExitCode {
+    fn from(value: i32) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for VerificationExitCode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct VerificationOutputText(String);
+
+impl VerificationOutputText {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<String> for VerificationOutputText {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for VerificationOutputText {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for VerificationOutputText {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerificationCommandOutput {
+    pub exit_code: VerificationExitCode,
+    pub standard_output: VerificationOutputText,
+    pub standard_error: VerificationOutputText,
+}
+
+pub trait VerificationRunner {
+    fn run(
+        &self,
+        repository_path: &RepositoryPath,
+        command: &VerificationCommand,
+    ) -> VerificationCommandOutput;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShellVerificationRunner;
+
+impl VerificationRunner for ShellVerificationRunner {
+    fn run(
+        &self,
+        repository_path: &RepositoryPath,
+        command: &VerificationCommand,
+    ) -> VerificationCommandOutput {
+        shell_verification_output(repository_path, command)
     }
 }
 
@@ -165,6 +246,14 @@ pub fn run_verification(
     options: &TaskFinishOptions,
     candidates: &[PullRequestCandidate],
 ) -> Vec<VerificationResult> {
+    run_verification_with_runner(options, candidates, &ShellVerificationRunner)
+}
+
+pub fn run_verification_with_runner(
+    options: &TaskFinishOptions,
+    candidates: &[PullRequestCandidate],
+    runner: &impl VerificationRunner,
+) -> Vec<VerificationResult> {
     if options.verification_commands.is_empty() {
         return Vec::new();
     }
@@ -176,23 +265,13 @@ pub fn run_verification(
         };
         for command in commands {
             let resolved = resolve_node_package_manager_command(command);
-            let output = run_shell(candidate.path.as_str(), resolved.as_str());
+            let output = runner.run(&candidate.path, &resolved);
             results.push(VerificationResult {
                 repository: candidate.repository.clone(),
                 command: resolved,
-                exit_code: output
-                    .as_ref()
-                    .ok()
-                    .and_then(|output| output.status.code())
-                    .unwrap_or(1),
-                standard_output: output
-                    .as_ref()
-                    .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
-                    .unwrap_or_default(),
-                standard_error: output
-                    .as_ref()
-                    .map(|output| String::from_utf8_lossy(&output.stderr).to_string())
-                    .unwrap_or_else(|error| error.to_string()),
+                exit_code: output.exit_code,
+                standard_output: output.standard_output,
+                standard_error: output.standard_error,
             });
         }
     }
@@ -200,7 +279,7 @@ pub fn run_verification(
 }
 
 pub fn ensure_verification_passed(results: &[VerificationResult]) -> Result<(), TaskFinishError> {
-    if results.iter().all(|result| result.exit_code == 0) {
+    if results.iter().all(|result| result.exit_code.success()) {
         return Ok(());
     }
     Err(TaskFinishError::VerificationFailed)
@@ -346,7 +425,11 @@ fn render_verification(
             format!(
                 "- `{}`: {}",
                 result.command,
-                if result.exit_code == 0 { "OK" } else { "KO" }
+                if result.exit_code.success() {
+                    "OK"
+                } else {
+                    "KO"
+                }
             )
         })
         .collect::<Vec<_>>();
@@ -430,23 +513,53 @@ fn command_available(command: &str) -> bool {
     dw_process::command_available(command, &["--version"])
 }
 
-fn run_shell(path: &str, command: &str) -> std::io::Result<std::process::Output> {
+fn shell_verification_output(
+    repository_path: &RepositoryPath,
+    command: &VerificationCommand,
+) -> VerificationCommandOutput {
+    let output = run_shell(repository_path, command);
+    VerificationCommandOutput {
+        exit_code: output
+            .as_ref()
+            .ok()
+            .and_then(|output| output.status.code())
+            .unwrap_or(1)
+            .into(),
+        standard_output: output
+            .as_ref()
+            .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+            .unwrap_or_default()
+            .into(),
+        standard_error: output
+            .as_ref()
+            .map(|output| String::from_utf8_lossy(&output.stderr).to_string())
+            .unwrap_or_else(|error| error.to_string())
+            .into(),
+    }
+}
+
+fn run_shell(
+    repository_path: &RepositoryPath,
+    command: &VerificationCommand,
+) -> std::io::Result<std::process::Output> {
     if cfg!(windows) {
-        Command::new("powershell")
-            .args([
+        dw_process::output_in(
+            "powershell",
+            [
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
                 "-Command",
-                command,
-            ])
-            .current_dir(PathBuf::from(path))
-            .output()
+                command.as_str(),
+            ],
+            Some(Path::new(repository_path.as_str())),
+        )
     } else {
-        Command::new("sh")
-            .args(["-lc", command])
-            .current_dir(PathBuf::from(path))
-            .output()
+        dw_process::output_in(
+            "sh",
+            ["-lc", command.as_str()],
+            Some(Path::new(repository_path.as_str())),
+        )
     }
 }
 
@@ -573,9 +686,9 @@ mod tests {
         let verification = vec![VerificationResult {
             repository: WorkspaceRepositoryName::from("front"),
             command: VerificationCommand::from("pnpm test"),
-            exit_code: 0,
-            standard_output: String::new(),
-            standard_error: String::new(),
+            exit_code: VerificationExitCode::from(0),
+            standard_output: VerificationOutputText::from(""),
+            standard_error: VerificationOutputText::from(""),
         }];
 
         let rendered = pull_request_description(
