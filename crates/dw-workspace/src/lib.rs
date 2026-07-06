@@ -7,7 +7,7 @@ use dw_contracts::{
     PREFLIGHT_VERSION, TaskHandoffValidationItem, TaskHandoffValidationReport, TaskPreflightIssue,
     TaskPreflightReport,
 };
-use dw_core::{ProjectKey, WorkItemId};
+use dw_core::{ProjectKey, WorkItemId, WorkspaceRepositoryName};
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
     slug_from_phrase_or_fallback,
@@ -245,10 +245,10 @@ pub struct TaskStartRequest<'a> {
     pub root: &'a str,
     pub projects: &'a ProjectsConfig,
     pub work_item_ids: &'a [WorkItemId],
-    pub project: Option<&'a str>,
+    pub project: Option<&'a ProjectKey>,
     pub task_id: Option<&'a str>,
     pub type_name: Option<&'a str>,
-    pub only: Option<&'a str>,
+    pub repositories: &'a [WorkspaceRepositoryName],
     pub slug: Option<&'a str>,
 }
 
@@ -1319,7 +1319,10 @@ pub fn build_preflight_report_from_ai_context_files(
 }
 
 pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, WorkspaceError> {
-    let project = request.project.unwrap_or("default").to_string();
+    let project = request
+        .project
+        .map(|project| project.to_string())
+        .unwrap_or_else(|| "default".to_string());
     let work_item_ids = request
         .work_item_ids
         .iter()
@@ -1327,7 +1330,7 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
         .collect::<Vec<_>>();
     let primary_work_item_id = work_item_ids.first().cloned().unwrap_or_default();
     let project_config = resolve_project(request.projects, &project);
-    let repositories = resolve_repositories(project_config.as_ref(), request.only);
+    let repositories = resolve_repositories(project_config.as_ref(), request.repositories);
     let repository_folders = repositories
         .iter()
         .map(|repository| {
@@ -1861,13 +1864,14 @@ fn parse_work_item_selection(value: Option<&str>) -> Option<Vec<WorkItemId>> {
     Some(normalized.split(',').map(WorkItemId::from).collect())
 }
 
-fn resolve_repositories(project_config: Option<&ProjectConfig>, only: Option<&str>) -> Vec<String> {
-    if let Some(only) = only.filter(|value| !value.trim().is_empty()) {
-        return only
-            .split(',')
-            .map(|item| item.trim())
-            .filter(|item| !item.is_empty())
-            .map(|item| item.to_string())
+fn resolve_repositories(
+    project_config: Option<&ProjectConfig>,
+    repositories: &[WorkspaceRepositoryName],
+) -> Vec<String> {
+    if !repositories.is_empty() {
+        return repositories
+            .iter()
+            .map(|repository| repository.to_string())
             .collect();
     }
 
@@ -2676,7 +2680,7 @@ artifacts:
             project: None,
             task_id: None,
             type_name: None,
-            only: None,
+            repositories: &[],
             slug: None,
         })
         .expect("plan should build");
@@ -2707,10 +2711,10 @@ artifacts:
             root: root.to_str().expect("utf8 path"),
             projects: &projects,
             work_item_ids: &[WorkItemId::from("123")],
-            project: Some("ha"),
+            project: Some(&ProjectKey::from("ha")),
             task_id: None,
             type_name: Some("feat"),
-            only: None,
+            repositories: &[],
             slug: Some("demo"),
         })
         .expect_err("conflict should be rejected");
@@ -2731,10 +2735,10 @@ artifacts:
             root: root.to_str().expect("utf8 path"),
             projects: &projects,
             work_item_ids: &[WorkItemId::from("123")],
-            project: Some("ha"),
+            project: Some(&ProjectKey::from("ha")),
             task_id: None,
             type_name: Some("feat"),
-            only: None,
+            repositories: &[],
             slug: Some("demo"),
         })
         .expect("plan should build");
@@ -2836,10 +2840,10 @@ artifacts:
             root: root.to_str().expect("utf8 path"),
             projects: &projects,
             work_item_ids: &[WorkItemId::from("123")],
-            project: Some("ha"),
+            project: Some(&ProjectKey::from("ha")),
             task_id: None,
             type_name: Some("feat"),
-            only: Some("front"),
+            repositories: &[WorkspaceRepositoryName::from("front")],
             slug: Some("demo"),
         })
         .expect("plan should build");

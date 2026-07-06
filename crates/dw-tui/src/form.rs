@@ -231,10 +231,10 @@ impl FormState {
                     .map(dw_core::WorkItemId::parse_many)
                     .unwrap_or_default(),
                 root: Some(root.into()),
-                project: value("Project"),
+                project: value("Project").map(dw_core::ProjectKey::from),
                 task: None,
                 type_name: value("Type"),
-                only: value("Repository"),
+                repositories: parse_workspace_repository_names(value("Repository").as_deref()),
                 slug: value("Slug"),
                 skip_ado: enabled("Skip ADO"),
                 with_active_children: false,
@@ -245,7 +245,7 @@ impl FormState {
                 TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
                     pull_request_id: dw_core::PullRequestId::from(value("Pull request")?),
                     root: Some(root.into()),
-                    project: value("Project")?,
+                    project: dw_core::ProjectKey::from(value("Project")?),
                     repo: value("Repository"),
                     type_name: value("Type"),
                     slug: value("Slug"),
@@ -463,7 +463,7 @@ fn default_fields(template: FormTemplate, snapshot: &TuiSnapshot) -> Vec<FormFie
         .assigned_work_item_prompt_specs()
         .into_iter()
         .flat_map(|spec| spec.choices.into_iter())
-        .map(|choice| choice.value)
+        .map(|choice| choice.value.to_string())
         .next()
         .unwrap_or_default();
     let first_assigned_work_item_for_state = snapshot
@@ -929,6 +929,16 @@ fn field_value(fields: &[FormField], label: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn parse_workspace_repository_names(value: Option<&str>) -> Vec<dw_core::WorkspaceRepositoryName> {
+    value
+        .into_iter()
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(dw_core::WorkspaceRepositoryName::from)
+        .collect()
+}
+
 fn field_enabled(fields: &[FormField], label: &str) -> bool {
     fields
         .iter()
@@ -1027,7 +1037,7 @@ mod tests {
         match &preview.request {
             TuiActionRequest::TaskStartPr(args) => {
                 assert_eq!(args.pull_request_id, dw_core::PullRequestId::from("123"));
-                assert_eq!(args.project, "ha");
+                assert_eq!(args.project.as_str(), "ha");
                 assert_eq!(args.repo.as_deref(), Some("front"));
                 assert_eq!(args.type_name.as_deref(), Some("feature"));
                 assert_eq!(args.root.as_deref(), Some("/tmp/dw"));

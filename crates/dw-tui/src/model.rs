@@ -1589,7 +1589,7 @@ mod tests {
                 project: Some("ha".into()),
                 task: None,
                 type_name: None,
-                only: None,
+                repositories: Vec::new(),
                 slug: None,
                 skip_ado: true,
                 with_active_children: false,
@@ -1731,14 +1731,14 @@ mod tests {
 
         let specs = snapshot.assigned_work_item_prompt_specs();
 
-        assert_eq!(specs[0].id, "assigned-work-item:ha");
-        assert_eq!(specs[0].choices[0].value, "55264");
+        assert_eq!(specs[0].id.as_str(), "assigned-work-item:ha");
+        assert_eq!(specs[0].choices[0].value.as_str(), "55264");
         assert_eq!(
             specs[0].choices[0].label,
             "#55264 [Task] (Actif) Transmission automatique"
         );
         assert_eq!(
-            specs[0].choices[1].value,
+            specs[0].choices[1].value.as_str(),
             dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE
         );
         assert_eq!(

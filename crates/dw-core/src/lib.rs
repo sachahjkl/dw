@@ -154,7 +154,7 @@ pub fn action_descriptor(id: &str) -> Option<&'static ActionDescriptor> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PromptSpec {
-    pub id: String,
+    pub id: PromptId,
     pub kind: PromptKind,
     pub label: String,
     pub help: Option<String>,
@@ -164,7 +164,7 @@ pub struct PromptSpec {
 
 impl PromptSpec {
     pub fn select(
-        id: impl Into<String>,
+        id: impl Into<PromptId>,
         label: impl Into<String>,
         choices: Vec<PromptChoice>,
     ) -> Self {
@@ -179,7 +179,7 @@ impl PromptSpec {
     }
 
     pub fn multiselect(
-        id: impl Into<String>,
+        id: impl Into<PromptId>,
         label: impl Into<String>,
         choices: Vec<PromptChoice>,
     ) -> Self {
@@ -193,7 +193,7 @@ impl PromptSpec {
         }
     }
 
-    pub fn text(id: impl Into<String>, label: impl Into<String>) -> Self {
+    pub fn text(id: impl Into<PromptId>, label: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             kind: PromptKind::Text,
@@ -204,7 +204,7 @@ impl PromptSpec {
         }
     }
 
-    pub fn confirm(id: impl Into<String>, label: impl Into<String>) -> Self {
+    pub fn confirm(id: impl Into<PromptId>, label: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             kind: PromptKind::Confirm,
@@ -221,6 +221,38 @@ impl PromptSpec {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PromptId(String);
+
+impl PromptId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for PromptId {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for PromptId {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for PromptId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PromptKind {
@@ -232,13 +264,13 @@ pub enum PromptKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PromptChoice {
-    pub value: String,
+    pub value: PromptChoiceValue,
     pub label: String,
     pub description: Option<String>,
 }
 
 impl PromptChoice {
-    pub fn new(value: impl Into<String>, label: impl Into<String>) -> Self {
+    pub fn new(value: impl Into<PromptChoiceValue>, label: impl Into<String>) -> Self {
         Self {
             value: value.into(),
             label: label.into(),
@@ -252,35 +284,67 @@ impl PromptChoice {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PromptChoiceValue(String);
+
+impl PromptChoiceValue {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for PromptChoiceValue {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for PromptChoiceValue {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl fmt::Display for PromptChoiceValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InputRequest {
     Confirm {
-        id: String,
+        id: PromptId,
         label: String,
         help: Option<String>,
         default: bool,
     },
     SelectOne {
-        id: String,
+        id: PromptId,
         label: String,
         help: Option<String>,
         choices: Vec<PromptChoice>,
     },
     SelectMany {
-        id: String,
+        id: PromptId,
         label: String,
         help: Option<String>,
         choices: Vec<PromptChoice>,
     },
     Text {
-        id: String,
+        id: PromptId,
         label: String,
         help: Option<String>,
         default: Option<String>,
     },
     Secret {
-        id: String,
+        id: PromptId,
         label: String,
         help: Option<String>,
     },
@@ -290,8 +354,8 @@ pub enum InputRequest {
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum InputResponse {
     Confirm { accepted: bool },
-    SelectOne { value: String },
-    SelectMany { values: Vec<String> },
+    SelectOne { value: PromptChoiceValue },
+    SelectMany { values: Vec<PromptChoiceValue> },
     Text { value: String },
     Secret { value: String },
 }

@@ -8,7 +8,7 @@ use dw_ado::{
 use dw_config::{
     load_projects_config, load_workflow_config, repository_config, resolve_project, resolve_root,
 };
-use dw_core::{AdoRepositoryName, PullRequestId, WorkItemId};
+use dw_core::{AdoRepositoryName, ProjectKey, PullRequestId, WorkItemId, WorkspaceRepositoryName};
 use dw_workspace::{
     TaskStartOptions, TaskStartPlan, TaskStartRequest, WorkspaceChildTask, WorkspaceManifest,
     WorkspaceWorkItem, execute_task_start, execute_task_start_with_work_items_and_child_tasks,
@@ -22,10 +22,10 @@ pub mod ado;
 pub struct StartArgs {
     pub work_item_ids: Vec<WorkItemId>,
     pub root: Option<String>,
-    pub project: Option<String>,
+    pub project: Option<ProjectKey>,
     pub task: Option<String>,
     pub type_name: Option<String>,
-    pub only: Option<String>,
+    pub repositories: Vec<WorkspaceRepositoryName>,
     pub slug: Option<String>,
     pub skip_ado: bool,
     pub with_active_children: bool,
@@ -37,7 +37,7 @@ pub struct StartArgs {
 pub struct StartPrArgs {
     pub pull_request_id: PullRequestId,
     pub root: Option<String>,
-    pub project: String,
+    pub project: ProjectKey,
     pub repo: Option<String>,
     pub type_name: Option<String>,
     pub slug: Option<String>,
@@ -92,11 +92,11 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
     if args.work_item_ids.is_empty() {
         anyhow::bail!("work-item-id requis pour construire un plan de démarrage task.");
     }
-    let project = args.project.as_deref();
+    let project = args.project.as_ref();
     let ado_context = if args.skip_ado {
         None
     } else if args.with_active_children || args.mode.executes() {
-        let project_key = project.unwrap_or("default");
+        let project_key = project.map(|project| project.as_str()).unwrap_or("default");
         let mut ado_options = resolve_ado_options(&projects, &workflow, project_key)?;
         if ado_options.project.trim().is_empty() {
             ado_options.project = project_key.to_string();
@@ -139,7 +139,7 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
         project,
         task_id: args.task.as_deref(),
         type_name: args.type_name.as_deref(),
-        only: args.only.as_deref(),
+        repositories: &args.repositories,
         slug: args.slug.as_deref(),
     })?;
 
@@ -231,14 +231,14 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
     let root = resolve_root(args.root.as_deref());
     let projects = load_projects_config(&root);
     let workflow = load_workflow_config(&root);
-    let project_config = resolve_project(&projects, &args.project);
+    let project_config = resolve_project(&projects, args.project.as_str());
     let ado_repositories = resolve_ado_repositories(project_config.as_ref(), args.repo.as_deref());
     if ado_repositories.is_empty() {
         return Err(anyhow::anyhow!(
             "task start-pr requires an explicit repository, or a project with configured azureDevOpsRepository entries."
         ));
     }
-    let options = resolve_ado_options(&projects, &workflow, &args.project)?;
+    let options = resolve_ado_options(&projects, &workflow, args.project.as_str())?;
     let token = require_token(load_auth_options(Some(&root))?).await?;
     let work_item_options = options.clone();
     let work_item_repositories = ado_repositories.clone();
@@ -274,7 +274,10 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
         project: Some(args.project.clone()),
         task: None,
         type_name: args.type_name.clone(),
-        only: workspace_repositories.join(",").into(),
+        repositories: workspace_repositories
+            .into_iter()
+            .map(WorkspaceRepositoryName::from)
+            .collect(),
         slug: args.slug.clone(),
         skip_ado: false,
         with_active_children: false,
@@ -306,7 +309,12 @@ pub async fn execute_start_pr(
             project: Some(args.project.clone()),
             task: None,
             type_name: args.type_name.clone(),
-            only: args.repo.clone(),
+            repositories: args
+                .repo
+                .clone()
+                .map(WorkspaceRepositoryName::from)
+                .into_iter()
+                .collect(),
             slug: args.slug.clone(),
             skip_ado: false,
             with_active_children: false,

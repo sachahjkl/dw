@@ -1,7 +1,7 @@
 pub mod render;
 
 use anyhow::Result;
-use dw_core::{PromptChoice, PromptSpec};
+use dw_core::{PromptChoice, PromptChoiceValue, PromptId, PromptSpec};
 use dw_ui::TerminalTheme;
 use serde::Serialize;
 
@@ -18,14 +18,14 @@ pub fn print_lines(lines: &[String]) {
 }
 
 pub trait PromptUi {
-    fn select_value(&mut self, spec: &PromptSpec) -> Result<String>;
-    fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<String>>;
+    fn select_value(&mut self, spec: &PromptSpec) -> Result<PromptChoiceValue>;
+    fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<PromptChoiceValue>>;
     fn confirm(&mut self, spec: &PromptSpec, default: bool) -> Result<bool>;
     fn text_value(&mut self, spec: &PromptSpec) -> Result<String>;
 }
 
 pub fn project_prompt_spec(
-    id: impl Into<String>,
+    id: impl Into<PromptId>,
     label: impl Into<String>,
     choices: &[dw_config::ProjectChoice],
 ) -> PromptSpec {
@@ -50,6 +50,6 @@ pub fn repositories_prompt_spec(repositories: Vec<String>) -> PromptSpec {
     )
 }
 
-pub fn confirm_risk_prompt_spec(id: impl Into<String>, label: impl Into<String>) -> PromptSpec {
+pub fn confirm_risk_prompt_spec(id: impl Into<PromptId>, label: impl Into<String>) -> PromptSpec {
     PromptSpec::confirm(id, label)
 }

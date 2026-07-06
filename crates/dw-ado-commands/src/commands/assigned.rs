@@ -211,10 +211,13 @@ mod tests {
 
         let spec = assigned_work_item_prompt_spec(&[item]);
 
-        assert_eq!(spec.id, "assigned-work-item");
-        assert_eq!(spec.choices[0].value, "42");
+        assert_eq!(spec.id.as_str(), "assigned-work-item");
+        assert_eq!(spec.choices[0].value.as_str(), "42");
         assert_eq!(spec.choices[0].label, "#42 [User Story] (Actif) Parent");
-        assert_eq!(spec.choices[1].value, MANUAL_WORK_ITEM_PROMPT_VALUE);
+        assert_eq!(
+            spec.choices[1].value.as_str(),
+            MANUAL_WORK_ITEM_PROMPT_VALUE
+        );
         assert_eq!(spec.choices[1].label, MANUAL_WORK_ITEM_PROMPT_LABEL);
     }
 

@@ -192,7 +192,7 @@ mod tests {
             request: TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
                 pull_request_id: dw_core::PullRequestId::from("42"),
                 root: Some("/tmp/missing-dw-root".into()),
-                project: "ha".into(),
+                project: dw_core::ProjectKey::from("ha"),
                 repo: None,
                 type_name: None,
                 slug: None,

@@ -415,6 +415,39 @@ fn migrated_contracts_use_domain_id_types_not_structured_strings() {
 }
 
 #[test]
+fn input_dialogue_protocol_uses_typed_prompt_identifiers_and_choice_values() {
+    let repo = repo_root();
+    let core = repo.join("crates/dw-core/src/lib.rs");
+    let text = fs::read_to_string(&core).expect("read core lib");
+    for forbidden in [
+        "pub struct PromptSpec {\n    pub id: String",
+        "pub struct PromptChoice {\n    pub value: String",
+        "Confirm {\n        id: String",
+        "SelectOne {\n        id: String",
+        "SelectMany {\n        id: String",
+        "Text {\n        id: String",
+        "Secret {\n        id: String",
+        "SelectOne { value: String }",
+        "SelectMany { values: Vec<String> }",
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "{} contains primitive dialogue protocol field `{}`",
+            core.display(),
+            forbidden
+        );
+    }
+    for required in ["PromptId", "PromptChoiceValue"] {
+        assert!(
+            text.contains(required),
+            "{} should expose dialogue domain type `{}`",
+            core.display(),
+            required
+        );
+    }
+}
+
+#[test]
 fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
     let repo = repo_root();
     let checked: &[(&str, &[&str])] = &[
@@ -423,7 +456,11 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             &[
                 "pub work_item_id: Option<String>",
                 "pub pull_request_id: String",
+                "pub project: Option<String>",
+                "pub project: String",
+                "pub only: Option<String>",
                 "work_item_ids.join(",
+                "workspace_repositories.join(\",\")",
             ],
         ),
         (
@@ -472,6 +509,61 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
                 "{} contains forbidden structured string action token `{}`",
                 path.display(),
                 forbidden
+            );
+        }
+    }
+}
+
+#[test]
+fn task_start_contracts_parse_repository_selection_at_boundaries() {
+    let repo = repo_root();
+    let checked: &[(&str, &[&str], &[&str])] = &[
+        (
+            "crates/dw-task/src/start.rs",
+            &[
+                "pub project: Option<String>",
+                "pub project: String",
+                "pub only: Option<String>",
+                "only: workspace_repositories.join",
+                "only: args.repo.clone()",
+            ],
+            &[
+                "pub project: Option<ProjectKey>",
+                "pub project: ProjectKey",
+                "pub repositories: Vec<WorkspaceRepositoryName>",
+            ],
+        ),
+        (
+            "crates/dw-workspace/src/lib.rs",
+            &[
+                "pub project: Option<&'a str>",
+                "pub only: Option<&'a str>",
+                "fn resolve_repositories(project_config: Option<&ProjectConfig>, only: Option<&str>)",
+            ],
+            &[
+                "pub project: Option<&'a ProjectKey>",
+                "pub repositories: &'a [WorkspaceRepositoryName]",
+            ],
+        ),
+    ];
+
+    for (relative, forbidden_tokens, required_tokens) in checked {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read source file");
+        for forbidden in *forbidden_tokens {
+            assert!(
+                !text.contains(forbidden),
+                "{} contains primitive task start contract token `{}`",
+                path.display(),
+                forbidden
+            );
+        }
+        for required in *required_tokens {
+            assert!(
+                text.contains(required),
+                "{} should expose typed task start contract token `{}`",
+                path.display(),
+                required
             );
         }
     }

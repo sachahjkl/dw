@@ -256,10 +256,10 @@ pub fn selected_ado_action(
             TuiActionRequest::TaskStart(dw_task::start::StartArgs {
                 work_item_ids: vec![dw_core::WorkItemId::from(item.id.clone())],
                 root: Some(snapshot.root.clone()),
-                project: Some(project.key.clone()),
+                project: Some(dw_core::ProjectKey::from(project.key.clone())),
                 task: None,
                 type_name: None,
-                only: None,
+                repositories: Vec::new(),
                 slug: None,
                 skip_ado: false,
                 with_active_children: false,
@@ -367,7 +367,7 @@ pub fn selected_pull_request_action(
             TuiActionRequest::TaskStartPr(dw_task::start::StartPrArgs {
                 pull_request_id: dw_core::PullRequestId::from(pull_request_id.to_string()),
                 root: Some(snapshot.root.clone()),
-                project: item.project.clone(),
+                project: dw_core::ProjectKey::from(item.project.clone()),
                 repo: Some(item.repository.clone()),
                 type_name: None,
                 slug: None,
@@ -583,7 +583,10 @@ mod tests {
             TuiActionRequest::TaskStart(args) => {
                 assert_eq!(args.work_item_ids, vec![dw_core::WorkItemId::from("42")]);
                 assert_eq!(args.root.as_deref(), Some("/tmp/dw"));
-                assert_eq!(args.project.as_deref(), Some("ha"));
+                assert_eq!(
+                    args.project.as_ref().map(|project| project.as_str()),
+                    Some("ha")
+                );
                 assert!(args.mode.executes());
             }
             _ => panic!("expected task start request"),

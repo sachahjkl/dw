@@ -6,7 +6,10 @@ use dw_cli_adapter::{
     PromptUi, confirm_risk_prompt_spec, print_json, print_lines, project_prompt_spec,
     repositories_prompt_spec,
 };
-use dw_core::{AdoActionEvent, ExecutionMode, PromptKind, PromptSpec, PullRequestId, WorkItemId};
+use dw_core::{
+    AdoActionEvent, ExecutionMode, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
+    PullRequestId, WorkItemId, WorkspaceRepositoryName,
+};
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
 use std::collections::HashSet;
@@ -249,10 +252,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                     .map(WorkItemId::parse_many)
                     .unwrap_or_default(),
                 root,
-                project,
+                project: project.map(ProjectKey::from),
                 task,
                 type_name,
-                only,
+                repositories: parse_workspace_repository_names(only.as_deref()),
                 slug,
                 skip_ado,
                 with_active_children,
@@ -289,7 +292,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             let args = dw_task::start::StartPrArgs {
                 pull_request_id: PullRequestId::from(pull_request_id),
                 root,
-                project,
+                project: ProjectKey::from(project),
                 repo,
                 type_name,
                 slug,
@@ -1115,11 +1118,13 @@ fn resolve_ado_project_interactively(
         );
     }
     let mut prompt = InquirePrompt;
-    prompt.select_value(&project_prompt_spec(
-        "ado-project",
-        "Projet Azure DevOps",
-        &choices,
-    ))
+    prompt
+        .select_value(&project_prompt_spec(
+            "ado-project",
+            "Projet Azure DevOps",
+            &choices,
+        ))
+        .map(|value| value.to_string())
 }
 
 fn confirm_ado_set_state(
@@ -1175,6 +1180,16 @@ fn finish_mode_from_label(label: &str) -> FinishMode {
         "Garder les flags actuels" => FinishMode::KeepFlags,
         _ => FinishMode::PushOnly,
     }
+}
+
+fn parse_workspace_repository_names(value: Option<&str>) -> Vec<WorkspaceRepositoryName> {
+    value
+        .into_iter()
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(WorkspaceRepositoryName::from)
+        .collect()
 }
 
 fn should_prompt_finish_mode(
@@ -1458,6 +1473,7 @@ async fn resolve_start_args_interactively(
             let mut prompt = InquirePrompt;
             args.project = prompt
                 .select_value(&project_prompt_spec("project", "Projet", &choices))
+                .map(|value| ProjectKey::from(value.to_string()))
                 .ok();
         }
     }
@@ -1471,13 +1487,13 @@ async fn resolve_start_args_interactively(
         args.work_item_ids = vec![resolve_start_work_item_id_interactively(&args).await?];
     }
 
-    if args.only.is_none() && std::io::stdin().is_terminal() {
-        let Some(project) = args.project.as_deref() else {
+    if args.repositories.is_empty() && std::io::stdin().is_terminal() {
+        let Some(project) = args.project.as_ref() else {
             return Ok(args);
         };
         let root = dw_config::resolve_root(args.root.as_deref());
         let projects = dw_config::load_projects_config(&root);
-        let Some(project_config) = dw_config::resolve_project(&projects, project) else {
+        let Some(project_config) = dw_config::resolve_project(&projects, project.as_str()) else {
             return Ok(args);
         };
         let repositories = project_config
@@ -1489,7 +1505,10 @@ async fn resolve_start_args_interactively(
             let mut prompt = InquirePrompt;
             let selected = prompt.multiselect_values(&repositories_prompt_spec(repositories))?;
             if !selected.is_empty() {
-                args.only = Some(selected.join(","));
+                args.repositories = selected
+                    .into_iter()
+                    .map(|value| WorkspaceRepositoryName::from(value.to_string()))
+                    .collect();
             }
         }
     }
@@ -1507,11 +1526,11 @@ async fn resolve_start_work_item_id_interactively(
     let Some(project) = args.project.clone() else {
         return Ok(WorkItemId::from(Text::new("Work item ID").prompt()?));
     };
-    print_lines(&[assigned_work_items_loading_line(&project)]);
+    print_lines(&[assigned_work_items_loading_line(project.as_str())]);
     let report = dw_ado_commands::commands::assigned::report(
         dw_ado_commands::commands::assigned::AssignedArgs {
             root: args.root.clone(),
-            project: Some(project),
+            project: Some(project.to_string()),
             top: 50,
             all: false,
             group_by_parent: false,
@@ -1536,23 +1555,23 @@ fn resolve_start_work_item_id_from_report(
     let selected = prompt.select_value(
         &dw_ado_commands::commands::assigned::assigned_work_item_prompt_spec(&report.items),
     )?;
-    if selected == dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE {
+    if selected.as_str() == dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE {
         prompt
             .text_value(&PromptSpec::text("work-item-id", "Work item ID"))
             .map(WorkItemId::from)
     } else {
-        Ok(WorkItemId::from(selected))
+        Ok(WorkItemId::from(selected.as_str()))
     }
 }
 
 struct InquirePrompt;
 
 impl PromptUi for InquirePrompt {
-    fn select_value(&mut self, spec: &PromptSpec) -> Result<String> {
+    fn select_value(&mut self, spec: &PromptSpec) -> Result<PromptChoiceValue> {
         prompt_select_value(spec)
     }
 
-    fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<String>> {
+    fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<PromptChoiceValue>> {
         if spec.kind != PromptKind::MultiSelect {
             anyhow::bail!("PromptSpec `{}` n'est pas un multiselect.", spec.id);
         }
@@ -1585,7 +1604,7 @@ impl PromptUi for InquirePrompt {
     }
 }
 
-fn prompt_select_value(spec: &PromptSpec) -> Result<String> {
+fn prompt_select_value(spec: &PromptSpec) -> Result<PromptChoiceValue> {
     if spec.kind != PromptKind::Select {
         anyhow::bail!("PromptSpec `{}` n'est pas un select.", spec.id);
     }
@@ -1601,7 +1620,7 @@ fn prompt_select_value(spec: &PromptSpec) -> Result<String> {
     prompt_choice_value_from_label(spec, &selected)
 }
 
-fn prompt_choice_value_from_label(spec: &PromptSpec, selected: &str) -> Result<String> {
+fn prompt_choice_value_from_label(spec: &PromptSpec, selected: &str) -> Result<PromptChoiceValue> {
     spec.choices
         .iter()
         .find(|choice| choice.label == selected)
@@ -1869,19 +1888,19 @@ mod prompt_tests {
     use super::*;
 
     struct FakePrompt {
-        selected: String,
+        selected: PromptChoiceValue,
         text: String,
-        selected_specs: Vec<String>,
-        text_specs: Vec<String>,
+        selected_specs: Vec<dw_core::PromptId>,
+        text_specs: Vec<dw_core::PromptId>,
     }
 
     impl PromptUi for FakePrompt {
-        fn select_value(&mut self, spec: &PromptSpec) -> Result<String> {
+        fn select_value(&mut self, spec: &PromptSpec) -> Result<PromptChoiceValue> {
             self.selected_specs.push(spec.id.clone());
             Ok(self.selected.clone())
         }
 
-        fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<String>> {
+        fn multiselect_values(&mut self, spec: &PromptSpec) -> Result<Vec<PromptChoiceValue>> {
             self.selected_specs.push(spec.id.clone());
             Ok(vec![self.selected.clone()])
         }
@@ -1912,7 +1931,7 @@ mod prompt_tests {
             prompt_choice_value_from_label(&spec, "#55264 [Task] (Actif) Transmission automatique")
                 .expect("choice should resolve");
 
-        assert_eq!(value, "55264");
+        assert_eq!(value.as_str(), "55264");
     }
 
     #[test]
@@ -1925,7 +1944,7 @@ mod prompt_tests {
             url: None,
         }]);
         let mut prompt = FakePrompt {
-            selected: "55264".into(),
+            selected: PromptChoiceValue::from("55264"),
             text: "ignored".into(),
             selected_specs: Vec::new(),
             text_specs: Vec::new(),
@@ -1935,7 +1954,10 @@ mod prompt_tests {
             .expect("assigned select should resolve");
 
         assert_eq!(value, WorkItemId::from("55264"));
-        assert_eq!(prompt.selected_specs, ["assigned-work-item"]);
+        assert_eq!(
+            prompt.selected_specs,
+            [dw_core::PromptId::from("assigned-work-item")]
+        );
         assert!(prompt.text_specs.is_empty());
     }
 
@@ -1949,7 +1971,9 @@ mod prompt_tests {
             url: None,
         }]);
         let mut prompt = FakePrompt {
-            selected: dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE.into(),
+            selected: PromptChoiceValue::from(
+                dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE,
+            ),
             text: "99999".into(),
             selected_specs: Vec::new(),
             text_specs: Vec::new(),
@@ -1959,8 +1983,11 @@ mod prompt_tests {
             .expect("manual fallback should resolve");
 
         assert_eq!(value, WorkItemId::from("99999"));
-        assert_eq!(prompt.selected_specs, ["assigned-work-item"]);
-        assert_eq!(prompt.text_specs, ["work-item-id"]);
+        assert_eq!(
+            prompt.selected_specs,
+            [dw_core::PromptId::from("assigned-work-item")]
+        );
+        assert_eq!(prompt.text_specs, [dw_core::PromptId::from("work-item-id")]);
     }
 
     #[test]
