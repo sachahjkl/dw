@@ -720,9 +720,6 @@ pub fn action_event_line(event: &DwActionEvent) -> String {
         DwActionEvent::ExternalLaunch { plan } => {
             format!("External launch: {}", plan.display_command())
         }
-        DwActionEvent::Completed { summary } => {
-            format!("Completed: {} ({})", summary.title, summary.status)
-        }
     }
 }
 

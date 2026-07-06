@@ -428,7 +428,7 @@ pub enum InputResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum DwActionEvent {
-    Started { action_id: String },
+    Started { action_id: ActionId },
     Task(TaskActionEvent),
     Ado(AdoActionEvent),
     Config(ConfigActionEvent),
@@ -438,8 +438,9 @@ pub enum DwActionEvent {
     Upgrade(UpgradeActionEvent),
     NeedsInput { request: InputRequest },
     ExternalLaunch { plan: ExternalLaunchPlan },
-    Completed { summary: ActionSummary },
 }
+
+string_newtype!(ActionId);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -1655,13 +1656,6 @@ pub enum UpgradeActionEvent {
     Completed {
         version: SemanticVersion,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActionSummary {
-    pub title: String,
-    pub status: String,
-    pub risk: ActionRisk,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
