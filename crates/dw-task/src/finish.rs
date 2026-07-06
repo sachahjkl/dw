@@ -273,11 +273,8 @@ pub async fn execute_finish_with_events(
                     operation: GitOperation::CommitAndPush,
                 },
             );
-            commit_repository(target.target.path.as_str(), plan.commit_message.as_str())?;
-            push_repository(
-                target.target.path.as_str(),
-                plan.manifest.branch_name.as_str(),
-            )?;
+            commit_repository(&target.target.path, &plan.commit_message)?;
+            push_repository(&target.target.path, &plan.manifest.branch_name)?;
             git_actions.push(FinishGitAction {
                 repository: target.target.repository.clone(),
                 operation: GitOperation::CommitAndPush,
@@ -309,10 +306,7 @@ pub async fn execute_finish_with_events(
                     operation: GitOperation::Push,
                 },
             );
-            push_repository(
-                target.target.path.as_str(),
-                plan.manifest.branch_name.as_str(),
-            )?;
+            push_repository(&target.target.path, &plan.manifest.branch_name)?;
             git_actions.push(FinishGitAction {
                 repository: target.target.repository.clone(),
                 operation: GitOperation::Push,

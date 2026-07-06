@@ -1,8 +1,8 @@
 use anyhow::{Result, anyhow};
 use dw_core::{
-    BranchName, GitAnchorName, GitReferenceName, GitRemoteUrl, GitRevision, ProjectRootPath,
-    RepositoryPath, SecretValue, TaskSlug, TaskSubjectName, WorkItemId, WorkItemTypeName,
-    WorkspaceRepositoryName,
+    BranchName, CommitMessage, GitAnchorName, GitReferenceName, GitRemoteUrl, GitRevision,
+    ProjectRootPath, RepositoryPath, SecretValue, TaskSlug, TaskSubjectName, WorkItemId,
+    WorkItemTypeName, WorkspaceRepositoryName,
 };
 use git2::{
     Cred, FetchOptions, IndexAddOption, ObjectType, PushOptions, RebaseOptions, RemoteCallbacks,
@@ -220,7 +220,7 @@ pub enum GitOperation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitOperationInvocation {
     pub operation: GitOperation,
-    pub repository_path: Option<String>,
+    pub repository_path: Option<RepositoryPath>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -386,11 +386,11 @@ pub fn resolve_remote_source_branch(default_branch: &BranchName) -> GitReference
 }
 
 pub fn update_repository(
-    repository_path: &str,
+    repository_path: &RepositoryPath,
     default_branch: &BranchName,
     credential: Option<&GitCredential>,
 ) -> Result<()> {
-    let mut repository = Repository::open(repository_path).map_err(git2_command_error)?;
+    let mut repository = Repository::open(repository_path.as_str()).map_err(git2_command_error)?;
     let has_changes = repository_has_changes(&repository)?;
     let mut stashed = false;
 
@@ -549,8 +549,8 @@ pub fn commit_messages_in_range(range: &GitRevisionRange) -> Result<GitCommitMes
     Ok(GitCommitMessages::new(messages))
 }
 
-pub fn commit_repository(repository_path: &str, message: &str) -> Result<()> {
-    let repository = Repository::open(repository_path).map_err(git2_command_error)?;
+pub fn commit_repository(repository_path: &RepositoryPath, message: &CommitMessage) -> Result<()> {
+    let repository = Repository::open(repository_path.as_str()).map_err(git2_command_error)?;
     let mut index = repository.index().map_err(git2_command_error)?;
     index
         .add_all(["*"].iter(), IndexAddOption::DEFAULT, None)
@@ -569,7 +569,7 @@ pub fn commit_repository(repository_path: &str, message: &str) -> Result<()> {
             Some("HEAD"),
             &signature,
             &signature,
-            message,
+            message.as_str(),
             &tree,
             &parents,
         )
@@ -577,8 +577,8 @@ pub fn commit_repository(repository_path: &str, message: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn push_repository(repository_path: &str, branch_name: &str) -> Result<()> {
-    let repository = Repository::open(repository_path).map_err(git2_command_error)?;
+pub fn push_repository(repository_path: &RepositoryPath, branch_name: &BranchName) -> Result<()> {
+    let repository = Repository::open(repository_path.as_str()).map_err(git2_command_error)?;
     let mut remote = repository
         .find_remote("origin")
         .map_err(git2_command_error)?;
@@ -831,12 +831,13 @@ fn worktree_name(request: &WorktreePrepareRequest) -> String {
     name.trim_matches('-').to_string()
 }
 
-pub fn worktree_remove(git_dir: &str, worktree_path: &str) -> Result<()> {
-    let repository = Repository::open_bare(git_dir).map_err(git2_command_error)?;
-    if Path::new(worktree_path).exists() {
-        std::fs::remove_dir_all(worktree_path)?;
+pub fn worktree_remove(git_dir: &RepositoryPath, worktree_path: &RepositoryPath) -> Result<()> {
+    let repository = Repository::open_bare(git_dir.as_str()).map_err(git2_command_error)?;
+    if Path::new(worktree_path.as_str()).exists() {
+        std::fs::remove_dir_all(worktree_path.as_str())?;
     }
-    if let Some(name) = find_worktree_name_by_path(&repository, Path::new(worktree_path))? {
+    if let Some(name) = find_worktree_name_by_path(&repository, Path::new(worktree_path.as_str()))?
+    {
         let worktree = repository
             .find_worktree(&name)
             .map_err(git2_command_error)?;
@@ -845,8 +846,8 @@ pub fn worktree_remove(git_dir: &str, worktree_path: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn worktree_prune(git_dir: &str) -> Result<()> {
-    let repository = Repository::open_bare(git_dir).map_err(git2_command_error)?;
+pub fn worktree_prune(git_dir: &RepositoryPath) -> Result<()> {
+    let repository = Repository::open_bare(git_dir.as_str()).map_err(git2_command_error)?;
     let worktrees = repository.worktrees().map_err(git2_command_error)?;
     for name in worktrees.iter().filter_map(|name| name.ok().flatten()) {
         let worktree = repository.find_worktree(name).map_err(git2_command_error)?;

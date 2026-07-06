@@ -104,10 +104,9 @@ pub fn execute(
             WorkspaceGitOperation::WorktreeRemove {
                 git_dir,
                 worktree_path,
-            } => worktree_remove(git_dir.as_str(), worktree_path.as_str())
-                .map_err(workspace_operation_error),
+            } => worktree_remove(&git_dir, &worktree_path).map_err(workspace_operation_error),
             WorkspaceGitOperation::WorktreePrune { git_dir } => {
-                worktree_prune(git_dir.as_str()).map_err(workspace_operation_error)
+                worktree_prune(&git_dir).map_err(workspace_operation_error)
             }
         })?;
         deleted.push(candidate.path);

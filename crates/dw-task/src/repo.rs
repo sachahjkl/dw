@@ -166,7 +166,7 @@ pub fn execute_repo_latest(plan: &RepoLatestPlanReport) -> Result<RepoLatestExec
         let credential = resolve_git_credential_from_keyring(target.git_credential_secret.as_ref())
             .map_err(|message| anyhow!(message.to_string()))?;
         update_repository(
-            target.repository_path.as_str(),
+            &target.repository_path,
             &target.default_branch,
             credential.as_ref(),
         )?;
@@ -213,7 +213,7 @@ pub fn commit_plan(args: CommitArgs) -> Result<CommitPlanReport> {
 pub fn execute_commit(plan: &CommitPlanReport) -> Result<CommitExecutionReport> {
     let changed = changed_commit_targets(plan);
     for item in &changed {
-        commit_repository(item.target.path.as_str(), plan.message.as_str())?;
+        commit_repository(&item.target.path, &plan.message)?;
     }
 
     Ok(CommitExecutionReport {
@@ -317,10 +317,9 @@ pub fn execute_teardown(plan: &TeardownPlanReport) -> Result<TeardownExecutionRe
         WorkspaceGitOperation::WorktreeRemove {
             git_dir,
             worktree_path,
-        } => worktree_remove(git_dir.as_str(), worktree_path.as_str())
-            .map_err(workspace_operation_error),
+        } => worktree_remove(&git_dir, &worktree_path).map_err(workspace_operation_error),
         WorkspaceGitOperation::WorktreePrune { git_dir } => {
-            worktree_prune(git_dir.as_str()).map_err(workspace_operation_error)
+            worktree_prune(&git_dir).map_err(workspace_operation_error)
         }
     })?;
 
