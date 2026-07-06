@@ -8,8 +8,8 @@ use dw_contracts::{
     TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightReport, TaskPreflightSeverity,
 };
 use dw_core::{
-    AiContextFilePath, BranchName, ProjectKey, ProjectRootPath, RepositoryPath, TaskSlug,
-    WorkItemId, WorkspacePath, WorkspaceRepositoryName,
+    AiContextFilePath, BranchName, GitAnchorName, ProjectKey, ProjectRootPath, RepositoryPath,
+    TaskId, TaskSlug, WorkItemId, WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_git::{
     WorktreePrepareRequest, build_branch_name, build_subject_name, prepare_worktree,
@@ -137,41 +137,41 @@ pub struct TaskCurrentItem {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskStartPlan {
     #[serde(rename = "workItemIds")]
-    pub work_item_ids: Vec<String>,
+    pub work_item_ids: Vec<WorkItemId>,
     #[serde(rename = "primaryWorkItemId")]
-    pub primary_work_item_id: String,
-    pub project: String,
+    pub primary_work_item_id: WorkItemId,
+    pub project: ProjectKey,
     #[serde(rename = "taskId")]
-    pub task_id: Option<String>,
+    pub task_id: Option<TaskId>,
     #[serde(rename = "type")]
-    pub kind: String,
-    pub slug: String,
+    pub kind: WorkItemTypeName,
+    pub slug: TaskSlug,
     #[serde(rename = "branchName")]
-    pub branch_name: String,
+    pub branch_name: BranchName,
     #[serde(rename = "subjectName")]
     pub subject_name: String,
-    pub workspace: String,
-    pub repositories: Vec<String>,
+    pub workspace: WorkspacePath,
+    pub repositories: Vec<WorkspaceRepositoryName>,
     #[serde(rename = "repositoryFolders")]
-    pub repository_folders: BTreeMap<String, String>,
+    pub repository_folders: BTreeMap<WorkspaceRepositoryName, RepositoryPath>,
     #[serde(rename = "repositoryWorktrees")]
     pub repository_worktrees: Vec<TaskStartRepositoryPlan>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaskStartRepositoryPlan {
-    pub repository: String,
+    pub repository: WorkspaceRepositoryName,
     #[serde(rename = "projectRoot")]
-    pub project_root: String,
+    pub project_root: ProjectRootPath,
     #[serde(rename = "worktreePath")]
-    pub worktree_path: String,
+    pub worktree_path: RepositoryPath,
     pub url: String,
     #[serde(rename = "defaultBranch")]
-    pub default_branch: String,
+    pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
-    pub anchor_name: String,
+    pub anchor_name: GitAnchorName,
     #[serde(rename = "branchName")]
-    pub branch_name: String,
+    pub branch_name: BranchName,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1197,7 +1197,7 @@ pub fn execute_task_start(
         plan.work_item_ids
             .iter()
             .map(|id| WorkspaceWorkItem {
-                id: id.clone(),
+                id: id.to_string(),
                 kind: work_item_type.map(ToOwned::to_owned),
                 title: work_item_title.map(ToOwned::to_owned),
                 state: work_item_state.map(ToOwned::to_owned),
@@ -1218,28 +1218,30 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
     work_items: Vec<WorkspaceWorkItem>,
     child_tasks: Vec<WorkspaceChildTask>,
 ) -> Result<WorkspaceManifest, WorkspaceError> {
-    let workspace = Path::new(&plan.workspace);
+    let workspace = Path::new(plan.workspace.as_str());
     fs::create_dir_all(workspace)
-        .map_err(|_| WorkspaceError::MissingWorkspace(plan.workspace.clone()))?;
+        .map_err(|_| WorkspaceError::MissingWorkspace(plan.workspace.to_string()))?;
     if plan.repository_worktrees.is_empty() {
         for folder in plan.repository_folders.values() {
-            fs::create_dir_all(workspace.join(folder)).map_err(|_| {
-                WorkspaceError::MissingWorkspace(workspace.join(folder).display().to_string())
+            fs::create_dir_all(workspace.join(folder.as_str())).map_err(|_| {
+                WorkspaceError::MissingWorkspace(
+                    workspace.join(folder.as_str()).display().to_string(),
+                )
             })?;
         }
     } else {
         for target in &plan.repository_worktrees {
             prepare_worktree(&WorktreePrepareRequest {
-                project_root: target.project_root.clone(),
-                repository: target.repository.clone(),
+                project_root: target.project_root.to_string(),
+                repository: target.repository.to_string(),
                 url: target.url.clone(),
-                default_branch: target.default_branch.clone(),
-                anchor_name: target.anchor_name.clone(),
-                branch_name: target.branch_name.clone(),
-                worktree_path: target.worktree_path.clone(),
+                default_branch: target.default_branch.to_string(),
+                anchor_name: target.anchor_name.to_string(),
+                branch_name: target.branch_name.to_string(),
+                worktree_path: target.worktree_path.to_string(),
             })
             .map_err(|error| WorkspaceError::WorktreePrepareFailed {
-                repository: target.repository.clone(),
+                repository: target.repository.to_string(),
                 message: error.to_string(),
             })?;
         }
@@ -1249,7 +1251,7 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
         plan.work_item_ids
             .iter()
             .map(|id| WorkspaceWorkItem {
-                id: id.clone(),
+                id: id.to_string(),
                 kind: None,
                 title: None,
                 state: None,
@@ -1260,18 +1262,18 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
     };
     let first = work_items
         .first()
-        .ok_or_else(|| WorkspaceError::InvalidManifest(plan.workspace.clone()))?;
+        .ok_or_else(|| WorkspaceError::InvalidManifest(plan.workspace.to_string()))?;
 
     let manifest = WorkspaceManifest {
         schema: 1,
-        work_item_id: plan.primary_work_item_id.clone(),
-        task_id: plan.task_id.clone(),
-        project: plan.project.clone(),
-        kind: plan.kind.clone(),
-        slug: plan.slug.clone(),
-        branch_name: plan.branch_name.clone(),
+        work_item_id: plan.primary_work_item_id.to_string(),
+        task_id: plan.task_id.as_ref().map(ToString::to_string),
+        project: plan.project.to_string(),
+        kind: plan.kind.to_string(),
+        slug: plan.slug.to_string(),
+        branch_name: plan.branch_name.to_string(),
         created_at: current_timestamp_string(),
-        repositories: plan.repositories.clone(),
+        repositories: plan.repositories.iter().map(ToString::to_string).collect(),
         status: "created".into(),
         work_item_type: first.kind.clone(),
         work_item_title: first.title.clone(),
@@ -1288,7 +1290,7 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
     write_text(
         &workspace.join("task.json"),
         &serde_json::to_string_pretty(&manifest)
-            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.clone()))?,
+            .map_err(|_| WorkspaceError::InvalidManifest(plan.workspace.to_string()))?,
     )?;
     write_text(&workspace.join("plan.md"), &plan_markdown(&manifest))?;
     for repository in &manifest.repositories {
@@ -1305,31 +1307,45 @@ pub fn start_plan_with_child_tasks(
     mut plan: TaskStartPlan,
     child_tasks: &[WorkspaceChildTask],
 ) -> TaskStartPlan {
-    if plan.task_id.as_ref().is_none_or(|id| id.trim().is_empty())
+    if plan
+        .task_id
+        .as_ref()
+        .is_none_or(|id| id.as_str().trim().is_empty())
         && child_tasks.len() == 1
         && !child_tasks[0].id.trim().is_empty()
     {
-        plan.task_id = Some(child_tasks[0].id.clone());
+        plan.task_id = Some(TaskId::from(child_tasks[0].id.clone()));
     }
 
     let mut branch_work_item_ids = plan.work_item_ids.clone();
-    if let Some(task_id) = plan.task_id.as_ref().filter(|id| !id.trim().is_empty())
+    if let Some(task_id) = plan
+        .task_id
+        .as_ref()
+        .filter(|id| !id.as_str().trim().is_empty())
         && !branch_work_item_ids
             .iter()
-            .any(|id| id.eq_ignore_ascii_case(task_id))
+            .any(|id| id.as_str().eq_ignore_ascii_case(task_id.as_str()))
     {
-        branch_work_item_ids.push(task_id.clone());
+        branch_work_item_ids.push(WorkItemId::from(task_id.as_str()));
     }
     for child_task in child_tasks {
         if !child_task.id.trim().is_empty()
             && !branch_work_item_ids
                 .iter()
-                .any(|id| id.eq_ignore_ascii_case(&child_task.id))
+                .any(|id| id.as_str().eq_ignore_ascii_case(&child_task.id))
         {
-            branch_work_item_ids.push(child_task.id.clone());
+            branch_work_item_ids.push(WorkItemId::from(child_task.id.clone()));
         }
     }
-    plan.branch_name = build_branch_name(&plan.kind, &branch_work_item_ids, &plan.slug);
+    let branch_work_item_id_values = branch_work_item_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    plan.branch_name = BranchName::from(build_branch_name(
+        plan.kind.as_str(),
+        &branch_work_item_id_values,
+        plan.slug.as_str(),
+    ));
     for worktree in &mut plan.repository_worktrees {
         worktree.branch_name = plan.branch_name.clone();
     }
@@ -1370,56 +1386,71 @@ pub fn build_preflight_report_from_ai_context_files(
 pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, WorkspaceError> {
     let project = request
         .project
-        .map(|project| project.to_string())
-        .unwrap_or_else(|| "default".to_string());
-    let work_item_ids = request
-        .work_item_ids
-        .iter()
-        .map(|id| id.as_str().to_owned())
-        .collect::<Vec<_>>();
-    let primary_work_item_id = work_item_ids.first().cloned().unwrap_or_default();
-    let project_config = resolve_project(request.projects, &project);
+        .cloned()
+        .unwrap_or_else(|| ProjectKey::from("default"));
+    let work_item_ids = request.work_item_ids.to_vec();
+    let primary_work_item_id = work_item_ids
+        .first()
+        .cloned()
+        .unwrap_or_else(|| WorkItemId::from(""));
+    let project_config = resolve_project(request.projects, project.as_str());
     let repositories = resolve_repositories(project_config.as_ref(), request.repositories);
     let repository_folders = repositories
         .iter()
         .map(|repository| {
             let folder = project_config
                 .as_ref()
-                .and_then(|project| repository_config(project, repository))
+                .and_then(|project| repository_config(project, repository.as_str()))
                 .and_then(|repository| repository.folder)
-                .unwrap_or_else(|| repository.clone());
-            (repository.clone(), folder)
+                .unwrap_or_else(|| repository.to_string());
+            (repository.clone(), RepositoryPath::from(folder))
         })
         .collect::<BTreeMap<_, _>>();
-    reject_workspace_conflicts(request.root, &project, &work_item_ids)?;
+    reject_workspace_conflicts(request.root, project.as_str(), &work_item_ids)?;
 
-    let kind = request
-        .type_name
-        .unwrap_or("feat")
-        .trim()
-        .to_ascii_lowercase();
-    let slug =
-        slug_from_phrase_or_fallback(request.slug, &format!("work item {primary_work_item_id}"));
+    let kind = WorkItemTypeName::from(
+        request
+            .type_name
+            .unwrap_or("feat")
+            .trim()
+            .to_ascii_lowercase(),
+    );
+    let slug = TaskSlug::from(slug_from_phrase_or_fallback(
+        request.slug,
+        &format!("work item {primary_work_item_id}"),
+    ));
     let mut branch_work_item_ids = work_item_ids.clone();
     if let Some(task_id) = request.task_id.filter(|value| !value.trim().is_empty())
         && !branch_work_item_ids
             .iter()
-            .any(|id| id.eq_ignore_ascii_case(task_id))
+            .any(|id| id.as_str().eq_ignore_ascii_case(task_id))
     {
-        branch_work_item_ids.push(task_id.to_string());
+        branch_work_item_ids.push(WorkItemId::from(task_id));
     }
-    let subject_name = build_subject_name(&kind, &work_item_ids, &slug);
-    let branch_name = build_branch_name(&kind, &branch_work_item_ids, &slug);
+    let work_item_id_values = work_item_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let branch_work_item_id_values = branch_work_item_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let subject_name = build_subject_name(kind.as_str(), &work_item_id_values, slug.as_str());
+    let branch_name = BranchName::from(build_branch_name(
+        kind.as_str(),
+        &branch_work_item_id_values,
+        slug.as_str(),
+    ));
     let workspace = Path::new(request.root)
         .join("projects")
-        .join(&project)
+        .join(project.as_str())
         .join("workspaces")
         .join(&subject_name)
         .display()
         .to_string();
     let project_root = Path::new(request.root)
         .join("projects")
-        .join(&project)
+        .join(project.as_str())
         .display()
         .to_string();
     let repository_worktrees = repositories
@@ -1427,19 +1458,19 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
         .map(|repository_key| {
             let repository = project_config
                 .as_ref()
-                .and_then(|project| repository_config(project, repository_key))
+                .and_then(|project| repository_config(project, repository_key.as_str()))
                 .unwrap_or(RepositoryConfig {
                     url: String::new(),
                     default_branch: "main".into(),
                     pull_request_target_branch: None,
                     azure_dev_ops_repository: None,
                     anchor_name: None,
-                    folder: Some(repository_key.clone()),
+                    folder: Some(repository_key.to_string()),
                 });
             let folder = repository_folders
                 .get(repository_key)
                 .cloned()
-                .unwrap_or_else(|| repository_key.clone());
+                .unwrap_or_else(|| RepositoryPath::from(repository_key.as_str()));
             let anchor_name = repository
                 .anchor_name
                 .clone()
@@ -1447,11 +1478,16 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
                 .unwrap_or_else(|| format!("{repository_key}.git"));
             TaskStartRepositoryPlan {
                 repository: repository_key.clone(),
-                project_root: project_root.clone(),
-                worktree_path: Path::new(&workspace).join(folder).display().to_string(),
+                project_root: ProjectRootPath::from(project_root.clone()),
+                worktree_path: RepositoryPath::from(
+                    Path::new(&workspace)
+                        .join(folder.as_str())
+                        .display()
+                        .to_string(),
+                ),
                 url: repository.url,
-                default_branch: repository.default_branch,
-                anchor_name,
+                default_branch: BranchName::from(repository.default_branch),
+                anchor_name: GitAnchorName::from(anchor_name),
                 branch_name: branch_name.clone(),
             }
         })
@@ -1461,12 +1497,12 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
         work_item_ids,
         primary_work_item_id,
         project,
-        task_id: request.task_id.map(|value| value.to_string()),
+        task_id: request.task_id.map(TaskId::from),
         kind,
         slug,
         branch_name,
         subject_name,
-        workspace,
+        workspace: WorkspacePath::from(workspace),
         repositories,
         repository_folders,
         repository_worktrees,
@@ -1916,27 +1952,32 @@ fn parse_work_item_selection(value: Option<&str>) -> Option<Vec<WorkItemId>> {
 fn resolve_repositories(
     project_config: Option<&ProjectConfig>,
     repositories: &[WorkspaceRepositoryName],
-) -> Vec<String> {
+) -> Vec<WorkspaceRepositoryName> {
     if !repositories.is_empty() {
-        return repositories
-            .iter()
-            .map(|repository| repository.to_string())
-            .collect();
+        return repositories.to_vec();
     }
 
     if let Some(project_config) = project_config
         && !project_config.repositories.is_empty()
     {
-        return project_config.repositories.keys().cloned().collect();
+        return project_config
+            .repositories
+            .keys()
+            .cloned()
+            .map(WorkspaceRepositoryName::from)
+            .collect();
     }
 
-    vec!["front".into(), "back".into()]
+    vec![
+        WorkspaceRepositoryName::from("front"),
+        WorkspaceRepositoryName::from("back"),
+    ]
 }
 
 fn reject_workspace_conflicts(
     root: &str,
     project: &str,
-    work_item_ids: &[String],
+    work_item_ids: &[WorkItemId],
 ) -> Result<(), WorkspaceError> {
     let conflicts = find_workspaces(root)
         .into_iter()
@@ -1944,7 +1985,7 @@ fn reject_workspace_conflicts(
         .filter_map(|workspace| {
             let matching = work_item_ids
                 .iter()
-                .filter(|id| workspace.manifest.matches_work_item(id))
+                .filter(|id| workspace.manifest.matches_work_item(id.as_str()))
                 .cloned()
                 .collect::<Vec<_>>();
             if matching.is_empty() {
@@ -1961,7 +2002,16 @@ fn reject_workspace_conflicts(
 
     let details = conflicts
         .into_iter()
-        .map(|(path, ids)| format!("{} déjà présent(s) dans {}", ids.join(", "), path))
+        .map(|(path, ids)| {
+            format!(
+                "{} déjà présent(s) dans {}",
+                ids.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                path
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ");
     Err(WorkspaceError::WorkspaceConflict(details))
@@ -2738,10 +2788,10 @@ artifacts:
         })
         .expect("plan should build");
 
-        assert_eq!(plan.project, "default");
-        assert_eq!(plan.kind, "feat");
-        assert_eq!(plan.slug, "work-item-55222");
-        assert_eq!(plan.branch_name, "feat/55222-work-item-55222");
+        assert_eq!(plan.project.as_str(), "default");
+        assert_eq!(plan.kind.as_str(), "feat");
+        assert_eq!(plan.slug.as_str(), "work-item-55222");
+        assert_eq!(plan.branch_name.as_str(), "feat/55222-work-item-55222");
     }
 
     #[test]
@@ -2797,17 +2847,23 @@ artifacts:
         .expect("plan should build");
 
         assert_eq!(
-            plan.repository_folders.get("front").map(String::as_str),
+            plan.repository_folders
+                .get(&WorkspaceRepositoryName::from("front"))
+                .map(RepositoryPath::as_str),
             Some("custom-front")
         );
         assert_eq!(plan.repository_worktrees.len(), 1);
-        assert_eq!(plan.repository_worktrees[0].repository, "front");
+        assert_eq!(plan.repository_worktrees[0].repository.as_str(), "front");
         assert!(
             plan.repository_worktrees[0]
                 .worktree_path
+                .as_str()
                 .ends_with("custom-front")
         );
-        assert_eq!(plan.repository_worktrees[0].default_branch, "develop");
+        assert_eq!(
+            plan.repository_worktrees[0].default_branch.as_str(),
+            "develop"
+        );
     }
 
     #[test]
@@ -2816,25 +2872,28 @@ artifacts:
         let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
         let project_root = temp.path().join("projects/ha");
         let plan = TaskStartPlan {
-            work_item_ids: vec!["123".into()],
-            primary_work_item_id: "123".into(),
-            project: "ha".into(),
+            work_item_ids: vec![WorkItemId::from("123")],
+            primary_work_item_id: WorkItemId::from("123"),
+            project: ProjectKey::from("ha"),
             task_id: None,
-            kind: "feat".into(),
-            slug: "demo".into(),
-            branch_name: "feat/123-demo".into(),
+            kind: WorkItemTypeName::from("feat"),
+            slug: TaskSlug::from("demo"),
+            branch_name: BranchName::from("feat/123-demo"),
             subject_name: "feat-123-demo".into(),
-            workspace: workspace.display().to_string(),
-            repositories: vec!["front".into()],
-            repository_folders: BTreeMap::from([("front".into(), "front".into())]),
+            workspace: WorkspacePath::from(workspace.display().to_string()),
+            repositories: vec![WorkspaceRepositoryName::from("front")],
+            repository_folders: BTreeMap::from([(
+                WorkspaceRepositoryName::from("front"),
+                RepositoryPath::from("front"),
+            )]),
             repository_worktrees: vec![TaskStartRepositoryPlan {
-                repository: "front".into(),
-                project_root: project_root.display().to_string(),
-                worktree_path: workspace.join("front").display().to_string(),
+                repository: WorkspaceRepositoryName::from("front"),
+                project_root: ProjectRootPath::from(project_root.display().to_string()),
+                worktree_path: RepositoryPath::from(workspace.join("front").display().to_string()),
                 url: temp.path().join("missing-remote.git").display().to_string(),
-                default_branch: "develop".into(),
-                anchor_name: "front.git".into(),
-                branch_name: "feat/123-demo".into(),
+                default_branch: BranchName::from("develop"),
+                anchor_name: GitAnchorName::from("front.git"),
+                branch_name: BranchName::from("feat/123-demo"),
             }],
         };
 
@@ -2915,19 +2974,28 @@ artifacts:
         let temp = tempdir().expect("tempdir should be created");
         let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
         let plan = TaskStartPlan {
-            work_item_ids: vec!["123".into()],
-            primary_work_item_id: "123".into(),
-            project: "ha".into(),
+            work_item_ids: vec![WorkItemId::from("123")],
+            primary_work_item_id: WorkItemId::from("123"),
+            project: ProjectKey::from("ha"),
             task_id: None,
-            kind: "feat".into(),
-            slug: "demo".into(),
-            branch_name: "feat/123-demo".into(),
+            kind: WorkItemTypeName::from("feat"),
+            slug: TaskSlug::from("demo"),
+            branch_name: BranchName::from("feat/123-demo"),
             subject_name: "feat-123-demo".into(),
-            workspace: workspace.display().to_string(),
-            repositories: vec!["front".into(), "back".into()],
+            workspace: WorkspacePath::from(workspace.display().to_string()),
+            repositories: vec![
+                WorkspaceRepositoryName::from("front"),
+                WorkspaceRepositoryName::from("back"),
+            ],
             repository_folders: BTreeMap::from([
-                ("front".into(), "front".into()),
-                ("back".into(), "back".into()),
+                (
+                    WorkspaceRepositoryName::from("front"),
+                    RepositoryPath::from("front"),
+                ),
+                (
+                    WorkspaceRepositoryName::from("back"),
+                    RepositoryPath::from("back"),
+                ),
             ]),
             repository_worktrees: Vec::new(),
         };
@@ -2952,17 +3020,20 @@ artifacts:
     #[test]
     fn start_plan_with_child_tasks_updates_branch_and_task_id() {
         let plan = TaskStartPlan {
-            work_item_ids: vec!["123".into()],
-            primary_work_item_id: "123".into(),
-            project: "ha".into(),
+            work_item_ids: vec![WorkItemId::from("123")],
+            primary_work_item_id: WorkItemId::from("123"),
+            project: ProjectKey::from("ha"),
             task_id: None,
-            kind: "feat".into(),
-            slug: "demo".into(),
-            branch_name: "feat/123-demo".into(),
+            kind: WorkItemTypeName::from("feat"),
+            slug: TaskSlug::from("demo"),
+            branch_name: BranchName::from("feat/123-demo"),
             subject_name: "feat-123-demo".into(),
-            workspace: "/tmp/workspace".into(),
-            repositories: vec!["front".into()],
-            repository_folders: BTreeMap::from([("front".into(), "front".into())]),
+            workspace: WorkspacePath::from("/tmp/workspace"),
+            repositories: vec![WorkspaceRepositoryName::from("front")],
+            repository_folders: BTreeMap::from([(
+                WorkspaceRepositoryName::from("front"),
+                RepositoryPath::from("front"),
+            )]),
             repository_worktrees: Vec::new(),
         };
 
@@ -2975,8 +3046,8 @@ artifacts:
             }],
         );
 
-        assert_eq!(updated.task_id.as_deref(), Some("456"));
-        assert_eq!(updated.branch_name, "feat/123-456-demo");
+        assert_eq!(updated.task_id.as_ref().map(TaskId::as_str), Some("456"));
+        assert_eq!(updated.branch_name.as_str(), "feat/123-456-demo");
     }
 
     #[test]
@@ -2984,17 +3055,20 @@ artifacts:
         let temp = tempdir().expect("tempdir should be created");
         let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
         let plan = TaskStartPlan {
-            work_item_ids: vec!["123".into()],
-            primary_work_item_id: "123".into(),
-            project: "ha".into(),
-            task_id: Some("456".into()),
-            kind: "feat".into(),
-            slug: "demo".into(),
-            branch_name: "feat/123-456-demo".into(),
+            work_item_ids: vec![WorkItemId::from("123")],
+            primary_work_item_id: WorkItemId::from("123"),
+            project: ProjectKey::from("ha"),
+            task_id: Some(TaskId::from("456")),
+            kind: WorkItemTypeName::from("feat"),
+            slug: TaskSlug::from("demo"),
+            branch_name: BranchName::from("feat/123-456-demo"),
             subject_name: "feat-123-demo".into(),
-            workspace: workspace.display().to_string(),
-            repositories: vec!["front".into()],
-            repository_folders: BTreeMap::from([("front".into(), "front".into())]),
+            workspace: WorkspacePath::from(workspace.display().to_string()),
+            repositories: vec![WorkspaceRepositoryName::from("front")],
+            repository_folders: BTreeMap::from([(
+                WorkspaceRepositoryName::from("front"),
+                RepositoryPath::from("front"),
+            )]),
             repository_worktrees: Vec::new(),
         };
 

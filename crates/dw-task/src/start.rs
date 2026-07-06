@@ -172,21 +172,21 @@ pub async fn execute_start(
                 .work_item_ids
                 .iter()
                 .map(|id| WorkspaceWorkItem {
-                    id: id.clone(),
+                    id: id.to_string(),
                     kind: None,
                     title: None,
                     state: None,
                 })
                 .collect();
         }
-        let project_key = if report.plan.project.trim().is_empty() {
+        let project_key = if report.plan.project.as_str().trim().is_empty() {
             "default"
         } else {
-            &report.plan.project
+            report.plan.project.as_str()
         };
         let mut ado_options = resolve_ado_options(&projects, &workflow, project_key)?;
         if ado_options.project.trim().is_empty() {
-            ado_options.project = report.plan.project.clone();
+            ado_options.project = report.plan.project.to_string();
         }
         let token = require_token(load_auth_options(Some(report.root.as_str()))?).await?;
         let start_options = task_start_options(&workflow);
@@ -213,7 +213,7 @@ pub async fn execute_start(
             work_items.clone(),
             child_tasks.clone(),
         )?;
-        write_workspace_agent_configs(&report.plan.workspace, &manifest)?;
+        write_workspace_agent_configs(report.plan.workspace.as_str(), &manifest)?;
         return Ok(StartExecutionReport {
             plan: report.plan,
             manifest,
@@ -222,7 +222,7 @@ pub async fn execute_start(
             state_updates,
         });
     };
-    write_workspace_agent_configs(&report.plan.workspace, &manifest)?;
+    write_workspace_agent_configs(report.plan.workspace.as_str(), &manifest)?;
     Ok(StartExecutionReport {
         plan: report.plan,
         manifest,

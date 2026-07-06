@@ -4,7 +4,7 @@ use dw_ado::{
     create_child_task_authenticated, get_related_work_item_ids,
     get_work_item_snapshots_authenticated, is_final_state,
 };
-use dw_core::WorkItemId;
+use dw_core::{WorkItemId, WorkspaceRepositoryName};
 use dw_workspace::{WorkspaceChildTask, WorkspaceWorkItem};
 
 pub fn load_start_work_items(
@@ -44,7 +44,7 @@ pub fn create_start_child_tasks(
     options: &AzureDevOpsOptions,
     token: &AdoToken,
     parent: Option<&WorkspaceWorkItem>,
-    repositories: &[String],
+    repositories: &[WorkspaceRepositoryName],
 ) -> Result<Vec<WorkspaceChildTask>> {
     let Some(parent) = parent else {
         return Ok(Vec::new());
@@ -59,19 +59,19 @@ pub fn create_start_child_tasks(
     let mut created = Vec::new();
     for repository in repositories {
         let title = child_task_title(
-            repository,
+            repository.as_str(),
             parent.title.as_deref().unwrap_or(parent.id.as_str()),
         );
         let result = create_child_task_authenticated(
             options,
             &parent_snapshot,
-            repository,
+            repository.as_str(),
             &title,
             "task start",
             token,
         )?;
         created.push(WorkspaceChildTask {
-            repository: repository.clone(),
+            repository: repository.to_string(),
             id: result.id,
             title: Some(result.title),
         });
