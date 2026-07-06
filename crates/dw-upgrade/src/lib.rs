@@ -7,6 +7,7 @@ use dw_core::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::ffi::OsString;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -545,7 +546,6 @@ fn replace_windows_executable(
     let command = std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into());
     ProcessCommand::new(&command)
         .arg("/d")
-        .arg("/s")
         .arg("/c")
         .arg(windows_replacement_command(&script))
         .current_dir(script.parent().unwrap_or_else(|| Path::new(".")))
@@ -603,8 +603,11 @@ del /f /q "%~f0" >nul 2>nul
     )
 }
 
-pub(crate) fn windows_replacement_command(script: &Path) -> String {
-    format!("call \"{}\"", script.display())
+pub(crate) fn windows_replacement_command(script: &Path) -> OsString {
+    script
+        .file_name()
+        .map(OsString::from)
+        .unwrap_or_else(|| script.as_os_str().to_os_string())
 }
 
 fn unique_upgrade_suffix() -> String {
@@ -758,15 +761,10 @@ mod tests {
     }
 
     #[test]
-    fn windows_replacement_command_calls_quoted_script_path() {
-        let command = windows_replacement_command(Path::new(
-            r"C:\Users\me\AppData\Local\Temp\dw upgrade.cmd",
-        ));
+    fn windows_replacement_command_uses_script_file_name() {
+        let command = windows_replacement_command(Path::new("/tmp/dw-upgrade-123.cmd"));
 
-        assert_eq!(
-            command,
-            r#"call "C:\Users\me\AppData\Local\Temp\dw upgrade.cmd""#
-        );
+        assert_eq!(command, OsString::from("dw-upgrade-123.cmd"));
     }
 
     #[test]
