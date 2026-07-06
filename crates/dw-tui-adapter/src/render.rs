@@ -487,13 +487,13 @@ pub fn ado_changelog_lines(
     if report.resolved_empty {
         return vec![theme.warning("No work item resolved in Azure DevOps.")];
     }
-    let format = changelog_format_from_name(&report.format);
+    let format = report.format.as_ado_format();
     let document = if report.group_by_parent {
         dw_ado::render_grouped_changelog(&report.groups, format, &report.options, report.table)
     } else {
         dw_ado::render_flat_changelog(&report.items, format, &report.options, report.table)
     };
-    if report.format == "raw" {
+    if report.format == dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw {
         document
             .lines()
             .map(|line| render_raw_changelog_line(line, theme))
@@ -1941,14 +1941,6 @@ fn render_raw_changelog_line(line: &str, theme: &TerminalTheme) -> String {
     format!("{prefix}{}{}", theme.success(id), suffix)
 }
 
-fn changelog_format_from_name(name: &str) -> dw_ado::ChangelogFormat {
-    match name {
-        "markdown" => dw_ado::ChangelogFormat::Markdown,
-        "html" => dw_ado::ChangelogFormat::Html,
-        _ => dw_ado::ChangelogFormat::Raw,
-    }
-}
-
 fn push_preflight_issue_group(
     lines: &mut Vec<String>,
     title: &str,
@@ -2686,7 +2678,7 @@ mod tests {
             from_pr: true,
             from_git: false,
             group_by_parent: false,
-            format: "raw".into(),
+            format: dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw,
             table: false,
             options: ado_options(),
             ids_only: true,
@@ -2724,7 +2716,7 @@ mod tests {
             from_pr: true,
             from_git: false,
             group_by_parent: false,
-            format: "raw".into(),
+            format: dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw,
             table: false,
             options: ado_options(),
             ids_only: false,
@@ -2758,7 +2750,7 @@ mod tests {
         assert!(output.contains("#43"));
 
         let markdown = dw_ado_commands::commands::changelog::ChangelogReport {
-            format: "markdown".into(),
+            format: dw_ado_commands::commands::changelog::ChangelogOutputFormat::Markdown,
             ..report
         };
         let markdown_output = ado_changelog_lines(&markdown, &theme).join("\n");

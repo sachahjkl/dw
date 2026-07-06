@@ -977,11 +977,15 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             let mut report = dw_ado_commands::commands::changelog::report_with_events(
                 dw_ado_commands::commands::changelog::ChangelogArgs {
                     source,
-                    root,
+                    root: root.map(DevWorkflowRoot::from),
                     project: project.map(ProjectKey::from),
                     repo: repo.map(AdoRepositoryName::from),
                     group_by_parent,
-                    format,
+                    format: format
+                        .as_deref()
+                        .map(str::parse)
+                        .transpose()?
+                        .unwrap_or_default(),
                     table,
                     ids_only,
                 },

@@ -424,13 +424,13 @@ pub fn selected_pull_request_action(
                 source: dw_ado_commands::commands::changelog::ChangelogSource::PullRequests(vec![
                     dw_core::PullRequestId::from(pull_request_id.to_string()),
                 ]),
-                root: Some(snapshot.root.clone()),
+                root: Some(dw_core::DevWorkflowRoot::from(snapshot.root.clone())),
                 project: Some(dw_core::ProjectKey::from(item.project.clone())),
                 repo: Some(dw_core::AdoRepositoryName::from(
                     item.ado_repository.clone(),
                 )),
                 group_by_parent: false,
-                format: None,
+                format: dw_ado_commands::commands::changelog::ChangelogOutputFormat::default(),
                 table: false,
                 ids_only: false,
             })

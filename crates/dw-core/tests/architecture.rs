@@ -615,7 +615,12 @@ fn migrated_action_requests_use_domain_id_types_not_structured_strings() {
             &[
                 "pub ids: String",
                 "pub git_to: Option<String>",
+                "pub root: Option<String>",
+                "pub root: String",
                 "pub repo: Option<String>",
+                "pub format: Option<String>",
+                "pub format: String",
+                "parse_changelog_format(format.as_deref())",
             ],
         ),
         (
@@ -723,6 +728,35 @@ fn ado_prs_contract_uses_typed_root_and_repositories() {
         assert!(
             changelog.contains(required),
             "changelog repository resolver should expose typed token `{required}`"
+        );
+    }
+}
+
+#[test]
+fn ado_changelog_contract_uses_typed_root_repository_and_format() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-ado-commands/src/commands/changelog.rs");
+    let text = fs::read_to_string(&path).expect("read changelog source");
+    for required in [
+        "AdoRepositoryName",
+        "ChangelogOutputFormat",
+        "DevWorkflowRoot",
+        "ProjectKey",
+        "PullRequestId",
+        "WorkItemId",
+        "pub root: Option<DevWorkflowRoot>",
+        "pub root: DevWorkflowRoot",
+        "pub repo: Option<AdoRepositoryName>",
+        "pub format: ChangelogOutputFormat",
+        "pub enum ChangelogOutputFormat",
+        "impl FromStr for ChangelogOutputFormat",
+        "pub fn as_ado_format(self) -> ChangelogFormat",
+    ] {
+        assert!(
+            text.contains(required),
+            "{} should expose typed ADO changelog contract token `{}`",
+            path.display(),
+            required
         );
     }
 }

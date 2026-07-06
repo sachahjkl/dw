@@ -4,21 +4,24 @@ use dw_ado::auth::require_token;
 use dw_ado::{
     ChangelogFormat, extract_work_item_ids_from_commit_messages,
     get_work_item_ids_from_pull_requests, group_work_items_by_parent, load_changelog_items,
-    parse_changelog_format,
 };
 use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
-use dw_core::{AdoActionEvent, AdoRepositoryName, ProjectKey, PullRequestId, WorkItemId};
+use dw_core::{
+    AdoActionEvent, AdoRepositoryName, DevWorkflowRoot, ProjectKey, PullRequestId, WorkItemId,
+};
 use serde::Serialize;
+use std::fmt;
 use std::process::Command as ProcessCommand;
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct ChangelogArgs {
     pub source: ChangelogSource,
-    pub root: Option<String>,
+    pub root: Option<DevWorkflowRoot>,
     pub project: Option<ProjectKey>,
     pub repo: Option<AdoRepositoryName>,
     pub group_by_parent: bool,
-    pub format: Option<String>,
+    pub format: ChangelogOutputFormat,
     pub table: bool,
     pub ids_only: bool,
 }
@@ -32,7 +35,7 @@ pub enum ChangelogSource {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ChangelogReport {
-    pub root: String,
+    pub root: DevWorkflowRoot,
     pub project: ProjectKey,
     #[serde(rename = "fromPr")]
     pub from_pr: bool,
@@ -40,7 +43,7 @@ pub struct ChangelogReport {
     pub from_git: bool,
     #[serde(rename = "groupByParent")]
     pub group_by_parent: bool,
-    pub format: String,
+    pub format: ChangelogOutputFormat,
     pub table: bool,
     pub options: dw_ado::AzureDevOpsOptions,
     #[serde(rename = "idsOnly")]
@@ -55,6 +58,67 @@ pub struct ChangelogReport {
     pub resolved_empty: bool,
     pub events: Vec<AdoActionEvent>,
 }
+
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ChangelogOutputFormat {
+    #[default]
+    Raw,
+    Markdown,
+    Html,
+}
+
+impl ChangelogOutputFormat {
+    pub fn as_ado_format(self) -> ChangelogFormat {
+        match self {
+            Self::Raw => ChangelogFormat::Raw,
+            Self::Markdown => ChangelogFormat::Markdown,
+            Self::Html => ChangelogFormat::Html,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Raw => "raw",
+            Self::Markdown => "markdown",
+            Self::Html => "html",
+        }
+    }
+}
+
+impl FromStr for ChangelogOutputFormat {
+    type Err = ChangelogOutputFormatParseError;
+
+    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "raw" => Ok(Self::Raw),
+            "markdown" => Ok(Self::Markdown),
+            "html" => Ok(Self::Html),
+            _ => Err(ChangelogOutputFormatParseError {
+                value: value.into(),
+            }),
+        }
+    }
+}
+
+impl fmt::Display for ChangelogOutputFormat {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangelogOutputFormatParseError {
+    value: String,
+}
+
+impl fmt::Display for ChangelogOutputFormatParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "Format de changelog inconnu: {}", self.value)
+    }
+}
+
+impl std::error::Error for ChangelogOutputFormatParseError {}
 
 pub async fn report(args: ChangelogArgs) -> Result<ChangelogReport> {
     report_with_events(args, |_| {}).await
@@ -76,8 +140,7 @@ pub async fn report_with_events(
     } = args;
     let from_pr = matches!(source, ChangelogSource::PullRequests(_));
     let from_git = matches!(source, ChangelogSource::GitRange { .. });
-    let output_format = parse_changelog_format(format.as_deref())?;
-    if table && output_format != ChangelogFormat::Markdown {
+    if table && format != ChangelogOutputFormat::Markdown {
         return Err(anyhow::anyhow!(
             "Table output is only available with markdown format."
         ));
@@ -88,11 +151,11 @@ pub async fn report_with_events(
         ));
     }
 
-    let root = resolve_root(root.as_deref());
+    let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
         project.ok_or_else(|| anyhow::anyhow!("ado changelog requires a configured project."))?;
-    let projects = load_projects_config(&root);
-    let workflow = load_workflow_config(&root);
+    let projects = load_projects_config(root.as_str());
+    let workflow = load_workflow_config(root.as_str());
     let options = resolve_ado_options(&projects, &workflow, project_key.as_str())?;
     let mut events = Vec::new();
     push_event(
@@ -102,7 +165,7 @@ pub async fn report_with_events(
             project: Some(project_key.clone()),
         },
     );
-    let token = require_token(load_auth_options(Some(&root))?).await?;
+    let token = require_token(load_auth_options(Some(root.as_str()))?).await?;
 
     let work_item_ids = match source {
         ChangelogSource::WorkItems(ids) => ids,
@@ -156,7 +219,7 @@ pub async fn report_with_events(
             from_pr,
             from_git,
             group_by_parent,
-            format: changelog_format_name(output_format).into(),
+            format,
             table,
             options,
             ids_only,
@@ -176,7 +239,7 @@ pub async fn report_with_events(
             from_pr,
             from_git,
             group_by_parent,
-            format: changelog_format_name(output_format).into(),
+            format,
             table,
             options,
             ids_only,
@@ -216,7 +279,7 @@ pub async fn report_with_events(
             from_pr,
             from_git,
             group_by_parent,
-            format: changelog_format_name(output_format).into(),
+            format,
             table,
             options,
             ids_only,
@@ -255,7 +318,7 @@ pub async fn report_with_events(
         from_pr,
         from_git,
         group_by_parent,
-        format: changelog_format_name(output_format).into(),
+        format,
         table,
         options,
         ids_only,
@@ -350,12 +413,4 @@ fn extract_work_item_ids_from_git_range(from: &str, to: Option<&str>) -> Result<
     Ok(extract_work_item_ids_from_commit_messages(
         &String::from_utf8_lossy(&output.stdout),
     ))
-}
-
-pub fn changelog_format_name(format: ChangelogFormat) -> &'static str {
-    match format {
-        ChangelogFormat::Raw => "raw",
-        ChangelogFormat::Markdown => "markdown",
-        ChangelogFormat::Html => "html",
-    }
 }
