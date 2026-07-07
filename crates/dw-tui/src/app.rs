@@ -173,6 +173,10 @@ impl TuiInputPrompt {
             .send(message)
             .map_err(|_| anyhow::anyhow!("Action stopped before receiving input"))
     }
+
+    fn cancel(&mut self) {
+        self.response.take();
+    }
 }
 
 pub struct App {
@@ -788,7 +792,7 @@ impl App {
         };
         match key.code {
             KeyCode::Esc => {
-                prompt.answer(false)?;
+                prompt.cancel();
                 self.input_prompt = None;
                 self.messages.push("Input canceled.".into());
             }
@@ -3639,6 +3643,24 @@ mod tests {
         assert!(summary.contains("1 prune"));
     }
 
+    #[test]
+    fn input_prompt_cancel_drops_response_without_submitting_selection() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let mut prompt = TuiInputPrompt::new(
+            ActionRunId::new(7),
+            InputRequest::SelectOne {
+                id: "assigned-work-item".into(),
+                label: "Work item".into(),
+                help: None,
+                choices: vec![dw_core::PromptChoice::new("42", "#42 Demo")],
+            },
+            sender,
+        );
+
+        prompt.cancel();
+
+        assert!(receiver.recv().is_err());
+    }
     fn assigned_project(key: &str) -> AdoAssignedProject {
         AdoAssignedProject {
             key: key.into(),

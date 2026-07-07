@@ -672,6 +672,10 @@ async fn resolve_task_start_input(
     emit: &mut impl FnMut(DwActionEvent),
     mut input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
 ) -> Result<dw_task::start::StartArgs> {
+    if !args.work_item_ids.is_empty() {
+        return Ok(args);
+    }
+
     if args.project.is_none() {
         args.project =
             request_task_start_project(&args, emit, input_receiver.as_deref_mut()).await?;
@@ -680,10 +684,6 @@ async fn resolve_task_start_input(
     if args.repositories.is_empty() {
         args.repositories =
             request_task_start_repositories(&args, emit, input_receiver.as_deref_mut()).await?;
-    }
-
-    if !args.work_item_ids.is_empty() {
-        return Ok(args);
     }
 
     let work_item_id = if args.skip_ado {
@@ -975,6 +975,33 @@ mod tests {
                 request: InputRequest::Text { id, .. }
             }] if id.as_str() == "work-item-id"
         ));
+    }
+
+    #[tokio::test]
+    async fn task_start_with_explicit_work_item_does_not_prompt_for_project_or_repositories() {
+        let mut events = Vec::new();
+        let args = resolve_task_start_input(
+            dw_task::start::StartArgs {
+                work_item_ids: vec![WorkItemId::from("123")],
+                root: None,
+                project: None,
+                task: None,
+                type_name: None,
+                repositories: Vec::new(),
+                slug: None,
+                skip_ado: false,
+                with_active_children: false,
+                create_child_tasks: false,
+                mode: dw_core::ExecutionMode::Preview,
+            },
+            &mut |event| events.push(event),
+            None,
+        )
+        .await
+        .expect("explicit work item should not need interactive input");
+
+        assert_eq!(args.work_item_ids, vec![WorkItemId::from("123")]);
+        assert!(events.is_empty());
     }
 
     #[tokio::test]
