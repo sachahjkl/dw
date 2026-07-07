@@ -10,6 +10,15 @@ use dw_completion::CompletionOutput;
 #[command(about = "Dev Workflow")]
 #[command(help_template = "{about} {version}\n\n{usage-heading} {usage}\n\n{all-args}")]
 pub(crate) struct Cli {
+    #[arg(
+        short = 'v',
+        long = "verbose",
+        action = ArgAction::Count,
+        global = true,
+        help = "Increase diagnostic output (-v info, -vv debug)."
+    )]
+    pub(crate) verbose: u8,
+
     #[command(subcommand)]
     pub(crate) command: Command,
 }
@@ -1104,6 +1113,7 @@ pub(crate) enum CompletionCommand {
 #[cfg(test)]
 mod tests {
     use super::Cli;
+    use clap::Parser;
 
     #[test]
     fn localized_help_uses_english_builtin_labels() {
@@ -1133,6 +1143,13 @@ mod tests {
     }
 
     #[test]
+    fn verbose_flag_counts_globally() {
+        let cli = Cli::parse_from(["dw", "-vv", "version"]);
+
+        assert_eq!(cli.verbose, 2);
+    }
+
+    #[test]
     fn secret_delete_help_requires_explicit_confirmation_option() {
         let error = Cli::localized_command()
             .try_get_matches_from(["dw", "secret", "delete", "--help"])
@@ -1153,7 +1170,7 @@ mod tests {
             .lines()
             .filter_map(|line| line.find("--").map(|index| &line[index + 2..]))
             .filter_map(|line| line.split_whitespace().next())
-            .map(|option| option.trim_end_matches(','))
+            .map(|option| option.trim_end_matches(',').trim_end_matches('.'))
             .collect::<Vec<_>>();
 
         assert_eq!(
@@ -1161,6 +1178,7 @@ mod tests {
             vec![
                 "agent",
                 "continue",
+                "verbose",
                 "help",
                 "json",
                 "pr",

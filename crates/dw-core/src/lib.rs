@@ -437,6 +437,21 @@ pub enum InputResponse {
     Secret { value: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiagnosticLogLevel {
+    Warning,
+    Info,
+    Debug,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiagnosticLogEvent {
+    pub level: DiagnosticLogLevel,
+    pub target: ActionId,
+    pub detail: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum DwActionEvent {
@@ -449,6 +464,7 @@ pub enum DwActionEvent {
     Secret(SecretActionEvent),
     Upgrade(UpgradeActionEvent),
     NeedsInput { request: InputRequest },
+    Log(DiagnosticLogEvent),
     ExternalLaunch { plan: ExternalLaunchPlan },
 }
 

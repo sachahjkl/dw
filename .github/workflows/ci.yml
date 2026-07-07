@@ -22,6 +22,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+
+env:
+  CARGO_TERM_COLOR: always
+  NIX_CONFIG: accept-flake-config = true
 jobs:
   preflight:
     name: Resolve CI mode
@@ -89,14 +93,17 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           skipPush: ${{ github.event_name == 'pull_request' }}
 
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+
       - name: Check flake
         uses: DeterminateSystems/flake-checker-action@main
 
       - name: Build Nix package
-        run: nix build .#default
+        run: nix build --accept-flake-config .#default
 
       - name: Checks
-        run: nix run .#check
+        run: nix run --accept-flake-config .#check
 
       - name: Publish linux-x64 artifact
         shell: bash
@@ -130,6 +137,9 @@ jobs:
 
       - name: Setup toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
 
       - name: Checks
         shell: pwsh

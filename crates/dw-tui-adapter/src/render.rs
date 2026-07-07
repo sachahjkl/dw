@@ -712,6 +712,7 @@ pub fn action_event_line(event: &DwActionEvent) -> String {
         DwActionEvent::Secret(event) => secret_action_event_line(event),
         DwActionEvent::Upgrade(event) => upgrade_action_event_line(event),
         DwActionEvent::NeedsInput { request } => format!("Input required: {request:?}"),
+        DwActionEvent::Log(event) => dw_ui::diagnostic_log_event_line(event),
         DwActionEvent::ExternalLaunch { plan } => {
             format!("External launch: {}", plan.display_command())
         }

@@ -726,6 +726,10 @@ pub fn ado_set_state_plan_lines(
     ]
 }
 
+pub fn diagnostic_log_event_line(event: &dw_core::DiagnosticLogEvent) -> String {
+    dw_ui::diagnostic_log_event_line(event)
+}
+
 pub fn ado_action_event_line(event: &AdoActionEvent) -> String {
     match event {
         AdoActionEvent::Authenticating { project } => format!(

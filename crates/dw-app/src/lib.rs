@@ -1,10 +1,10 @@
 use anyhow::Result;
 pub use dw_core::DwActionEvent;
 use dw_core::{
-    Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, EnvironmentVariableName, InputRequest,
-    InputResponse, ProjectKey, PromptChoice, PromptChoiceValue, PromptKind, PromptSpec,
-    RuntimeIdentifier, SecretKey, SecretValue, TaskActionEvent, WorkItemId,
-    WorkspaceRepositoryName,
+    ActionId, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DiagnosticLogEvent,
+    DiagnosticLogLevel, EnvironmentVariableName, InputRequest, InputResponse, ProjectKey,
+    PromptChoice, PromptChoiceValue, PromptKind, PromptSpec, RuntimeIdentifier, SecretKey,
+    SecretValue, TaskActionEvent, WorkItemId, WorkspaceRepositoryName,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -108,6 +108,66 @@ pub enum DwActionRequest {
         check: bool,
         rid: Option<RuntimeIdentifier>,
     },
+}
+
+impl DwActionRequest {
+    fn action_id(&self) -> ActionId {
+        ActionId::from(match self {
+            Self::Version => "app.version",
+            Self::Doctor { .. } => "app.doctor",
+            Self::Guide => "app.guide",
+            Self::Refresh(_) => "config.refresh",
+            Self::ConfigShow { .. } => "config.show",
+            Self::ConfigInit(_) => "config.init",
+            Self::ConfigDoctor { .. } => "config.doctor",
+            Self::ConfigSetColor { .. } => "config.color.set",
+            Self::ConfigSetRoot { .. } => "config.root.set",
+            Self::AgentConfig { .. } => "agent.config",
+            Self::AgentSetDefault { .. } => "agent.default.set",
+            Self::AgentDoctor { .. } => "agent.doctor",
+            Self::AgentContext => "agent.context",
+            Self::DbGuard(_) => "db.guard",
+            Self::DbSchema(_) => "db.schema",
+            Self::DbDescribe(_) => "db.describe",
+            Self::DbQuery(_) => "db.query",
+            Self::AdoAuthLogin { .. } => "ado.auth.login",
+            Self::AdoAuthStatus { .. } => "ado.auth.status",
+            Self::AdoAuthLogout { .. } => "ado.auth.logout",
+            Self::AdoAssigned(_) => "ado.assigned",
+            Self::AdoPrs(_) => "ado.prs",
+            Self::AdoChangelog(_) => "ado.changelog",
+            Self::AdoContext(_) => "ado.context",
+            Self::AdoAiContext(_) => "ado.ai_context",
+            Self::AdoWorkItem(_) => "ado.work_item",
+            Self::AdoSetStatePlan(_) => "ado.state.plan",
+            Self::AdoSetStateExecute(_) => "ado.state.execute",
+            Self::AdoSetState(_) => "ado.state.set",
+            Self::TaskStatus { .. } => "task.status",
+            Self::TaskList { .. } => "task.list",
+            Self::TaskCurrent => "task.current",
+            Self::TaskOpen(_) => "task.open",
+            Self::TaskStart(_) => "task.start",
+            Self::TaskStartPr(_) => "task.start_pr",
+            Self::TaskPreflight(_) => "task.preflight",
+            Self::TaskHandoffValidate(_) => "task.handoff.validate",
+            Self::TaskSync(_) => "task.sync",
+            Self::TaskRename(_) => "task.rename",
+            Self::TaskRepoLatest(_) => "task.repo.latest",
+            Self::TaskCommit(_) => "task.commit",
+            Self::TaskAddRepo(_) => "task.repo.add",
+            Self::TaskTeardown(_) => "task.teardown",
+            Self::TaskFinish(_) => "task.finish",
+            Self::TaskPrune(_) => "task.prune",
+            Self::TaskCreateChildTask(_) => "task.child.create",
+            Self::TaskAddWorkItem(_) => "task.work_item.add",
+            Self::TaskRemoveWorkItem(_) => "task.work_item.remove",
+            Self::SecretGet { .. } => "secret.get",
+            Self::SecretSetFromEnv { .. } => "secret.set.from_env",
+            Self::SecretSet { .. } => "secret.set",
+            Self::SecretDelete { .. } => "secret.delete",
+            Self::Upgrade { .. } => "upgrade.run",
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -311,6 +371,13 @@ async fn run_action_inner(
     emit: &mut impl FnMut(DwActionEvent),
     mut input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
 ) -> Result<DwActionResult> {
+    let action_id = request.action_id();
+    emit_diagnostic_log(
+        emit,
+        DiagnosticLogLevel::Info,
+        action_id.clone(),
+        "action started",
+    );
     match request {
         DwActionRequest::Version => Ok(DwActionResult::App(AppActionResult::Version {
             version: env!("DW_VERSION").into(),
@@ -811,6 +878,18 @@ async fn confirm_secret_delete(
     }
 }
 
+fn emit_diagnostic_log(
+    emit: &mut impl FnMut(DwActionEvent),
+    level: DiagnosticLogLevel,
+    target: ActionId,
+    detail: impl Into<String>,
+) {
+    emit(DwActionEvent::Log(DiagnosticLogEvent {
+        level,
+        target,
+        detail: detail.into(),
+    }));
+}
 async fn resolve_work_item_id_from_assigned_report(
     report: &dw_ado_commands::commands::assigned::AssignedReport,
     emit: &mut impl FnMut(DwActionEvent),
@@ -853,6 +932,12 @@ async fn request_input(
     input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
     request: InputRequest,
 ) -> Result<InputResponse> {
+    emit_diagnostic_log(
+        emit,
+        DiagnosticLogLevel::Debug,
+        ActionId::from(format!("input.{}", request.id())),
+        "waiting for typed input response",
+    );
     emit(DwActionEvent::NeedsInput {
         request: request.clone(),
     });
@@ -940,6 +1025,24 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn run_action_emits_domain_scoped_diagnostic_log() {
+        let mut events = Vec::new();
+
+        run_action(DwActionRequest::Version, |event| events.push(event))
+            .await
+            .expect("version action should run");
+
+        assert!(matches!(
+            events.as_slice(),
+            [DwActionEvent::Log(DiagnosticLogEvent {
+                level: DiagnosticLogLevel::Info,
+                target,
+                detail,
+            })] if target.as_str() == "app.version" && detail == "action started"
+        ));
+    }
+
+    #[tokio::test]
     async fn request_input_emits_typed_request_and_waits_for_response() {
         let (sender, mut receiver) = mpsc::unbounded_channel();
         sender
@@ -969,12 +1072,12 @@ mod tests {
                 value: "55264".into()
             }
         );
-        assert!(matches!(
-            events.as_slice(),
-            [DwActionEvent::NeedsInput {
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DwActionEvent::NeedsInput {
                 request: InputRequest::Text { id, .. }
-            }] if id.as_str() == "work-item-id"
-        ));
+            } if id.as_str() == "work-item-id"
+        )));
     }
 
     #[tokio::test]
@@ -1029,7 +1132,7 @@ mod tests {
         .expect_err("unknown choice value should fail");
 
         assert!(error.to_string().contains("invalid input choice"));
-        assert_eq!(events.len(), 1);
+        assert_eq!(events.len(), 2);
     }
 
     #[tokio::test]
@@ -1048,12 +1151,12 @@ mod tests {
         .await
         .expect("accepted confirmation should continue");
 
-        assert!(matches!(
-            events.as_slice(),
-            [DwActionEvent::NeedsInput {
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DwActionEvent::NeedsInput {
                 request: InputRequest::Confirm { id, default: false, .. }
-            }] if id.as_str() == "secret-delete:db/password"
-        ));
+            } if id.as_str() == "secret-delete:db/password"
+        )));
     }
 
     #[tokio::test]
@@ -1075,11 +1178,11 @@ mod tests {
         .expect("secret input should be accepted");
 
         assert_eq!(value, SecretValue::from("s3cr3t"));
-        assert!(matches!(
-            events.as_slice(),
-            [DwActionEvent::NeedsInput {
+        assert!(events.iter().any(|event| matches!(
+            event,
+            DwActionEvent::NeedsInput {
                 request: InputRequest::Secret { id, .. }
-            }] if id.as_str() == "secret-set:db/password"
-        ));
+            } if id.as_str() == "secret-set:db/password"
+        )));
     }
 }

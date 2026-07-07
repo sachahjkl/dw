@@ -10,3 +10,4 @@ repository.workspace = true
 anstyle.workspace = true
 dw-ado = { path = "../dw-ado" }
 dw-ado-commands = { path = "../dw-ado-commands" }
+dw-core = { path = "../dw-core" }

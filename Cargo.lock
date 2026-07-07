@@ -1238,6 +1238,7 @@ dependencies = [
  "anstyle",
  "dw-ado",
  "dw-ado-commands",
+ "dw-core",
 ]
 
 [[package]]

@@ -7,17 +7,42 @@ use dw_cli_adapter::{
 };
 use dw_core::{
     AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
-    DwActionEvent, EnvironmentVariableName, ExecutionMode, ExternalLaunchPlan, GitRevision,
-    InputRequest, InputResponse, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
-    PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId, WorkItemTypeName,
-    WorkspacePath, WorkspaceRepositoryName,
+    DiagnosticLogLevel, DwActionEvent, EnvironmentVariableName, ExecutionMode, ExternalLaunchPlan,
+    GitRevision, InputRequest, InputResponse, ProjectKey, PromptChoiceValue, PromptKind,
+    PromptSpec, PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId,
+    WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
 use std::io::{IsTerminal, Write};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
+static OUTPUT_VERBOSITY: AtomicU8 = AtomicU8::new(0);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct OutputVerbosity {
+    level: u8,
+}
+
+impl OutputVerbosity {
+    fn current() -> Self {
+        Self {
+            level: OUTPUT_VERBOSITY.load(Ordering::Relaxed),
+        }
+    }
+
+    fn includes(self, level: DiagnosticLogLevel) -> bool {
+        match level {
+            DiagnosticLogLevel::Warning => self.level >= 1,
+            DiagnosticLogLevel::Info => self.level >= 1,
+            DiagnosticLogLevel::Debug => self.level >= 2,
+        }
+    }
+}
+
 pub(crate) async fn run(cli: Cli) -> Result<()> {
+    OUTPUT_VERBOSITY.store(cli.verbose, Ordering::Relaxed);
     match cli.command {
         Command::Version => {
             run_cli_action(dw_app::DwActionRequest::Version).await?;
@@ -63,7 +88,6 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
         Command::Auth { command } => handle_auth(command).await?,
         Command::Completion { command } => handle_completion(command)?,
         Command::Config { command } => handle_config(command).await?,
-
         Command::Ado { command } => handle_ado(command).await?,
         Command::Db { command } => handle_db(command).await?,
         Command::Secret { command } => handle_secret(command).await?,
@@ -115,6 +139,9 @@ fn print_cli_action_event(event: &DwActionEvent) {
             print_lines(&[dw_cli_adapter::render::task_action_event_line(event)]);
         }
         DwActionEvent::Upgrade(event) => print_upgrade_event_line(event),
+        DwActionEvent::Log(event) if OutputVerbosity::current().includes(event.level) => {
+            print_lines(&[dw_cli_adapter::render::diagnostic_log_event_line(event)]);
+        }
         _ => {}
     }
 }
