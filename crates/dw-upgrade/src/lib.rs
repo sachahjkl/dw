@@ -12,6 +12,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
+use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -548,7 +549,9 @@ fn replace_windows_executable(
         .arg("/d")
         .arg("/c")
         .arg(windows_replacement_command(&script))
-        .current_dir(script.parent().unwrap_or_else(|| Path::new(".")))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
         .map_err(|error| {
             anyhow!(
@@ -571,11 +574,12 @@ pub(crate) fn windows_replacement_script(
 ) -> String {
     format!(
         r#"@echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 set "NEW={replacement}"
 set "TARGET={executable_path}"
 set "BACKUP={backup}"
 set "PID={pid}"
+set "ATTEMPTS=60"
 
 :wait
 tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul
@@ -585,20 +589,34 @@ if not errorlevel 1 (
 )
 
 if not exist "%NEW%" exit /b 1
+
+:replace
 if exist "%BACKUP%" del /f /q "%BACKUP%" >nul 2>nul
-if exist "%TARGET%" move /Y "%TARGET%" "%BACKUP%" >nul
-copy /Y "%NEW%" "%TARGET%" >nul
+if exist "%TARGET%" (
+  move /Y "%TARGET%" "%BACKUP%" >nul 2>nul
+  if errorlevel 1 goto retry
+)
+copy /Y "%NEW%" "%TARGET%" >nul 2>nul
 if errorlevel 1 (
-  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul
-  exit /b 1
+  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul 2>nul
+  goto retry
 )
 if not exist "%TARGET%" (
-  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul
-  exit /b 1
+  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul 2>nul
+  goto retry
 )
 del /f /q "%NEW%" >nul 2>nul
 del /f /q "%BACKUP%" >nul 2>nul
 del /f /q "%~f0" >nul 2>nul
+exit /b 0
+
+:retry
+set /a ATTEMPTS-=1
+if !ATTEMPTS! GTR 0 (
+  timeout /t 1 /nobreak >nul
+  goto replace
+)
+exit /b 1
 "#
     )
 }
@@ -753,10 +771,13 @@ mod tests {
         let script = windows_replacement_script("new.exe", "dw.exe", "dw.exe.bak", 1234);
 
         assert!(script.contains("tasklist /FI \"PID eq %PID%\""));
-        assert!(script.contains("set \"BACKUP=dw.exe.bak\""));
-        assert!(script.contains("move /Y \"%TARGET%\" \"%BACKUP%\""));
-        assert!(script.contains("copy /Y \"%NEW%\" \"%TARGET%\""));
-        assert!(script.contains("move /Y \"%BACKUP%\" \"%TARGET%\""));
+        assert!(script.contains("setlocal EnableExtensions EnableDelayedExpansion"));
+        assert!(script.contains("set \"ATTEMPTS=60\""));
+        assert!(script.contains("move /Y \"%TARGET%\" \"%BACKUP%\" >nul 2>nul"));
+        assert!(script.contains("copy /Y \"%NEW%\" \"%TARGET%\" >nul 2>nul"));
+        assert!(script.contains(":retry"));
+        assert!(script.contains("if !ATTEMPTS! GTR 0"));
+        assert!(script.contains("move /Y \"%BACKUP%\" \"%TARGET%\" >nul 2>nul"));
         assert!(!script.contains("move /Y \"new.exe\" \"dw.exe\""));
     }
 
