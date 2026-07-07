@@ -1136,7 +1136,7 @@ pub fn upgrade_spinner_frame(
     let message = event
         .map(|event| upgrade_event_frame_line(event, theme))
         .unwrap_or_else(|| "Upgrade [starting          ] Preparing".into());
-    format!("\r{} {message}", theme.cyan(frame))
+    format!("\r\x1b[2K{} {message}", theme.cyan(frame))
 }
 
 pub fn upgrade_spinner_clear_sequence() -> &'static str {
@@ -3048,8 +3048,12 @@ mod tests {
         );
 
         assert_eq!(upgrade_spinner_clear_sequence(), "\r\x1b[2K");
-        assert!(frame.starts_with("\r| Upgrade [download"));
+        assert!(frame.starts_with("\r\x1b[2K| Upgrade [download"));
         assert!(frame.contains("Downloading dw-linux-x64.tar.gz"));
+        assert!(
+            frame.starts_with(upgrade_spinner_clear_sequence()),
+            "each frame must clear stale bytes from the previous longer frame"
+        );
     }
 
     #[test]

@@ -13,6 +13,7 @@ use dw_core::{
     WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -240,29 +241,24 @@ async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> 
     let result = action.result;
     let mut events = action.events;
     let interactive = std::io::stderr().is_terminal();
-    let theme = TerminalTheme::stdout_auto();
-    let frames = ["|", "/", "-", "\\"];
-    let mut frame = 0_usize;
+    let mut progress = UpgradeProgressUi::new(interactive);
     let mut seen_events = Vec::new();
-    let mut current = None;
 
     while !result.is_finished() {
         while let Ok(event) = events.try_recv() {
             let DwActionEvent::Upgrade(event) = event else {
                 continue;
             };
-            if !interactive {
+            if interactive {
+                progress.update(&event);
+            } else {
                 print_upgrade_event_line(&event);
             }
-            current = Some(event.clone());
             if !dw_cli_adapter::render::upgrade_event_is_transient(&event) {
                 seen_events.push(event);
             }
         }
-        if interactive {
-            write_upgrade_spinner_frame(current.as_ref(), frames[frame % frames.len()], &theme)?;
-            frame = frame.wrapping_add(1);
-        }
+        progress.tick();
         tokio::time::sleep(Duration::from_millis(120)).await;
     }
 
@@ -270,7 +266,9 @@ async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> 
         let DwActionEvent::Upgrade(event) = event else {
             continue;
         };
-        if !interactive {
+        if interactive {
+            progress.update(&event);
+        } else {
             print_upgrade_event_line(&event);
         }
         if !dw_cli_adapter::render::upgrade_event_is_transient(&event) {
@@ -278,7 +276,7 @@ async fn handle_upgrade_command(check: bool, rid: Option<String>) -> Result<()> 
         }
     }
     if interactive {
-        write_upgrade_spinner_clear()?;
+        progress.finish_and_clear();
         print_lines(
             &seen_events
                 .iter()
@@ -301,26 +299,95 @@ fn print_upgrade_event_line(event: &dw_core::UpgradeActionEvent) {
     }
 }
 
-fn write_upgrade_spinner_frame(
-    event: Option<&dw_core::UpgradeActionEvent>,
-    frame: &str,
-    theme: &TerminalTheme,
-) -> Result<()> {
-    eprint!(
-        "{}",
-        dw_cli_adapter::render::upgrade_spinner_frame(event, frame, theme)
-    );
-    std::io::stderr().flush()?;
-    Ok(())
+struct UpgradeProgressUi {
+    bar: Option<ProgressBar>,
+    showing_download: bool,
 }
 
-fn write_upgrade_spinner_clear() -> Result<()> {
-    eprint!(
-        "{}",
-        dw_cli_adapter::render::upgrade_spinner_clear_sequence()
-    );
-    std::io::stderr().flush()?;
-    Ok(())
+impl UpgradeProgressUi {
+    fn new(enabled: bool) -> Self {
+        let bar = enabled.then(|| {
+            let bar = ProgressBar::new_spinner();
+            bar.set_draw_target(ProgressDrawTarget::stderr());
+            bar.set_style(upgrade_spinner_style());
+            bar.set_message("Upgrade [starting          ] Preparing");
+            bar.enable_steady_tick(Duration::from_millis(120));
+            bar
+        });
+        Self {
+            bar,
+            showing_download: false,
+        }
+    }
+
+    fn update(&mut self, event: &dw_core::UpgradeActionEvent) {
+        let Some(bar) = &self.bar else {
+            return;
+        };
+        match event {
+            dw_core::UpgradeActionEvent::DownloadedAssetBytes {
+                file_name,
+                received,
+                total,
+            } => {
+                if let Some(total) = total {
+                    if !self.showing_download {
+                        bar.set_style(upgrade_download_style());
+                        self.showing_download = true;
+                    }
+                    bar.set_length(total.as_u64());
+                    bar.set_position(received.as_u64());
+                    bar.set_message(format!("Upgrade [download          ] {file_name}"));
+                } else {
+                    if self.showing_download {
+                        bar.set_style(upgrade_spinner_style());
+                        self.showing_download = false;
+                    }
+                    bar.set_message(dw_cli_adapter::render::upgrade_download_progress_line(
+                        file_name,
+                        *received,
+                        *total,
+                        &TerminalTheme::plain(),
+                    ));
+                    bar.tick();
+                }
+            }
+            event => {
+                if self.showing_download {
+                    bar.set_style(upgrade_spinner_style());
+                    self.showing_download = false;
+                }
+                bar.set_message(dw_cli_adapter::render::upgrade_event_line(event));
+                bar.tick();
+            }
+        }
+    }
+
+    fn tick(&self) {
+        if let Some(bar) = &self.bar {
+            bar.tick();
+        }
+    }
+
+    fn finish_and_clear(self) {
+        if let Some(bar) = self.bar {
+            bar.finish_and_clear();
+        }
+    }
+}
+
+fn upgrade_spinner_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner} {msg}")
+        .expect("upgrade spinner style should parse")
+        .tick_strings(&["|", "/", "-", "\\"])
+}
+
+fn upgrade_download_style() -> ProgressStyle {
+    ProgressStyle::with_template(
+        "{msg} [{bar:28.cyan/blue}] {percent:>3}% {binary_bytes} / {binary_total_bytes}",
+    )
+    .expect("upgrade download style should parse")
+    .progress_chars("█░")
 }
 
 async fn handle_auth(command: AuthCommand) -> Result<()> {

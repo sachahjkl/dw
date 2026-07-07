@@ -28,6 +28,7 @@ dw-tui = { path = "../dw-tui" }
 dw-ui = { path = "../dw-ui" }
 dw-workspace = { path = "../dw-workspace" }
 inquire.workspace = true
+indicatif.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
