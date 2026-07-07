@@ -1509,6 +1509,30 @@ pub enum GitOperation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TaskActionEvent {
+    ExecutingStart {
+        workspace: WorkspacePath,
+        repository_count: usize,
+    },
+    SyncLoadingWorkItems,
+    SyncWritingManifest,
+    ExecutingRepoLatest {
+        repository_count: usize,
+    },
+    ExecutingAddRepo {
+        repository: WorkspaceRepositoryName,
+    },
+    PlanningStart {
+        project: ProjectKey,
+        work_item_ids: Vec<WorkItemId>,
+    },
+    LoadingStartWorkItems {
+        project: ProjectKey,
+        work_item_ids: Vec<WorkItemId>,
+    },
+    BuildingStartPlan {
+        project: ProjectKey,
+        repositories: Vec<WorkspaceRepositoryName>,
+    },
     ResolvingPullRequestWorkItems {
         pull_request_id: PullRequestId,
     },
@@ -1552,6 +1576,14 @@ pub enum TaskActionEvent {
 impl TaskActionEvent {
     pub fn action_id(&self) -> ActionId {
         ActionId::from(match self {
+            Self::ExecutingStart { .. } => "task.start.execute",
+            Self::SyncLoadingWorkItems => "task.sync.workitems.load",
+            Self::SyncWritingManifest => "task.sync.manifest.write",
+            Self::ExecutingRepoLatest { .. } => "task.repo.latest.execute",
+            Self::ExecutingAddRepo { .. } => "task.repo.add.execute",
+            Self::PlanningStart { .. } => "task.start.plan",
+            Self::LoadingStartWorkItems { .. } => "task.start.workitems.load",
+            Self::BuildingStartPlan { .. } => "task.start.plan.build",
             Self::ResolvingPullRequestWorkItems { .. } => "task.pr.resolve.workitems",
             Self::ResolvedPullRequestWorkItems { .. } => "task.pr.resolved.workitems",
             Self::VerifyingFinish { .. } => "task.finish.verify",

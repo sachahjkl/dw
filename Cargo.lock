@@ -994,6 +994,7 @@ name = "dw-app"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "dw-ado",
  "dw-ado-commands",
  "dw-agent",
  "dw-config",

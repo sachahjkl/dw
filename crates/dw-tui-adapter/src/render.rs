@@ -1525,7 +1525,7 @@ pub fn task_start_plan_lines(report: &dw_task::start::StartPlanReport) -> Vec<St
         format!("Target branch: {}", plan.branch_name),
         format!("Target workspace: {}", plan.workspace),
         format!("Repositories: {}", join_display(&plan.repositories)),
-        "Action    : enable execution to create the workspace.".into(),
+        "Action    : choose Execute to create the workspace.".into(),
     ]
 }
 
@@ -3436,7 +3436,7 @@ mod tests {
         let lines = task_start_plan_lines(&report);
 
         assert_eq!(lines[0], "Plan task start");
-        assert!(lines.contains(&"Action    : enable execution to create the workspace.".into()));
+        assert!(lines.contains(&"Action    : choose Execute to create the workspace.".into()));
     }
 
     fn workspace_manifest_with_items(

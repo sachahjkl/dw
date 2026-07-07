@@ -1835,6 +1835,63 @@ pub fn task_work_item_execution_lines(
     ]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskStartCreateCommandOptions {
+    pub skip_ado: bool,
+    pub with_active_children: bool,
+    pub create_child_tasks: bool,
+}
+
+pub fn task_start_create_command(
+    report: &dw_task::start::StartPlanReport,
+    options: TaskStartCreateCommandOptions,
+) -> String {
+    let plan = &report.plan;
+    let mut parts = vec!["dw".into(), "task".into(), "start".into()];
+    parts.push(shell_arg(&join_display_with_separator(
+        &plan.work_item_ids,
+        ",",
+    )));
+    parts.push("--project".into());
+    parts.push(shell_arg(plan.project.as_str()));
+    if let Some(task) = &plan.task_id {
+        parts.push("--task".into());
+        parts.push(shell_arg(task.as_str()));
+    }
+    parts.push("--type".into());
+    parts.push(shell_arg(plan.kind.as_str()));
+    if !plan.repositories.is_empty() {
+        parts.push("--only".into());
+        parts.push(shell_arg(&join_display_with_separator(
+            &plan.repositories,
+            ",",
+        )));
+    }
+    parts.push("--slug".into());
+    parts.push(shell_arg(plan.slug.as_str()));
+    if options.skip_ado {
+        parts.push("--skip-ado".into());
+    }
+    if options.with_active_children {
+        parts.push("--with-active-children".into());
+    }
+    if options.create_child_tasks {
+        parts.push("--create-child-tasks".into());
+    }
+    parts.push("--execute".into());
+    parts.join(" ")
+}
+
+fn shell_arg(value: &str) -> String {
+    if value.chars().all(|character| {
+        character.is_ascii_alphanumeric()
+            || matches!(character, '.' | '_' | '-' | '/' | ':' | ',' | '#')
+    }) {
+        return value.into();
+    }
+    format!("\"{}\"", value.replace('"', "\\\""))
+}
+
 pub fn task_start_plan_lines(report: &dw_task::start::StartPlanReport) -> Vec<String> {
     let plan = &report.plan;
     vec![
@@ -1845,7 +1902,7 @@ pub fn task_start_plan_lines(report: &dw_task::start::StartPlanReport) -> Vec<St
         format!("Target branch: {}", plan.branch_name),
         format!("Target workspace: {}", plan.workspace),
         format!("Repositories: {}", join_display(&plan.repositories)),
-        "Rerun with --execute to create the workspace.".into(),
+        "Action: preview only; answer yes when prompted or run the command below.".into(),
     ]
 }
 
@@ -3787,7 +3844,20 @@ mod tests {
         let lines = task_start_plan_lines(&report);
 
         assert_eq!(lines[0], "Task start plan");
-        assert!(lines.contains(&"Rerun with --execute to create the workspace.".into()));
+        assert!(lines.contains(
+            &"Action: preview only; answer yes when prompted or run the command below.".into()
+        ));
+        assert_eq!(
+            task_start_create_command(
+                &report,
+                TaskStartCreateCommandOptions {
+                    skip_ado: false,
+                    with_active_children: false,
+                    create_child_tasks: false,
+                }
+            ),
+            "dw task start 42 --project ha --type feat --only front,back --slug titre --execute"
+        );
     }
 
     #[test]

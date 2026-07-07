@@ -1,10 +1,10 @@
 use anyhow::Result;
 pub use dw_core::DwActionEvent;
 use dw_core::{
-    ActionId, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DiagnosticLogEvent,
-    DiagnosticLogLevel, EnvironmentVariableName, InputRequest, InputResponse, ProjectKey,
-    PromptChoice, PromptChoiceValue, PromptKind, PromptSpec, RuntimeIdentifier, SecretKey,
-    SecretValue, TaskActionEvent, WorkItemId, WorkspaceRepositoryName,
+    ActionId, AdoActionEvent, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
+    DiagnosticLogEvent, DiagnosticLogLevel, EnvironmentVariableName, InputRequest, InputResponse,
+    ProjectKey, PromptChoice, PromptChoiceValue, PromptKind, PromptSpec, RuntimeIdentifier,
+    SecretKey, SecretValue, TaskActionEvent, TaskSlug, WorkItemId, WorkspaceRepositoryName,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
@@ -468,9 +468,14 @@ async fn run_action_inner(
                 .await?;
             Ok(DwActionResult::Ado(AdoActionResult::Assigned(report)))
         }
-        DwActionRequest::AdoPrs(args) => Ok(DwActionResult::Ado(AdoActionResult::Prs(
-            dw_ado_commands::commands::prs::report(args).await?,
-        ))),
+        DwActionRequest::AdoPrs(args) => {
+            emit(DwActionEvent::Ado(AdoActionEvent::LoadingPullRequests {
+                project: args.project.clone(),
+            }));
+            Ok(DwActionResult::Ado(AdoActionResult::Prs(
+                dw_ado_commands::commands::prs::report(args).await?,
+            )))
+        }
         DwActionRequest::AdoChangelog(args) => {
             let report =
                 dw_ado_commands::commands::changelog::report_with_events(args, &mut |event| {
@@ -536,13 +541,53 @@ async fn run_action_inner(
         DwActionRequest::TaskCurrent => Ok(task_result(TaskActionResult::Current(
             dw_task::open::current_report()?,
         ))),
-        DwActionRequest::TaskOpen(args) => Ok(task_result(TaskActionResult::Open(
-            dw_task::open::resolve_open_launch_async(args).await?,
-        ))),
+        DwActionRequest::TaskOpen(args) => {
+            if let Some(pull_request_id) = &args.pull_request {
+                emit(DwActionEvent::Task(
+                    TaskActionEvent::ResolvingPullRequestWorkItems {
+                        pull_request_id: pull_request_id.clone(),
+                    },
+                ));
+            }
+            Ok(task_result(TaskActionResult::Open(
+                dw_task::open::resolve_open_launch_async(args).await?,
+            )))
+        }
         DwActionRequest::TaskStart(args) => {
             let args = resolve_task_start_input(args, emit, input_receiver.as_deref_mut()).await?;
+            emit(DwActionEvent::Task(TaskActionEvent::PlanningStart {
+                project: args
+                    .project
+                    .clone()
+                    .unwrap_or_else(|| ProjectKey::from("default")),
+                work_item_ids: args.work_item_ids.clone(),
+            }));
+            if !args.skip_ado
+                && (args.with_active_children || args.mode.executes() || args.slug.is_none())
+            {
+                emit(DwActionEvent::Task(
+                    TaskActionEvent::LoadingStartWorkItems {
+                        project: args
+                            .project
+                            .clone()
+                            .unwrap_or_else(|| ProjectKey::from("default")),
+                        work_item_ids: args.work_item_ids.clone(),
+                    },
+                ));
+            }
+            emit(DwActionEvent::Task(TaskActionEvent::BuildingStartPlan {
+                project: args
+                    .project
+                    .clone()
+                    .unwrap_or_else(|| ProjectKey::from("default")),
+                repositories: args.repositories.clone(),
+            }));
             let plan = dw_task::start::start_plan(args.clone()).await?;
             if args.mode.executes() {
+                emit(DwActionEvent::Task(TaskActionEvent::ExecutingStart {
+                    workspace: plan.plan.workspace.clone(),
+                    repository_count: plan.plan.repositories.len(),
+                }));
                 Ok(task_result(TaskActionResult::StartExecution(
                     dw_task::start::execute_start(plan, &args).await?,
                 )))
@@ -576,9 +621,12 @@ async fn run_action_inner(
         DwActionRequest::TaskHandoffValidate(args) => Ok(task_result(
             TaskActionResult::HandoffValidate(dw_task::validate::handoff_validation_report(args)?),
         )),
-        DwActionRequest::TaskSync(args) => Ok(task_result(TaskActionResult::Sync(
-            dw_task::lifecycle::sync_report(args).await?,
-        ))),
+        DwActionRequest::TaskSync(args) => {
+            emit(DwActionEvent::Task(TaskActionEvent::SyncLoadingWorkItems));
+            let report = dw_task::lifecycle::sync_report(args).await?;
+            emit(DwActionEvent::Task(TaskActionEvent::SyncWritingManifest));
+            Ok(task_result(TaskActionResult::Sync(report)))
+        }
         DwActionRequest::TaskRename(args) => {
             let plan = dw_task::lifecycle::rename_plan(args.clone())?;
             if args.mode.executes() {
@@ -592,6 +640,9 @@ async fn run_action_inner(
         DwActionRequest::TaskRepoLatest(args) => {
             let plan = dw_task::repo::repo_latest_plan(args.clone())?;
             if args.mode.executes() {
+                emit(DwActionEvent::Task(TaskActionEvent::ExecutingRepoLatest {
+                    repository_count: plan.targets.len(),
+                }));
                 let execution = dw_task::repo::execute_repo_latest(&plan)?;
                 Ok(task_result(TaskActionResult::RepoLatestExecution {
                     plan,
@@ -616,6 +667,9 @@ async fn run_action_inner(
         DwActionRequest::TaskAddRepo(args) => {
             let plan = dw_task::repo::add_repo_plan(args.clone())?;
             if args.mode.executes() {
+                emit(DwActionEvent::Task(TaskActionEvent::ExecutingAddRepo {
+                    repository: plan.plan.repository.clone(),
+                }));
                 let execution = dw_task::repo::execute_add_repo(&plan)?;
                 Ok(task_result(TaskActionResult::AddRepoExecution {
                     plan,
@@ -753,10 +807,13 @@ async fn resolve_task_start_input(
             request_task_start_repositories(&args, emit, input_receiver.as_deref_mut()).await?;
     }
 
-    let work_item_id = if args.skip_ado {
-        request_work_item_text(emit, input_receiver.as_deref_mut()).await?
+    let (work_item_id, selected_title) = if args.skip_ado {
+        (
+            request_work_item_text(emit, input_receiver.as_deref_mut()).await?,
+            None,
+        )
     } else if let Some(project) = args.project.clone() {
-        let report = dw_ado_commands::commands::assigned::report(
+        let report = dw_ado_commands::commands::assigned::report_with_events(
             dw_ado_commands::commands::assigned::AssignedArgs {
                 root: args.root.clone(),
                 project: Some(project),
@@ -764,13 +821,19 @@ async fn resolve_task_start_input(
                 all: false,
                 group_by_parent: false,
             },
+            &mut |event| emit(DwActionEvent::Ado(event)),
         )
         .await?;
         resolve_work_item_id_from_assigned_report(&report, emit, input_receiver.as_deref_mut())
             .await?
     } else {
-        request_work_item_text(emit, input_receiver).await?
+        (request_work_item_text(emit, input_receiver).await?, None)
     };
+    if args.slug.is_none()
+        && let Some(title) = selected_title
+    {
+        args.slug = Some(TaskSlug::from(title));
+    }
     args.work_item_ids = vec![work_item_id];
     Ok(args)
 }
@@ -878,25 +941,13 @@ async fn confirm_secret_delete(
     }
 }
 
-fn emit_diagnostic_log(
-    emit: &mut impl FnMut(DwActionEvent),
-    level: DiagnosticLogLevel,
-    target: ActionId,
-    detail: impl Into<String>,
-) {
-    emit(DwActionEvent::Log(DiagnosticLogEvent {
-        level,
-        target,
-        detail: detail.into(),
-    }));
-}
 async fn resolve_work_item_id_from_assigned_report(
     report: &dw_ado_commands::commands::assigned::AssignedReport,
     emit: &mut impl FnMut(DwActionEvent),
     mut input_receiver: Option<&mut UnboundedReceiver<InputResponse>>,
-) -> Result<WorkItemId> {
+) -> Result<(WorkItemId, Option<String>)> {
     if report.items.is_empty() {
-        return request_work_item_text(emit, input_receiver).await;
+        return Ok((request_work_item_text(emit, input_receiver).await?, None));
     }
 
     let spec = dw_ado_commands::commands::assigned::assigned_work_item_prompt_spec(&report.items);
@@ -910,9 +961,14 @@ async fn resolve_work_item_id_from_assigned_report(
         anyhow::bail!("input response kind mismatch for `{}`", spec.id);
     };
     if value.as_str() == dw_ado_commands::commands::assigned::MANUAL_WORK_ITEM_PROMPT_VALUE {
-        request_work_item_text(emit, input_receiver).await
+        Ok((request_work_item_text(emit, input_receiver).await?, None))
     } else {
-        Ok(WorkItemId::from(value.as_str()))
+        let title = report
+            .items
+            .iter()
+            .find(|item| item.id.as_str().eq_ignore_ascii_case(value.as_str()))
+            .and_then(|item| item.title.clone());
+        Ok((WorkItemId::from(value.as_str()), title))
     }
 }
 
@@ -955,6 +1011,19 @@ async fn request_input(
     })?;
     validate_input_response(&request, &response)?;
     Ok(response)
+}
+
+fn emit_diagnostic_log(
+    emit: &mut impl FnMut(DwActionEvent),
+    level: DiagnosticLogLevel,
+    target: ActionId,
+    detail: impl Into<String>,
+) {
+    emit(DwActionEvent::Log(DiagnosticLogEvent {
+        level,
+        target,
+        detail: detail.into(),
+    }));
 }
 
 fn input_request_from_prompt_spec(spec: &PromptSpec) -> InputRequest {
@@ -1078,6 +1147,43 @@ mod tests {
                 request: InputRequest::Text { id, .. }
             } if id.as_str() == "work-item-id"
         )));
+    }
+
+    #[tokio::test]
+    async fn assigned_selection_returns_title_for_generated_slug() {
+        let report = dw_ado_commands::commands::assigned::AssignedReport {
+            root: DevWorkflowRoot::from("/tmp/dw"),
+            project: ProjectKey::from("ha"),
+            top: 50,
+            include_final_states: false,
+            group_by_parent: false,
+            items: vec![dw_ado::WorkItemSnapshot {
+                id: WorkItemId::from("55311"),
+                kind: Some("User Story".into()),
+                state: Some("Active".into()),
+                title: Some("[Arbre Hommage] - gestion du retour succès du dossier à DNC".into()),
+                url: None,
+            }],
+            groups: Vec::new(),
+            events: Vec::new(),
+        };
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+        sender
+            .send(InputResponse::SelectOne {
+                value: PromptChoiceValue::from("55311"),
+            })
+            .expect("response channel should be open");
+
+        let (id, title) =
+            resolve_work_item_id_from_assigned_report(&report, &mut |_| {}, Some(&mut receiver))
+                .await
+                .expect("selection should resolve");
+
+        assert_eq!(id, WorkItemId::from("55311"));
+        assert_eq!(
+            title.as_deref(),
+            Some("[Arbre Hommage] - gestion du retour succès du dossier à DNC")
+        );
     }
 
     #[tokio::test]

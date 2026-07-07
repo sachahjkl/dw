@@ -493,7 +493,38 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                     if json {
                         print_json(&report)?;
                     } else {
-                        print_lines(&dw_cli_adapter::render::task_start_plan_lines(&report));
+                        let create_options =
+                            dw_cli_adapter::render::TaskStartCreateCommandOptions {
+                                skip_ado,
+                                with_active_children,
+                                create_child_tasks,
+                            };
+                        let create_command = dw_cli_adapter::render::task_start_create_command(
+                            &report,
+                            create_options,
+                        );
+                        let mut lines = dw_cli_adapter::render::task_start_plan_lines(&report);
+                        lines.push(format!("Create command: {create_command}"));
+                        print_lines(&lines);
+                        if std::io::stdin().is_terminal()
+                            && Confirm::new("Create this workspace now?")
+                                .with_default(false)
+                                .prompt()?
+                        {
+                            let execution_args =
+                                task_start_execute_args_from_plan(&report, create_options);
+                            let result = execute_task_cli_action(
+                                dw_app::DwActionRequest::TaskStart(execution_args),
+                            )
+                            .await?;
+                            let dw_app::TaskActionResult::StartExecution(execution) = *result
+                            else {
+                                anyhow::bail!("Unexpected task start execute result: {result:?}");
+                            };
+                            print_lines(&dw_cli_adapter::render::task_start_execution_lines(
+                                &execution,
+                            ));
+                        }
                     }
                 }
                 result => anyhow::bail!("Unexpected task start result: {result:?}"),
@@ -1238,6 +1269,26 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn task_start_execute_args_from_plan(
+    report: &dw_task::start::StartPlanReport,
+    options: dw_cli_adapter::render::TaskStartCreateCommandOptions,
+) -> dw_task::start::StartArgs {
+    let plan = &report.plan;
+    dw_task::start::StartArgs {
+        work_item_ids: plan.work_item_ids.clone(),
+        root: Some(report.root.clone()),
+        project: Some(plan.project.clone()),
+        task: plan.task_id.clone(),
+        type_name: Some(plan.kind.clone()),
+        repositories: plan.repositories.clone(),
+        slug: Some(plan.slug.clone()),
+        skip_ado: options.skip_ado,
+        with_active_children: options.with_active_children,
+        create_child_tasks: options.create_child_tasks,
+        mode: ExecutionMode::Execute,
+    }
 }
 
 async fn execute_task_cli_action(
@@ -2378,5 +2429,47 @@ mod prompt_tests {
             add_work_item_choices_loading_line(),
             "Loading ADO work items to add..."
         );
+    }
+
+    #[test]
+    fn task_start_execute_args_preserve_resolved_interactive_plan() {
+        let report = dw_task::start::StartPlanReport {
+            root: DevWorkflowRoot::from("/tmp/dw"),
+            plan: dw_workspace::TaskStartPlan {
+                work_item_ids: vec![WorkItemId::from("55311")],
+                primary_work_item_id: WorkItemId::from("55311"),
+                project: ProjectKey::from("ha"),
+                task_id: None,
+                kind: WorkItemTypeName::from("feat"),
+                slug: TaskSlug::from("gestion-retour-succes"),
+                branch_name: dw_core::BranchName::from("feat/55311-gestion-retour-succes"),
+                subject_name: dw_core::TaskSubjectName::from("feat-55311-gestion-retour-succes"),
+                workspace: WorkspacePath::from("/tmp/dw/workspace"),
+                repositories: vec![
+                    WorkspaceRepositoryName::from("front"),
+                    WorkspaceRepositoryName::from("back"),
+                ],
+                repository_folders: Default::default(),
+                repository_worktrees: Vec::new(),
+            },
+            work_items: Vec::new(),
+            child_tasks: Vec::new(),
+        };
+
+        let args = task_start_execute_args_from_plan(
+            &report,
+            dw_cli_adapter::render::TaskStartCreateCommandOptions {
+                skip_ado: false,
+                with_active_children: true,
+                create_child_tasks: false,
+            },
+        );
+
+        assert_eq!(args.work_item_ids, vec![WorkItemId::from("55311")]);
+        assert_eq!(args.project, Some(ProjectKey::from("ha")));
+        assert_eq!(args.repositories, report.plan.repositories);
+        assert_eq!(args.slug, Some(TaskSlug::from("gestion-retour-succes")));
+        assert_eq!(args.mode, ExecutionMode::Execute);
+        assert!(args.with_active_children);
     }
 }

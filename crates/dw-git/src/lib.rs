@@ -333,7 +333,13 @@ pub fn normalize_slug(value: &str) -> String {
         }
     }
 
-    output.trim_matches('-').to_string()
+    output
+        .trim_matches('-')
+        .chars()
+        .take(50)
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
 
 pub fn slug_from_phrase_or_fallback(value: Option<&str>, fallback: &str) -> TaskSlug {
@@ -1030,6 +1036,16 @@ mod tests {
         assert_eq!(
             normalize_slug("ceci est un Test hehe"),
             "ceci-est-un-test-hehe"
+        );
+    }
+
+    #[test]
+    fn normalize_slug_caps_length_after_cleanup() {
+        assert_eq!(
+            normalize_slug(
+                "[Arbre Hommage] - gestion du retour succès du dossier à DNC et beaucoup trop long"
+            ),
+            "arbre-hommage-gestion-du-retour-succes-du-dossier"
         );
     }
 

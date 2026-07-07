@@ -18,6 +18,39 @@ pub fn diagnostic_log_event_line(event: &dw_core::DiagnosticLogEvent) -> String 
 pub fn task_action_event_line(event: &dw_core::TaskActionEvent) -> String {
     let action_id = event.action_id();
     match event {
+        dw_core::TaskActionEvent::ExecutingStart {
+            workspace,
+            repository_count,
+        } => format!("{action_id} workspace={workspace} repositories={repository_count}"),
+        dw_core::TaskActionEvent::SyncLoadingWorkItems
+        | dw_core::TaskActionEvent::SyncWritingManifest => action_id.to_string(),
+        dw_core::TaskActionEvent::ExecutingRepoLatest { repository_count } => {
+            format!("{action_id} repositories={repository_count}")
+        }
+        dw_core::TaskActionEvent::ExecutingAddRepo { repository } => {
+            format!("{action_id} repository={repository}")
+        }
+        dw_core::TaskActionEvent::PlanningStart {
+            project,
+            work_item_ids,
+        } => format!(
+            "{action_id} project={project} workitems={}",
+            join_display(work_item_ids)
+        ),
+        dw_core::TaskActionEvent::LoadingStartWorkItems {
+            project,
+            work_item_ids,
+        } => format!(
+            "{action_id} project={project} workitems={}",
+            join_display(work_item_ids)
+        ),
+        dw_core::TaskActionEvent::BuildingStartPlan {
+            project,
+            repositories,
+        } => format!(
+            "{action_id} project={project} repositories={}",
+            join_display(repositories)
+        ),
         dw_core::TaskActionEvent::ResolvingPullRequestWorkItems { pull_request_id } => {
             format!("{action_id} pull_request=#{pull_request_id}")
         }

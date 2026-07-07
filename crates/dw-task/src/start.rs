@@ -100,7 +100,7 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
     let project = args.project.as_ref();
     let ado_context = if args.skip_ado {
         None
-    } else if args.with_active_children || args.mode.executes() {
+    } else if args.with_active_children || args.mode.executes() || args.slug.is_none() {
         let project_key = project.map(|project| project.as_str()).unwrap_or("default");
         let mut ado_options = resolve_ado_options(&projects, &workflow, project_key)?;
         if ado_options.project.trim().is_empty() {
@@ -137,15 +137,21 @@ pub async fn start_plan(args: StartArgs) -> Result<StartPlanReport> {
     } else {
         args.work_item_ids.clone()
     };
+    let explicit_slug = args.slug.as_ref().map(TaskSlug::as_str);
+    let generated_slug_source = ado_work_items
+        .first()
+        .and_then(|item| item.title.as_ref())
+        .map(|title| title.as_str())
+        .filter(|title| !title.trim().is_empty());
     let plan = plan_task_start(TaskStartRequest {
         root: root.as_str(),
         projects: &projects,
         work_item_ids: &planned_work_item_ids,
-        project,
+        project: args.project.as_ref(),
         task_id: args.task.as_ref().map(TaskId::as_str),
         type_name: args.type_name.as_ref().map(WorkItemTypeName::as_str),
         repositories: &args.repositories,
-        slug: args.slug.as_ref().map(TaskSlug::as_str),
+        slug: explicit_slug.or(generated_slug_source),
     })?;
 
     Ok(StartPlanReport {
