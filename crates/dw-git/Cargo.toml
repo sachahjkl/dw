@@ -13,3 +13,7 @@ dw-core = { path = "../dw-core" }
 git2.workspace = true
 serde.workspace = true
 thiserror.workspace = true
+
+
+[target.'cfg(windows)'.dependencies]
+git2 = { workspace = true, features = ["vendored-libgit2", "vendored-openssl"] }

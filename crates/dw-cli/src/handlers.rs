@@ -40,6 +40,10 @@ impl OutputVerbosity {
             DiagnosticLogLevel::Debug => self.level >= 2,
         }
     }
+
+    fn shows_event_lines(self) -> bool {
+        self.level > 0
+    }
 }
 
 pub(crate) async fn run(cli: Cli) -> Result<()> {
@@ -122,16 +126,25 @@ async fn execute_cli_action_with_event_output(
     let input = action.input.clone();
     let result = action.result;
     let mut events = action.events;
+    let verbosity = OutputVerbosity::current();
     let mut progress = CliProgressUi::lazy(print_events && std::io::stderr().is_terminal());
     let mut seen_event_lines = Vec::new();
 
     while let Some(event) = events.recv().await {
-        if print_events && let Some(line) = cli_action_event_line(&event) {
-            if progress.is_interactive() {
-                progress.set_message(line.clone());
-                seen_event_lines.push(line);
-            } else {
-                print_lines(&[line]);
+        if print_events {
+            if progress.is_interactive()
+                && let Some(message) = cli_action_progress_message(&event)
+            {
+                progress.set_message(message);
+            }
+            if verbosity.shows_event_lines()
+                && let Some(line) = cli_action_event_line(&event)
+            {
+                if progress.is_interactive() {
+                    seen_event_lines.push(line);
+                } else {
+                    print_lines(&[line]);
+                }
             }
         }
         if let DwActionEvent::NeedsInput { request } = &event {
@@ -141,7 +154,9 @@ async fn execute_cli_action_with_event_output(
     }
     if progress.is_enabled() {
         progress.finish_and_clear();
-        print_lines(&seen_event_lines);
+        if verbosity.shows_event_lines() {
+            print_lines(&seen_event_lines);
+        }
     }
     result.await?
 }
@@ -159,6 +174,200 @@ fn cli_action_event_line(event: &DwActionEvent) -> Option<String> {
             Some(dw_cli_adapter::render::diagnostic_log_event_line(event))
         }
         _ => None,
+    }
+}
+
+fn cli_action_progress_message(event: &DwActionEvent) -> Option<String> {
+    match event {
+        DwActionEvent::Ado(event) => Some(ado_progress_message(event)),
+        DwActionEvent::Task(event) => Some(task_progress_message(event)),
+        DwActionEvent::Db(event) => Some(db_progress_message(event)),
+        DwActionEvent::Upgrade(event)
+            if !dw_cli_adapter::render::upgrade_event_is_transient(event) =>
+        {
+            Some(upgrade_progress_message(event))
+        }
+        DwActionEvent::NeedsInput { request } => {
+            Some(format!("Waiting for input: {}", request.id()))
+        }
+        _ => None,
+    }
+}
+
+fn ado_progress_message(event: &dw_core::AdoActionEvent) -> String {
+    match event {
+        dw_core::AdoActionEvent::Authenticating { project } => project
+            .as_ref()
+            .map(|project| format!("Connecting to Azure DevOps for {project}..."))
+            .unwrap_or_else(|| "Connecting to Azure DevOps...".into()),
+        dw_core::AdoActionEvent::DeviceLoginRequired { .. } => {
+            "Waiting for Azure DevOps browser authentication...".into()
+        }
+        dw_core::AdoActionEvent::LoadingAssignedWorkItems { project, top } => {
+            format!("Loading assigned work items for {project} (top {top})...")
+        }
+        dw_core::AdoActionEvent::GroupingAssignedWorkItems { project } => {
+            format!("Grouping assigned work items for {project}...")
+        }
+        dw_core::AdoActionEvent::LoadingPullRequests { project } => {
+            format!("Loading active pull requests for {project}...")
+        }
+        dw_core::AdoActionEvent::ResolvingPullRequestWorkItems { repositories } => {
+            format!(
+                "Resolving PR work items across {} repositories...",
+                repositories.len()
+            )
+        }
+        dw_core::AdoActionEvent::ExtractingGitWorkItems { git_to } => {
+            format!("Extracting work items from git range ending at {git_to}...")
+        }
+        dw_core::AdoActionEvent::LoadingWorkItem { id }
+        | dw_core::AdoActionEvent::LoadingWorkItemContext { id } => {
+            format!("Loading work item #{id}...")
+        }
+        dw_core::AdoActionEvent::LoadingWorkItems { ids }
+        | dw_core::AdoActionEvent::LoadingChangelog { ids }
+        | dw_core::AdoActionEvent::LoadingChangelogItems { ids } => {
+            format!("Loading {} work items...", ids.len())
+        }
+        dw_core::AdoActionEvent::UpdatingWorkItemState { ids, state } => {
+            format!("Updating {} work items to {state}...", ids.len())
+        }
+        dw_core::AdoActionEvent::UpdatedWorkItemState { id, state } => {
+            format!("Updated work item #{id} to {state}.")
+        }
+    }
+}
+
+fn task_progress_message(event: &dw_core::TaskActionEvent) -> String {
+    match event {
+        dw_core::TaskActionEvent::ExecutingStart {
+            workspace,
+            repository_count,
+        } => format!("Creating workspace {workspace} across {repository_count} repositories..."),
+        dw_core::TaskActionEvent::SyncLoadingWorkItems => {
+            "Loading workspace work items from Azure DevOps...".into()
+        }
+        dw_core::TaskActionEvent::SyncWritingManifest => "Writing workspace manifest...".into(),
+        dw_core::TaskActionEvent::ExecutingRepoLatest { repository_count } => {
+            format!("Updating {repository_count} repositories to latest target branches...")
+        }
+        dw_core::TaskActionEvent::ExecutingAddRepo { repository } => {
+            format!("Adding repository {repository} to the workspace...")
+        }
+        dw_core::TaskActionEvent::PlanningStart {
+            project,
+            work_item_ids,
+        } => format!(
+            "Planning task workspace for {project} / {} work items...",
+            work_item_ids.len()
+        ),
+        dw_core::TaskActionEvent::LoadingStartWorkItems {
+            project,
+            work_item_ids,
+        } => format!(
+            "Loading task start work items for {project} / {} IDs...",
+            work_item_ids.len()
+        ),
+        dw_core::TaskActionEvent::BuildingStartPlan {
+            project,
+            repositories,
+        } => format!(
+            "Building workspace plan for {project} across {} repositories...",
+            repositories.len()
+        ),
+        dw_core::TaskActionEvent::ResolvingPullRequestWorkItems { pull_request_id } => {
+            format!("Resolving work items for PR #{pull_request_id}...")
+        }
+        dw_core::TaskActionEvent::ResolvedPullRequestWorkItems { work_item_ids } => {
+            format!(
+                "Resolved {} work items from pull request.",
+                work_item_ids.len()
+            )
+        }
+        dw_core::TaskActionEvent::VerifyingFinish {
+            pull_request_candidate_count,
+        } => format!("Verifying finish plan for {pull_request_candidate_count} PR candidates..."),
+        dw_core::TaskActionEvent::FinishVerificationCompleted => {
+            "Finish verification completed.".into()
+        }
+        dw_core::TaskActionEvent::RunningGitOperation {
+            operation,
+            repository_count,
+        } => format!("Running {operation:?} across {repository_count} repositories..."),
+        dw_core::TaskActionEvent::RunningRepositoryGitOperation {
+            repository,
+            operation,
+        } => format!("Running {operation:?} in {repository}..."),
+        dw_core::TaskActionEvent::GitOperationCompleted { operation } => {
+            format!("{operation:?} completed.")
+        }
+        dw_core::TaskActionEvent::SkippingPullRequestCreation => {
+            "Skipping pull request creation.".into()
+        }
+        dw_core::TaskActionEvent::AuthenticatingAdoForPullRequests {
+            pull_request_candidate_count,
+        } => format!("Authenticating before creating {pull_request_candidate_count} PRs..."),
+        dw_core::TaskActionEvent::CheckingActivePullRequest { repository } => {
+            format!("Checking active pull request for {repository}...")
+        }
+        dw_core::TaskActionEvent::CreatingPullRequest { repository } => {
+            format!("Creating pull request for {repository}...")
+        }
+        dw_core::TaskActionEvent::PullRequestWorkItemLinkSkipped { work_item_id, .. } => {
+            format!("Skipped linking work item #{work_item_id}.")
+        }
+        dw_core::TaskActionEvent::UpdatingFinishWorkItemStates { work_item_ids } => {
+            format!(
+                "Updating {} finish work item states...",
+                work_item_ids.len()
+            )
+        }
+    }
+}
+
+fn db_progress_message(event: &dw_core::DbActionEvent) -> String {
+    match event {
+        dw_core::DbActionEvent::GuardingQuery => "Checking SQL safety...".into(),
+        dw_core::DbActionEvent::ResolvingConnection { database } => database
+            .as_ref()
+            .map(|database| format!("Resolving database connection for {database}..."))
+            .unwrap_or_else(|| "Resolving database connection...".into()),
+        dw_core::DbActionEvent::ExecutingReadOnlyQuery { max_rows } => max_rows
+            .map(|max_rows| format!("Executing read-only SQL query (max {max_rows} rows)..."))
+            .unwrap_or_else(|| "Executing read-only SQL query...".into()),
+    }
+}
+
+fn upgrade_progress_message(event: &dw_core::UpgradeActionEvent) -> String {
+    match event {
+        dw_core::UpgradeActionEvent::CheckingHost => "Checking current installation...".into(),
+        dw_core::UpgradeActionEvent::ResolvingConfig => "Reading upgrade configuration...".into(),
+        dw_core::UpgradeActionEvent::FetchingRelease { owner, repository } => {
+            format!("Looking up latest {owner}/{repository} release...")
+        }
+        dw_core::UpgradeActionEvent::FetchingManifest { asset_name } => {
+            format!("Downloading manifest {asset_name}...")
+        }
+        dw_core::UpgradeActionEvent::SelectingAsset { rid } => {
+            format!("Selecting asset for {rid}...")
+        }
+        dw_core::UpgradeActionEvent::DownloadingAsset { file_name } => {
+            format!("Downloading {file_name}...")
+        }
+        dw_core::UpgradeActionEvent::DownloadedAssetBytes { .. } => "Downloading asset...".into(),
+        dw_core::UpgradeActionEvent::VerifyingChecksum { file_name, .. } => {
+            format!("Verifying checksum for {file_name}...")
+        }
+        dw_core::UpgradeActionEvent::PreparingExecutable { file_name, rid } => {
+            format!("Preparing {file_name} for {rid}...")
+        }
+        dw_core::UpgradeActionEvent::ReplacingExecutable { executable_path } => {
+            format!("Replacing {executable_path}...")
+        }
+        dw_core::UpgradeActionEvent::Completed { version } => {
+            format!("Upgrade completed: {version}")
+        }
     }
 }
 
@@ -2233,6 +2442,7 @@ async fn execute_db_cli_action(request: dw_app::DwActionRequest) -> Result<dw_ap
     let interactive = std::io::stderr().is_terminal();
     let theme = TerminalTheme::stdout_auto();
     let mut progress = CliProgressUi::spinner(interactive, "DB: preparing");
+    let verbosity = OutputVerbosity::current();
     let mut seen_events = Vec::new();
 
     while !result.is_finished() {
@@ -2247,7 +2457,7 @@ async fn execute_db_cli_action(request: dw_app::DwActionRequest) -> Result<dw_ap
             };
             if interactive {
                 progress.set_message(dw_cli_adapter::render::db_action_event_line(&event));
-            } else {
+            } else if verbosity.shows_event_lines() {
                 write_db_event_line(&event, &theme)?;
             }
             seen_events.push(event);
@@ -2269,15 +2479,17 @@ async fn execute_db_cli_action(request: dw_app::DwActionRequest) -> Result<dw_ap
         };
         if interactive {
             progress.set_message(dw_cli_adapter::render::db_action_event_line(&event));
-        } else {
+        } else if verbosity.shows_event_lines() {
             write_db_event_line(&event, &theme)?;
         }
         seen_events.push(event);
     }
     if interactive {
         progress.finish_and_clear();
-        for event in seen_events {
-            write_db_event_line(&event, &theme)?;
+        if verbosity.shows_event_lines() {
+            for event in seen_events {
+                write_db_event_line(&event, &theme)?;
+            }
         }
     }
 
@@ -2527,6 +2739,32 @@ mod prompt_tests {
             add_work_item_choices_loading_line(),
             "Loading ADO work items to add..."
         );
+    }
+
+    #[test]
+    fn action_event_lines_are_verbose_only() {
+        assert!(!OutputVerbosity { level: 0 }.shows_event_lines());
+        assert!(OutputVerbosity { level: 1 }.shows_event_lines());
+    }
+
+    #[test]
+    fn progress_messages_are_human_readable_not_action_ids() {
+        let message = cli_action_progress_message(&DwActionEvent::Task(
+            dw_core::TaskActionEvent::BuildingStartPlan {
+                project: ProjectKey::from("ha"),
+                repositories: vec![
+                    WorkspaceRepositoryName::from("front"),
+                    WorkspaceRepositoryName::from("back"),
+                ],
+            },
+        ))
+        .expect("task event should have a progress message");
+
+        assert_eq!(
+            message,
+            "Building workspace plan for ha across 2 repositories..."
+        );
+        assert!(!message.contains("task.start.plan.build"));
     }
 
     #[test]

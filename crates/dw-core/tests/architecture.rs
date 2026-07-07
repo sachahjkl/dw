@@ -2322,29 +2322,28 @@ fn tui_actions_reuse_central_dw_action_request() {
 #[test]
 fn action_event_rendering_uses_central_action_ids() {
     let repo = repo_root();
-    for relative in [
-        "crates/dw-cli-adapter/src/render.rs",
-        "crates/dw-tui-adapter/src/render.rs",
-    ] {
-        let path = repo.join(relative);
-        let text = fs::read_to_string(&path).expect("read source file");
-        for forbidden in [
-            "Task [",
-            "ADO [",
-            "Config [",
-            "Agent [",
-            "DB [",
-            "Secret [",
-            "Upgrade [",
-        ] {
-            assert!(
-                !text.contains(forbidden),
-                "{} hardcodes bracket event id `{}` instead of using core action_id()",
-                path.display(),
-                forbidden
-            );
+    for relative in ["crates/dw-cli-adapter/src", "crates/dw-tui-adapter/src"] {
+        let adapter_dir = repo.join(relative);
+        for path in rust_files(&adapter_dir) {
+            let text = fs::read_to_string(&path).expect("read source file");
+            for forbidden in [
+                "Task [",
+                "ADO [",
+                "Config [",
+                "Agent [",
+                "DB [",
+                "Secret [",
+                "Upgrade [",
+            ] {
+                assert!(
+                    !text.contains(forbidden),
+                    "{} hardcodes bracket event id `{}` instead of using core action_id()",
+                    path.display(),
+                    forbidden
+                );
+            }
+            assert_no_action_id_literals(&path, &text);
         }
-        assert_no_action_id_literals(&path, &text);
     }
     let ui = fs::read_to_string(repo.join("crates/dw-ui/src/lib.rs")).expect("read dw-ui");
     assert!(ui.contains("event.action_id()"));
