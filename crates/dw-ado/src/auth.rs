@@ -13,6 +13,9 @@ pub const DEFAULT_ADO_SCOPE: &str = "499b84ac-1321-427f-aa17-267ca6975798/.defau
 
 const KEYRING_SERVICE: &str = "dw.azure-devops";
 const KEYRING_USER: &str = "oauth-refresh-token";
+const KEYRING_CHUNK_PREFIX: &str = "oauth-refresh-token.";
+const KEYRING_SPLIT_PREFIX: &str = "dw-split:v1:";
+const KEYRING_REFRESH_TOKEN_CHUNK_BYTES: usize = 1800;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdoAuthOptions {
@@ -255,7 +258,7 @@ pub async fn status(auth: Option<AdoAuthOptions>) -> Result<AdoAuthStatus, AdoAu
 }
 
 pub fn logout() -> Result<bool, AdoAuthError> {
-    delete_keyring_credential(KEYRING_USER)
+    delete_stored_refresh_token()
 }
 
 async fn refresh_access_token(
@@ -341,13 +344,87 @@ fn oauth_error_message(body: &str) -> String {
 }
 
 fn store_refresh_token(refresh_token: &str) -> Result<(), AdoAuthError> {
+    let chunks = split_refresh_token(refresh_token);
+    delete_stored_refresh_token()?;
+    for (index, chunk) in chunks.iter().enumerate() {
+        keyring_entry_for(&chunk_key(index))?
+            .set_password(chunk)
+            .map_err(|error| AdoAuthError::Keyring(error.to_string()))?;
+    }
     keyring_entry()?
-        .set_password(refresh_token)
+        .set_password(&format!("{KEYRING_SPLIT_PREFIX}{}", chunks.len()))
         .map_err(|error| AdoAuthError::Keyring(error.to_string()))
 }
 
 fn read_refresh_token() -> Result<Option<String>, AdoAuthError> {
-    read_keyring_password(KEYRING_USER)
+    let Some(value) = read_keyring_password(KEYRING_USER)? else {
+        return Ok(None);
+    };
+    if let Some(count) = split_refresh_token_count(&value)? {
+        return read_split_refresh_token(count);
+    }
+    Ok(Some(value))
+}
+
+fn split_refresh_token(refresh_token: &str) -> Vec<String> {
+    if refresh_token.is_empty() {
+        return vec![String::new()];
+    }
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    for (index, _) in refresh_token.char_indices() {
+        if index - start >= KEYRING_REFRESH_TOKEN_CHUNK_BYTES {
+            chunks.push(refresh_token[start..index].to_string());
+            start = index;
+        }
+    }
+    chunks.push(refresh_token[start..].to_string());
+    chunks
+}
+
+fn split_refresh_token_count(value: &str) -> Result<Option<usize>, AdoAuthError> {
+    let Some(count) = value.strip_prefix(KEYRING_SPLIT_PREFIX) else {
+        return Ok(None);
+    };
+    count.parse::<usize>().map(Some).map_err(|error| {
+        AdoAuthError::Keyring(format!("invalid split refresh token marker: {error}"))
+    })
+}
+
+fn read_split_refresh_token(count: usize) -> Result<Option<String>, AdoAuthError> {
+    if count == 0 {
+        return Ok(None);
+    }
+    let mut token = String::new();
+    for index in 0..count {
+        let Some(chunk) = read_keyring_password(&chunk_key(index))? else {
+            return Ok(None);
+        };
+        token.push_str(&chunk);
+    }
+    Ok(Some(token))
+}
+
+fn delete_stored_refresh_token() -> Result<bool, AdoAuthError> {
+    let marker = read_keyring_password(KEYRING_USER)?;
+    let mut deleted = delete_keyring_credential(KEYRING_USER)?;
+    if let Some(value) = marker
+        && let Some(count) = split_refresh_token_count(&value)?
+    {
+        for index in 0..count {
+            deleted |= delete_keyring_credential(&chunk_key(index))?;
+        }
+    }
+    Ok(deleted)
+}
+
+fn chunk_key(index: usize) -> String {
+    format!("{KEYRING_CHUNK_PREFIX}{index}")
+}
+
+#[cfg(test)]
+fn join_refresh_token_chunks(chunks: &[String]) -> String {
+    chunks.concat()
 }
 
 fn read_keyring_password(user: &str) -> Result<Option<String>, AdoAuthError> {
@@ -412,5 +489,39 @@ mod tests {
             "AADSTS70016: Authorization is pending"
         ));
         assert!(!is_pending_device_auth("authorization_declined"));
+    }
+
+    #[test]
+    fn refresh_token_storage_chunks_long_values_below_windows_limit() {
+        let token = "a".repeat(KEYRING_REFRESH_TOKEN_CHUNK_BYTES * 2 + 17);
+        let chunks = split_refresh_token(&token);
+
+        assert_eq!(chunks.len(), 3);
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk.len() <= KEYRING_REFRESH_TOKEN_CHUNK_BYTES)
+        );
+        assert_eq!(join_refresh_token_chunks(&chunks), token);
+    }
+
+    #[test]
+    fn refresh_token_storage_chunks_on_char_boundaries() {
+        let token = "é".repeat(KEYRING_REFRESH_TOKEN_CHUNK_BYTES);
+        let chunks = split_refresh_token(&token);
+
+        assert_eq!(join_refresh_token_chunks(&chunks), token);
+    }
+
+    #[test]
+    fn split_refresh_token_marker_parses_chunk_count() {
+        assert_eq!(
+            split_refresh_token_count("dw-split:v1:3").expect("marker should parse"),
+            Some(3)
+        );
+        assert_eq!(
+            split_refresh_token_count("plain-refresh-token").expect("plain token should pass"),
+            None
+        );
     }
 }
