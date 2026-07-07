@@ -720,134 +720,17 @@ pub fn action_event_line(event: &DwActionEvent) -> String {
 }
 
 fn task_action_event_line(event: &TaskActionEvent) -> String {
-    match event {
-        TaskActionEvent::ResolvingPullRequestWorkItems { pull_request_id } => {
-            format!("Task [resolve-pr-work-items] PR #{pull_request_id}")
-        }
-        TaskActionEvent::ResolvedPullRequestWorkItems { work_item_ids } => {
-            let ids = if work_item_ids.is_empty() {
-                "none".into()
-            } else {
-                work_item_ids
-                    .iter()
-                    .map(|id| format!("#{id}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            };
-            format!("Task [resolved-work-items] {ids}")
-        }
-        TaskActionEvent::VerifyingFinish {
-            pull_request_candidate_count,
-        } => format!("Task [finish-verify] candidates={pull_request_candidate_count}"),
-        TaskActionEvent::FinishVerificationCompleted => "Task [finish-verify-completed]".into(),
-        TaskActionEvent::RunningGitOperation {
-            operation,
-            repository_count,
-        } => format!(
-            "Task [finish-git] operation={} repositories={repository_count}",
-            git_operation_key(*operation)
-        ),
-        TaskActionEvent::RunningRepositoryGitOperation {
-            repository,
-            operation,
-        } => format!(
-            "Task [finish-git-repository] repository={repository} operation={}",
-            git_operation_key(*operation)
-        ),
-        TaskActionEvent::GitOperationCompleted { operation } => {
-            format!(
-                "Task [finish-git-completed] operation={}",
-                git_operation_key(*operation)
-            )
-        }
-        TaskActionEvent::SkippingPullRequestCreation => "Task [finish-skip-pr]".into(),
-        TaskActionEvent::AuthenticatingAdoForPullRequests {
-            pull_request_candidate_count,
-        } => format!("Task [finish-ado-auth] candidates={pull_request_candidate_count}"),
-        TaskActionEvent::CheckingActivePullRequest { repository } => {
-            format!("Task [finish-check-pr] repository={repository}")
-        }
-        TaskActionEvent::CreatingPullRequest { repository } => {
-            format!("Task [finish-create-pr] repository={repository}")
-        }
-        TaskActionEvent::PullRequestWorkItemLinkSkipped {
-            work_item_id,
-            error,
-        } => format!("Task [finish-link-skipped] work_item=#{work_item_id} error={error}"),
-        TaskActionEvent::UpdatingFinishWorkItemStates { work_item_ids } => {
-            format!(
-                "Task [finish-update-work-items] {}",
-                join_display(work_item_ids)
-            )
-        }
-    }
+    dw_ui::task_action_event_line(event)
+}
+
+fn ado_action_event_line(event: &AdoActionEvent) -> String {
+    dw_ui::ado_action_event_line(event)
 }
 
 fn git_operation_key(operation: GitOperation) -> &'static str {
     match operation {
         GitOperation::CommitAndPush => "commit-and-push",
         GitOperation::Push => "push",
-    }
-}
-
-fn ado_action_event_line(event: &AdoActionEvent) -> String {
-    match event {
-        AdoActionEvent::Authenticating { project } => format!(
-            "ADO [auth] {}",
-            project
-                .as_ref()
-                .map(|project| project.to_string())
-                .unwrap_or_else(|| "default project".into())
-        ),
-        AdoActionEvent::DeviceLoginRequired {
-            verification_uri,
-            user_code,
-            expires_in_seconds,
-            poll_interval_seconds,
-        } => format!(
-            "ADO [device-login] open {verification_uri}, enter {user_code}, expires={expires_in_seconds}s, polling={poll_interval_seconds}s"
-        ),
-        AdoActionEvent::LoadingAssignedWorkItems { project, top } => {
-            format!("ADO [assigned] project={project} top={top}")
-        }
-        AdoActionEvent::GroupingAssignedWorkItems { project } => {
-            format!("ADO [group-assigned] project={project}")
-        }
-        AdoActionEvent::LoadingPullRequests { project } => {
-            format!("ADO [pull-requests] project={project}")
-        }
-        AdoActionEvent::ResolvingPullRequestWorkItems { repositories } => {
-            format!(
-                "ADO [resolve-pr-work-items] repos={}",
-                repositories
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        }
-        AdoActionEvent::ExtractingGitWorkItems { git_to } => {
-            format!("ADO [extract-git-work-items] to={git_to}")
-        }
-        AdoActionEvent::LoadingWorkItem { id } => format!("ADO [work-item] #{id}"),
-        AdoActionEvent::LoadingWorkItems { ids } => {
-            format!("ADO [work-items] {}", join_display(ids))
-        }
-        AdoActionEvent::LoadingWorkItemContext { id } => {
-            format!("ADO [work-item-context] #{id}")
-        }
-        AdoActionEvent::LoadingChangelog { ids } => {
-            format!("ADO [changelog] {}", join_display(ids))
-        }
-        AdoActionEvent::LoadingChangelogItems { ids } => {
-            format!("ADO [changelog-items] {}", join_display(ids))
-        }
-        AdoActionEvent::UpdatingWorkItemState { ids, state } => {
-            format!("ADO [set-state] {} -> {state}", join_display(ids))
-        }
-        AdoActionEvent::UpdatedWorkItemState { id, state } => {
-            format!("ADO [state-updated] #{id} -> {state}")
-        }
     }
 }
 

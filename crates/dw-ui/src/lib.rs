@@ -15,6 +15,130 @@ pub fn diagnostic_log_event_line(event: &dw_core::DiagnosticLogEvent) -> String 
     )
 }
 
+pub fn task_action_event_line(event: &dw_core::TaskActionEvent) -> String {
+    let action_id = event.action_id();
+    match event {
+        dw_core::TaskActionEvent::ResolvingPullRequestWorkItems { pull_request_id } => {
+            format!("{action_id} pull_request=#{pull_request_id}")
+        }
+        dw_core::TaskActionEvent::ResolvedPullRequestWorkItems { work_item_ids } => {
+            format!("{action_id} workitems={}", join_display(work_item_ids))
+        }
+        dw_core::TaskActionEvent::VerifyingFinish {
+            pull_request_candidate_count,
+        } => format!("{action_id} candidates={pull_request_candidate_count}"),
+        dw_core::TaskActionEvent::FinishVerificationCompleted => action_id.to_string(),
+        dw_core::TaskActionEvent::RunningGitOperation {
+            operation,
+            repository_count,
+        } => format!(
+            "{action_id} operation={} repositories={repository_count}",
+            git_operation_key(*operation)
+        ),
+        dw_core::TaskActionEvent::RunningRepositoryGitOperation {
+            repository,
+            operation,
+        } => format!(
+            "{action_id} repository={repository} operation={}",
+            git_operation_key(*operation)
+        ),
+        dw_core::TaskActionEvent::GitOperationCompleted { operation } => {
+            format!("{action_id} operation={}", git_operation_key(*operation))
+        }
+        dw_core::TaskActionEvent::SkippingPullRequestCreation => action_id.to_string(),
+        dw_core::TaskActionEvent::AuthenticatingAdoForPullRequests {
+            pull_request_candidate_count,
+        } => format!("{action_id} candidates={pull_request_candidate_count}"),
+        dw_core::TaskActionEvent::CheckingActivePullRequest { repository }
+        | dw_core::TaskActionEvent::CreatingPullRequest { repository } => {
+            format!("{action_id} repository={repository}")
+        }
+        dw_core::TaskActionEvent::PullRequestWorkItemLinkSkipped {
+            work_item_id,
+            error,
+        } => format!("{action_id} workitem=#{work_item_id} error={error}"),
+        dw_core::TaskActionEvent::UpdatingFinishWorkItemStates { work_item_ids } => {
+            format!("{action_id} workitems={}", join_display(work_item_ids))
+        }
+    }
+}
+
+pub fn ado_action_event_line(event: &dw_core::AdoActionEvent) -> String {
+    let action_id = event.action_id();
+    match event {
+        dw_core::AdoActionEvent::Authenticating { project } => format!(
+            "{action_id} project={}",
+            project
+                .as_ref()
+                .map(|project| project.to_string())
+                .unwrap_or_else(|| "resolved".into())
+        ),
+        dw_core::AdoActionEvent::DeviceLoginRequired {
+            verification_uri,
+            user_code,
+            expires_in_seconds,
+            poll_interval_seconds,
+        } => format!(
+            "{action_id} uri={verification_uri} code={user_code} expires={expires_in_seconds}s polling={poll_interval_seconds}s"
+        ),
+        dw_core::AdoActionEvent::LoadingAssignedWorkItems { project, top } => {
+            format!("{action_id} project={project} top={top}")
+        }
+        dw_core::AdoActionEvent::GroupingAssignedWorkItems { project }
+        | dw_core::AdoActionEvent::LoadingPullRequests { project } => {
+            format!("{action_id} project={project}")
+        }
+        dw_core::AdoActionEvent::ResolvingPullRequestWorkItems { repositories } => {
+            format!("{action_id} repositories={}", join_display(repositories))
+        }
+        dw_core::AdoActionEvent::ExtractingGitWorkItems { git_to } => {
+            format!("{action_id} to={git_to}")
+        }
+        dw_core::AdoActionEvent::LoadingWorkItem { id }
+        | dw_core::AdoActionEvent::LoadingWorkItemContext { id } => {
+            format!("{action_id} workitem=#{id}")
+        }
+        dw_core::AdoActionEvent::LoadingWorkItems { ids }
+        | dw_core::AdoActionEvent::LoadingChangelog { ids }
+        | dw_core::AdoActionEvent::LoadingChangelogItems { ids } => {
+            format!("{action_id} workitems={}", join_display(ids))
+        }
+        dw_core::AdoActionEvent::UpdatingWorkItemState { ids, state } => {
+            format!("{action_id} workitems={} state={state}", join_display(ids))
+        }
+        dw_core::AdoActionEvent::UpdatedWorkItemState { id, state } => {
+            format!("{action_id} workitem=#{id} state={state}")
+        }
+    }
+}
+
+pub fn action_event_line(event: &dw_core::DwActionEvent) -> Option<String> {
+    match event {
+        dw_core::DwActionEvent::Ado(event) => Some(ado_action_event_line(event)),
+        dw_core::DwActionEvent::Task(event) => Some(task_action_event_line(event)),
+        dw_core::DwActionEvent::Log(event) => Some(diagnostic_log_event_line(event)),
+        _ => None,
+    }
+}
+
+fn git_operation_key(operation: dw_core::GitOperation) -> &'static str {
+    match operation {
+        dw_core::GitOperation::CommitAndPush => "commit-and-push",
+        dw_core::GitOperation::Push => "push",
+    }
+}
+
+fn join_display<T: std::fmt::Display>(items: &[T]) -> String {
+    if items.is_empty() {
+        return "none".into();
+    }
+    items
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 use std::io::IsTerminal;
 
 pub fn banner(title: &str) -> String {

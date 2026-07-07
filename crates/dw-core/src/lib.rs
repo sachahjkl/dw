@@ -164,7 +164,7 @@ pub const ACTION_CATALOG: &[ActionDescriptor] = &[
         refresh_after_success: false,
     },
     ActionDescriptor {
-        id: "ado.set-state",
+        id: "ado.state.set",
         domain: ActionDomain::Ado,
         label: "ADO set-state",
         description: "Change Azure DevOps work item state",
@@ -1549,6 +1549,26 @@ pub enum TaskActionEvent {
     },
 }
 
+impl TaskActionEvent {
+    pub fn action_id(&self) -> ActionId {
+        ActionId::from(match self {
+            Self::ResolvingPullRequestWorkItems { .. } => "task.pr.resolve.workitems",
+            Self::ResolvedPullRequestWorkItems { .. } => "task.pr.resolved.workitems",
+            Self::VerifyingFinish { .. } => "task.finish.verify",
+            Self::FinishVerificationCompleted => "task.finish.verify.completed",
+            Self::RunningGitOperation { .. } => "task.finish.git.run",
+            Self::RunningRepositoryGitOperation { .. } => "task.finish.git.repository.run",
+            Self::GitOperationCompleted { .. } => "task.finish.git.completed",
+            Self::SkippingPullRequestCreation => "task.finish.pr.skipped",
+            Self::AuthenticatingAdoForPullRequests { .. } => "task.finish.ado.auth",
+            Self::CheckingActivePullRequest { .. } => "task.finish.pr.check",
+            Self::CreatingPullRequest { .. } => "task.finish.pr.create",
+            Self::PullRequestWorkItemLinkSkipped { .. } => "task.finish.pr.link.skipped",
+            Self::UpdatingFinishWorkItemStates { .. } => "task.finish.workitems.update",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum AdoActionEvent {
@@ -1600,6 +1620,27 @@ pub enum AdoActionEvent {
         id: WorkItemId,
         state: WorkItemState,
     },
+}
+
+impl AdoActionEvent {
+    pub fn action_id(&self) -> ActionId {
+        ActionId::from(match self {
+            Self::Authenticating { .. } => "ado.auth",
+            Self::DeviceLoginRequired { .. } => "ado.auth.device.login",
+            Self::LoadingAssignedWorkItems { .. } => "ado.assigned.load",
+            Self::GroupingAssignedWorkItems { .. } => "ado.assigned.group",
+            Self::LoadingPullRequests { .. } => "ado.pr.load",
+            Self::ResolvingPullRequestWorkItems { .. } => "ado.pr.resolve.workitems",
+            Self::ExtractingGitWorkItems { .. } => "ado.git.extract.workitems",
+            Self::LoadingWorkItem { .. } => "ado.workitem.load",
+            Self::LoadingWorkItems { .. } => "ado.workitems.load",
+            Self::LoadingWorkItemContext { .. } => "ado.workitem.context.load",
+            Self::LoadingChangelog { .. } => "ado.changelog.load",
+            Self::LoadingChangelogItems { .. } => "ado.changelog.items.load",
+            Self::UpdatingWorkItemState { .. } => "ado.workitem.state.update",
+            Self::UpdatedWorkItemState { .. } => "ado.workitem.state.updated",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

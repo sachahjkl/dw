@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -55,14 +54,13 @@ impl CapturedActionRunError {
 
 pub fn install_terminal() -> Result<()> {
     enable_raw_mode().context("enable raw terminal mode")?;
-    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).context("open TUI screen")?;
+    execute!(io::stdout(), EnterAlternateScreen).context("open TUI screen")?;
     Ok(())
 }
 
 pub fn restore_terminal() -> Result<()> {
     disable_raw_mode().ok();
-    execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)
-        .context("restore terminal")?;
+    execute!(io::stdout(), LeaveAlternateScreen).context("restore terminal")?;
     Ok(())
 }
 

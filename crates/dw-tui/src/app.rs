@@ -3449,7 +3449,7 @@ mod tests {
         assert_eq!(
             crate::ui_text::history_entry_preview_lines(entry),
             [
-                "Task [resolve-pr-work-items] PR #42",
+                "task.pr.resolve.workitems pull_request=#42",
                 "Dev Workflow 2026.07.04"
             ]
         );

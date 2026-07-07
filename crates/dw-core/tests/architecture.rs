@@ -2316,6 +2316,40 @@ fn tui_actions_reuse_central_dw_action_request() {
 }
 
 #[test]
+fn action_event_rendering_uses_central_action_ids() {
+    let repo = repo_root();
+    for relative in [
+        "crates/dw-cli-adapter/src/render.rs",
+        "crates/dw-tui-adapter/src/render.rs",
+    ] {
+        let path = repo.join(relative);
+        let text = fs::read_to_string(&path).expect("read source file");
+        for forbidden in ["Task [", "ADO [", "task.finish.", "ado.workitem."] {
+            assert!(
+                !text.contains(forbidden),
+                "{} hardcodes event action id `{}` instead of using core action_id()",
+                path.display(),
+                forbidden
+            );
+        }
+    }
+    let ui = fs::read_to_string(repo.join("crates/dw-ui/src/lib.rs")).expect("read dw-ui");
+    assert!(ui.contains("event.action_id()"));
+}
+
+#[test]
+fn tui_does_not_enable_mouse_capture_so_text_selection_stays_available() {
+    let repo = repo_root();
+    let runner = repo.join("crates/dw-tui/src/runner.rs");
+    let text = fs::read_to_string(&runner).expect("read tui runner");
+    assert!(
+        !text.contains("EnableMouseCapture") && !text.contains("DisableMouseCapture"),
+        "{} should leave terminal mouse selection to the terminal",
+        runner.display()
+    );
+}
+
+#[test]
 fn domain_completion_catalogs_live_in_cli_completion_adapter() {
     let repo = repo_root();
     for relative in [

@@ -610,6 +610,7 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
     let repositories_root = Path::new(request.project_root.as_str()).join("repositories");
     let anchor_path = repositories_root.join(request.anchor_name.as_str());
     std::fs::create_dir_all(&repositories_root)?;
+    let normalized_url = normalize_git_remote_url(&request.url);
     let environment_credential =
         if request.credential.is_none() && is_azure_devops_url(request.url.as_str()) {
             git_credential_from_environment()
@@ -622,8 +623,9 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
         .or(environment_credential.as_ref());
 
     let anchor_repository = if !anchor_path.is_dir() {
-        clone_bare_repository(&request.url, &anchor_path, credential)?
+        clone_bare_repository(&normalized_url, &anchor_path, credential)?
     } else {
+        ensure_origin_url(&anchor_path, &normalized_url)?;
         Repository::open_bare(&anchor_path).map_err(git2_command_error)?
     };
     configure_anchor_fetch_refspec(&anchor_repository)?;
@@ -708,6 +710,42 @@ fn clone_bare_repository(
     builder
         .clone(url.as_str(), anchor_path)
         .map_err(|error| git2_auth_error(error, credential.is_some()))
+}
+
+fn ensure_origin_url(anchor_path: &Path, url: &GitRemoteUrl) -> std::result::Result<(), GitError> {
+    let repository = Repository::open_bare(anchor_path).map_err(git2_command_error)?;
+    let current = repository
+        .find_remote("origin")
+        .ok()
+        .and_then(|remote| remote.url().ok().map(ToString::to_string));
+    if current.as_deref() != Some(url.as_str()) {
+        repository
+            .remote_set_url("origin", url.as_str())
+            .map_err(git2_command_error)?;
+    }
+    Ok(())
+}
+
+fn normalize_git_remote_url(url: &GitRemoteUrl) -> GitRemoteUrl {
+    let raw = url.as_str().trim();
+    if raw.contains("://")
+        || raw.starts_with('/')
+        || raw.starts_with("./")
+        || raw.starts_with("../")
+    {
+        return GitRemoteUrl::from(raw);
+    }
+    let Some((authority, path)) = raw.split_once(':') else {
+        return GitRemoteUrl::from(raw);
+    };
+    if authority.len() == 1
+        || authority.contains('/')
+        || authority.contains('\\')
+        || path.trim().is_empty()
+    {
+        return GitRemoteUrl::from(raw);
+    }
+    GitRemoteUrl::from(format!("ssh://{authority}/{path}"))
 }
 
 fn configure_anchor_fetch_refspec(repository: &Repository) -> std::result::Result<(), GitError> {
@@ -1027,6 +1065,21 @@ mod tests {
         );
     }
 
+    #[test]
+    fn normalize_git_remote_url_accepts_azure_scp_like_ssh_urls() {
+        assert_eq!(
+            normalize_git_remote_url(&GitRemoteUrl::from(
+                "git@ssh.dev.azure.com:v3/org/project/repository"
+            )),
+            GitRemoteUrl::from("ssh://git@ssh.dev.azure.com/v3/org/project/repository")
+        );
+        assert_eq!(
+            normalize_git_remote_url(&GitRemoteUrl::from(
+                "https://dev.azure.com/org/project/_git/repo"
+            )),
+            GitRemoteUrl::from("https://dev.azure.com/org/project/_git/repo")
+        );
+    }
     #[test]
     fn build_subject_name_uses_folder_format() {
         assert_eq!(
