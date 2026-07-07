@@ -53,12 +53,19 @@ jobs:
           tag="v${version}"
           release_enabled=false
 
-          if [[ "${EVENT_NAME}" == "push" && "${REF_NAME}" == "master" ]]; then
-            if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
-              changed_files="$(git diff --name-only "${BEFORE}" "${GITHUB_SHA}")"
-            else
-              changed_files="$(git diff-tree --no-commit-id --name-only -r "${GITHUB_SHA}")"
-            fi
+          if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
+            changed_files="$(git diff --name-only "${BEFORE}" "${GITHUB_SHA}")"
+          else
+            changed_files="$(git diff-tree --no-commit-id --name-only -r "${GITHUB_SHA}")"
+          fi
+          workflow_changed=false
+          if grep -Eq '^\.github/workflows/' <<<"${changed_files}"; then
+            workflow_changed=true
+          fi
+
+          if [[ "${workflow_changed}" == "true" ]]; then
+            echo "Release disabled: this commit changes workflow files, and GITHUB_TOKEN cannot tag workflow changes." >&2
+          elif [[ "${EVENT_NAME}" == "push" && "${REF_NAME}" == "master" ]]; then
             if grep -qx 'VERSION' <<<"${changed_files}"; then
               release_enabled=true
             fi
