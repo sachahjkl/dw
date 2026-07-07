@@ -7,12 +7,9 @@ use dw_core::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::ffi::OsString;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command as ProcessCommand;
-use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -499,133 +496,12 @@ fn ensure_unix_executable(path: &Path, display_name: &str, rid: &str) -> Result<
 }
 
 fn replace_executable(executable_path: &Path, replacement: &Path) -> Result<ReplacementReport> {
-    if cfg!(windows) {
-        return replace_windows_executable(executable_path, replacement);
-    }
-    fs::copy(replacement, executable_path)?;
+    self_replace::self_replace(replacement)?;
     let _ = fs::remove_file(replacement);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = fs::metadata(executable_path)?.permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(executable_path, permissions)?;
-    }
     Ok(ReplacementReport {
         executable_path: executable_path.to_path_buf(),
-        deferred_windows_replacement: false,
+        deferred_windows_replacement: cfg!(windows),
     })
-}
-
-fn replace_windows_executable(
-    executable_path: &Path,
-    replacement: &Path,
-) -> Result<ReplacementReport> {
-    let script = std::env::temp_dir().join(format!("dw-upgrade-{}.cmd", unique_upgrade_suffix()));
-    let backup = executable_path.with_extension(format!(
-        "{}bak",
-        executable_path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .map(|extension| format!("{extension}."))
-            .unwrap_or_default()
-    ));
-    let script_content = windows_replacement_script(
-        &replacement.display().to_string(),
-        &executable_path.display().to_string(),
-        &backup.display().to_string(),
-        std::process::id(),
-    )
-    .replace('\n', "\r\n");
-    fs::write(&script, script_content)?;
-    if !script.is_file() {
-        return Err(anyhow!(
-            "Windows replacement script not found after creation: {}",
-            script.display()
-        ));
-    }
-    let command = std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into());
-    ProcessCommand::new(&command)
-        .arg("/d")
-        .arg("/c")
-        .arg(windows_replacement_command(&script))
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| {
-            anyhow!(
-                "Could not launch Windows replacement script {} via {}: {error}",
-                script.display(),
-                PathBuf::from(&command).display()
-            )
-        })?;
-    Ok(ReplacementReport {
-        executable_path: executable_path.to_path_buf(),
-        deferred_windows_replacement: true,
-    })
-}
-
-pub(crate) fn windows_replacement_script(
-    replacement: &str,
-    executable_path: &str,
-    backup: &str,
-    pid: u32,
-) -> String {
-    format!(
-        r#"@echo off
-setlocal EnableExtensions EnableDelayedExpansion
-set "NEW={replacement}"
-set "TARGET={executable_path}"
-set "BACKUP={backup}"
-set "PID={pid}"
-set "ATTEMPTS=60"
-
-:wait
-tasklist /FI "PID eq %PID%" 2>nul | find "%PID%" >nul
-if not errorlevel 1 (
-  timeout /t 1 /nobreak >nul
-  goto wait
-)
-
-if not exist "%NEW%" exit /b 1
-
-:replace
-if exist "%BACKUP%" del /f /q "%BACKUP%" >nul 2>nul
-if exist "%TARGET%" (
-  move /Y "%TARGET%" "%BACKUP%" >nul 2>nul
-  if errorlevel 1 goto retry
-)
-copy /Y "%NEW%" "%TARGET%" >nul 2>nul
-if errorlevel 1 (
-  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul 2>nul
-  goto retry
-)
-if not exist "%TARGET%" (
-  if exist "%BACKUP%" move /Y "%BACKUP%" "%TARGET%" >nul 2>nul
-  goto retry
-)
-del /f /q "%NEW%" >nul 2>nul
-del /f /q "%BACKUP%" >nul 2>nul
-del /f /q "%~f0" >nul 2>nul
-exit /b 0
-
-:retry
-set /a ATTEMPTS-=1
-if !ATTEMPTS! GTR 0 (
-  timeout /t 1 /nobreak >nul
-  goto replace
-)
-exit /b 1
-"#
-    )
-}
-
-pub(crate) fn windows_replacement_command(script: &Path) -> OsString {
-    script
-        .file_name()
-        .map(OsString::from)
-        .unwrap_or_else(|| script.as_os_str().to_os_string())
 }
 
 fn unique_upgrade_suffix() -> String {
@@ -764,28 +640,6 @@ mod tests {
             report.assets[0].file_name,
             UpgradeFileName::from("dw-linux-x64.tar.gz")
         );
-    }
-
-    #[test]
-    fn windows_replacement_script_waits_and_restores_backup_on_failure() {
-        let script = windows_replacement_script("new.exe", "dw.exe", "dw.exe.bak", 1234);
-
-        assert!(script.contains("tasklist /FI \"PID eq %PID%\""));
-        assert!(script.contains("setlocal EnableExtensions EnableDelayedExpansion"));
-        assert!(script.contains("set \"ATTEMPTS=60\""));
-        assert!(script.contains("move /Y \"%TARGET%\" \"%BACKUP%\" >nul 2>nul"));
-        assert!(script.contains("copy /Y \"%NEW%\" \"%TARGET%\" >nul 2>nul"));
-        assert!(script.contains(":retry"));
-        assert!(script.contains("if !ATTEMPTS! GTR 0"));
-        assert!(script.contains("move /Y \"%BACKUP%\" \"%TARGET%\" >nul 2>nul"));
-        assert!(!script.contains("move /Y \"new.exe\" \"dw.exe\""));
-    }
-
-    #[test]
-    fn windows_replacement_command_uses_script_file_name() {
-        let command = windows_replacement_command(Path::new("/tmp/dw-upgrade-123.cmd"));
-
-        assert_eq!(command, OsString::from("dw-upgrade-123.cmd"));
     }
 
     #[test]

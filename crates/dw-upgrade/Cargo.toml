@@ -18,3 +18,4 @@ sha2.workspace = true
 tar.workspace = true
 tokio.workspace = true
 zip.workspace = true
+self-replace.workspace = true

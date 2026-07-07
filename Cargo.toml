@@ -62,3 +62,4 @@ url = "2"
 webbrowser = "1"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 crossterm = "0.29"
+self-replace = "1.5"
