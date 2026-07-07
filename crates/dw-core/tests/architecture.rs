@@ -2338,13 +2338,13 @@ fn action_event_rendering_uses_central_action_ids() {
 }
 
 #[test]
-fn tui_does_not_enable_mouse_capture_so_text_selection_stays_available() {
+fn tui_keeps_mouse_capture_enabled_for_clickable_panels() {
     let repo = repo_root();
     let runner = repo.join("crates/dw-tui/src/runner.rs");
     let text = fs::read_to_string(&runner).expect("read tui runner");
     assert!(
-        !text.contains("EnableMouseCapture") && !text.contains("DisableMouseCapture"),
-        "{} should leave terminal mouse selection to the terminal",
+        text.contains("EnableMouseCapture") && text.contains("DisableMouseCapture"),
+        "{} should keep panel mouse interactions enabled; terminal selection remains available through terminal modifiers",
         runner.display()
     );
 }
