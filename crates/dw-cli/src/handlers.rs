@@ -6,16 +6,16 @@ use dw_cli_adapter::{
     print_json, print_lines, project_prompt_spec,
 };
 use dw_core::{
-    AdoActionEvent, AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot,
-    DiagnosticLogLevel, DwActionEvent, EnvironmentVariableName, ExecutionMode, ExternalLaunchPlan,
-    GitRevision, InputRequest, InputResponse, ProjectKey, PromptChoiceValue, PromptKind,
-    PromptSpec, PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId,
-    WorkItemTypeName, WorkspacePath, WorkspaceRepositoryName,
+    AdoRepositoryName, Agent, ConfigColorMode, ConfigRootPath, DevWorkflowRoot, DiagnosticLogLevel,
+    DwActionEvent, EnvironmentVariableName, ExecutionMode, ExternalLaunchPlan, GitRevision,
+    InputRequest, InputResponse, ProjectKey, PromptChoiceValue, PromptKind, PromptSpec,
+    PullRequestId, SecretKey, SecretValue, TaskId, TaskSlug, WorkItemId, WorkItemTypeName,
+    WorkspacePath, WorkspaceRepositoryName,
 };
 use dw_ui::TerminalTheme;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use inquire::{Confirm, MultiSelect, Password, PasswordDisplayMode, Select, Text};
-use std::io::{IsTerminal, Write};
+use std::io::IsTerminal;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
@@ -122,28 +122,43 @@ async fn execute_cli_action_with_event_output(
     let input = action.input.clone();
     let result = action.result;
     let mut events = action.events;
+    let mut progress = CliProgressUi::lazy(print_events && std::io::stderr().is_terminal());
+    let mut seen_event_lines = Vec::new();
+
     while let Some(event) = events.recv().await {
-        if print_events {
-            print_cli_action_event(&event);
+        if print_events && let Some(line) = cli_action_event_line(&event) {
+            if progress.is_interactive() {
+                progress.set_message(line.clone());
+                seen_event_lines.push(line);
+            } else {
+                print_lines(&[line]);
+            }
         }
         if let DwActionEvent::NeedsInput { request } = &event {
-            input.respond(prompt_cli_input(request)?)?;
+            let response = progress.suspend(|| prompt_cli_input(request))?;
+            input.respond(response)?;
         }
+    }
+    if progress.is_enabled() {
+        progress.finish_and_clear();
+        print_lines(&seen_event_lines);
     }
     result.await?
 }
 
-fn print_cli_action_event(event: &DwActionEvent) {
+fn cli_action_event_line(event: &DwActionEvent) -> Option<String> {
     match event {
-        DwActionEvent::Ado(event) => print_ado_action_event(event.clone()),
-        DwActionEvent::Task(event) => {
-            print_lines(&[dw_cli_adapter::render::task_action_event_line(event)]);
+        DwActionEvent::Ado(event) => Some(dw_cli_adapter::render::ado_action_event_line(event)),
+        DwActionEvent::Task(event) => Some(dw_cli_adapter::render::task_action_event_line(event)),
+        DwActionEvent::Db(event) => Some(dw_cli_adapter::render::db_action_event_line(event)),
+        DwActionEvent::Upgrade(event) => {
+            (!dw_cli_adapter::render::upgrade_event_is_transient(event))
+                .then(|| dw_cli_adapter::render::upgrade_event_line(event))
         }
-        DwActionEvent::Upgrade(event) => print_upgrade_event_line(event),
         DwActionEvent::Log(event) if OutputVerbosity::current().includes(event.level) => {
-            print_lines(&[dw_cli_adapter::render::diagnostic_log_event_line(event)]);
+            Some(dw_cli_adapter::render::diagnostic_log_event_line(event))
         }
-        _ => {}
+        _ => None,
     }
 }
 
@@ -299,29 +314,86 @@ fn print_upgrade_event_line(event: &dw_core::UpgradeActionEvent) {
     }
 }
 
-struct UpgradeProgressUi {
+struct CliProgressUi {
+    enabled: bool,
     bar: Option<ProgressBar>,
+}
+
+impl CliProgressUi {
+    fn lazy(enabled: bool) -> Self {
+        Self { enabled, bar: None }
+    }
+
+    fn spinner(enabled: bool, initial_message: &'static str) -> Self {
+        let mut progress = Self::lazy(enabled);
+        if enabled {
+            progress.start(initial_message.to_string());
+        }
+        progress
+    }
+
+    fn is_interactive(&self) -> bool {
+        self.enabled
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.bar.is_some()
+    }
+
+    fn set_message(&mut self, message: String) {
+        if !self.enabled {
+            return;
+        }
+        match &self.bar {
+            Some(bar) => bar.set_message(message),
+            None => self.start(message),
+        }
+    }
+
+    fn tick(&self) {
+        if let Some(bar) = &self.bar {
+            bar.tick();
+        }
+    }
+
+    fn suspend<T>(&self, operation: impl FnOnce() -> T) -> T {
+        match &self.bar {
+            Some(bar) => bar.suspend(operation),
+            None => operation(),
+        }
+    }
+
+    fn finish_and_clear(self) {
+        if let Some(bar) = self.bar {
+            bar.finish_and_clear();
+        }
+    }
+
+    fn start(&mut self, message: String) {
+        let bar = ProgressBar::new_spinner();
+        bar.set_draw_target(ProgressDrawTarget::stderr());
+        bar.set_style(action_spinner_style());
+        bar.set_message(message);
+        bar.enable_steady_tick(Duration::from_millis(120));
+        self.bar = Some(bar);
+    }
+}
+
+struct UpgradeProgressUi {
+    progress: CliProgressUi,
     showing_download: bool,
 }
 
 impl UpgradeProgressUi {
     fn new(enabled: bool) -> Self {
-        let bar = enabled.then(|| {
-            let bar = ProgressBar::new_spinner();
-            bar.set_draw_target(ProgressDrawTarget::stderr());
-            bar.set_style(upgrade_spinner_style());
-            bar.set_message("Upgrade [starting          ] Preparing");
-            bar.enable_steady_tick(Duration::from_millis(120));
-            bar
-        });
         Self {
-            bar,
+            progress: CliProgressUi::spinner(enabled, "Upgrade [starting          ] Preparing"),
             showing_download: false,
         }
     }
 
     fn update(&mut self, event: &dw_core::UpgradeActionEvent) {
-        let Some(bar) = &self.bar else {
+        let Some(bar) = &self.progress.bar else {
             return;
         };
         match event {
@@ -340,7 +412,7 @@ impl UpgradeProgressUi {
                     bar.set_message(format!("Upgrade [download          ] {file_name}"));
                 } else {
                     if self.showing_download {
-                        bar.set_style(upgrade_spinner_style());
+                        bar.set_style(action_spinner_style());
                         self.showing_download = false;
                     }
                     bar.set_message(dw_cli_adapter::render::upgrade_download_progress_line(
@@ -354,7 +426,7 @@ impl UpgradeProgressUi {
             }
             event => {
                 if self.showing_download {
-                    bar.set_style(upgrade_spinner_style());
+                    bar.set_style(action_spinner_style());
                     self.showing_download = false;
                 }
                 bar.set_message(dw_cli_adapter::render::upgrade_event_line(event));
@@ -364,21 +436,17 @@ impl UpgradeProgressUi {
     }
 
     fn tick(&self) {
-        if let Some(bar) = &self.bar {
-            bar.tick();
-        }
+        self.progress.tick();
     }
 
     fn finish_and_clear(self) {
-        if let Some(bar) = self.bar {
-            bar.finish_and_clear();
-        }
+        self.progress.finish_and_clear();
     }
 }
 
-fn upgrade_spinner_style() -> ProgressStyle {
+fn action_spinner_style() -> ProgressStyle {
     ProgressStyle::with_template("{spinner} {msg}")
-        .expect("upgrade spinner style should parse")
+        .expect("action spinner style should parse")
         .tick_strings(&["|", "/", "-", "\\"])
 }
 
@@ -1595,27 +1663,7 @@ async fn execute_ado_cli_action(
     request: dw_app::DwActionRequest,
     print_events: bool,
 ) -> Result<dw_app::DwActionResult> {
-    let action = dw_app::spawn_action(request);
-    let input = action.input.clone();
-    let result = action.result;
-    let mut events = action.events;
-    while let Some(event) = events.recv().await {
-        if print_events {
-            if let DwActionEvent::Ado(event) = &event {
-                print_ado_action_event(event.clone());
-            } else {
-                print_cli_action_event(&event);
-            }
-        }
-        if let DwActionEvent::NeedsInput { request } = &event {
-            input.respond(prompt_cli_input(request)?)?;
-        }
-    }
-    result.await?
-}
-
-fn print_ado_action_event(event: AdoActionEvent) {
-    print_lines(&[dw_cli_adapter::render::ado_action_event_line(&event)]);
+    execute_cli_action_with_event_output(request, print_events).await
 }
 
 fn add_work_item_choices_loading_line() -> String {
@@ -2184,48 +2232,50 @@ async fn execute_db_cli_action(request: dw_app::DwActionRequest) -> Result<dw_ap
     let mut events = action.events;
     let interactive = std::io::stderr().is_terminal();
     let theme = TerminalTheme::stdout_auto();
-    let frames = ["|", "/", "-", "\\"];
-    let mut frame = 0_usize;
+    let mut progress = CliProgressUi::spinner(interactive, "DB: preparing");
     let mut seen_events = Vec::new();
-    let mut current = None;
 
     while !result.is_finished() {
         while let Ok(event) = events.try_recv() {
             if let DwActionEvent::NeedsInput { request } = &event {
-                input.respond(prompt_cli_input(request)?)?;
+                let response = progress.suspend(|| prompt_cli_input(request))?;
+                input.respond(response)?;
                 continue;
             }
             let DwActionEvent::Db(event) = event else {
                 continue;
             };
-            if !interactive {
+            if interactive {
+                progress.set_message(dw_cli_adapter::render::db_action_event_line(&event));
+            } else {
                 write_db_event_line(&event, &theme)?;
             }
-            current = Some(event.clone());
             seen_events.push(event);
         }
         if interactive {
-            write_db_spinner_frame(current.as_ref(), frames[frame % frames.len()], &theme)?;
-            frame = frame.wrapping_add(1);
+            progress.tick();
         }
         tokio::time::sleep(Duration::from_millis(120)).await;
     }
 
     while let Ok(event) = events.try_recv() {
         if let DwActionEvent::NeedsInput { request } = &event {
-            input.respond(prompt_cli_input(request)?)?;
+            let response = progress.suspend(|| prompt_cli_input(request))?;
+            input.respond(response)?;
             continue;
         }
         let DwActionEvent::Db(event) = event else {
             continue;
         };
-        if !interactive {
+        if interactive {
+            progress.set_message(dw_cli_adapter::render::db_action_event_line(&event));
+        } else {
             write_db_event_line(&event, &theme)?;
         }
         seen_events.push(event);
     }
     if interactive {
-        write_db_spinner_clear()?;
+        progress.finish_and_clear();
         for event in seen_events {
             write_db_event_line(&event, &theme)?;
         }
@@ -2258,25 +2308,6 @@ fn write_db_event_line(event: &dw_core::DbActionEvent, theme: &TerminalTheme) ->
         "{}",
         theme.style_line(&dw_cli_adapter::render::db_action_event_line(event), false)
     );
-    Ok(())
-}
-
-fn write_db_spinner_frame(
-    event: Option<&dw_core::DbActionEvent>,
-    frame: &str,
-    theme: &TerminalTheme,
-) -> Result<()> {
-    eprint!(
-        "{}",
-        dw_cli_adapter::render::db_spinner_frame(event, frame, theme)
-    );
-    std::io::stderr().flush()?;
-    Ok(())
-}
-
-fn write_db_spinner_clear() -> Result<()> {
-    eprint!("{}", dw_cli_adapter::render::db_spinner_clear_sequence());
-    std::io::stderr().flush()?;
     Ok(())
 }
 

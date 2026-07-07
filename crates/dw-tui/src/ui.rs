@@ -193,8 +193,8 @@ fn top_status_text(app: &App) -> String {
         ));
     }
     if app.action_loading() {
-        labels.push(loading_label(
-            "Operation",
+        labels.push(action_loading_label(
+            app.latest_action_event_line(),
             app.loading_elapsed_label(BackgroundKind::Action),
         ));
     }
@@ -207,6 +207,14 @@ fn top_status_text(app: &App) -> String {
 
 fn loading_label(label: &'static str, elapsed: Option<String>) -> String {
     format!("{label} {}...", elapsed.unwrap_or_else(|| "<1s".into()))
+}
+
+fn action_loading_label(operation: Option<String>, elapsed: Option<String>) -> String {
+    let elapsed = elapsed.unwrap_or_else(|| "<1s".into());
+    match operation {
+        Some(operation) => format!("Operation {elapsed}: {operation}"),
+        None => format!("Operation {elapsed}..."),
+    }
 }
 
 fn render_top_separator(frame: &mut Frame<'_>, area: Rect) {
@@ -1086,7 +1094,7 @@ fn detail_panel_lines(content: &DetailPanelContent) -> Vec<String> {
             let theme = dw_ui::TerminalTheme::plain();
             let mut lines = events
                 .iter()
-                .map(dw_tui_adapter::render::action_event_line)
+                .map(dw_ui::action_event_line)
                 .collect::<Vec<_>>();
             let result_lines = dw_tui_adapter::render::action_result_lines(result, &theme);
             if !lines.is_empty() && !result_lines.is_empty() {
@@ -2533,6 +2541,19 @@ mod tests {
         assert_eq!(selected.style.fg, Some(Color::White));
         assert!(!selected.style.add_modifier.contains(Modifier::DIM));
         assert!(inactive.style.add_modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn action_loading_label_names_latest_operation() {
+        let event = dw_core::DwActionEvent::Started {
+            action_id: "task.finish".into(),
+        };
+        let rendered = dw_ui::action_event_line(&event);
+
+        let label = action_loading_label(Some(rendered.clone()), Some("4s".into()));
+
+        assert!(label.contains("Operation 4s"));
+        assert!(label.contains(&rendered));
     }
 
     #[test]

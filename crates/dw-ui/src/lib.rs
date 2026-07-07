@@ -145,12 +145,121 @@ pub fn ado_action_event_line(event: &dw_core::AdoActionEvent) -> String {
     }
 }
 
-pub fn action_event_line(event: &dw_core::DwActionEvent) -> Option<String> {
+pub fn config_action_event_line(event: &dw_core::ConfigActionEvent) -> String {
+    let action_id = event.action_id();
     match event {
-        dw_core::DwActionEvent::Ado(event) => Some(ado_action_event_line(event)),
-        dw_core::DwActionEvent::Task(event) => Some(task_action_event_line(event)),
-        dw_core::DwActionEvent::Log(event) => Some(diagnostic_log_event_line(event)),
-        _ => None,
+        dw_core::ConfigActionEvent::Reading { root }
+        | dw_core::ConfigActionEvent::Validating { root } => format!(
+            "{action_id} root={}",
+            root.as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "resolved".into())
+        ),
+        dw_core::ConfigActionEvent::Writing { field } => format!("{action_id} field={field}"),
+    }
+}
+
+pub fn agent_action_event_line(event: &dw_core::AgentActionEvent) -> String {
+    let action_id = event.action_id();
+    match event {
+        dw_core::AgentActionEvent::Checking { agent } => format!(
+            "{action_id} agent={}",
+            agent
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "all".into())
+        ),
+        dw_core::AgentActionEvent::ResolvingDefault { root } => format!("{action_id} root={root}"),
+    }
+}
+
+pub fn db_action_event_line(event: &dw_core::DbActionEvent) -> String {
+    let action_id = event.action_id();
+    match event {
+        dw_core::DbActionEvent::GuardingQuery => action_id.to_string(),
+        dw_core::DbActionEvent::ResolvingConnection { database } => format!(
+            "{action_id} database={}",
+            database
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "default".into())
+        ),
+        dw_core::DbActionEvent::ExecutingReadOnlyQuery { max_rows } => match max_rows {
+            Some(max_rows) => format!("{action_id} max_rows={max_rows}"),
+            None => action_id.to_string(),
+        },
+    }
+}
+
+pub fn secret_action_event_line(event: &dw_core::SecretActionEvent) -> String {
+    let action_id = event.action_id();
+    match event {
+        dw_core::SecretActionEvent::Reading { key }
+        | dw_core::SecretActionEvent::Writing { key }
+        | dw_core::SecretActionEvent::Deleting { key } => format!("{action_id} key={key}"),
+    }
+}
+
+pub fn upgrade_action_event_line(event: &dw_core::UpgradeActionEvent) -> String {
+    let action_id = event.action_id();
+    match event {
+        dw_core::UpgradeActionEvent::CheckingHost
+        | dw_core::UpgradeActionEvent::ResolvingConfig => action_id.to_string(),
+        dw_core::UpgradeActionEvent::FetchingRelease { owner, repository } => {
+            format!("{action_id} repository={owner}/{repository}")
+        }
+        dw_core::UpgradeActionEvent::FetchingManifest { asset_name } => {
+            format!("{action_id} asset={asset_name}")
+        }
+        dw_core::UpgradeActionEvent::SelectingAsset { rid } => format!("{action_id} rid={rid}"),
+        dw_core::UpgradeActionEvent::DownloadingAsset { file_name } => {
+            format!("{action_id} file={file_name}")
+        }
+        dw_core::UpgradeActionEvent::DownloadedAssetBytes {
+            file_name,
+            received,
+            total,
+        } => match total {
+            Some(total) => {
+                format!("{action_id} file={file_name} received={received} total={total}")
+            }
+            None => format!("{action_id} file={file_name} received={received}"),
+        },
+        dw_core::UpgradeActionEvent::VerifyingChecksum {
+            file_name,
+            expected_sha256,
+        } => {
+            format!("{action_id} file={file_name} expected_sha256={expected_sha256}")
+        }
+        dw_core::UpgradeActionEvent::PreparingExecutable { file_name, rid } => {
+            format!("{action_id} file={file_name} rid={rid}")
+        }
+        dw_core::UpgradeActionEvent::ReplacingExecutable { executable_path } => {
+            format!("{action_id} path={executable_path}")
+        }
+        dw_core::UpgradeActionEvent::Completed { version } => {
+            format!("{action_id} version={version}")
+        }
+    }
+}
+
+pub fn action_event_line(event: &dw_core::DwActionEvent) -> String {
+    match event {
+        dw_core::DwActionEvent::Started { action_id } => format!("started action={action_id}"),
+        dw_core::DwActionEvent::Task(event) => task_action_event_line(event),
+        dw_core::DwActionEvent::Ado(event) => ado_action_event_line(event),
+        dw_core::DwActionEvent::Config(event) => config_action_event_line(event),
+        dw_core::DwActionEvent::Agent(event) => agent_action_event_line(event),
+        dw_core::DwActionEvent::Db(event) => db_action_event_line(event),
+        dw_core::DwActionEvent::Secret(event) => secret_action_event_line(event),
+        dw_core::DwActionEvent::Upgrade(event) => upgrade_action_event_line(event),
+        dw_core::DwActionEvent::NeedsInput { request } => {
+            format!("{} prompt={}", event.action_id(), request.id())
+        }
+        dw_core::DwActionEvent::Log(event) => diagnostic_log_event_line(event),
+        dw_core::DwActionEvent::ExternalLaunch { plan } => {
+            format!("{} command={}", event.action_id(), plan.display_command())
+        }
     }
 }
 

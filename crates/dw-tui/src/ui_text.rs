@@ -50,6 +50,11 @@ pub(crate) fn shortcut_bar_line(app: &App) -> String {
 pub(crate) fn state_modal_lines(app: &App) -> Vec<String> {
     let mut lines = vec!["Loads".into()];
     lines.extend(app.background_status_lines());
+    if let Some(status) = app.active_action_status_text() {
+        lines.push(String::new());
+        lines.push("Current operation".into());
+        lines.push(status);
+    }
     let queued = app.action_queue_status_lines();
     if !queued.is_empty() {
         lines.push(String::new());
@@ -200,13 +205,20 @@ pub(crate) fn history_journal_lines(app: &App) -> Vec<String> {
             app.history.entries.len()
         ),
         format!("{marker} {} ({})", entry.request_label, entry.status),
-        if entry.status.is_running() {
-            "Output is being captured; closing this modal does not interrupt the action.".into()
-        } else {
-            "Output captured.".into()
-        },
-        String::new(),
     ];
+    if entry.status.is_running() {
+        lines.push(
+            active_operation_line(entry)
+                .map(|line| format!("Now         : {line}"))
+                .unwrap_or_else(|| "Now         : waiting for first event".into()),
+        );
+        lines.push(
+            "Output is being captured; closing this modal does not interrupt the action.".into(),
+        );
+    } else {
+        lines.push("Output captured.".into());
+    }
+    lines.push(String::new());
     let rendered = history_entry_rendered_lines(entry);
     if rendered.is_empty() {
         if entry.status.is_running() {
@@ -220,17 +232,21 @@ pub(crate) fn history_journal_lines(app: &App) -> Vec<String> {
     lines
 }
 
+fn active_operation_line(entry: &RunHistoryEntry) -> Option<String> {
+    entry.latest_event().map(dw_ui::action_event_line)
+}
+
 pub(crate) fn history_entry_rendered_lines(entry: &RunHistoryEntry) -> Vec<String> {
     let theme = dw_ui::TerminalTheme::plain();
     let lines = match &entry.record {
         ActionRunRecord::Running { events } => events
             .iter()
-            .map(dw_tui_adapter::render::action_event_line)
+            .map(dw_ui::action_event_line)
             .collect::<Vec<_>>(),
         ActionRunRecord::Completed { events, result } => {
             let mut lines = events
                 .iter()
-                .map(dw_tui_adapter::render::action_event_line)
+                .map(dw_ui::action_event_line)
                 .collect::<Vec<_>>();
             let result_lines = dw_tui_adapter::render::action_result_lines(result.as_ref(), &theme);
             if !lines.is_empty() && !result_lines.is_empty() {
@@ -245,7 +261,7 @@ pub(crate) fn history_entry_rendered_lines(entry: &RunHistoryEntry) -> Vec<Strin
         ActionRunRecord::Failed { events, error } => {
             let mut lines = events
                 .iter()
-                .map(dw_tui_adapter::render::action_event_line)
+                .map(dw_ui::action_event_line)
                 .collect::<Vec<_>>();
             if !lines.is_empty() {
                 lines.push(String::new());
@@ -686,8 +702,58 @@ mod tests {
         let lines = history_journal_lines(&app);
 
         assert!(lines[1].contains("running"));
-        assert!(lines[2].contains("Output is being captured"));
+        assert!(lines[2].contains("waiting for first event"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("Output is being captured"))
+        );
         assert!(lines.iter().any(|line| line.contains("first output line")));
+    }
+
+    #[test]
+    fn history_journal_lines_show_latest_running_event() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let latest = dw_core::DwActionEvent::Started {
+            action_id: "task.finish".into(),
+        };
+        app.history
+            .start_running(ActionRunId::new(1), ActionRunLabel::new("Task finish"));
+        app.history.append_running_event(
+            ActionRunId::new(1),
+            dw_core::DwActionEvent::Started {
+                action_id: "task.start".into(),
+            },
+        );
+        app.history
+            .append_running_event(ActionRunId::new(1), latest.clone());
+
+        let lines = history_journal_lines(&app);
+        let expected = dw_ui::action_event_line(&latest);
+
+        assert_eq!(lines[2], format!("Now         : {expected}"));
+    }
+
+    #[test]
+    fn state_modal_lines_show_current_operation() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let latest = dw_core::DwActionEvent::Started {
+            action_id: "task.finish".into(),
+        };
+        app.history
+            .start_running(ActionRunId::new(1), ActionRunLabel::new("Task finish"));
+        app.history
+            .append_running_event(ActionRunId::new(1), latest.clone());
+
+        let lines = state_modal_lines(&app);
+        let expected = dw_ui::action_event_line(&latest);
+
+        assert!(lines.iter().any(|line| line == "Current operation"));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == &format!("Task finish -> {expected}"))
+        );
     }
 
     #[test]

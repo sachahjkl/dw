@@ -72,6 +72,12 @@ pub struct RunHistoryEntry {
     pub record: ActionRunRecord,
 }
 
+impl RunHistoryEntry {
+    pub fn latest_event(&self) -> Option<&DwActionEvent> {
+        self.record.latest_event()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ActionRunRecord {
     Running {
@@ -105,6 +111,15 @@ impl ActionRunRecord {
 
     pub fn failed(events: Vec<DwActionEvent>, error: ActionRunErrorMessage) -> Self {
         Self::Failed { events, error }
+    }
+
+    pub fn latest_event(&self) -> Option<&DwActionEvent> {
+        match self {
+            Self::Running { events }
+            | Self::Completed { events, .. }
+            | Self::Failed { events, .. } => events.last(),
+            Self::ExternalLaunch { .. } => None,
+        }
     }
 
     #[cfg(test)]
@@ -212,6 +227,13 @@ impl HistoryState {
 
     pub fn selected_entry(&self) -> Option<&RunHistoryEntry> {
         self.entries.get(self.selected_entry)
+    }
+
+    pub fn current_running_entry(&self) -> Option<&RunHistoryEntry> {
+        self.entries
+            .iter()
+            .rev()
+            .find(|entry| entry.status.is_running())
     }
 }
 

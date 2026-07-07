@@ -49,7 +49,8 @@
           inherit nativeBuildInputs buildInputs;
 
           cargoBuildFlags = [ "-p" "dw-cli" ];
-          cargoTestFlags = [ "--workspace" ];
+          # CI runs the full workspace check app; the package build only produces the release binary.
+          doCheck = false;
 
           DW_COMMIT = sourceRevision;
 

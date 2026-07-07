@@ -27,6 +27,10 @@ const CORE_FORBIDDEN: &[&str] = &[
     "block_on",
 ];
 
+const ACTION_ID_DOMAINS: &[&str] = &[
+    "ado", "agent", "auth", "config", "db", "external", "input", "secret", "task", "upgrade",
+];
+
 #[test]
 fn migrated_core_crates_do_not_depend_on_cli_or_tui_rendering() {
     let repo = repo_root();
@@ -2324,17 +2328,55 @@ fn action_event_rendering_uses_central_action_ids() {
     ] {
         let path = repo.join(relative);
         let text = fs::read_to_string(&path).expect("read source file");
-        for forbidden in ["Task [", "ADO [", "task.finish.", "ado.workitem."] {
+        for forbidden in [
+            "Task [",
+            "ADO [",
+            "Config [",
+            "Agent [",
+            "DB [",
+            "Secret [",
+            "Upgrade [",
+        ] {
             assert!(
                 !text.contains(forbidden),
-                "{} hardcodes event action id `{}` instead of using core action_id()",
+                "{} hardcodes bracket event id `{}` instead of using core action_id()",
                 path.display(),
                 forbidden
             );
         }
+        assert_no_action_id_literals(&path, &text);
     }
     let ui = fs::read_to_string(repo.join("crates/dw-ui/src/lib.rs")).expect("read dw-ui");
     assert!(ui.contains("event.action_id()"));
+    for required in [
+        "config_action_event_line",
+        "agent_action_event_line",
+        "db_action_event_line",
+        "secret_action_event_line",
+        "upgrade_action_event_line",
+    ] {
+        assert!(
+            ui.contains(required),
+            "dw-ui should centralize `{}` for adapters",
+            required
+        );
+    }
+}
+
+#[test]
+fn core_action_ids_use_dot_notation() {
+    let repo = repo_root();
+    let path = repo.join("crates/dw-core/src/lib.rs");
+    let text = fs::read_to_string(&path).expect("read dw-core lib");
+    let action_ids = action_id_literals(&text);
+    assert!(
+        !action_ids.is_empty(),
+        "{} should expose central action ids",
+        path.display()
+    );
+    for (line, action_id) in action_ids {
+        assert_dot_action_id(&path, line, &action_id);
+    }
 }
 
 #[test]
@@ -2621,6 +2663,78 @@ fn migrated_ado_command_modules_do_not_render_or_prompt() {
             );
         }
     }
+}
+
+fn assert_no_action_id_literals(path: &Path, text: &str) {
+    if let Some((line, action_id)) = action_id_literals(text).into_iter().next() {
+        panic!(
+            "{}:{} hardcodes action id `{}` instead of using dw-core/dw-ui helpers",
+            path.display(),
+            line,
+            action_id
+        );
+    }
+}
+
+fn assert_dot_action_id(path: &Path, line: usize, action_id: &str) {
+    assert!(
+        action_id.contains('.'),
+        "{}:{} action id `{}` must use dot notation",
+        path.display(),
+        line,
+        action_id
+    );
+    assert!(
+        !action_id.contains('_') && !action_id.contains('-'),
+        "{}:{} action id `{}` must not contain underscores or hyphens",
+        path.display(),
+        line,
+        action_id
+    );
+    assert!(
+        !action_id.starts_with('.') && !action_id.ends_with('.') && !action_id.contains(".."),
+        "{}:{} action id `{}` must be segmented by single dots",
+        path.display(),
+        line,
+        action_id
+    );
+    assert!(
+        action_id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'.'),
+        "{}:{} action id `{}` must contain only lowercase ASCII letters, digits, and dots",
+        path.display(),
+        line,
+        action_id
+    );
+}
+
+fn action_id_literals(text: &str) -> Vec<(usize, String)> {
+    let mut literals = Vec::new();
+    for (line_index, line) in text.lines().enumerate() {
+        let mut remainder = line;
+        while let Some(open_quote) = remainder.find('"') {
+            let after_open = &remainder[open_quote + 1..];
+            let Some(close_quote) = after_open.find('"') else {
+                break;
+            };
+            let literal = &after_open[..close_quote];
+            if looks_like_action_id(literal) {
+                literals.push((line_index + 1, literal.to_owned()));
+            }
+            remainder = &after_open[close_quote + 1..];
+        }
+    }
+    literals
+}
+
+fn looks_like_action_id(literal: &str) -> bool {
+    ACTION_ID_DOMAINS.iter().any(|domain| {
+        literal
+            .strip_prefix(domain)
+            .and_then(|rest| rest.as_bytes().first().copied())
+            .is_some_and(|separator| matches!(separator, b'.' | b'_' | b'-'))
+    })
 }
 
 fn repo_root() -> PathBuf {

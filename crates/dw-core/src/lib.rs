@@ -468,6 +468,24 @@ pub enum DwActionEvent {
     ExternalLaunch { plan: ExternalLaunchPlan },
 }
 
+impl DwActionEvent {
+    pub fn action_id(&self) -> ActionId {
+        match self {
+            Self::Started { action_id } => action_id.clone(),
+            Self::Task(event) => event.action_id(),
+            Self::Ado(event) => event.action_id(),
+            Self::Config(event) => event.action_id(),
+            Self::Agent(event) => event.action_id(),
+            Self::Db(event) => event.action_id(),
+            Self::Secret(event) => event.action_id(),
+            Self::Upgrade(event) => event.action_id(),
+            Self::NeedsInput { .. } => ActionId::from("input.required"),
+            Self::Log(event) => event.target.clone(),
+            Self::ExternalLaunch { .. } => ActionId::from("external.launch"),
+        }
+    }
+}
+
 string_newtype!(ActionId);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -1683,11 +1701,30 @@ pub enum ConfigActionEvent {
     Validating { root: Option<DevWorkflowRoot> },
 }
 
+impl ConfigActionEvent {
+    pub fn action_id(&self) -> ActionId {
+        ActionId::from(match self {
+            Self::Reading { .. } => "config.read",
+            Self::Writing { .. } => "config.write",
+            Self::Validating { .. } => "config.validate",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum AgentActionEvent {
     Checking { agent: Option<Agent> },
     ResolvingDefault { root: DevWorkflowRoot },
+}
+
+impl AgentActionEvent {
+    pub fn action_id(&self) -> ActionId {
+        ActionId::from(match self {
+            Self::Checking { .. } => "agent.check",
+            Self::ResolvingDefault { .. } => "agent.default.resolve",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1698,12 +1735,32 @@ pub enum DbActionEvent {
     ExecutingReadOnlyQuery { max_rows: Option<usize> },
 }
 
+impl DbActionEvent {
+    pub fn action_id(&self) -> ActionId {
+        ActionId::from(match self {
+            Self::GuardingQuery => "db.query.guard",
+            Self::ResolvingConnection { .. } => "db.connection.resolve",
+            Self::ExecutingReadOnlyQuery { .. } => "db.query.execute",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum SecretActionEvent {
     Reading { key: SecretKey },
     Writing { key: SecretKey },
     Deleting { key: SecretKey },
+}
+
+impl SecretActionEvent {
+    pub fn action_id(&self) -> ActionId {
+        ActionId::from(match self {
+            Self::Reading { .. } => "secret.read",
+            Self::Writing { .. } => "secret.write",
+            Self::Deleting { .. } => "secret.delete",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1743,6 +1800,26 @@ pub enum UpgradeActionEvent {
     Completed {
         version: SemanticVersion,
     },
+}
+
+impl UpgradeActionEvent {
+    pub const DOWNLOADED_ASSET_BYTES_ACTION_ID: &'static str = "upgrade.asset.download.progress";
+
+    pub fn action_id(&self) -> ActionId {
+        ActionId::from(match self {
+            Self::CheckingHost => "upgrade.host.check",
+            Self::ResolvingConfig => "upgrade.config.resolve",
+            Self::FetchingRelease { .. } => "upgrade.release.fetch",
+            Self::FetchingManifest { .. } => "upgrade.manifest.fetch",
+            Self::SelectingAsset { .. } => "upgrade.asset.select",
+            Self::DownloadingAsset { .. } => "upgrade.asset.download",
+            Self::DownloadedAssetBytes { .. } => Self::DOWNLOADED_ASSET_BYTES_ACTION_ID,
+            Self::VerifyingChecksum { .. } => "upgrade.checksum.verify",
+            Self::PreparingExecutable { .. } => "upgrade.executable.prepare",
+            Self::ReplacingExecutable { .. } => "upgrade.executable.replace",
+            Self::Completed { .. } => "upgrade.complete",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

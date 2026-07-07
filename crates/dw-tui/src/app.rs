@@ -385,6 +385,23 @@ impl App {
         self.background.action_label()
     }
 
+    pub fn latest_action_event_line(&self) -> Option<String> {
+        self.history
+            .current_running_entry()
+            .and_then(RunHistoryEntry::latest_event)
+            .map(dw_ui::action_event_line)
+    }
+
+    pub fn active_action_status_text(&self) -> Option<String> {
+        let entry = self.history.current_running_entry()?;
+        let label = &entry.request_label;
+        let status = entry
+            .latest_event()
+            .map(dw_ui::action_event_line)
+            .unwrap_or_else(|| "waiting for first event".into());
+        Some(format!("{label} -> {status}"))
+    }
+
     pub fn pending_action_count(&self) -> usize {
         self.background.pending_action_count()
     }
@@ -464,24 +481,30 @@ impl App {
     }
 
     fn action_status_line(&self) -> String {
+        let queued = self.background.pending_action_count();
         if let Some(label) = self.background.action_label() {
             let elapsed = self
                 .background
                 .elapsed_label(BackgroundKind::Action)
                 .unwrap_or_else(|| "<1s".into());
-            let queued = self.background.pending_action_count();
+            let status = self
+                .active_action_status_text()
+                .unwrap_or_else(|| label.to_string());
             if queued > 0 {
-                format!("Action: {label} ({elapsed}, queue {queued})")
+                format!("Action: {status} ({elapsed}, queue {queued})")
             } else {
-                format!("Action: {label} ({elapsed})")
+                format!("Action: {status} ({elapsed})")
             }
+        } else if let Some(status) = self.active_action_status_text() {
+            if queued > 0 {
+                format!("Action: {status} (queue {queued})")
+            } else {
+                format!("Action: {status}")
+            }
+        } else if queued > 0 {
+            format!("Action: queue {queued}")
         } else {
-            let queued = self.background.pending_action_count();
-            if queued > 0 {
-                format!("Action: queue {queued}")
-            } else {
-                "Action: none".into()
-            }
+            "Action: none".into()
         }
     }
 
@@ -2700,6 +2723,27 @@ mod tests {
         assert!(lines.contains(&"Snapshot: ready".into()));
         assert!(lines.contains(&"My work items: 1 items".into()));
         assert!(lines.contains(&"PRs: 1 active".into()));
+    }
+
+    #[test]
+    fn background_status_lines_surface_current_operation_event() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let latest = DwActionEvent::Started {
+            action_id: "task.finish".into(),
+        };
+        app.history
+            .start_running(ActionRunId::new(1), ActionRunLabel::new("Task finish"));
+        app.history
+            .append_running_event(ActionRunId::new(1), latest.clone());
+
+        let lines = app.background_status_lines();
+        let expected = dw_ui::action_event_line(&latest);
+
+        assert!(
+            lines
+                .iter()
+                .any(|line| line == &format!("Action: Task finish -> {expected}"))
+        );
     }
 
     #[test]

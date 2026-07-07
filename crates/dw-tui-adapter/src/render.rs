@@ -15,10 +15,7 @@ use dw_contracts::{
     TaskHandoffValidationStatus, TaskPreflightIssue, TaskPreflightIssueCode,
     TaskPreflightIssueDetail, TaskPreflightReport, TaskPreflightSeverity, TaskPreflightStaleReason,
 };
-use dw_core::{
-    AdoActionEvent, AgentActionEvent, ConfigActionEvent, DbActionEvent, DwActionEvent,
-    GitOperation, SecretActionEvent, TaskActionEvent, Timestamp, UpgradeActionEvent,
-};
+use dw_core::{AdoActionEvent, DwActionEvent, GitOperation, TaskActionEvent, Timestamp};
 use dw_db::{QueryResult, SqlGuardResult};
 use dw_doctor::{DoctorCheck, DoctorCheckDetail, DoctorCheckKind, DoctorRemediation, DoctorReport};
 use dw_secret::command::{SecretDeleteReport, SecretGetReport, SecretSetReport};
@@ -702,21 +699,7 @@ pub fn task_open_launch_lines(plan: &dw_core::ExternalLaunchPlan) -> Vec<String>
 }
 
 pub fn action_event_line(event: &DwActionEvent) -> String {
-    match event {
-        DwActionEvent::Started { action_id } => format!("Started: {action_id}"),
-        DwActionEvent::Task(event) => task_action_event_line(event),
-        DwActionEvent::Ado(event) => ado_action_event_line(event),
-        DwActionEvent::Config(event) => config_action_event_line(event),
-        DwActionEvent::Agent(event) => agent_action_event_line(event),
-        DwActionEvent::Db(event) => db_action_event_line(event),
-        DwActionEvent::Secret(event) => secret_action_event_line(event),
-        DwActionEvent::Upgrade(event) => upgrade_action_event_line(event),
-        DwActionEvent::NeedsInput { request } => format!("Input required: {request:?}"),
-        DwActionEvent::Log(event) => dw_ui::diagnostic_log_event_line(event),
-        DwActionEvent::ExternalLaunch { plan } => {
-            format!("External launch: {}", plan.display_command())
-        }
-    }
+    dw_ui::action_event_line(event)
 }
 
 fn task_action_event_line(event: &TaskActionEvent) -> String {
@@ -744,100 +727,6 @@ fn join_display_with_separator<T: Display>(items: &[T], separator: &str) -> Stri
         .map(|item| format!("{item}"))
         .collect::<Vec<_>>()
         .join(separator)
-}
-
-fn config_action_event_line(event: &ConfigActionEvent) -> String {
-    match event {
-        ConfigActionEvent::Reading { root } => format!(
-            "Config [read] {}",
-            root.as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "resolved root".into())
-        ),
-        ConfigActionEvent::Writing { field } => format!("Config [write] {field}"),
-        ConfigActionEvent::Validating { root } => format!(
-            "Config [validate] {}",
-            root.as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "resolved root".into())
-        ),
-    }
-}
-
-fn agent_action_event_line(event: &AgentActionEvent) -> String {
-    match event {
-        AgentActionEvent::Checking { agent } => format!(
-            "Agent [check] {}",
-            agent
-                .as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "all".into())
-        ),
-        AgentActionEvent::ResolvingDefault { root } => format!("Agent [default] root={root}"),
-    }
-}
-
-fn db_action_event_line(event: &DbActionEvent) -> String {
-    match event {
-        DbActionEvent::GuardingQuery => "DB [guard-query]".into(),
-        DbActionEvent::ResolvingConnection { database } => format!(
-            "DB [resolve-connection] {}",
-            database
-                .as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "default".into())
-        ),
-        DbActionEvent::ExecutingReadOnlyQuery { max_rows } => match max_rows {
-            Some(max_rows) => format!("DB [query] max_rows={max_rows}"),
-            None => "DB [query]".into(),
-        },
-    }
-}
-
-fn secret_action_event_line(event: &SecretActionEvent) -> String {
-    match event {
-        SecretActionEvent::Reading { key } => format!("Secret [read] {key}"),
-        SecretActionEvent::Writing { key } => format!("Secret [write] {key}"),
-        SecretActionEvent::Deleting { key } => format!("Secret [delete] {key}"),
-    }
-}
-
-fn upgrade_action_event_line(event: &UpgradeActionEvent) -> String {
-    match event {
-        UpgradeActionEvent::CheckingHost => "Upgrade [check-host]".into(),
-        UpgradeActionEvent::ResolvingConfig => "Upgrade [resolve-config]".into(),
-        UpgradeActionEvent::FetchingRelease { owner, repository } => {
-            format!("Upgrade [fetch-release] {owner}/{repository}")
-        }
-        UpgradeActionEvent::FetchingManifest { asset_name } => {
-            format!("Upgrade [fetch-manifest] {asset_name}")
-        }
-        UpgradeActionEvent::SelectingAsset { rid } => format!("Upgrade [select-asset] {rid}"),
-        UpgradeActionEvent::DownloadingAsset { file_name } => {
-            format!("Upgrade [download] {file_name}")
-        }
-        UpgradeActionEvent::DownloadedAssetBytes {
-            file_name,
-            received,
-            total,
-        } => match total {
-            Some(total) => format!("Upgrade [download] {file_name} {received}/{total} bytes"),
-            None => format!("Upgrade [download] {file_name} {received} bytes"),
-        },
-        UpgradeActionEvent::VerifyingChecksum {
-            file_name,
-            expected_sha256,
-        } => {
-            format!("Upgrade [checksum] {file_name} {expected_sha256}")
-        }
-        UpgradeActionEvent::PreparingExecutable { file_name, rid } => {
-            format!("Upgrade [prepare] {file_name} {rid}")
-        }
-        UpgradeActionEvent::ReplacingExecutable { executable_path } => {
-            format!("Upgrade [replace] {executable_path}")
-        }
-        UpgradeActionEvent::Completed { version } => format!("Upgrade [complete] {version}"),
-    }
 }
 
 pub fn upgrade_report_lines(report: &dw_upgrade::UpgradeReport) -> Vec<String> {
@@ -901,71 +790,7 @@ fn upgrade_install_summary_header(
 }
 
 pub fn upgrade_event_line(event: &dw_core::UpgradeActionEvent) -> String {
-    format!(
-        "Upgrade [{:<18}] {}",
-        upgrade_step_label(event),
-        upgrade_event_message(event)
-    )
-}
-
-fn upgrade_event_message(event: &dw_core::UpgradeActionEvent) -> String {
-    match event {
-        dw_core::UpgradeActionEvent::CheckingHost => "Checking current installation".into(),
-        dw_core::UpgradeActionEvent::ResolvingConfig => "Reading upgrade configuration".into(),
-        dw_core::UpgradeActionEvent::FetchingRelease { owner, repository } => {
-            format!("Fetching latest release {owner}/{repository}")
-        }
-        dw_core::UpgradeActionEvent::FetchingManifest { asset_name } => {
-            format!("Downloading manifest {asset_name}")
-        }
-        dw_core::UpgradeActionEvent::SelectingAsset { rid } => {
-            format!("Selecting artifact {rid}")
-        }
-        dw_core::UpgradeActionEvent::DownloadingAsset { file_name } => {
-            format!("Downloading {file_name}")
-        }
-        dw_core::UpgradeActionEvent::DownloadedAssetBytes {
-            file_name,
-            received,
-            total,
-        } => match total {
-            Some(total) => {
-                format!("Downloading {file_name}: {received} / {total} bytes")
-            }
-            None => format!("Downloading {file_name}: {received} bytes"),
-        },
-        dw_core::UpgradeActionEvent::VerifyingChecksum {
-            file_name,
-            expected_sha256,
-        } => {
-            format!("Verifying SHA256 for {file_name} ({expected_sha256})")
-        }
-        dw_core::UpgradeActionEvent::PreparingExecutable { file_name, rid } => {
-            format!("Preparing {file_name} for {rid}")
-        }
-        dw_core::UpgradeActionEvent::ReplacingExecutable { executable_path } => {
-            format!("Replacing {executable_path}")
-        }
-        dw_core::UpgradeActionEvent::Completed { version } => {
-            format!("Upgrade completed: {version}")
-        }
-    }
-}
-
-fn upgrade_step_label(event: &dw_core::UpgradeActionEvent) -> &'static str {
-    match event {
-        dw_core::UpgradeActionEvent::CheckingHost => "host",
-        dw_core::UpgradeActionEvent::ResolvingConfig => "config",
-        dw_core::UpgradeActionEvent::FetchingRelease { .. } => "release",
-        dw_core::UpgradeActionEvent::FetchingManifest { .. } => "manifest",
-        dw_core::UpgradeActionEvent::SelectingAsset { .. } => "asset",
-        dw_core::UpgradeActionEvent::DownloadingAsset { .. } => "download",
-        dw_core::UpgradeActionEvent::DownloadedAssetBytes { .. } => "download",
-        dw_core::UpgradeActionEvent::VerifyingChecksum { .. } => "checksum",
-        dw_core::UpgradeActionEvent::PreparingExecutable { .. } => "prepare",
-        dw_core::UpgradeActionEvent::ReplacingExecutable { .. } => "replace",
-        dw_core::UpgradeActionEvent::Completed { .. } => "done",
-    }
+    dw_ui::upgrade_action_event_line(event)
 }
 
 pub fn task_status_lines(report: &TaskStatusReport) -> Vec<String> {

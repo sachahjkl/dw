@@ -111,25 +111,53 @@ jobs:
           purge-last-accessed: P7D
           purge-primary-key: never
 
-      - name: Build Nix package
-        run: nix build --accept-flake-config .#default
+      - name: Build Nix package for artifact
+        run: nix build --accept-flake-config .#default --out-link result-linux
 
       - name: Checks
         run: nix run --accept-flake-config .#check
 
-      - name: Publish linux-x64 artifact
+      - name: Package linux-x64 artifact
         shell: bash
         run: |
+          version="0.0.0-ci"
+          release_base_url=""
           if [[ "${{ needs.preflight.outputs.release_enabled }}" == "true" ]]; then
-            VERSION="${{ needs.preflight.outputs.version }}" \
-            COMMIT="${{ github.sha }}" \
-            RELEASE_BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}" \
-            bash ./scripts/publish-linux-x64.sh
-          else
-            VERSION="0.0.0-ci" \
-            COMMIT="${{ github.sha }}" \
-            bash ./scripts/publish-linux-x64.sh
+            version="${{ needs.preflight.outputs.version }}"
+            release_base_url="https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}"
           fi
+
+          output_path="artifacts/linux-x64"
+          archive_name="dw-linux-x64.tar.gz"
+          archive_path="${output_path}/${archive_name}"
+          mkdir -p "${output_path}"
+
+          cp result-linux/bin/dw "${output_path}/dw"
+          chmod 755 "${output_path}/dw"
+          tar -czf "${archive_path}" -C "${output_path}" dw
+
+          hash="$(sha256sum "${archive_path}" | awk '{print $1}')"
+          url=""
+          if [[ -n "${release_base_url}" ]]; then
+            url="${release_base_url}/${archive_name}"
+          fi
+
+          cat > "${output_path}/release.json" <<EOF
+          {
+            "schema": 1,
+            "version": "${version}",
+            "commit": "${{ github.sha }}",
+            "channel": "stable",
+            "assets": [
+              {
+                "rid": "linux-x64",
+                "fileName": "${archive_name}",
+                "sha256": "${hash}",
+                "url": "${url}"
+              }
+            ]
+          }
+          EOF
 
       - name: Upload linux artifact
         uses: actions/upload-artifact@v5

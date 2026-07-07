@@ -739,33 +739,7 @@ pub fn task_action_event_line(event: &TaskActionEvent) -> String {
 }
 
 pub fn db_action_event_line(event: &DbActionEvent) -> String {
-    match event {
-        DbActionEvent::GuardingQuery => "DB guard: read-only validation".into(),
-        DbActionEvent::ResolvingConnection { database } => match database {
-            Some(database) => format!("DB connection: {database}"),
-            None => "DB connection: resolved database".into(),
-        },
-        DbActionEvent::ExecutingReadOnlyQuery { max_rows } => match max_rows {
-            Some(max_rows) => format!("DB query: read-only execution max_rows={max_rows}"),
-            None => "DB query: read-only execution".into(),
-        },
-    }
-}
-
-pub fn db_spinner_frame(
-    event: Option<&DbActionEvent>,
-    frame: &str,
-    theme: &TerminalTheme,
-) -> String {
-    let message = event
-        .map(db_action_event_line)
-        .unwrap_or_else(|| "DB: preparing".into());
-    let line = format!("{frame} {message}");
-    format!("\r{}", theme.style_line(&line, false))
-}
-
-pub fn db_spinner_clear_sequence() -> &'static str {
-    "\r\x1b[2K"
+    dw_ui::db_action_event_line(event)
 }
 
 fn format_ids<T: Display>(ids: &[T]) -> String {
@@ -1121,92 +1095,7 @@ fn upgrade_install_summary_header(
 }
 
 pub fn upgrade_event_line(event: &dw_core::UpgradeActionEvent) -> String {
-    format!(
-        "Upgrade [{:<18}] {}",
-        upgrade_step_label(event),
-        upgrade_event_message(event)
-    )
-}
-
-pub fn upgrade_spinner_frame(
-    event: Option<&dw_core::UpgradeActionEvent>,
-    frame: &str,
-    theme: &TerminalTheme,
-) -> String {
-    let message = event
-        .map(|event| upgrade_event_frame_line(event, theme))
-        .unwrap_or_else(|| "Upgrade [starting          ] Preparing".into());
-    format!("\r\x1b[2K{} {message}", theme.cyan(frame))
-}
-
-pub fn upgrade_spinner_clear_sequence() -> &'static str {
-    "\r\x1b[2K"
-}
-
-fn upgrade_event_message(event: &dw_core::UpgradeActionEvent) -> String {
-    match event {
-        dw_core::UpgradeActionEvent::CheckingHost => "Checking the current installation".into(),
-        dw_core::UpgradeActionEvent::ResolvingConfig => "Reading upgrade configuration".into(),
-        dw_core::UpgradeActionEvent::FetchingRelease { owner, repository } => {
-            format!("Looking up the latest {owner}/{repository} release")
-        }
-        dw_core::UpgradeActionEvent::FetchingManifest { asset_name } => {
-            format!("Downloading manifest {asset_name}")
-        }
-        dw_core::UpgradeActionEvent::SelectingAsset { rid } => {
-            format!("Selecting artifact {rid}")
-        }
-        dw_core::UpgradeActionEvent::DownloadingAsset { file_name } => {
-            format!("Downloading {file_name}")
-        }
-        dw_core::UpgradeActionEvent::DownloadedAssetBytes {
-            file_name,
-            received,
-            total,
-        } => upgrade_download_progress_line(file_name, *received, *total, &TerminalTheme::plain()),
-        dw_core::UpgradeActionEvent::VerifyingChecksum {
-            file_name,
-            expected_sha256,
-        } => {
-            format!("Verifying SHA256 for {file_name} ({expected_sha256})")
-        }
-        dw_core::UpgradeActionEvent::PreparingExecutable { file_name, rid } => {
-            format!("Preparing {file_name} for {rid}")
-        }
-        dw_core::UpgradeActionEvent::ReplacingExecutable { executable_path } => {
-            format!("Replacing {executable_path}")
-        }
-        dw_core::UpgradeActionEvent::Completed { version } => {
-            format!("Upgrade completed: {version}")
-        }
-    }
-}
-
-fn upgrade_event_frame_line(event: &dw_core::UpgradeActionEvent, theme: &TerminalTheme) -> String {
-    match event {
-        dw_core::UpgradeActionEvent::DownloadedAssetBytes {
-            file_name,
-            received,
-            total,
-        } => upgrade_download_progress_line(file_name, *received, *total, theme),
-        event => upgrade_event_line(event),
-    }
-}
-
-fn upgrade_step_label(event: &dw_core::UpgradeActionEvent) -> &'static str {
-    match event {
-        dw_core::UpgradeActionEvent::CheckingHost => "host",
-        dw_core::UpgradeActionEvent::ResolvingConfig => "config",
-        dw_core::UpgradeActionEvent::FetchingRelease { .. } => "release",
-        dw_core::UpgradeActionEvent::FetchingManifest { .. } => "manifest",
-        dw_core::UpgradeActionEvent::SelectingAsset { .. } => "asset",
-        dw_core::UpgradeActionEvent::DownloadingAsset { .. } => "download",
-        dw_core::UpgradeActionEvent::DownloadedAssetBytes { .. } => "download",
-        dw_core::UpgradeActionEvent::VerifyingChecksum { .. } => "checksum",
-        dw_core::UpgradeActionEvent::PreparingExecutable { .. } => "prepare",
-        dw_core::UpgradeActionEvent::ReplacingExecutable { .. } => "replace",
-        dw_core::UpgradeActionEvent::Completed { .. } => "done",
-    }
+    dw_ui::upgrade_action_event_line(event)
 }
 
 pub fn upgrade_event_is_transient(event: &dw_core::UpgradeActionEvent) -> bool {
@@ -1234,9 +1123,15 @@ pub fn upgrade_download_progress_line(
     let bar = upgrade_download_progress_bar(received, total, theme);
     match total.and_then(|total| progress_percent(received, total)) {
         Some(percent) => {
-            format!("Upgrade [download          ] {bar} {percent:>3}% {size} {file_name}")
+            format!(
+                "{} {bar} {percent:>3}% {size} {file_name}",
+                dw_core::UpgradeActionEvent::DOWNLOADED_ASSET_BYTES_ACTION_ID
+            )
         }
-        None => format!("Upgrade [download          ] {bar} {size} {file_name}"),
+        None => format!(
+            "{} {bar} {size} {file_name}",
+            dw_core::UpgradeActionEvent::DOWNLOADED_ASSET_BYTES_ACTION_ID
+        ),
     }
 }
 
@@ -3027,33 +2922,15 @@ mod tests {
 
     #[test]
     fn upgrade_event_line_renders_one_step_per_action() {
-        let line = upgrade_event_line(&dw_core::UpgradeActionEvent::DownloadingAsset {
+        let event = dw_core::UpgradeActionEvent::DownloadingAsset {
             file_name: dw_core::UpgradeFileName::from("dw-linux-x64.tar.gz"),
-        });
+        };
+        let action_id = event.action_id();
+        let line = upgrade_event_line(&event);
 
-        assert!(line.contains("Upgrade [download"));
-        assert!(line.contains("Downloading dw-linux-x64.tar.gz"));
+        assert!(line.contains(action_id.as_str()));
+        assert!(line.contains("file=dw-linux-x64.tar.gz"));
         assert!(!line.contains("download/checksum"));
-    }
-
-    #[test]
-    fn upgrade_spinner_frame_renders_current_event_and_clear_sequence() {
-        let theme = TerminalTheme::plain();
-        let frame = upgrade_spinner_frame(
-            Some(&dw_core::UpgradeActionEvent::DownloadingAsset {
-                file_name: dw_core::UpgradeFileName::from("dw-linux-x64.tar.gz"),
-            }),
-            "|",
-            &theme,
-        );
-
-        assert_eq!(upgrade_spinner_clear_sequence(), "\r\x1b[2K");
-        assert!(frame.starts_with("\r\x1b[2K| Upgrade [download"));
-        assert!(frame.contains("Downloading dw-linux-x64.tar.gz"));
-        assert!(
-            frame.starts_with(upgrade_spinner_clear_sequence()),
-            "each frame must clear stale bytes from the previous longer frame"
-        );
     }
 
     #[test]
