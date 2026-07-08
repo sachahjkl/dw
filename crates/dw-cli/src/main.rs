@@ -5,7 +5,12 @@ mod version;
 #[tokio::main]
 async fn main() {
     install_broken_pipe_panic_hook();
-    match std::panic::catch_unwind(|| async { handlers::run(cli::Cli::parse_localized()).await }) {
+    let cli = match std::panic::catch_unwind(parse_cli) {
+        Ok(cli) => cli,
+        Err(payload) if is_broken_pipe_panic_payload(payload.as_ref()) => return,
+        Err(payload) => std::panic::resume_unwind(payload),
+    };
+    match std::panic::catch_unwind(|| Box::pin(handlers::run(cli))) {
         Ok(future) => match future.await {
             Ok(()) => {}
             Err(error) if is_broken_pipe_error(&error) => {}
@@ -17,6 +22,16 @@ async fn main() {
         Err(payload) if is_broken_pipe_panic_payload(payload.as_ref()) => {}
         Err(payload) => std::panic::resume_unwind(payload),
     }
+}
+
+fn parse_cli() -> cli::Cli {
+    std::thread::Builder::new()
+        .name("dw-cli-parser".into())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(cli::Cli::parse_localized)
+        .expect("spawn CLI parser thread")
+        .join()
+        .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
 }
 
 fn install_broken_pipe_panic_hook() {

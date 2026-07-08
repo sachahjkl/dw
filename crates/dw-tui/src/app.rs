@@ -726,7 +726,7 @@ impl App {
                 severity: CockpitSeverity::Normal,
                 primary_action: actions::option_action(
                     &self.snapshot.root,
-                    QuickOptionAction::Guide,
+                    QuickOptionAction::Refresh,
                 ),
             });
         }

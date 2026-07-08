@@ -33,11 +33,11 @@ impl Cli {
     pub(crate) fn localized_command() -> clap::Command {
         let display_version: &'static str =
             Box::leak(crate::version::informational_version().into_boxed_str());
-        localize_command(Self::command().version(display_version))
+        localize_command(Self::command().version(display_version), 0)
     }
 }
 
-fn localize_command(command: clap::Command) -> clap::Command {
+fn localize_command(command: clap::Command, depth: usize) -> clap::Command {
     let help_template = if command.get_name() == "dw" {
         "{about} {version}\n\nUsage: {usage}\n\n{all-args}"
     } else {
@@ -63,8 +63,12 @@ fn localize_command(command: clap::Command) -> clap::Command {
                 .long("version")
                 .action(ArgAction::Version)
                 .help("Show version."),
-        )
-        .mut_subcommands(localize_command);
+        );
+    let command = if depth < 3 {
+        command.mut_subcommands(|subcommand| localize_command(subcommand, depth + 1))
+    } else {
+        command
+    };
 
     sort_help_options(sort_help_subcommands(command))
 }
