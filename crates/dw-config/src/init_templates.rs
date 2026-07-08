@@ -195,7 +195,7 @@ const BUSINESS_PROJECTS_JSON: &str = r#"{
       "repositories": {
         "front": {
           "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-front",
-          "gitCredentialSecret": "git/azure-devops",
+          "gitCredentialSecret": "",
           "defaultBranch": "develop",
           "pullRequestTargetBranch": "develop",
           "azureDevOpsRepository": "gesco-front",
@@ -204,7 +204,7 @@ const BUSINESS_PROJECTS_JSON: &str = r#"{
         },
         "back": {
           "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-back",
-          "gitCredentialSecret": "git/azure-devops",
+          "gitCredentialSecret": "",
           "defaultBranch": "develop",
           "pullRequestTargetBranch": "develop",
           "azureDevOpsRepository": "gesco-back",
@@ -226,7 +226,7 @@ const BUSINESS_PROJECTS_JSON: &str = r#"{
       "repositories": {
         "front": {
           "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/FRONT%20HOMMAGE%20EXPLOITATION",
-          "gitCredentialSecret": "git/azure-devops",
+          "gitCredentialSecret": "",
           "defaultBranch": "develop",
           "pullRequestTargetBranch": "develop",
           "azureDevOpsRepository": "FRONT HOMMAGE EXPLOITATION",
@@ -235,7 +235,7 @@ const BUSINESS_PROJECTS_JSON: &str = r#"{
         },
         "back": {
           "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/HOMMAGE%20EXPLOITATION",
-          "gitCredentialSecret": "git/azure-devops",
+          "gitCredentialSecret": "",
           "defaultBranch": "develop",
           "pullRequestTargetBranch": "develop",
           "azureDevOpsRepository": "HOMMAGE EXPLOITATION",

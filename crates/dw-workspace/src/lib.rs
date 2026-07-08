@@ -1950,6 +1950,9 @@ pub fn resolve_git_credential_from_keyring(
     let Some(secret_key) = secret_key else {
         return Ok(None);
     };
+    if secret_key.as_str().trim().is_empty() {
+        return Ok(None);
+    }
     let store = KeyringSecretStore;
     let secret = store.get(secret_key).map_err(|error| {
         WorkspaceOperationError::from(format!("Could not read Git secret `{secret_key}`: {error}"))
