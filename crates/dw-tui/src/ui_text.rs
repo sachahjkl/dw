@@ -136,7 +136,7 @@ pub(crate) fn view_hint(app: &App) -> &'static str {
             "explore schema [Enter]    explore schema [s]    describe table [d]    guided query [e]"
         }
         View::Composer => {
-            "edit or run [Enter]    select down [j]    select up [k]    next field [Tab]    suggestion [Ctrl+Space]    flows [Esc]"
+            "edit or run [Enter]    select down [j]    select up [k]    suggestion [Ctrl+Space]    flows [Esc]    next view [Tab]"
         }
     }
 }
@@ -360,7 +360,7 @@ fn form_preview_lines_for(form: &FormState, app: &App) -> Vec<String> {
         lines.push(format!("Suggestion: {value}"));
     }
     lines.push(
-        "run [Enter]    next field [Tab]    field with arrows [arrows]    suggestion [Ctrl+Space]    toggle [Space]    cancel [Esc]"
+        "run [Enter]    field with arrows/j/k    suggestion [Ctrl+Space]    toggle [Space]    cancel [Esc]    next view [Tab]"
             .into(),
     );
     lines

@@ -1617,7 +1617,7 @@ fn footer_buttons(app: &App) -> Vec<ActionButton> {
         ],
         View::Composer => vec![
             ActionButton::new("Run", "Enter", ActionIntent::Primary),
-            ActionButton::new("Next field", "Tab", ActionIntent::Review),
+            ActionButton::new("Select", "j/k", ActionIntent::Review),
             ActionButton::new("Suggest", "Ctrl+Space", ActionIntent::Review),
             ActionButton::new("Flows", "Esc", ActionIntent::Review),
         ],

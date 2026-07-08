@@ -941,8 +941,6 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') if self.view == View::Composer => {
                 self.move_action_form_down()
             }
-            KeyCode::BackTab if self.view == View::Composer => self.move_action_form_up(),
-            KeyCode::Tab if self.view == View::Composer => self.move_action_form_down(),
             KeyCode::Up | KeyCode::Char('k') => self.move_action_up(),
             KeyCode::Down | KeyCode::Char('j') => self.move_action_down(),
             KeyCode::Char('K') if self.view == View::Ado => self.move_ado_project_up(),
@@ -2835,6 +2833,20 @@ mod tests {
         );
         assert_eq!(app.selected_workspace, 0);
         assert_eq!(app.selected_action, 0);
+    }
+
+    #[test]
+    fn composer_does_not_capture_tab_view_navigation() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.set_view(View::Composer);
+        app.action_form.begin_editing(&app.snapshot);
+        let selected_field = app.action_form.selected_field;
+
+        assert!(!app.handle_view_navigation_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)));
+        assert!(
+            !app.handle_view_navigation_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT))
+        );
+        assert_eq!(app.action_form.selected_field, selected_field);
     }
 
     #[test]
