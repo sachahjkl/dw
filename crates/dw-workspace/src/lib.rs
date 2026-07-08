@@ -2175,14 +2175,26 @@ fn trim_scalar(value: &str) -> String {
 
 fn distinct_repositories(repositories: &[WorkspaceRepositoryName]) -> Vec<WorkspaceRepositoryName> {
     let mut result = Vec::new();
-    for repository in repositories {
+    for repository in normalize_repository_names(repositories) {
         if !result.iter().any(|item: &WorkspaceRepositoryName| {
             item.as_str().eq_ignore_ascii_case(repository.as_str())
         }) {
-            result.push(repository.clone());
+            result.push(repository);
         }
     }
     result
+}
+
+fn normalize_repository_names(
+    repositories: &[WorkspaceRepositoryName],
+) -> Vec<WorkspaceRepositoryName> {
+    repositories
+        .iter()
+        .flat_map(|repository| repository.as_str().split(','))
+        .map(str::trim)
+        .filter(|repository| !repository.is_empty())
+        .map(WorkspaceRepositoryName::from)
+        .collect()
 }
 
 fn resolve_work_item_ids(
@@ -2232,7 +2244,7 @@ fn resolve_repositories(
     repositories: &[WorkspaceRepositoryName],
 ) -> Vec<WorkspaceRepositoryName> {
     if !repositories.is_empty() {
-        return repositories.to_vec();
+        return distinct_repositories(repositories);
     }
 
     if let Some(project_config) = project_config
@@ -2527,8 +2539,10 @@ fn collect_workspace_manifests(projects_root: &Path, entries: &mut Vec<Workspace
 fn read_manifest(path: &Path) -> Result<WorkspaceManifest, WorkspaceError> {
     let manifest_text = fs::read_to_string(path)
         .map_err(|_| WorkspaceError::InvalidManifest(path.display().to_string()))?;
-    serde_json::from_str(&manifest_text)
-        .map_err(|_| WorkspaceError::InvalidManifest(path.display().to_string()))
+    let mut manifest: WorkspaceManifest = serde_json::from_str(&manifest_text)
+        .map_err(|_| WorkspaceError::InvalidManifest(path.display().to_string()))?;
+    manifest.repositories = distinct_repositories(&manifest.repositories);
+    Ok(manifest)
 }
 
 fn write_text(path: &Path, content: &str) -> Result<(), WorkspaceError> {
@@ -2858,6 +2872,29 @@ artifacts:
         assert_eq!(
             result[0].path,
             WorkspacePath::from(workspace.display().to_string())
+        );
+    }
+
+    #[test]
+    fn task_list_splits_legacy_comma_separated_repositories() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"123","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/123-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front,back"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+
+        let result = task_list(root.to_str().expect("utf8 path"), None, None);
+
+        assert_eq!(
+            result[0].repositories,
+            vec![
+                WorkspaceRepositoryName::from("front"),
+                WorkspaceRepositoryName::from("back")
+            ]
         );
     }
 
@@ -4124,6 +4161,48 @@ artifacts:
                         workspace: WorkspacePath::from(workspace.display().to_string()),
                     }
         }));
+    }
+
+    #[test]
+    fn plan_task_teardown_splits_legacy_comma_separated_repositories() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        let workspace = test_workspace_dir(root, "ha", "feat-55222-slug");
+        fs::create_dir_all(&workspace).expect("workspace should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"55222","taskId":null,"project":"ha","type":"feat","slug":"slug","branchName":"feat/55222-slug","createdAt":"2026-06-22T12:00:00Z","repositories":["front,back"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+        let projects: ProjectsConfig = serde_json::from_str(
+            r#"{"projects":{"ha":{"displayName":"HA","repositories":{"front":{"url":"https://example/front.git","defaultBranch":"develop","anchorName":"front.git","folder":"front"},"back":{"url":"https://example/back.git","defaultBranch":"main","anchorName":"back.git","folder":"back"}}}}}"#,
+        )
+        .expect("projects should parse");
+
+        let (manifest, steps) = plan_task_teardown(
+            root.to_str().expect("utf8 path"),
+            &projects,
+            &typed_workspace_path(&workspace),
+        )
+        .expect("teardown plan should build");
+
+        assert_eq!(
+            manifest.repositories,
+            vec![
+                WorkspaceRepositoryName::from("front"),
+                WorkspaceRepositoryName::from("back"),
+            ]
+        );
+        assert!(steps.iter().any(|step| matches!(
+            &step.action,
+            WorkspaceTeardownAction::WorktreeRemove { git_dir, .. }
+                if git_dir.as_str().ends_with("front.git")
+        )));
+        assert!(steps.iter().any(|step| matches!(
+            &step.action,
+            WorkspaceTeardownAction::WorktreeRemove { git_dir, .. }
+                if git_dir.as_str().ends_with("back.git")
+        )));
     }
 
     #[test]

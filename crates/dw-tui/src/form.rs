@@ -1015,6 +1015,7 @@ fn field_value(fields: &[FormField], label: &str) -> Option<String> {
 fn parse_workspace_repository_names(value: Option<&str>) -> Vec<dw_core::WorkspaceRepositoryName> {
     value
         .into_iter()
+        .flat_map(|value| value.split(','))
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(dw_core::WorkspaceRepositoryName::from)

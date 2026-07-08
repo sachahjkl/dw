@@ -1998,6 +1998,7 @@ fn finish_mode_from_label(label: &str) -> FinishMode {
 fn parse_workspace_repository_names(value: Option<&str>) -> Vec<WorkspaceRepositoryName> {
     value
         .into_iter()
+        .flat_map(|value| value.split(','))
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(WorkspaceRepositoryName::from)
