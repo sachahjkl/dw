@@ -16,4 +16,4 @@ thiserror.workspace = true
 
 
 [target.'cfg(windows)'.dependencies]
-git2 = { workspace = true, features = ["https", "vendored-libgit2"] }
+git2 = { workspace = true, features = ["https", "ssh", "vendored-libgit2"] }

@@ -212,12 +212,6 @@ fn _is_absolute(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(windows)]
-    use std::sync::Mutex;
-
-    #[cfg(windows)]
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
     #[test]
     fn normalize_expands_tilde_from_platform_home() {
         let path = normalize_path_lossy("~/dev/dw");
@@ -236,7 +230,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_user_config_uses_local_app_data() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = crate::TEST_ENV_LOCK.lock().expect("env lock");
         let local_app_data = env::var("LOCALAPPDATA").ok();
         unsafe {
             env::set_var("LOCALAPPDATA", "C:/Users/demo/AppData/Local");

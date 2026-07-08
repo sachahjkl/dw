@@ -169,6 +169,7 @@ pub fn execute_repo_latest(plan: &RepoLatestPlanReport) -> Result<RepoLatestExec
             &target.repository_path,
             &target.default_branch,
             credential.as_ref(),
+            target.ssh_url.as_ref(),
         )?;
         updated.push(RepoLatestUpdate {
             repository: target.repository.clone(),
@@ -264,7 +265,8 @@ pub fn execute_add_repo(plan: &AddRepoPlanReport) -> Result<AddRepoExecutionRepo
     let worktree = prepare_worktree(&WorktreePrepareRequest {
         project_root: plan.plan.project_root.clone(),
         repository: plan.plan.repository.clone(),
-        url: plan.plan.url.clone(),
+        http_url: plan.plan.http_url.clone(),
+        ssh_url: plan.plan.ssh_url.clone(),
         default_branch: plan.plan.default_branch.clone(),
         anchor_name: plan.plan.anchor_name.clone(),
         branch_name: plan.plan.branch_name.clone(),

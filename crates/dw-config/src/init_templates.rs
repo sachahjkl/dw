@@ -44,6 +44,24 @@ pub(crate) fn resolve_profile(name: &str) -> std::io::Result<InitProfile> {
     }
 }
 
+pub(crate) fn repository_ssh_url_for_http(http_url: &str) -> Option<String> {
+    if let Some(path) = http_url.strip_prefix("https://github.com/") {
+        return Some(format!("git@github.com:{path}"));
+    }
+    let projects: crate::ProjectsConfig = serde_json::from_str(BUSINESS_PROJECTS_JSON).ok()?;
+    projects
+        .projects
+        .values()
+        .filter_map(|project| serde_json::from_value::<crate::ProjectConfig>(project.clone()).ok())
+        .flat_map(|project| project.repositories.into_values())
+        .filter_map(|repository| serde_json::from_value::<crate::RepositoryConfig>(repository).ok())
+        .find_map(|repository| {
+            (repository.url.http() == http_url)
+                .then(|| repository.url.ssh().map(ToString::to_string))
+                .flatten()
+        })
+}
+
 pub(crate) fn detect_profile(root: &str) -> InitProfile {
     let projects = std::fs::read_to_string(std::path::Path::new(root).join("config/projects.json"))
         .unwrap_or_default();
@@ -194,7 +212,10 @@ const BUSINESS_PROJECTS_JSON: &str = r#"{
       },
       "repositories": {
         "front": {
-          "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-front",
+          "url": {
+            "http": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-front",
+            "ssh": "git@ssh.dev.azure.com:v3/digital-factory-ogf/HOMMAGE%20AGENCE/gesco-front"
+          },
           "gitCredentialSecret": "",
           "defaultBranch": "develop",
           "pullRequestTargetBranch": "develop",
@@ -203,7 +224,10 @@ const BUSINESS_PROJECTS_JSON: &str = r#"{
           "folder": "front"
         },
         "back": {
-          "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-back",
+          "url": {
+            "http": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20AGENCE/_git/gesco-back",
+            "ssh": "git@ssh.dev.azure.com:v3/digital-factory-ogf/HOMMAGE%20AGENCE/gesco-back"
+          },
           "gitCredentialSecret": "",
           "defaultBranch": "develop",
           "pullRequestTargetBranch": "develop",
@@ -225,7 +249,10 @@ const BUSINESS_PROJECTS_JSON: &str = r#"{
       },
       "repositories": {
         "front": {
-          "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/FRONT%20HOMMAGE%20EXPLOITATION",
+          "url": {
+            "http": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/FRONT%20HOMMAGE%20EXPLOITATION",
+            "ssh": "git@ssh.dev.azure.com:v3/digital-factory-ogf/HOMMAGE%20EXPLOITATION/FRONT%20HOMMAGE%20EXPLOITATION"
+          },
           "gitCredentialSecret": "",
           "defaultBranch": "develop",
           "pullRequestTargetBranch": "develop",
@@ -234,7 +261,10 @@ const BUSINESS_PROJECTS_JSON: &str = r#"{
           "folder": "front"
         },
         "back": {
-          "url": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/HOMMAGE%20EXPLOITATION",
+          "url": {
+            "http": "https://digital-factory-ogf@dev.azure.com/digital-factory-ogf/HOMMAGE%20EXPLOITATION/_git/HOMMAGE%20EXPLOITATION",
+            "ssh": "git@ssh.dev.azure.com:v3/digital-factory-ogf/HOMMAGE%20EXPLOITATION/HOMMAGE%20EXPLOITATION"
+          },
           "gitCredentialSecret": "",
           "defaultBranch": "develop",
           "pullRequestTargetBranch": "develop",

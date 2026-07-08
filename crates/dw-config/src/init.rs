@@ -1,9 +1,16 @@
-use crate::init_templates::{WORKSPACE_CODEX_CONFIG, detect_profile, resolve_profile};
+use crate::init_templates::{
+    WORKSPACE_CODEX_CONFIG, detect_profile, repository_ssh_url_for_http, resolve_profile,
+};
 use crate::settings::normalize_path_lossy;
-use crate::{UserSettings, default_root, save_user_settings};
+use crate::{
+    ProjectConfig, ProjectsConfig, RepositoryConfig, UserSettings, default_root, save_user_settings,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::process::Stdio;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InitRequest {
@@ -122,12 +129,110 @@ pub fn refresh_root(request: RefreshRequest) -> std::io::Result<RefreshReport> {
 
     create_directories(&root)?;
     write_schemas(&root, true)?;
+    migrate_projects_urls(&root)?;
+    sync_bare_repository_remotes(&root)?;
     write_root_agent_files(&root, &profile, true)?;
 
     Ok(RefreshReport {
         root,
         profile: profile.name.into(),
     })
+}
+
+fn migrate_projects_urls(root: &str) -> std::io::Result<()> {
+    let projects_path = path(root, &["config", "projects.json"]);
+    let Ok(text) = fs::read_to_string(&projects_path) else {
+        return Ok(());
+    };
+    let Ok(mut value) = serde_json::from_str::<Value>(&text) else {
+        return Ok(());
+    };
+    let mut changed = false;
+    if let Some(projects) = value.get_mut("projects").and_then(Value::as_object_mut) {
+        for project in projects.values_mut() {
+            let Some(repositories) = project
+                .get_mut("repositories")
+                .and_then(Value::as_object_mut)
+            else {
+                continue;
+            };
+            for repository in repositories.values_mut() {
+                let Some(url) = repository.get_mut("url") else {
+                    continue;
+                };
+                if let Some(http) = url.as_str().map(ToString::to_string) {
+                    let ssh = repository_ssh_url_for_http(&http);
+                    *url = match ssh {
+                        Some(ssh) => json!({ "http": http, "ssh": ssh }),
+                        None => json!({ "http": http }),
+                    };
+                    changed = true;
+                }
+            }
+        }
+    }
+    if changed {
+        let migrated = serde_json::to_string_pretty(&value).map_err(std::io::Error::other)?;
+        fs::write(projects_path, format!("{migrated}\n"))?;
+    }
+    Ok(())
+}
+
+fn sync_bare_repository_remotes(root: &str) -> std::io::Result<()> {
+    let projects_path = path(root, &["config", "projects.json"]);
+    let Ok(text) = fs::read_to_string(projects_path) else {
+        return Ok(());
+    };
+    let Ok(config) = serde_json::from_str::<ProjectsConfig>(&text) else {
+        return Ok(());
+    };
+    for (project_key, project) in config.projects {
+        let Ok(project) = serde_json::from_value::<ProjectConfig>(project) else {
+            continue;
+        };
+        for (repository_key, repository) in project.repositories {
+            let Ok(repository) = serde_json::from_value::<RepositoryConfig>(repository) else {
+                continue;
+            };
+            let anchor_name = repository
+                .anchor_name
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .map(ToString::to_string)
+                .unwrap_or_else(|| format!("{repository_key}.git"));
+            let repository_path = Path::new(root)
+                .join("projects")
+                .join(project_key.as_str())
+                .join("repositories")
+                .join(anchor_name);
+            if !repository_path.is_dir() {
+                continue;
+            }
+            let http = repository.url.http().trim();
+            if !http.is_empty() {
+                let _ = git(&repository_path, &["remote", "set-url", "origin", http]);
+            }
+            if let Some(ssh) = repository.url.ssh() {
+                if git(&repository_path, &["remote", "get-url", "dw-ssh"]) {
+                    let _ = git(&repository_path, &["remote", "set-url", "dw-ssh", ssh]);
+                } else {
+                    let _ = git(&repository_path, &["remote", "add", "dw-ssh", ssh]);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn git(repository_path: &Path, args: &[&str]) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(repository_path)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn create_directories(root: &str) -> std::io::Result<()> {
@@ -280,6 +385,9 @@ fn normalize_root(value: Option<&str>) -> String {
 mod tests {
     use super::*;
 
+    const TEST_HTTP_URL: &str = "https://github.com/torvalds/linux.git";
+    const TEST_SSH_URL: &str = "git@github.com:torvalds/linux.git";
+
     #[test]
     fn init_writes_config_and_schemas_with_relative_links() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -389,5 +497,43 @@ mod tests {
             fs::read_to_string(root.path().join("config/databases.json")).expect("databases"),
             "custom databases"
         );
+    }
+
+    #[test]
+    fn refresh_migrates_repository_url_string_to_http_ssh_object() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(root.path().join("config")).expect("config dir");
+        fs::write(
+            root.path().join("config/projects.json"),
+            &format!(
+                r#"{{
+  "schema": 1,
+  "projects": {{
+    "linux": {{
+      "displayName": "Linux Kernel",
+      "repositories": {{
+        "kernel": {{
+          "url": "{TEST_HTTP_URL}",
+          "defaultBranch": "develop"
+        }}
+      }}
+    }}
+  }}
+}}"#
+            ),
+        )
+        .expect("projects");
+
+        refresh_root(RefreshRequest {
+            root: root.path().display().to_string(),
+            profile: Some("business".into()),
+        })
+        .expect("refresh should succeed");
+
+        let migrated =
+            fs::read_to_string(root.path().join("config/projects.json")).expect("projects");
+        assert!(migrated.contains(r#""url": {"#));
+        assert!(migrated.contains(&format!(r#""http": "{TEST_HTTP_URL}""#)));
+        assert!(migrated.contains(&format!(r#""ssh": "{TEST_SSH_URL}""#)));
     }
 }

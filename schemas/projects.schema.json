@@ -76,7 +76,24 @@
       "required": ["url", "defaultBranch"],
       "properties": {
         "url": {
-          "type": "string"
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "required": ["http"],
+              "properties": {
+                "http": {
+                  "type": "string"
+                },
+                "ssh": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "defaultBranch": {
           "type": "string",

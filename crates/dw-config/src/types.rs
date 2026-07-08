@@ -86,7 +86,7 @@ pub struct ProjectConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct RepositoryConfig {
-    pub url: String,
+    pub url: RepositoryUrl,
     #[serde(rename = "defaultBranch")]
     pub default_branch: String,
     #[serde(rename = "pullRequestTargetBranch")]
@@ -98,6 +98,36 @@ pub struct RepositoryConfig {
     #[serde(rename = "gitCredentialSecret")]
     pub git_credential_secret: Option<dw_core::SecretKey>,
     pub folder: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum RepositoryUrl {
+    Http(String),
+    Split { http: String, ssh: Option<String> },
+}
+
+impl RepositoryUrl {
+    pub fn http(&self) -> &str {
+        match self {
+            Self::Http(url) => url,
+            Self::Split { http, .. } => http,
+        }
+    }
+
+    pub fn ssh(&self) -> Option<&str> {
+        match self {
+            Self::Http(_) => None,
+            Self::Split { ssh, .. } => ssh.as_deref(),
+        }
+        .filter(|value| !value.trim().is_empty())
+    }
+}
+
+impl Default for RepositoryUrl {
+    fn default() -> Self {
+        Self::Http(String::new())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

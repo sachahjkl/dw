@@ -16,6 +16,7 @@ use thiserror::Error;
 
 const ENV_DW_ADO_TOKEN: &str = "DW_ADO_TOKEN";
 const ENV_AZURE_DEVOPS_EXT_PAT: &str = "AZURE_DEVOPS_EXT_PAT";
+const FALLBACK_SSH_REMOTE: &str = "dw-ssh";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GitRewriteNote {
@@ -135,7 +136,10 @@ pub struct WorktreePrepareRequest {
     #[serde(rename = "projectRoot")]
     pub project_root: ProjectRootPath,
     pub repository: WorkspaceRepositoryName,
-    pub url: GitRemoteUrl,
+    #[serde(rename = "httpUrl")]
+    pub http_url: GitRemoteUrl,
+    #[serde(rename = "sshUrl")]
+    pub ssh_url: Option<GitRemoteUrl>,
     #[serde(rename = "defaultBranch")]
     pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
@@ -396,8 +400,10 @@ pub fn update_repository(
     repository_path: &RepositoryPath,
     default_branch: &BranchName,
     credential: Option<&GitCredential>,
+    ssh_url: Option<&GitRemoteUrl>,
 ) -> Result<()> {
     let mut repository = Repository::open(repository_path.as_str()).map_err(git2_command_error)?;
+    configure_ssh_remote(&repository, ssh_url)?;
     let has_changes = repository_has_changes(&repository)?;
     let mut stashed = false;
 
@@ -413,7 +419,7 @@ pub fn update_repository(
         stashed = true;
     }
 
-    fetch_anchor_repository(&repository, credential)?;
+    fetch_anchor_repository(&repository, credential, ssh_url)?;
     let source_branch = resolve_remote_source_branch(default_branch);
     rebase_current_branch(&repository, &source_branch).map_err(|error| {
         anyhow!(
@@ -586,24 +592,20 @@ pub fn commit_repository(repository_path: &RepositoryPath, message: &CommitMessa
 
 pub fn push_repository(repository_path: &RepositoryPath, branch_name: &BranchName) -> Result<()> {
     let repository = Repository::open(repository_path.as_str()).map_err(git2_command_error)?;
-    let mut remote = repository
-        .find_remote("origin")
-        .map_err(git2_command_error)?;
-    let remote_url = remote.url().ok().map(str::to_string);
-    let callbacks = remote_callbacks(None, remote_url.as_deref());
-    let mut options = PushOptions::new();
-    options.remote_callbacks(callbacks);
+    let ssh_url = configured_ssh_remote_url(&repository).map(GitRemoteUrl::from);
     let refspec = format!("refs/heads/{branch_name}:refs/heads/{branch_name}");
-    remote
-        .push(&[refspec.as_str()], Some(&mut options))
-        .map_err(|error| {
-            git2_auth_error(error, credential_available(None, remote_url.as_deref()))
-        })?;
+    match push_remote(&repository, "origin", &refspec, None) {
+        Ok(()) => {}
+        Err(error) if should_try_ssh_fallback(&error) && ssh_url.is_some() => {
+            push_remote(&repository, FALLBACK_SSH_REMOTE, &refspec, None)?;
+        }
+        Err(error) => return Err(error.into()),
+    }
     Ok(())
 }
 
 pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrepareResult> {
-    if request.url.as_str().trim().is_empty() {
+    if request.http_url.as_str().trim().is_empty() {
         std::fs::create_dir_all(request.worktree_path.as_str())?;
         return Ok(WorktreePrepareResult {
             repository: request.repository.clone(),
@@ -615,16 +617,26 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
     let repositories_root = Path::new(request.project_root.as_str()).join("repositories");
     let anchor_path = repositories_root.join(request.anchor_name.as_str());
     std::fs::create_dir_all(&repositories_root)?;
-    let normalized_url = normalize_git_remote_url(&request.url);
+    let normalized_url = normalize_git_remote_url(&request.http_url);
 
     let anchor_repository = if !anchor_path.is_dir() {
-        clone_bare_repository(&normalized_url, &anchor_path, request.credential.as_ref())?
+        clone_bare_repository(
+            &normalized_url,
+            request.ssh_url.as_ref(),
+            &anchor_path,
+            request.credential.as_ref(),
+        )?
     } else {
         ensure_origin_url(&anchor_path, &normalized_url)?;
         Repository::open_bare(&anchor_path).map_err(git2_command_error)?
     };
+    configure_ssh_remote(&anchor_repository, request.ssh_url.as_ref())?;
     configure_anchor_fetch_refspec(&anchor_repository)?;
-    fetch_anchor_repository(&anchor_repository, request.credential.as_ref())?;
+    fetch_anchor_repository(
+        &anchor_repository,
+        request.credential.as_ref(),
+        request.ssh_url.as_ref(),
+    )?;
 
     if Path::new(request.worktree_path.as_str()).is_dir() {
         return Ok(WorktreePrepareResult {
@@ -696,15 +708,33 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
 
 fn clone_bare_repository(
     url: &GitRemoteUrl,
+    ssh_url: Option<&GitRemoteUrl>,
     anchor_path: &Path,
     credential: Option<&GitCredential>,
 ) -> std::result::Result<Repository, GitError> {
-    let fetch_options = fetch_options(credential, Some(url.as_str()));
+    let origin_fetch_options = fetch_options(credential, Some(url.as_str()));
     let mut builder = RepoBuilder::new();
-    builder.bare(true).fetch_options(fetch_options);
-    builder.clone(url.as_str(), anchor_path).map_err(|error| {
+    builder.bare(true).fetch_options(origin_fetch_options);
+    match builder.clone(url.as_str(), anchor_path).map_err(|error| {
         git2_auth_error(error, credential_available(credential, Some(url.as_str())))
-    })
+    }) {
+        Ok(repository) => Ok(repository),
+        Err(error) if should_try_ssh_fallback(&error) && ssh_url.is_some() => {
+            let ssh_url = normalize_git_remote_url(ssh_url.expect("checked is_some"));
+            let fetch_options = fetch_options(None, Some(ssh_url.as_str()));
+            let mut builder = RepoBuilder::new();
+            builder.bare(true).fetch_options(fetch_options);
+            let repository = builder
+                .clone(ssh_url.as_str(), anchor_path)
+                .map_err(|error| git2_auth_error(error, false))?;
+            repository
+                .remote_set_url("origin", url.as_str())
+                .map_err(git2_command_error)?;
+            configure_ssh_remote(&repository, Some(&ssh_url))?;
+            Ok(repository)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn ensure_origin_url(anchor_path: &Path, url: &GitRemoteUrl) -> std::result::Result<(), GitError> {
@@ -719,6 +749,48 @@ fn ensure_origin_url(anchor_path: &Path, url: &GitRemoteUrl) -> std::result::Res
             .map_err(git2_command_error)?;
     }
     Ok(())
+}
+
+fn configure_ssh_remote(
+    repository: &Repository,
+    ssh_url: Option<&GitRemoteUrl>,
+) -> std::result::Result<(), GitError> {
+    let Some(ssh_url) = ssh_url else {
+        return Ok(());
+    };
+    if ssh_url.as_str().trim().is_empty() {
+        return Ok(());
+    }
+    let ssh_url = normalize_git_remote_url(ssh_url);
+    match repository.find_remote(FALLBACK_SSH_REMOTE) {
+        Ok(remote) if remote.url().ok() == Some(ssh_url.as_str()) => Ok(()),
+        Ok(_) => repository
+            .remote_set_url(FALLBACK_SSH_REMOTE, ssh_url.as_str())
+            .map_err(git2_command_error),
+        Err(_) => repository
+            .remote(FALLBACK_SSH_REMOTE, ssh_url.as_str())
+            .map(|_| ())
+            .map_err(git2_command_error),
+    }
+}
+
+fn configured_ssh_remote_url(repository: &Repository) -> Option<String> {
+    repository
+        .find_remote(FALLBACK_SSH_REMOTE)
+        .ok()
+        .and_then(|remote| remote.url().ok().map(str::to_string))
+        .filter(|url| !url.trim().is_empty())
+}
+
+fn should_try_ssh_fallback(error: &GitError) -> bool {
+    matches!(
+        error,
+        GitError::Authentication {
+            kind: GitAuthFailureKind::HttpsCredentialMissing
+                | GitAuthFailureKind::HttpsCredentialRejected,
+            ..
+        }
+    )
 }
 
 fn normalize_git_remote_url(url: &GitRemoteUrl) -> GitRemoteUrl {
@@ -753,9 +825,25 @@ fn configure_anchor_fetch_refspec(repository: &Repository) -> std::result::Resul
 fn fetch_anchor_repository(
     repository: &Repository,
     credential: Option<&GitCredential>,
+    ssh_url: Option<&GitRemoteUrl>,
+) -> std::result::Result<(), GitError> {
+    configure_ssh_remote(repository, ssh_url)?;
+    match fetch_remote(repository, "origin", credential) {
+        Ok(()) => Ok(()),
+        Err(error) if should_try_ssh_fallback(&error) && ssh_url.is_some() => {
+            fetch_remote(repository, FALLBACK_SSH_REMOTE, None)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn fetch_remote(
+    repository: &Repository,
+    remote_name: &str,
+    credential: Option<&GitCredential>,
 ) -> std::result::Result<(), GitError> {
     let mut remote = repository
-        .find_remote("origin")
+        .find_remote(remote_name)
         .map_err(git2_command_error)?;
     let remote_url = remote.url().ok().map(str::to_string);
     let mut fetch_options = fetch_options(credential, remote_url.as_deref());
@@ -765,6 +853,29 @@ fn fetch_anchor_repository(
             Some(&mut fetch_options),
             None,
         )
+        .map_err(|error| {
+            git2_auth_error(
+                error,
+                credential_available(credential, remote_url.as_deref()),
+            )
+        })
+}
+
+fn push_remote(
+    repository: &Repository,
+    remote_name: &str,
+    refspec: &str,
+    credential: Option<&GitCredential>,
+) -> std::result::Result<(), GitError> {
+    let mut remote = repository
+        .find_remote(remote_name)
+        .map_err(git2_command_error)?;
+    let remote_url = remote.url().ok().map(str::to_string);
+    let callbacks = remote_callbacks(credential, remote_url.as_deref());
+    let mut options = PushOptions::new();
+    options.remote_callbacks(callbacks);
+    remote
+        .push(&[refspec], Some(&mut options))
         .map_err(|error| {
             git2_auth_error(
                 error,

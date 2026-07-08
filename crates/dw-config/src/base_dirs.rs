@@ -1,3 +1,4 @@
+#[cfg(not(test))]
 use directories::BaseDirs;
 use std::env;
 use std::path::{Path, PathBuf};
@@ -17,20 +18,32 @@ pub struct PlatformBaseDirs {
 
 impl PlatformBaseDirs {
     pub fn resolve() -> Self {
-        if let Some(base_dirs) = BaseDirs::new() {
-            return Self {
-                home_dir: base_dirs.home_dir().to_path_buf(),
-                cache_dir: Some(base_dirs.cache_dir().to_path_buf()),
-                config_dir: Some(base_dirs.config_dir().to_path_buf()),
-                data_dir: Some(base_dirs.data_dir().to_path_buf()),
-                data_local_dir: Some(base_dirs.data_local_dir().to_path_buf()),
-                executable_dir: base_dirs.executable_dir().map(PathBuf::from),
-                preference_dir: Some(base_dirs.preference_dir().to_path_buf()),
-                runtime_dir: base_dirs.runtime_dir().map(PathBuf::from),
-                state_dir: base_dirs.state_dir().map(PathBuf::from),
-            };
+        #[cfg(test)]
+        {
+            Self::resolve_from_environment()
         }
 
+        #[cfg(not(test))]
+        {
+            if let Some(base_dirs) = BaseDirs::new() {
+                return Self {
+                    home_dir: base_dirs.home_dir().to_path_buf(),
+                    cache_dir: Some(base_dirs.cache_dir().to_path_buf()),
+                    config_dir: Some(base_dirs.config_dir().to_path_buf()),
+                    data_dir: Some(base_dirs.data_dir().to_path_buf()),
+                    data_local_dir: Some(base_dirs.data_local_dir().to_path_buf()),
+                    executable_dir: base_dirs.executable_dir().map(PathBuf::from),
+                    preference_dir: Some(base_dirs.preference_dir().to_path_buf()),
+                    runtime_dir: base_dirs.runtime_dir().map(PathBuf::from),
+                    state_dir: base_dirs.state_dir().map(PathBuf::from),
+                };
+            }
+
+            Self::resolve_from_environment()
+        }
+    }
+
+    fn resolve_from_environment() -> Self {
         let home_dir = fallback_home_dir();
         Self {
             cache_dir: fallback_cache_dir(&home_dir),

@@ -1,6 +1,7 @@
 use dw_ado::WorkItemSnapshot;
 use dw_config::{
-    ProjectConfig, ProjectsConfig, RepositoryConfig, repository_config, resolve_project,
+    ProjectConfig, ProjectsConfig, RepositoryConfig, RepositoryUrl, repository_config,
+    resolve_project,
 };
 use dw_contracts::{
     AdoAiContextItem, HANDOFF_PREFIX, HANDOFF_VALIDATION_VERSION, MARKDOWN_EXTENSION,
@@ -205,7 +206,10 @@ pub struct TaskStartRepositoryPlan {
     pub project_root: ProjectRootPath,
     #[serde(rename = "worktreePath")]
     pub worktree_path: RepositoryPath,
-    pub url: GitRemoteUrl,
+    #[serde(rename = "httpUrl")]
+    pub http_url: GitRemoteUrl,
+    #[serde(rename = "sshUrl")]
+    pub ssh_url: Option<GitRemoteUrl>,
     #[serde(rename = "defaultBranch")]
     pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
@@ -237,6 +241,8 @@ pub struct TaskRepoLatestTarget {
     pub repository_path: RepositoryPath,
     #[serde(rename = "defaultBranch")]
     pub default_branch: BranchName,
+    #[serde(rename = "sshUrl")]
+    pub ssh_url: Option<GitRemoteUrl>,
     #[serde(rename = "gitCredentialSecret")]
     pub git_credential_secret: Option<SecretKey>,
 }
@@ -268,7 +274,10 @@ pub struct TaskAddRepoPlan {
     pub project_root: ProjectRootPath,
     #[serde(rename = "worktreePath")]
     pub worktree_path: RepositoryPath,
-    pub url: GitRemoteUrl,
+    #[serde(rename = "httpUrl")]
+    pub http_url: GitRemoteUrl,
+    #[serde(rename = "sshUrl")]
+    pub ssh_url: Option<GitRemoteUrl>,
     #[serde(rename = "defaultBranch")]
     pub default_branch: BranchName,
     #[serde(rename = "anchorName")]
@@ -884,7 +893,7 @@ pub fn plan_task_repo_latest(
                 .as_ref()
                 .and_then(|project| repository_config(project, repository.as_str()))
                 .unwrap_or(RepositoryConfig {
-                    url: String::new(),
+                    url: RepositoryUrl::default(),
                     default_branch: "main".into(),
                     pull_request_target_branch: None,
                     azure_dev_ops_repository: None,
@@ -905,6 +914,7 @@ pub fn plan_task_repo_latest(
                         .to_string(),
                 ),
                 default_branch: BranchName::from(repository_config.default_branch),
+                ssh_url: repository_config.url.ssh().map(GitRemoteUrl::from),
                 git_credential_secret: repository_config.git_credential_secret,
             }
         })
@@ -1220,7 +1230,8 @@ pub fn plan_task_add_repo(
                         .display()
                         .to_string(),
                 ),
-                url: GitRemoteUrl::from(""),
+                http_url: GitRemoteUrl::from(""),
+                ssh_url: None,
                 default_branch: BranchName::from("main"),
                 anchor_name: GitAnchorName::from(format!("{repository}.git")),
                 git_credential_secret: None,
@@ -1266,7 +1277,8 @@ pub fn plan_task_add_repo(
                     .display()
                     .to_string(),
             ),
-            url: GitRemoteUrl::from(repository_config.url),
+            http_url: GitRemoteUrl::from(repository_config.url.http()),
+            ssh_url: repository_config.url.ssh().map(GitRemoteUrl::from),
             default_branch: BranchName::from(repository_config.default_branch),
             anchor_name: GitAnchorName::from(anchor_name),
             git_credential_secret: repository_config.git_credential_secret,
@@ -1313,7 +1325,7 @@ pub fn plan_task_teardown(
             .as_ref()
             .and_then(|project| repository_config(project, repository_key.as_str()))
             .unwrap_or(RepositoryConfig {
-                url: String::new(),
+                url: RepositoryUrl::default(),
                 default_branch: "main".into(),
                 pull_request_target_branch: None,
                 azure_dev_ops_repository: None,
@@ -1352,7 +1364,7 @@ pub fn plan_task_teardown(
             },
         });
 
-        if !repository.url.trim().is_empty() {
+        if !repository.url.http().trim().is_empty() {
             steps.push(WorkspaceTeardownStep {
                 subject: WorkspaceTeardownSubject::Repository {
                     repository: repository_key.clone(),
@@ -1485,7 +1497,8 @@ pub fn execute_task_start_with_work_items_and_child_tasks(
             prepare_worktree(&WorktreePrepareRequest {
                 project_root: target.project_root.clone(),
                 repository: target.repository.clone(),
-                url: target.url.clone(),
+                http_url: target.http_url.clone(),
+                ssh_url: target.ssh_url.clone(),
                 default_branch: target.default_branch.clone(),
                 anchor_name: target.anchor_name.clone(),
                 branch_name: target.branch_name.clone(),
@@ -1690,7 +1703,7 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
                 .as_ref()
                 .and_then(|project| repository_config(project, repository_key.as_str()))
                 .unwrap_or(RepositoryConfig {
-                    url: String::new(),
+                    url: RepositoryUrl::default(),
                     default_branch: "main".into(),
                     pull_request_target_branch: None,
                     azure_dev_ops_repository: None,
@@ -1716,7 +1729,8 @@ pub fn plan_task_start(request: TaskStartRequest<'_>) -> Result<TaskStartPlan, W
                         .display()
                         .to_string(),
                 ),
-                url: GitRemoteUrl::from(repository.url),
+                http_url: GitRemoteUrl::from(repository.url.http()),
+                ssh_url: repository.url.ssh().map(GitRemoteUrl::from),
                 default_branch: BranchName::from(repository.default_branch),
                 anchor_name: GitAnchorName::from(anchor_name),
                 git_credential_secret: repository.git_credential_secret,
@@ -1822,7 +1836,7 @@ pub fn resolve_open_target(
     let repository = project_config
         .and_then(|project| repository_config(project, repository_key))
         .unwrap_or(RepositoryConfig {
-            url: String::new(),
+            url: RepositoryUrl::default(),
             default_branch: "main".into(),
             pull_request_target_branch: None,
             azure_dev_ops_repository: None,
@@ -3326,9 +3340,10 @@ artifacts:
                 repository: WorkspaceRepositoryName::from("front"),
                 project_root: ProjectRootPath::from(project_root.display().to_string()),
                 worktree_path: RepositoryPath::from(workspace.join("front").display().to_string()),
-                url: GitRemoteUrl::from(
+                http_url: GitRemoteUrl::from(
                     temp.path().join("missing-remote.git").display().to_string(),
                 ),
+                ssh_url: None,
                 default_branch: BranchName::from("develop"),
                 anchor_name: GitAnchorName::from("front.git"),
                 git_credential_secret: None,

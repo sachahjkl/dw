@@ -25,18 +25,18 @@ pub use store::{
 };
 pub use types::{
     AgentOptions, ConfigDoctorCheck, ConfigDoctorReport, ConfigShow, DatabasesConfig,
-    ProjectChoice, ProjectConfig, ProjectsConfig, RepositoryConfig, RootStatus, UserSettings,
-    WorkflowConfig,
+    ProjectChoice, ProjectConfig, ProjectsConfig, RepositoryConfig, RepositoryUrl, RootStatus,
+    UserSettings, WorkflowConfig,
 };
+
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::Path;
-    use std::sync::Mutex;
     use tempfile::tempdir;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn default_root_uses_dev_dw_suffix() {
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn root_status_is_initialized_after_init() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = crate::TEST_ENV_LOCK.lock().expect("env lock");
         let temp = tempdir().expect("tempdir");
 
         init_root(InitRequest {
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn set_color_persists_normalized_mode() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = crate::TEST_ENV_LOCK.lock().expect("env lock");
         let temp = tempdir().expect("tempdir should be created");
         let env = isolate_user_config_env(temp.path());
 
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn set_root_persists_absolute_path() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = crate::TEST_ENV_LOCK.lock().expect("env lock");
         let temp = tempdir().expect("tempdir should be created");
         let env = isolate_user_config_env(temp.path());
         let root = temp.path().join("dw-root");
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn set_root_normalizes_relative_segments_like_dotnet() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = crate::TEST_ENV_LOCK.lock().expect("env lock");
         let temp = tempdir().expect("tempdir should be created");
         let env = isolate_user_config_env(temp.path());
 
