@@ -4029,6 +4029,8 @@ artifacts:
             candidates[0].path.as_str(),
             final_workspace.display().to_string()
         );
+        let workspaces = find_workspaces(root.to_str().expect("utf8 path"));
+        assert_eq!(prune_candidate_count_from_workspaces(&workspaces), 1);
     }
 
     #[test]
