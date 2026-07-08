@@ -710,8 +710,10 @@ impl TuiSnapshot {
         let databases = load_databases_config(&root);
         let database_entries = database_entries_for_tui(&databases);
         let config_doctor = config_doctor(Some(&root));
-        let workspaces = load_workspaces_via_app(&root).await;
-        let prune_candidates = load_prune_candidate_count_via_app(&root).await;
+        let (workspaces, prune_candidates) = tokio::join!(
+            load_workspaces_via_app(&root),
+            load_prune_candidate_count_via_app(&root)
+        );
         let actions = build_actions(&root, &projects, &databases, &workspaces);
         let color_mode = load_user_settings().color.unwrap_or(ConfigColorMode::Auto);
         Self {
