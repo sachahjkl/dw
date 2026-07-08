@@ -618,7 +618,7 @@ pub fn find_workspace_path(start_path: &str) -> Option<String> {
 pub fn find_workspaces(root: &str) -> Vec<WorkspaceSummary> {
     let projects = Path::new(root).join("projects");
     let mut entries = Vec::new();
-    collect_manifests(&projects, &mut entries);
+    collect_workspace_manifests(&projects, &mut entries);
     entries.sort_by(|left, right| right.manifest.created_at.cmp(&left.manifest.created_at));
     entries
 }
@@ -2498,24 +2498,27 @@ fn teardown_git_dir(step: &WorkspaceTeardownStep) -> Result<&str, WorkspaceError
     Ok(git_dir)
 }
 
-fn collect_manifests(root: &Path, entries: &mut Vec<WorkspaceSummary>) {
-    let Ok(read_dir) = fs::read_dir(root) else {
+fn collect_workspace_manifests(projects_root: &Path, entries: &mut Vec<WorkspaceSummary>) {
+    let Ok(project_dirs) = fs::read_dir(projects_root) else {
         return;
     };
 
-    for entry in read_dir.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
+    for project_entry in project_dirs.flatten() {
+        let workspaces_dir = project_entry.path().join("workspaces");
+        let Ok(workspace_dirs) = fs::read_dir(workspaces_dir) else {
+            continue;
+        };
+        for workspace_entry in workspace_dirs.flatten() {
+            let path = workspace_entry.path();
+            if !path.is_dir() {
+                continue;
+            }
             let manifest_path = path.join("task.json");
-            if manifest_path.exists() {
-                if let Ok(manifest) = read_manifest(&manifest_path) {
-                    entries.push(WorkspaceSummary {
-                        path: WorkspacePath::from(path.display().to_string()),
-                        manifest,
-                    });
-                }
-            } else {
-                collect_manifests(&path, entries);
+            if let Ok(manifest) = read_manifest(&manifest_path) {
+                entries.push(WorkspaceSummary {
+                    path: WorkspacePath::from(path.display().to_string()),
+                    manifest,
+                });
             }
         }
     }
@@ -2791,6 +2794,40 @@ artifacts:
 
         let filtered = filter_workspaces(workspaces, Some("ha"), Some("123"));
         assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn find_workspaces_scans_only_workspace_directories() {
+        let temp = tempdir().expect("tempdir should be created");
+        let root = temp.path();
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
+        let repository = workspace.join("front");
+        let anchor = test_anchor_dir(root, "ha", "front.git");
+        fs::create_dir_all(&repository).expect("repository should exist");
+        fs::create_dir_all(&anchor).expect("anchor should exist");
+        fs::write(
+            workspace.join("task.json"),
+            r#"{"schema":1,"workItemId":"123","taskId":null,"project":"ha","type":"feat","slug":"demo","branchName":"feat/123-demo","createdAt":"2026-07-02T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("manifest should be written");
+        fs::write(
+            repository.join("task.json"),
+            r#"{"schema":1,"workItemId":"999","taskId":null,"project":"ha","type":"feat","slug":"nested","branchName":"feat/999-nested","createdAt":"2026-07-03T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("nested manifest should be written");
+        fs::write(
+            anchor.join("task.json"),
+            r#"{"schema":1,"workItemId":"998","taskId":null,"project":"ha","type":"feat","slug":"anchor","branchName":"feat/998-anchor","createdAt":"2026-07-04T10:00:00Z","repositories":["front"],"status":"created"}"#,
+        )
+        .expect("anchor manifest should be written");
+
+        let workspaces = find_workspaces(root.to_str().expect("utf8 path"));
+
+        assert_eq!(workspaces.len(), 1);
+        assert_eq!(
+            workspaces[0].manifest.primary_work_item_id().as_str(),
+            "123"
+        );
     }
 
     #[test]
