@@ -589,18 +589,16 @@ pub fn push_repository(repository_path: &RepositoryPath, branch_name: &BranchNam
     let mut remote = repository
         .find_remote("origin")
         .map_err(git2_command_error)?;
-    let environment_credential = remote
-        .url()
-        .ok()
-        .filter(|url| is_azure_devops_url(url))
-        .and_then(|_| git_credential_from_environment());
-    let callbacks = remote_callbacks(environment_credential.as_ref());
+    let remote_url = remote.url().ok().map(str::to_string);
+    let callbacks = remote_callbacks(None, remote_url.as_deref());
     let mut options = PushOptions::new();
     options.remote_callbacks(callbacks);
     let refspec = format!("refs/heads/{branch_name}:refs/heads/{branch_name}");
     remote
         .push(&[refspec.as_str()], Some(&mut options))
-        .map_err(|error| git2_auth_error(error, environment_credential.is_some()))?;
+        .map_err(|error| {
+            git2_auth_error(error, credential_available(None, remote_url.as_deref()))
+        })?;
     Ok(())
 }
 
@@ -618,25 +616,15 @@ pub fn prepare_worktree(request: &WorktreePrepareRequest) -> Result<WorktreePrep
     let anchor_path = repositories_root.join(request.anchor_name.as_str());
     std::fs::create_dir_all(&repositories_root)?;
     let normalized_url = normalize_git_remote_url(&request.url);
-    let environment_credential =
-        if request.credential.is_none() && is_azure_devops_url(request.url.as_str()) {
-            git_credential_from_environment()
-        } else {
-            None
-        };
-    let credential = request
-        .credential
-        .as_ref()
-        .or(environment_credential.as_ref());
 
     let anchor_repository = if !anchor_path.is_dir() {
-        clone_bare_repository(&normalized_url, &anchor_path, credential)?
+        clone_bare_repository(&normalized_url, &anchor_path, request.credential.as_ref())?
     } else {
         ensure_origin_url(&anchor_path, &normalized_url)?;
         Repository::open_bare(&anchor_path).map_err(git2_command_error)?
     };
     configure_anchor_fetch_refspec(&anchor_repository)?;
-    fetch_anchor_repository(&anchor_repository, credential)?;
+    fetch_anchor_repository(&anchor_repository, request.credential.as_ref())?;
 
     if Path::new(request.worktree_path.as_str()).is_dir() {
         return Ok(WorktreePrepareResult {
@@ -711,12 +699,12 @@ fn clone_bare_repository(
     anchor_path: &Path,
     credential: Option<&GitCredential>,
 ) -> std::result::Result<Repository, GitError> {
-    let fetch_options = fetch_options(credential);
+    let fetch_options = fetch_options(credential, Some(url.as_str()));
     let mut builder = RepoBuilder::new();
     builder.bare(true).fetch_options(fetch_options);
-    builder
-        .clone(url.as_str(), anchor_path)
-        .map_err(|error| git2_auth_error(error, credential.is_some()))
+    builder.clone(url.as_str(), anchor_path).map_err(|error| {
+        git2_auth_error(error, credential_available(credential, Some(url.as_str())))
+    })
 }
 
 fn ensure_origin_url(anchor_path: &Path, url: &GitRemoteUrl) -> std::result::Result<(), GitError> {
@@ -769,14 +757,20 @@ fn fetch_anchor_repository(
     let mut remote = repository
         .find_remote("origin")
         .map_err(git2_command_error)?;
-    let mut fetch_options = fetch_options(credential);
+    let remote_url = remote.url().ok().map(str::to_string);
+    let mut fetch_options = fetch_options(credential, remote_url.as_deref());
     remote
         .fetch(
             &["+refs/heads/*:refs/remotes/origin/*"],
             Some(&mut fetch_options),
             None,
         )
-        .map_err(|error| git2_auth_error(error, credential.is_some()))
+        .map_err(|error| {
+            git2_auth_error(
+                error,
+                credential_available(credential, remote_url.as_deref()),
+            )
+        })
 }
 
 fn repository_has_changes(repository: &Repository) -> std::result::Result<bool, GitError> {
@@ -836,18 +830,27 @@ fn rebase_current_branch(
     rebase.finish(Some(&signature)).map_err(git2_command_error)
 }
 
-fn fetch_options(credential: Option<&GitCredential>) -> FetchOptions<'_> {
-    let callbacks = remote_callbacks(credential);
+fn fetch_options(
+    credential: Option<&GitCredential>,
+    remote_url: Option<&str>,
+) -> FetchOptions<'static> {
+    let callbacks = remote_callbacks(credential, remote_url);
     let mut fetch_options = FetchOptions::new();
     fetch_options.remote_callbacks(callbacks);
     fetch_options
 }
 
-fn remote_callbacks(credential: Option<&GitCredential>) -> RemoteCallbacks<'_> {
+fn remote_callbacks(
+    credential: Option<&GitCredential>,
+    remote_url: Option<&str>,
+) -> RemoteCallbacks<'static> {
     let mut callbacks = RemoteCallbacks::new();
+    let credential = credential
+        .cloned()
+        .or_else(|| remote_url.and_then(|url| fallback_environment_credential(url, credential)));
     callbacks.certificate_check(|_, _| Ok(CertificateCheckStatus::CertificateOk));
     callbacks.credentials(move |_url, username_from_url, allowed_types| {
-        if let Some(credential) = credential
+        if let Some(credential) = credential.as_ref()
             && allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT)
         {
             return Cred::userpass_plaintext(
@@ -970,6 +973,30 @@ fn git_credential_from_environment() -> Option<GitCredential> {
         .map(GitCredential::personal_access_token)
 }
 
+fn fallback_environment_credential(
+    remote_url: &str,
+    explicit_credential: Option<&GitCredential>,
+) -> Option<GitCredential> {
+    if should_use_environment_credential(remote_url, explicit_credential.is_some()) {
+        return git_credential_from_environment();
+    }
+
+    None
+}
+
+fn should_use_environment_credential(
+    remote_url: &str,
+    explicit_credential_available: bool,
+) -> bool {
+    !explicit_credential_available && is_azure_devops_url(remote_url)
+}
+
+fn credential_available(credential: Option<&GitCredential>, remote_url: Option<&str>) -> bool {
+    credential.is_some()
+        || (remote_url.is_some_and(|url| should_use_environment_credential(url, false))
+            && git_credential_from_environment().is_some())
+}
+
 fn classify_auth_failure(
     stderr: &str,
     credential_was_available: bool,
@@ -1061,6 +1088,26 @@ mod tests {
             slug_from_phrase_or_fallback(Some("!!!"), "work item 55222"),
             TaskSlug::from("work-item-55222")
         );
+    }
+
+    #[test]
+    fn remote_auth_uses_environment_credential_for_ado_without_explicit_credential() {
+        assert!(should_use_environment_credential(
+            "https://dev.azure.com/org/project/_git/front",
+            false
+        ));
+        assert!(should_use_environment_credential(
+            "https://org.visualstudio.com/project/_git/front",
+            false
+        ));
+        assert!(!should_use_environment_credential(
+            "https://dev.azure.com/org/project/_git/front",
+            true
+        ));
+        assert!(!should_use_environment_credential(
+            "https://github.com/example/front.git",
+            false
+        ));
     }
 
     #[test]
