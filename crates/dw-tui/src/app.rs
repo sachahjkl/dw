@@ -548,7 +548,7 @@ impl App {
 
     pub fn cockpit_items(&self) -> Vec<CockpitItem> {
         let mut items = Vec::new();
-        if !self.snapshot.config_doctor.passed {
+        if !self.snapshot.config_doctor.passed && !self.snapshot.config_doctor.checks.is_empty() {
             items.push(CockpitItem {
                 section: "Attention",
                 title: "Configuration needs attention".into(),
@@ -2630,6 +2630,21 @@ mod tests {
         );
         assert!(app.reload_assigned_after_snapshot);
         assert!(app.reload_pull_requests_after_snapshot);
+    }
+
+    #[test]
+    fn loading_snapshot_does_not_surface_doctor_attention() {
+        let root = initialized_root();
+        let app = App::new(Some(root.path().display().to_string()));
+
+        let items = app.cockpit_items();
+
+        assert!(app.snapshot.config_doctor.checks.is_empty());
+        assert!(
+            items
+                .iter()
+                .all(|item| item.title != "Configuration needs attention")
+        );
     }
 
     #[test]

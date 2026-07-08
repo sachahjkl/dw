@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use crossterm::{
+    event,
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -7,6 +8,7 @@ use crossterm::{
 use dw_app::{DwActionRequest, DwActionResult};
 use dw_core::{DwActionEvent, ExternalLaunchPlan, InputRequest, InputResponse};
 use std::io;
+use std::time::Duration;
 
 use crate::history::ActionRunErrorMessage;
 use crate::model::{TuiAction, TuiActionRequest};
@@ -56,6 +58,14 @@ impl CapturedActionRunError {
 pub fn install_terminal() -> Result<()> {
     enable_raw_mode().context("enable raw terminal mode")?;
     execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).context("open TUI screen")?;
+    drain_pending_events()?;
+    Ok(())
+}
+
+fn drain_pending_events() -> Result<()> {
+    while event::poll(Duration::from_millis(0)).context("poll pending terminal events")? {
+        let _ = event::read().context("drain pending terminal event")?;
+    }
     Ok(())
 }
 

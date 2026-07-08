@@ -212,16 +212,13 @@ mod tests {
     fn set_color_persists_normalized_mode() {
         let _guard = ENV_LOCK.lock().expect("env lock");
         let temp = tempdir().expect("tempdir should be created");
-        let previous = std::env::var("XDG_CONFIG_HOME").ok();
-        unsafe {
-            std::env::set_var("XDG_CONFIG_HOME", temp.path().join("xdg"));
-        }
+        let env = isolate_user_config_env(temp.path());
 
         let result =
             set_color_mode(dw_core::ConfigColorMode::Always).expect("color should be saved");
         let settings = load_user_settings();
 
-        restore_env("XDG_CONFIG_HOME", previous);
+        restore_env_vars(env);
         assert_eq!(result, dw_core::ConfigColorMode::Always);
         assert_eq!(settings.color, Some(dw_core::ConfigColorMode::Always));
     }
@@ -274,16 +271,13 @@ mod tests {
     fn set_root_persists_absolute_path() {
         let _guard = ENV_LOCK.lock().expect("env lock");
         let temp = tempdir().expect("tempdir should be created");
-        let previous = std::env::var("XDG_CONFIG_HOME").ok();
-        unsafe {
-            std::env::set_var("XDG_CONFIG_HOME", temp.path().join("xdg"));
-        }
+        let env = isolate_user_config_env(temp.path());
         let root = temp.path().join("dw-root");
 
         let result = set_user_root(root.to_str().expect("utf8 path")).expect("root should save");
         let settings = load_user_settings();
 
-        restore_env("XDG_CONFIG_HOME", previous);
+        restore_env_vars(env);
         assert_eq!(
             result,
             dw_core::DevWorkflowRoot::from(root.display().to_string())
@@ -298,14 +292,11 @@ mod tests {
     fn set_root_normalizes_relative_segments_like_dotnet() {
         let _guard = ENV_LOCK.lock().expect("env lock");
         let temp = tempdir().expect("tempdir should be created");
-        let previous = std::env::var("XDG_CONFIG_HOME").ok();
-        unsafe {
-            std::env::set_var("XDG_CONFIG_HOME", temp.path().join("xdg"));
-        }
+        let env = isolate_user_config_env(temp.path());
 
         let result = set_user_root("./relative-root/../dw-root").expect("root should save");
 
-        restore_env("XDG_CONFIG_HOME", previous);
+        restore_env_vars(env);
         assert_eq!(
             result,
             dw_core::DevWorkflowRoot::from(
@@ -316,6 +307,35 @@ mod tests {
                     .to_string()
             )
         );
+    }
+
+    fn isolate_user_config_env(root: &std::path::Path) -> Vec<(&'static str, Option<String>)> {
+        let previous = [
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+            "XDG_CACHE_HOME",
+            "XDG_STATE_HOME",
+            "LOCALAPPDATA",
+            "APPDATA",
+        ]
+        .into_iter()
+        .map(|key| (key, std::env::var(key).ok()))
+        .collect::<Vec<_>>();
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", root.join("xdg-config"));
+            std::env::set_var("XDG_DATA_HOME", root.join("xdg-data"));
+            std::env::set_var("XDG_CACHE_HOME", root.join("xdg-cache"));
+            std::env::set_var("XDG_STATE_HOME", root.join("xdg-state"));
+            std::env::set_var("LOCALAPPDATA", root.join("local-app-data"));
+            std::env::set_var("APPDATA", root.join("app-data"));
+        }
+        previous
+    }
+
+    fn restore_env_vars(previous: Vec<(&'static str, Option<String>)>) {
+        for (key, value) in previous {
+            restore_env(key, value);
+        }
     }
 
     fn restore_env(key: &str, previous: Option<String>) {
