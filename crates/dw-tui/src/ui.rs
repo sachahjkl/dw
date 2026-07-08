@@ -15,10 +15,12 @@ use crate::model::{
     ActionRisk, CockpitSeverity, DetailPanelContent, TuiAction, View, WorkspaceAction,
 };
 use crate::ui_text::{
-    action_builder_preview_lines, confirmation_lines, form_preview_lines, guide_detail_lines,
-    help_lines, history_journal_lines, history_line_level, option_active, options_summary_lines,
-    state_modal_lines,
+    JournalLine, action_builder_preview_lines, confirmation_lines, form_preview_lines,
+    guide_detail_lines, help_lines, history_journal_line_items, option_active,
+    options_summary_lines, state_modal_lines,
 };
+
+const MAX_ACTION_BAR_LINES: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ActionIntent {
@@ -66,13 +68,14 @@ struct StatusBadge {
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
+    let footer_height = footer_height(app, area.width);
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Min(12),
-            Constraint::Length(1),
+            Constraint::Length(footer_height),
         ])
         .split(area);
 
@@ -1585,12 +1588,19 @@ fn render_help_modal(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn render_footer(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let actions = footer_buttons(app);
     frame.render_widget(
-        Paragraph::new(action_bar_line(&footer_buttons(app)))
+        Paragraph::new(action_bar_lines(&actions, area.width))
             .style(Style::default().bg(Color::Black))
             .wrap(Wrap { trim: true }),
         area,
     );
+}
+
+fn footer_height(app: &App, width: u16) -> u16 {
+    action_bar_lines(&footer_buttons(app), width)
+        .len()
+        .clamp(1, MAX_ACTION_BAR_LINES) as u16
 }
 
 fn footer_buttons(app: &App) -> Vec<ActionButton> {
@@ -1709,14 +1719,40 @@ fn styled_shortcut_line(text: &str) -> Line<'static> {
 }
 
 fn action_bar_line(actions: &[ActionButton]) -> Line<'static> {
+    action_bar_lines(actions, u16::MAX)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| Line::from(""))
+}
+
+fn action_bar_lines(actions: &[ActionButton], width: u16) -> Vec<Line<'static>> {
+    let max_width = width as usize;
+    let mut lines = Vec::new();
     let mut spans = Vec::new();
+    let mut line_width = 0;
     for (index, action) in actions.iter().enumerate() {
-        if index > 0 {
+        let action_width = action_button_width(action);
+        let separator_width = usize::from(!spans.is_empty());
+        if max_width > 0
+            && line_width > 0
+            && line_width + separator_width + action_width > max_width
+        {
+            lines.push(Line::from(spans));
+            spans = Vec::new();
+            line_width = 0;
+        }
+        if index > 0 && !spans.is_empty() {
             spans.push(Span::raw(" "));
+            line_width += 1;
         }
         spans.extend(action_button_spans(action));
+        line_width += action_width;
     }
-    Line::from(spans)
+    if !spans.is_empty() || lines.is_empty() {
+        lines.push(Line::from(spans));
+    }
+    lines.truncate(MAX_ACTION_BAR_LINES);
+    lines
 }
 
 fn action_button_spans(action: &ActionButton) -> Vec<Span<'static>> {
@@ -1725,6 +1761,10 @@ fn action_button_spans(action: &ActionButton) -> Vec<Span<'static>> {
         format!(" {} [{}] ", action.label, action.key),
         style,
     )]
+}
+
+fn action_button_width(action: &ActionButton) -> usize {
+    action.label.chars().count() + action.key.chars().count() + 5
 }
 
 fn action_intent_style(intent: ActionIntent, enabled: bool) -> Style {
@@ -2180,7 +2220,7 @@ fn render_history_output(frame: &mut Frame<'_>, area: Rect, app: &App) {
         centered_rect(82, 72, area)
     };
     frame.render_widget(Clear, popup);
-    let lines = history_journal_lines(app);
+    let lines = history_journal_line_items(app);
     let title = if app.history.output_fullscreen {
         "Journal fullscreen"
     } else {
@@ -2207,21 +2247,22 @@ fn render_history_output(frame: &mut Frame<'_>, area: Rect, app: &App) {
     );
 }
 
-fn styled_journal_lines(lines: Vec<String>) -> Vec<Line<'static>> {
+fn styled_journal_lines(lines: Vec<JournalLine>) -> Vec<Line<'static>> {
     lines
         .into_iter()
         .map(|line| {
-            let style = match history_line_level(&line) {
+            let style = match line.level() {
                 JournalLogLevel::Error => Style::default().fg(Color::LightRed),
                 JournalLogLevel::Warn => Style::default().fg(Color::Yellow),
                 JournalLogLevel::Info => Style::default().fg(Color::Cyan),
                 JournalLogLevel::Debug => Style::default().fg(Color::Magenta),
                 JournalLogLevel::Other => Style::default().fg(Color::Gray),
             };
-            if line.starts_with("Run") || line.starts_with("Levels") || line.starts_with("View") {
-                Line::from(Span::styled(line, Style::default().fg(Color::White)))
+            let text = line.render_text();
+            if text.starts_with("Run") || text.starts_with("Levels") || text.starts_with("View") {
+                Line::from(Span::styled(text, Style::default().fg(Color::White)))
             } else {
-                Line::from(Span::styled(line, style))
+                Line::from(Span::styled(text, style))
             }
         })
         .collect()
@@ -2271,10 +2312,10 @@ fn action_progress_lines(app: &App) -> Vec<String> {
         String::new(),
         "Live progress".into(),
     ];
-    let events: &[dw_core::DwActionEvent] = match &entry.record {
+    let events: &[crate::history::RecordedActionEvent] = match &entry.record {
         ActionRunRecord::Running { events }
         | ActionRunRecord::Completed { events, .. }
-        | ActionRunRecord::Failed { events, .. } => events,
+        | ActionRunRecord::Failed { events, .. } => events.as_slice(),
         ActionRunRecord::ExternalLaunch { .. } => &[],
     };
     if events.is_empty() {
@@ -2288,7 +2329,7 @@ fn action_progress_lines(app: &App) -> Vec<String> {
                 .collect::<Vec<_>>()
                 .into_iter()
                 .rev()
-                .map(|event| format!("- {}", dw_ui::action_event_line(event))),
+                .map(|event| format!("- {}", dw_ui::action_event_line(&event.event))),
         );
     }
     lines
@@ -2686,6 +2727,46 @@ mod tests {
                 .add_modifier
                 .contains(Modifier::UNDERLINED)
         );
+    }
+
+    #[test]
+    fn action_bar_wraps_shortcut_actions_by_chip() {
+        let actions = [
+            ActionButton::new("Explore schema", "Enter", ActionIntent::Primary),
+            ActionButton::new("Describe", "d", ActionIntent::Review),
+            ActionButton::new("Query", "e", ActionIntent::Review),
+        ];
+
+        let lines = action_bar_lines(&actions, 20);
+
+        assert_eq!(lines.len(), 3);
+        let rendered = lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rendered[0], " Explore schema [Enter] ");
+        assert_eq!(rendered[1], " Describe [d] ");
+        assert_eq!(rendered[2], " Query [e] ");
+    }
+
+    #[test]
+    fn action_bar_caps_wrapped_shortcuts_to_three_lines() {
+        let actions = [
+            ActionButton::new("One", "1", ActionIntent::Review),
+            ActionButton::new("Two", "2", ActionIntent::Review),
+            ActionButton::new("Three", "3", ActionIntent::Review),
+            ActionButton::new("Four", "4", ActionIntent::Review),
+            ActionButton::new("Five", "5", ActionIntent::Review),
+        ];
+
+        let lines = action_bar_lines(&actions, 1);
+
+        assert_eq!(lines.len(), 3);
     }
 
     #[test]

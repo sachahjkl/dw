@@ -1905,8 +1905,11 @@ impl App {
         match result {
             Ok(result) => {
                 self.close_action_progress_modal(run_id);
+                let events = self
+                    .history
+                    .record_events_for(run_id, result.events.clone());
                 let record = ActionRunRecord::Completed {
-                    events: result.events.clone(),
+                    events,
                     result: Box::new(result.result.clone()),
                 };
                 if !self
@@ -1941,7 +1944,10 @@ impl App {
             }
             Err(error) => {
                 self.close_action_progress_modal(run_id);
-                let record = ActionRunRecord::failed(error.events.clone(), error.message.clone());
+                let record = ActionRunRecord::Failed {
+                    events: self.history.record_events_for(run_id, error.events.clone()),
+                    error: error.message.clone(),
+                };
                 if !self
                     .history
                     .finish_running(run_id, ActionRunStatus::Failed, record.clone())
@@ -2592,6 +2598,7 @@ fn snapshot_reload_summary(snapshot: &TuiSnapshot) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::history::RecordedActionEvent;
     use crate::model::AdoAssignedProject;
     use dw_app::{AdoActionResult, AppActionResult, DwActionResult};
     use dw_core::{DwActionEvent, PullRequestId, TaskActionEvent};
@@ -3501,15 +3508,24 @@ mod tests {
             status: ActionRunStatus::Succeeded,
             record: ActionRunRecord::Running {
                 events: vec![
-                    dw_core::DwActionEvent::Started {
-                        action_id: "one".into(),
-                    },
-                    dw_core::DwActionEvent::Started {
-                        action_id: "two".into(),
-                    },
-                    dw_core::DwActionEvent::Started {
-                        action_id: "three".into(),
-                    },
+                    RecordedActionEvent::fixed(
+                        "2026-07-08 10:00:00Z",
+                        dw_core::DwActionEvent::Started {
+                            action_id: "one".into(),
+                        },
+                    ),
+                    RecordedActionEvent::fixed(
+                        "2026-07-08 10:00:01Z",
+                        dw_core::DwActionEvent::Started {
+                            action_id: "two".into(),
+                        },
+                    ),
+                    RecordedActionEvent::fixed(
+                        "2026-07-08 10:00:02Z",
+                        dw_core::DwActionEvent::Started {
+                            action_id: "three".into(),
+                        },
+                    ),
                 ],
             },
         });
@@ -3649,13 +3665,11 @@ mod tests {
         assert_eq!(app.history.entries.len(), 1);
         let entry = app.history.selected_entry().expect("entry");
         assert_eq!(entry.status, ActionRunStatus::Succeeded);
-        assert_eq!(
-            crate::ui_text::history_entry_preview_lines(entry),
-            [
-                "task.pr.resolve.workitems pull_request=#42",
-                "Dev Workflow 2026.07.04"
-            ]
+        let preview_lines = crate::ui_text::history_entry_preview_lines(entry);
+        assert!(
+            preview_lines[0].ends_with(" | INF | task.pr.resolve.workitems | pull_request=#42")
         );
+        assert_eq!(preview_lines[1], "Dev Workflow 2026.07.04");
     }
 
     #[test]

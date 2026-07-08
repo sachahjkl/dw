@@ -2,6 +2,7 @@ use dw_app::DwActionResult;
 use dw_core::{DwActionEvent, ExternalLaunchPlan};
 use std::collections::BTreeSet;
 use std::fmt;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ActionRunId(u64);
@@ -112,6 +113,56 @@ pub struct RunHistoryEntry {
     pub record: ActionRunRecord,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JournalTimestamp(String);
+
+impl JournalTimestamp {
+    pub fn now_utc() -> Self {
+        let now = OffsetDateTime::now_utc();
+        Self(format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}Z",
+            now.year(),
+            u8::from(now.month()),
+            now.day(),
+            now.hour(),
+            now.minute(),
+            now.second()
+        ))
+    }
+
+    #[cfg(test)]
+    pub fn fixed(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedActionEvent {
+    pub occurred_at: JournalTimestamp,
+    pub event: DwActionEvent,
+}
+
+impl RecordedActionEvent {
+    pub fn now(event: DwActionEvent) -> Self {
+        Self {
+            occurred_at: JournalTimestamp::now_utc(),
+            event,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn fixed(occurred_at: impl Into<String>, event: DwActionEvent) -> Self {
+        Self {
+            occurred_at: JournalTimestamp::fixed(occurred_at),
+            event,
+        }
+    }
+}
+
 impl RunHistoryEntry {
     pub fn latest_event(&self) -> Option<&DwActionEvent> {
         self.record.latest_event()
@@ -121,17 +172,17 @@ impl RunHistoryEntry {
 #[derive(Debug, Clone)]
 pub enum ActionRunRecord {
     Running {
-        events: Vec<DwActionEvent>,
+        events: Vec<RecordedActionEvent>,
     },
     Completed {
-        events: Vec<DwActionEvent>,
+        events: Vec<RecordedActionEvent>,
         result: Box<DwActionResult>,
     },
     ExternalLaunch {
         plan: Box<ExternalLaunchPlan>,
     },
     Failed {
-        events: Vec<DwActionEvent>,
+        events: Vec<RecordedActionEvent>,
         error: ActionRunErrorMessage,
     },
 }
@@ -150,20 +201,23 @@ impl ActionRunRecord {
     }
 
     pub fn failed(events: Vec<DwActionEvent>, error: ActionRunErrorMessage) -> Self {
-        Self::Failed { events, error }
+        Self::Failed {
+            events: record_events_now(events),
+            error,
+        }
     }
 
     pub fn latest_event(&self) -> Option<&DwActionEvent> {
         match self {
             Self::Running { events }
             | Self::Completed { events, .. }
-            | Self::Failed { events, .. } => events.last(),
+            | Self::Failed { events, .. } => events.last().map(|event| &event.event),
             Self::ExternalLaunch { .. } => None,
         }
     }
 
     #[cfg(test)]
-    pub fn events(&self) -> &[DwActionEvent] {
+    pub fn events(&self) -> &[RecordedActionEvent] {
         match self {
             Self::Running { events }
             | Self::Completed { events, .. }
@@ -217,9 +271,36 @@ impl HistoryState {
             return;
         };
         if let ActionRunRecord::Running { events } = &mut entry.record {
-            events.push(event);
+            events.push(RecordedActionEvent::now(event));
             cap_events(events);
         }
+    }
+
+    pub fn record_events_for(
+        &self,
+        id: ActionRunId,
+        events: Vec<DwActionEvent>,
+    ) -> Vec<RecordedActionEvent> {
+        let Some(entry) = self
+            .entries
+            .iter()
+            .rev()
+            .find(|entry| entry.id == id && entry.status.is_running())
+        else {
+            return record_events_now(events);
+        };
+        let ActionRunRecord::Running { events: recorded } = &entry.record else {
+            return record_events_now(events);
+        };
+        if recorded.len() == events.len()
+            && recorded
+                .iter()
+                .zip(events.iter())
+                .all(|(recorded, event)| recorded.event == *event)
+        {
+            return recorded.clone();
+        }
+        record_events_now(events)
     }
 
     pub fn finish_running(
@@ -325,7 +406,11 @@ impl HistoryState {
     }
 }
 
-fn cap_events(events: &mut Vec<DwActionEvent>) {
+fn record_events_now(events: Vec<DwActionEvent>) -> Vec<RecordedActionEvent> {
+    events.into_iter().map(RecordedActionEvent::now).collect()
+}
+
+fn cap_events(events: &mut Vec<RecordedActionEvent>) {
     const MAX_EVENTS: usize = 160;
     if events.len() <= MAX_EVENTS {
         return;
@@ -353,15 +438,24 @@ mod tests {
                 status: ActionRunStatus::Succeeded,
                 record: ActionRunRecord::Running {
                     events: vec![
-                        DwActionEvent::Started {
-                            action_id: "one".into(),
-                        },
-                        DwActionEvent::Started {
-                            action_id: "two".into(),
-                        },
-                        DwActionEvent::Started {
-                            action_id: "three".into(),
-                        },
+                        RecordedActionEvent::fixed(
+                            "2026-07-08 10:00:00Z",
+                            DwActionEvent::Started {
+                                action_id: "one".into(),
+                            },
+                        ),
+                        RecordedActionEvent::fixed(
+                            "2026-07-08 10:00:01Z",
+                            DwActionEvent::Started {
+                                action_id: "two".into(),
+                            },
+                        ),
+                        RecordedActionEvent::fixed(
+                            "2026-07-08 10:00:02Z",
+                            DwActionEvent::Started {
+                                action_id: "three".into(),
+                            },
+                        ),
                     ],
                 },
             });

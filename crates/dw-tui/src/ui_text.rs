@@ -3,11 +3,13 @@ use crate::app::App;
 use crate::form::FormState;
 #[cfg(test)]
 use crate::history::{ActionRunErrorMessage, ActionRunId, ActionRunLabel};
-use crate::history::{ActionRunRecord, ActionRunStatus, JournalLogLevel, RunHistoryEntry};
+use crate::history::{
+    ActionRunRecord, ActionRunStatus, JournalLogLevel, RecordedActionEvent, RunHistoryEntry,
+};
 #[cfg(test)]
 use crate::model::View;
 use crate::model::{ActionRisk, TuiAction};
-use dw_core::{Agent, ConfigColorMode};
+use dw_core::{Agent, ConfigColorMode, DiagnosticLogLevel, DwActionEvent};
 
 pub(crate) fn help_lines() -> Vec<&'static str> {
     vec![
@@ -191,56 +193,71 @@ pub(crate) fn options_summary_lines(app: &App) -> Vec<String> {
 }
 
 pub(crate) fn history_journal_lines(app: &App) -> Vec<String> {
+    history_journal_line_items(app)
+        .into_iter()
+        .map(JournalLine::render_text)
+        .collect()
+}
+
+pub(crate) fn history_journal_line_items(app: &App) -> Vec<JournalLine> {
     let Some(entry) = app.history.selected_entry() else {
         return vec![
-            "No operation in Journal.".into(),
-            "Long-running or background actions will appear here with their logs.".into(),
+            JournalLine::other("No operation in Journal."),
+            JournalLine::other(
+                "Long-running or background actions will appear here with their logs.",
+            ),
         ];
     };
     let marker = history_marker(entry);
     let mut lines = vec![
-        format!(
+        JournalLine::other(format!(
             "Run         : {}/{}",
             app.history.selected_entry + 1,
             app.history.entries.len()
-        ),
-        format!("{marker} {} ({})", entry.request_label, entry.status),
+        )),
+        JournalLine::other(format!(
+            "{marker} {} ({})",
+            entry.request_label, entry.status
+        )),
     ];
     if entry.status.is_running() {
         lines.push(
             active_operation_line(entry)
-                .map(|line| format!("Now         : {line}"))
-                .unwrap_or_else(|| "Now         : waiting for first event".into()),
+                .map(|line| JournalLine::other(format!("Now         : {line}")))
+                .unwrap_or_else(|| JournalLine::other("Now         : waiting for first event")),
         );
-        lines.push(
-            "Output is being captured; closing this modal does not interrupt the action.".into(),
-        );
+        lines.push(JournalLine::other(
+            "Output is being captured; closing this modal does not interrupt the action.",
+        ));
     } else {
-        lines.push("Output captured.".into());
+        lines.push(JournalLine::other("Output captured."));
     }
-    lines.push(format!(
+    lines.push(JournalLine::other(format!(
         "Levels      : {}",
         app.history.log_level_labels().join("  ")
-    ));
-    lines.push(format!(
+    )));
+    lines.push(JournalLine::other(format!(
         "View        : {}    Toggle [e/w/i/d/o]    all [a]    fullscreen [f]",
         if app.history.output_fullscreen {
             "fullscreen"
         } else {
             "modal"
         }
-    ));
-    lines.push(String::new());
-    let rendered = history_entry_rendered_lines(entry)
+    )));
+    lines.push(JournalLine::other(String::new()));
+    let rendered = history_entry_journal_lines(entry)
         .into_iter()
-        .filter(|line| app.history.log_level_enabled(history_line_level(line)))
-        .map(normalize_history_log_line)
+        .filter(|line| app.history.log_level_enabled(line.level()))
         .collect::<Vec<_>>();
     if rendered.is_empty() {
         if entry.status.is_running() {
-            lines.push("Waiting for the first output line; adjust level filters if needed.".into());
+            lines.push(JournalLine::other(
+                "Waiting for the first output line; adjust level filters if needed.",
+            ));
         } else {
-            lines.push("No visible output for this run; adjust level filters if needed.".into());
+            lines.push(JournalLine::other(
+                "No visible output for this run; adjust level filters if needed.",
+            ));
         }
     } else {
         lines.extend(rendered);
@@ -248,101 +265,165 @@ pub(crate) fn history_journal_lines(app: &App) -> Vec<String> {
     lines
 }
 
-pub(crate) fn history_line_level(line: &str) -> JournalLogLevel {
-    let trimmed = line.trim_start();
-    let upper = trimmed.to_ascii_uppercase();
-    if upper.starts_with("ERROR")
-        || upper.starts_with("ERR ")
-        || upper.starts_with("KO ")
-        || upper.contains("(ERROR)")
-        || upper.contains("FAILED")
-    {
-        JournalLogLevel::Error
-    } else if upper.starts_with("WARN") || upper.starts_with("WRN ") || upper.contains("WARNING") {
-        JournalLogLevel::Warn
-    } else if upper.starts_with("DEBUG") || upper.starts_with("DBG ") || upper.starts_with("TRACE")
-    {
-        JournalLogLevel::Debug
-    } else if upper.starts_with("INFO") || upper.starts_with("INF ") || upper.starts_with("TASK.") {
-        JournalLogLevel::Info
-    } else {
-        JournalLogLevel::Other
-    }
-}
-
-pub(crate) fn normalize_history_log_line(line: String) -> String {
-    if line.trim().is_empty() {
-        return line;
-    }
-    let level = history_line_level(&line);
-    if level == JournalLogLevel::Other {
-        return line;
-    }
-    let trimmed = line.trim_start();
-    let without_level = trimmed
-        .strip_prefix("INFO ")
-        .or_else(|| trimmed.strip_prefix("WARN "))
-        .or_else(|| trimmed.strip_prefix("WARNING "))
-        .or_else(|| trimmed.strip_prefix("ERROR "))
-        .or_else(|| trimmed.strip_prefix("DEBUG "))
-        .or_else(|| trimmed.strip_prefix("TRACE "))
-        .unwrap_or(trimmed);
-    let body = normalize_history_log_body(without_level.trim_start());
-    format!("{} | {body}", level.marker())
-}
-
-fn normalize_history_log_body(body: &str) -> String {
-    if let Some(rest) = body.strip_prefix('[')
-        && let Some((scope, message)) = rest.split_once(']')
-    {
-        return format!("{} | {}", scope.trim(), message.trim_start());
-    }
-
-    let Some((scope, message)) = body.split_once(' ') else {
-        return body.to_string();
-    };
-    if scope.contains('.') {
-        return format!("{} | {}", scope.trim(), message.trim_start());
-    }
-
-    body.to_string()
-}
-
 fn active_operation_line(entry: &RunHistoryEntry) -> Option<String> {
     entry.latest_event().map(dw_ui::action_event_line)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct JournalLine {
+    kind: JournalLineKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum JournalLineKind {
+    Text(String),
+    Event {
+        occurred_at: String,
+        level: JournalLogLevel,
+        scope: String,
+        detail: Option<String>,
+    },
+}
+
+impl JournalLine {
+    fn other(text: impl Into<String>) -> Self {
+        Self {
+            kind: JournalLineKind::Text(text.into()),
+        }
+    }
+
+    fn event(level: JournalLogLevel, scope: impl Into<String>, detail: Option<String>) -> Self {
+        Self {
+            kind: JournalLineKind::Event {
+                occurred_at: String::new(),
+                level,
+                scope: scope.into(),
+                detail,
+            },
+        }
+    }
+
+    pub(crate) fn level(&self) -> JournalLogLevel {
+        match &self.kind {
+            JournalLineKind::Text(_) => JournalLogLevel::Other,
+            JournalLineKind::Event { level, .. } => *level,
+        }
+    }
+
+    pub(crate) fn render_text(self) -> String {
+        match self.kind {
+            JournalLineKind::Text(text) => text,
+            JournalLineKind::Event {
+                occurred_at,
+                level,
+                scope,
+                detail: Some(detail),
+            } => format_event_text(&occurred_at, level, &scope, Some(&detail)),
+            JournalLineKind::Event {
+                occurred_at,
+                level,
+                scope,
+                detail: None,
+            } => format_event_text(&occurred_at, level, &scope, None),
+        }
+    }
+
+    fn with_timestamp(mut self, occurred_at: &str) -> Self {
+        if let JournalLineKind::Event {
+            occurred_at: timestamp,
+            ..
+        } = &mut self.kind
+        {
+            *timestamp = occurred_at.to_string();
+        }
+        self
+    }
+}
+
+fn format_event_text(
+    occurred_at: &str,
+    level: JournalLogLevel,
+    scope: &str,
+    detail: Option<&str>,
+) -> String {
+    let prefix = if occurred_at.is_empty() {
+        level.marker().to_string()
+    } else {
+        format!("{occurred_at} | {}", level.marker())
+    };
+    match detail {
+        Some(detail) => format!("{prefix} | {scope} | {detail}"),
+        None => format!("{prefix} | {scope}"),
+    }
+}
+
+fn journal_event_line(recorded: &RecordedActionEvent) -> JournalLine {
+    match &recorded.event {
+        DwActionEvent::Log(event) => JournalLine::event(
+            match event.level {
+                DiagnosticLogLevel::Warning => JournalLogLevel::Warn,
+                DiagnosticLogLevel::Info => JournalLogLevel::Info,
+                DiagnosticLogLevel::Debug => JournalLogLevel::Debug,
+            },
+            event.target.to_string(),
+            Some(event.detail.clone()),
+        ),
+        event => format_event_columns(event.action_id().as_str(), &dw_ui::action_event_line(event)),
+    }
+    .with_timestamp(recorded.occurred_at.as_str())
+}
+
+fn format_event_columns(action_id: &str, rendered: &str) -> JournalLine {
+    if let Some(detail) = rendered.strip_prefix(action_id) {
+        let detail = detail.trim_start();
+        if detail.is_empty() {
+            return JournalLine::event(JournalLogLevel::Info, action_id, None);
+        }
+        return JournalLine::event(JournalLogLevel::Info, action_id, Some(detail.to_string()));
+    }
+
+    JournalLine::event(JournalLogLevel::Info, action_id, Some(rendered.to_string()))
+}
+
+#[cfg(test)]
 pub(crate) fn history_entry_rendered_lines(entry: &RunHistoryEntry) -> Vec<String> {
+    history_entry_journal_lines(entry)
+        .into_iter()
+        .map(JournalLine::render_text)
+        .collect()
+}
+
+fn history_entry_journal_lines(entry: &RunHistoryEntry) -> Vec<JournalLine> {
     let theme = dw_ui::TerminalTheme::plain();
     let lines = match &entry.record {
-        ActionRunRecord::Running { events } => events
-            .iter()
-            .map(dw_ui::action_event_line)
-            .collect::<Vec<_>>(),
+        ActionRunRecord::Running { events } => {
+            events.iter().map(journal_event_line).collect::<Vec<_>>()
+        }
         ActionRunRecord::Completed { events, result } => {
-            let mut lines = events
-                .iter()
-                .map(dw_ui::action_event_line)
-                .collect::<Vec<_>>();
+            let mut lines = events.iter().map(journal_event_line).collect::<Vec<_>>();
             let result_lines = dw_tui_adapter::render::action_result_lines(result.as_ref(), &theme);
             if !lines.is_empty() && !result_lines.is_empty() {
-                lines.push(String::new());
+                lines.push(JournalLine::other(String::new()));
             }
-            lines.extend(result_lines);
+            lines.extend(result_lines.into_iter().map(JournalLine::other));
             lines
         }
         ActionRunRecord::ExternalLaunch { plan } => {
             dw_tui_adapter::render::task_open_launch_lines(plan)
+                .into_iter()
+                .map(JournalLine::other)
+                .collect()
         }
         ActionRunRecord::Failed { events, error } => {
-            let mut lines = events
-                .iter()
-                .map(dw_ui::action_event_line)
-                .collect::<Vec<_>>();
+            let mut lines = events.iter().map(journal_event_line).collect::<Vec<_>>();
             if !lines.is_empty() {
-                lines.push(String::new());
+                lines.push(JournalLine::other(String::new()));
             }
-            lines.push(error.to_string());
+            lines.push(JournalLine::event(
+                JournalLogLevel::Error,
+                "run.failed",
+                Some(error.to_string()),
+            ));
             lines
         }
     };
@@ -362,14 +443,16 @@ pub(crate) fn history_entry_preview_lines(entry: &RunHistoryEntry) -> Vec<String
         .collect()
 }
 
-fn capped_history_lines(mut lines: Vec<String>) -> Vec<String> {
+fn capped_history_lines(mut lines: Vec<JournalLine>) -> Vec<JournalLine> {
     const MAX_OUTPUT_LINES: usize = 160;
     if lines.len() <= MAX_OUTPUT_LINES {
         return lines;
     }
     let omitted = lines.len() - MAX_OUTPUT_LINES;
     let mut kept = Vec::with_capacity(MAX_OUTPUT_LINES + 1);
-    kept.push(format!("... {omitted} previous lines hidden ..."));
+    kept.push(JournalLine::other(format!(
+        "... {omitted} previous lines hidden ..."
+    )));
     kept.extend(lines.drain(omitted..));
     kept
 }
@@ -770,15 +853,46 @@ mod tests {
     }
 
     #[test]
-    fn normalize_history_log_lines_uses_scope_column_consistently() {
-        assert_eq!(
-            normalize_history_log_line("INFO [task.repo.latest] action started".into()),
-            "INF | task.repo.latest | action started"
-        );
-        assert_eq!(
-            normalize_history_log_line("task.repo.latest.execute repositories=2".into()),
-            "INF | task.repo.latest.execute | repositories=2"
-        );
+    fn history_journal_lines_render_structured_event_levels() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.history.push(RunHistoryEntry {
+            id: ActionRunId::new(1),
+            request_label: ActionRunLabel::new("Latest"),
+            status: ActionRunStatus::Running,
+            record: ActionRunRecord::Running {
+                events: vec![
+                    RecordedActionEvent::fixed(
+                        "2026-07-08 10:11:12Z",
+                        dw_core::DwActionEvent::Log(dw_core::DiagnosticLogEvent {
+                            level: dw_core::DiagnosticLogLevel::Warning,
+                            target: "task.repo.latest".into(),
+                            detail: "action started".into(),
+                        }),
+                    ),
+                    RecordedActionEvent::fixed(
+                        "2026-07-08 10:11:13Z",
+                        dw_core::DwActionEvent::Task(
+                            dw_core::TaskActionEvent::ExecutingRepoLatest {
+                                repository_count: 2,
+                            },
+                        ),
+                    ),
+                ],
+            },
+        });
+
+        let lines = history_journal_line_items(&app);
+
+        assert!(lines.iter().any(|line| {
+            line.level() == JournalLogLevel::Warn
+                && line.clone().render_text()
+                    == "2026-07-08 10:11:12Z | WRN | task.repo.latest | action started"
+        }));
+        assert!(lines.iter().any(|line| {
+            line.level() == JournalLogLevel::Info
+                && line.clone().render_text()
+                    == "2026-07-08 10:11:13Z | INF | task.repo.latest.execute | repositories=2"
+        }));
     }
 
     #[test]
@@ -874,7 +988,7 @@ mod tests {
 
         assert_eq!(lines[2], "Output captured.");
         assert!(lines.iter().any(|line| line.contains("prepare")));
-        assert!(lines.iter().any(|line| line == "boom"));
+        assert!(lines.iter().any(|line| line == "ERR | run.failed | boom"));
     }
 
     #[test]

@@ -3,16 +3,7 @@ mod ado_changelog;
 pub use ado_changelog::render_ado_changelog_document;
 
 pub fn diagnostic_log_event_line(event: &dw_core::DiagnosticLogEvent) -> String {
-    format!(
-        "{} [{}] {}",
-        match event.level {
-            dw_core::DiagnosticLogLevel::Warning => "WARN",
-            dw_core::DiagnosticLogLevel::Info => "INFO",
-            dw_core::DiagnosticLogLevel::Debug => "DEBUG",
-        },
-        event.target,
-        event.detail
-    )
+    format!("{} {}", event.target, event.detail)
 }
 
 pub fn task_action_event_line(event: &dw_core::TaskActionEvent) -> String {
