@@ -395,8 +395,12 @@ fn render_metrics(frame: &mut Frame<'_>, area: Rect, app: &App) {
         frame.render_widget(Paragraph::new(line.clone()), *row);
     }
     frame.render_widget(
+        Paragraph::new("workspaces ready to clean").style(Style::default().fg(Color::Yellow)),
+        rows[7],
+    );
+    frame.render_widget(
         Gauge::default()
-            .label("workspaces ready to clean")
+            .label("")
             .gauge_style(Style::default().fg(Color::Yellow))
             .percent(prune_ratio),
         rows[8],

@@ -287,7 +287,25 @@ pub(crate) fn normalize_history_log_line(line: String) -> String {
         .or_else(|| trimmed.strip_prefix("DEBUG "))
         .or_else(|| trimmed.strip_prefix("TRACE "))
         .unwrap_or(trimmed);
-    format!("{} | {}", level.marker(), without_level.trim_start())
+    let body = normalize_history_log_body(without_level.trim_start());
+    format!("{} | {body}", level.marker())
+}
+
+fn normalize_history_log_body(body: &str) -> String {
+    if let Some(rest) = body.strip_prefix('[')
+        && let Some((scope, message)) = rest.split_once(']')
+    {
+        return format!("{} | {}", scope.trim(), message.trim_start());
+    }
+
+    let Some((scope, message)) = body.split_once(' ') else {
+        return body.to_string();
+    };
+    if scope.contains('.') {
+        return format!("{} | {}", scope.trim(), message.trim_start());
+    }
+
+    body.to_string()
 }
 
 fn active_operation_line(entry: &RunHistoryEntry) -> Option<String> {
@@ -749,6 +767,18 @@ mod tests {
         assert_eq!(history_marker(&running), "...");
         assert_eq!(history_marker(&success), "OK");
         assert_eq!(history_marker(&failure), "KO");
+    }
+
+    #[test]
+    fn normalize_history_log_lines_uses_scope_column_consistently() {
+        assert_eq!(
+            normalize_history_log_line("INFO [task.repo.latest] action started".into()),
+            "INF | task.repo.latest | action started"
+        );
+        assert_eq!(
+            normalize_history_log_line("task.repo.latest.execute repositories=2".into()),
+            "INF | task.repo.latest.execute | repositories=2"
+        );
     }
 
     #[test]
