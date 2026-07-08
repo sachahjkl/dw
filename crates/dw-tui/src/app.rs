@@ -1,5 +1,7 @@
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+use crossterm::event::{
+    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
+};
 use dw_core::{InputRequest, InputResponse, PromptChoiceValue};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::collections::BTreeSet;
@@ -47,7 +49,10 @@ async fn run_tui_inner(root: Option<String>) -> Result<()> {
         terminal.draw(|frame| ui::render(frame, &app))?;
         if event::poll(Duration::from_millis(200))? {
             match event::read()? {
-                Event::Key(key) => app.handle_key(key, &mut terminal).await?,
+                Event::Key(key) if should_handle_key_event(key) => {
+                    app.handle_key(key, &mut terminal).await?
+                }
+                Event::Key(_) => {}
                 Event::Mouse(mouse) => app.handle_mouse(mouse.kind),
                 _ => {}
             }
@@ -55,6 +60,10 @@ async fn run_tui_inner(root: Option<String>) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn should_handle_key_event(key: KeyEvent) -> bool {
+    !matches!(key.kind, KeyEventKind::Release)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2601,6 +2610,24 @@ mod tests {
                 },
             )),
         }
+    }
+
+    #[test]
+    fn key_release_events_are_ignored() {
+        assert!(should_handle_key_event(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE
+        )));
+        assert!(!should_handle_key_event(KeyEvent::new_with_kind(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        )));
+        assert!(!should_handle_key_event(KeyEvent::new_with_kind(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        )));
     }
 
     #[test]
