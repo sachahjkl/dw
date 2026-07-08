@@ -338,15 +338,16 @@ pub fn ado_assigned_lines(
         theme.success("ADO assigned"),
         format!("Items     : {}", report.items.len()),
     ];
-    for item in &report.items {
-        lines.push(String::new());
-        lines.push(format!(
-            "Item      : {}",
-            ado_work_item_summary(item, theme)
+    for (index, item) in report.items.iter().enumerate() {
+        if index > 0 {
+            lines.push(String::new());
+        }
+        lines.push(ado_assigned_field_line(
+            "Item",
+            ado_work_item_summary(item, theme),
         ));
         let ids = [item.id.clone()];
         lines.push(ado_start_action_line(&ids, &report.project, theme));
-        lines.push(String::new());
     }
     trim_trailing_blank_line(lines)
 }
@@ -1581,7 +1582,7 @@ pub fn doctor_report_lines(report: &DoctorReport, theme: &TerminalTheme) -> Vec<
     let mut lines = vec![
         theme.command("Diagnostic Dev Workflow"),
         format!(
-            "{} {passed_count}/{total_count} checks OK",
+            "{} {passed_count}/{total_count} checks passed",
             if failed_count == 0 {
                 theme.success("✓")
             } else {
@@ -1591,7 +1592,7 @@ pub fn doctor_report_lines(report: &DoctorReport, theme: &TerminalTheme) -> Vec<
         format!(
             "Status    : {}",
             if failed_count == 0 {
-                "OK"
+                "healthy"
             } else {
                 "needs fixes"
             }
@@ -1605,7 +1606,7 @@ pub fn doctor_report_lines(report: &DoctorReport, theme: &TerminalTheme) -> Vec<
         theme,
     ));
     lines.extend(render_doctor_check_group(
-        "OK",
+        "Checks",
         report.checks.iter().filter(|check| check.passed).collect(),
         theme,
     ));
@@ -1755,9 +1756,9 @@ fn ado_assigned_group_lines(
     ))];
     for group in &report.groups {
         lines.push(String::new());
-        lines.push(format!(
-            "Parent    : {}",
-            ado_work_item_summary(&group.parent, theme)
+        lines.push(ado_assigned_field_line(
+            "Parent",
+            ado_work_item_summary(&group.parent, theme),
         ));
         if !group.items.is_empty() {
             lines.push(ado_start_action_line(
@@ -1771,8 +1772,8 @@ fn ado_assigned_group_lines(
         }
         for item in &group.items {
             lines.push(format!(
-                "  Child   : {}",
-                ado_work_item_summary(item, theme)
+                "  {}",
+                ado_assigned_field_line("Child", ado_work_item_summary(item, theme))
             ));
         }
         lines.push(String::new());
@@ -1786,10 +1787,14 @@ fn ado_start_action_line(
     theme: &TerminalTheme,
 ) -> String {
     let ids = join_display_with_separator(ids, ",");
-    format!(
-        "Start     : {}",
-        theme.command(&format!("start action for {ids} ({project})"))
+    ado_assigned_field_line(
+        "Start",
+        theme.command(&format!("start action for {ids} ({project})")),
     )
+}
+
+fn ado_assigned_field_line(label: &str, value: String) -> String {
+    format!("{label:<5}: {value}")
 }
 
 fn ado_work_item_summary(item: &dw_ado::WorkItemSnapshot, theme: &TerminalTheme) -> String {
@@ -2232,11 +2237,11 @@ fn render_doctor_check_group(
     lines.push(theme.cyan(title));
     for check in checks {
         let status = if check.passed {
-            theme.success("✓ OK")
+            theme.success("✓")
         } else {
             theme.error("! Needs fixes")
         };
-        lines.push(format!("{:<8} {}", status, doctor_check_label(check.kind)));
+        lines.push(format!("{:<12} {}", status, doctor_check_label(check.kind)));
         if let Some(detail) = doctor_check_detail(check.detail.as_ref()) {
             lines.push(format!("         {}", theme.path(&detail)));
         }
@@ -2559,8 +2564,8 @@ mod tests {
 
         assert!(lines.contains(&"ADO assigned".into()));
         assert!(lines.contains(&"Items     : 1".into()));
-        assert!(lines.contains(&"Item      : #42 [Bug / En developpement] Corriger".into()));
-        assert!(lines.contains(&"Start     : start action for 42 (ha)".into()));
+        assert!(lines.contains(&"Item : #42 [Bug / En developpement] Corriger".into()));
+        assert!(lines.contains(&"Start: start action for 42 (ha)".into()));
     }
 
     #[test]
@@ -2596,9 +2601,9 @@ mod tests {
         let lines = ado_assigned_lines(&report, &TerminalTheme::plain());
 
         assert!(lines.contains(&"Assigned work items: 1 group(s), 2 item(s)".into()));
-        assert!(lines.contains(&"Parent    : #42 [User Story / Actif] Parent".into()));
-        assert!(lines.contains(&"Start     : start action for 42,43 (ha)".into()));
-        assert!(lines.contains(&"  Child   : #43 [Task / Actif] Enfant".into()));
+        assert!(lines.contains(&"Parent: #42 [User Story / Actif] Parent".into()));
+        assert!(lines.contains(&"Start: start action for 42,43 (ha)".into()));
+        assert!(lines.contains(&"  Child: #43 [Task / Actif] Enfant".into()));
     }
 
     #[test]
