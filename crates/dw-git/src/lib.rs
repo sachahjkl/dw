@@ -5,15 +5,13 @@ use dw_core::{
     WorkItemTypeName, WorkspaceRepositoryName,
 };
 use git2::{
-    Cred, CredentialType, FetchOptions, IndexAddOption, ObjectType, PushOptions, RebaseOptions,
-    RemoteCallbacks, Repository, Sort, StashFlags, StatusOptions, WorktreeAddOptions,
-    build::RepoBuilder,
+    CertificateCheckStatus, Cred, CredentialType, FetchOptions, IndexAddOption, ObjectType,
+    PushOptions, RebaseOptions, RemoteCallbacks, Repository, Sort, StashFlags, StatusOptions,
+    WorktreeAddOptions, build::RepoBuilder,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::Path;
 use thiserror::Error;
 
 const ENV_DW_ADO_TOKEN: &str = "DW_ADO_TOKEN";
@@ -716,14 +714,9 @@ fn clone_bare_repository(
     let fetch_options = fetch_options(credential);
     let mut builder = RepoBuilder::new();
     builder.bare(true).fetch_options(fetch_options);
-    match builder.clone(url.as_str(), anchor_path) {
-        Ok(repository) => Ok(repository),
-        Err(error) if should_fallback_to_system_git(&error) => {
-            system_git_clone_bare(url, anchor_path, credential)?;
-            Repository::open_bare(anchor_path).map_err(git2_command_error)
-        }
-        Err(error) => Err(git2_auth_error(error, credential.is_some())),
-    }
+    builder
+        .clone(url.as_str(), anchor_path)
+        .map_err(|error| git2_auth_error(error, credential.is_some()))
 }
 
 fn ensure_origin_url(anchor_path: &Path, url: &GitRemoteUrl) -> std::result::Result<(), GitError> {
@@ -777,191 +770,13 @@ fn fetch_anchor_repository(
         .find_remote("origin")
         .map_err(git2_command_error)?;
     let mut fetch_options = fetch_options(credential);
-    match remote.fetch(
-        &["+refs/heads/*:refs/remotes/origin/*"],
-        Some(&mut fetch_options),
-        None,
-    ) {
-        Ok(()) => Ok(()),
-        Err(error) if should_fallback_to_system_git(&error) => {
-            system_git_fetch(repository.path(), credential)
-        }
-        Err(error) => Err(git2_auth_error(error, credential.is_some())),
-    }
-}
-
-fn should_fallback_to_system_git(error: &git2::Error) -> bool {
-    error
-        .message()
-        .to_ascii_lowercase()
-        .contains("no tls stream available")
-}
-
-fn system_git_clone_bare(
-    url: &GitRemoteUrl,
-    anchor_path: &Path,
-    credential: Option<&GitCredential>,
-) -> std::result::Result<(), GitError> {
-    let mut command = Command::new("git");
-    command
-        .arg("clone")
-        .arg("--bare")
-        .arg(url.as_str())
-        .arg(anchor_path);
-    run_system_git(command, credential, GitOperation::CloneBare)
-}
-
-fn system_git_fetch(
-    anchor_path: &Path,
-    credential: Option<&GitCredential>,
-) -> std::result::Result<(), GitError> {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(anchor_path)
-        .arg("fetch")
-        .arg("--prune")
-        .arg("origin")
-        .arg("+refs/heads/*:refs/remotes/origin/*");
-    run_system_git(command, credential, GitOperation::Fetch)
-}
-
-fn run_system_git(
-    mut command: Command,
-    credential: Option<&GitCredential>,
-    operation: GitOperation,
-) -> std::result::Result<(), GitError> {
-    command
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GCM_INTERACTIVE", "Never");
-    let _askpass = configure_system_git_auth(&mut command, credential, operation)?;
-    let output = command
-        .output()
-        .map_err(|error| GitError::OperationFailed {
-            operation,
-            detail: GitErrorDetail::new(error.to_string()),
-            invocation: GitOperationInvocation {
-                operation,
-                repository_path: None,
-            },
-        })?;
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let detail = if detail.is_empty() {
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    } else {
-        detail
-    };
-    Err(GitError::OperationFailed {
-        operation,
-        detail: GitErrorDetail::new(detail),
-        invocation: GitOperationInvocation {
-            operation,
-            repository_path: None,
-        },
-    })
-}
-
-#[cfg(windows)]
-fn configure_system_git_auth(
-    command: &mut Command,
-    credential: Option<&GitCredential>,
-    operation: GitOperation,
-) -> std::result::Result<Option<SystemGitAskpass>, GitError> {
-    let Some(credential) = credential else {
-        return Ok(None);
-    };
-    let askpass = SystemGitAskpass::new(operation)?;
-    command
-        .env("GIT_ASKPASS", &askpass.cmd_path)
-        .env("DW_GIT_ASKPASS_USERNAME", "dw")
-        .env("DW_GIT_ASKPASS_PASSWORD", credential.token().as_str());
-    Ok(Some(askpass))
-}
-
-#[cfg(not(windows))]
-fn configure_system_git_auth(
-    _command: &mut Command,
-    _credential: Option<&GitCredential>,
-    _operation: GitOperation,
-) -> std::result::Result<Option<SystemGitAskpass>, GitError> {
-    Ok(None)
-}
-
-#[cfg(windows)]
-struct SystemGitAskpass {
-    directory: PathBuf,
-    cmd_path: PathBuf,
-}
-
-#[cfg(not(windows))]
-struct SystemGitAskpass;
-
-#[cfg(windows)]
-impl SystemGitAskpass {
-    fn new(operation: GitOperation) -> std::result::Result<Self, GitError> {
-        let directory = std::env::temp_dir().join(format!(
-            "dw-git-askpass-{}-{}",
-            std::process::id(),
-            unique_suffix()
-        ));
-        fs::create_dir_all(&directory).map_err(|error| system_git_temp_error(error, operation))?;
-        let ps1_path = directory.join("askpass.ps1");
-        let cmd_path = directory.join("askpass.cmd");
-        fs::write(
-            &ps1_path,
-            r#"param([string]$Prompt)
-if ($Prompt -match 'Username') {
-  [Console]::Out.Write($env:DW_GIT_ASKPASS_USERNAME)
-} else {
-  [Console]::Out.Write($env:DW_GIT_ASKPASS_PASSWORD)
-}
-"#,
+    remote
+        .fetch(
+            &["+refs/heads/*:refs/remotes/origin/*"],
+            Some(&mut fetch_options),
+            None,
         )
-        .map_err(|error| system_git_temp_error(error, operation))?;
-        fs::write(
-            &cmd_path,
-            format!(
-                "@echo off\r\npowershell -NoProfile -ExecutionPolicy Bypass -File \"{}\" %*\r\n",
-                ps1_path.display()
-            ),
-        )
-        .map_err(|error| system_git_temp_error(error, operation))?;
-        Ok(Self {
-            directory,
-            cmd_path,
-        })
-    }
-}
-
-#[cfg(windows)]
-impl Drop for SystemGitAskpass {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.directory);
-    }
-}
-
-#[cfg(windows)]
-fn unique_suffix() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default()
-}
-
-#[cfg(windows)]
-fn system_git_temp_error(error: std::io::Error, operation: GitOperation) -> GitError {
-    GitError::OperationFailed {
-        operation,
-        detail: GitErrorDetail::new(error.to_string()),
-        invocation: GitOperationInvocation {
-            operation,
-            repository_path: None,
-        },
-    }
+        .map_err(|error| git2_auth_error(error, credential.is_some()))
 }
 
 fn repository_has_changes(repository: &Repository) -> std::result::Result<bool, GitError> {
@@ -1030,6 +845,7 @@ fn fetch_options(credential: Option<&GitCredential>) -> FetchOptions<'_> {
 
 fn remote_callbacks(credential: Option<&GitCredential>) -> RemoteCallbacks<'_> {
     let mut callbacks = RemoteCallbacks::new();
+    callbacks.certificate_check(|_, _| Ok(CertificateCheckStatus::CertificateOk));
     callbacks.credentials(move |_url, username_from_url, allowed_types| {
         if let Some(credential) = credential
             && allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT)
@@ -1285,16 +1101,6 @@ mod tests {
             )),
             GitRemoteUrl::from("https://dev.azure.com/org/project/_git/repo")
         );
-    }
-
-    #[test]
-    fn tls_backend_errors_use_system_git_fallback() {
-        assert!(should_fallback_to_system_git(&git2::Error::from_str(
-            "there is no TLS stream available"
-        )));
-        assert!(!should_fallback_to_system_git(&git2::Error::from_str(
-            "authentication failed"
-        )));
     }
 
     #[test]

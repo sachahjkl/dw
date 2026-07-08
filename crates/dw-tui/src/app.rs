@@ -752,6 +752,10 @@ impl App {
             };
         }
 
+        if self.detail.is_some() {
+            return self.handle_detail_key(key);
+        }
+
         if self.filter_active {
             return self.handle_filter_key(key);
         }
@@ -3535,6 +3539,18 @@ mod tests {
                 .iter()
                 .any(|line| line.contains("#55264"))
         );
+    }
+
+    #[test]
+    fn detail_panel_closes_even_when_modal_stack_is_desynced() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        app.detail = Some(DetailPanel::guide());
+        app.modal_stack.clear();
+
+        app.handle_detail_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .expect("close detail");
+
+        assert!(app.detail.is_none());
     }
 
     #[test]

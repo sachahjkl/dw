@@ -460,6 +460,10 @@ impl TuiAction {
     }
 
     pub fn opens_result_after_success(&self) -> bool {
+        if self.kind == ActionRisk::DryRun {
+            return false;
+        }
+
         matches!(
             self.request,
             TuiActionRequest::Doctor { .. }
@@ -1730,6 +1734,15 @@ mod tests {
 
         action = workspace_action(&workspace_item(), WorkspaceAction::FinishPreview);
         assert!(!action.should_refresh_after_success());
+    }
+
+    #[test]
+    fn preview_actions_do_not_auto_open_result_modal() {
+        let preview = workspace_action(&workspace_item(), WorkspaceAction::FinishPreview);
+        let execute = workspace_action(&workspace_item(), WorkspaceAction::FinishExecute);
+
+        assert!(!preview.opens_result_after_success());
+        assert!(execute.opens_result_after_success());
     }
 
     #[test]
