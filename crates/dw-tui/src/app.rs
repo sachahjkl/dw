@@ -2820,6 +2820,7 @@ mod tests {
     #[test]
     fn workspace_teardown_shortcut_action_is_rooted_and_confirmed() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let root = app.snapshot.root.clone();
         app.snapshot.workspaces = vec![workspace("/tmp/ws-one", "one")];
 
         let action =
@@ -2835,7 +2836,7 @@ mod tests {
                 );
                 assert_eq!(
                     args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
-                    Some("/tmp/missing-dw-root")
+                    Some(root.as_str())
                 );
                 assert!(args.mode.executes());
                 assert!(args.yes);
@@ -2847,6 +2848,7 @@ mod tests {
     #[test]
     fn workspace_finish_execute_action_is_rooted_and_confirmed() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let root = app.snapshot.root.clone();
         app.snapshot.workspaces = vec![workspace("/tmp/ws-one", "one")];
 
         let action =
@@ -2862,7 +2864,7 @@ mod tests {
                 );
                 assert_eq!(
                     args.root.as_ref().map(dw_core::DevWorkflowRoot::as_str),
-                    Some("/tmp/missing-dw-root")
+                    Some(root.as_str())
                 );
                 assert!(args.mode.executes());
                 assert!(args.yes);
@@ -3232,6 +3234,7 @@ mod tests {
     #[tokio::test]
     async fn config_show_quick_option_uses_core_detail_panel() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let root = app.snapshot.root.clone();
 
         assert!(
             app.run_core_quick_option(QuickOptionAction::ConfigShow)
@@ -3244,7 +3247,7 @@ mod tests {
         let crate::model::DetailPanelContent::ConfigShow(report) = detail.content else {
             panic!("expected config show panel");
         };
-        assert_eq!(report.root, "/tmp/missing-dw-root");
+        assert_eq!(report.root, root.as_str());
         assert!(app.history.entries.is_empty());
     }
 
@@ -3272,6 +3275,7 @@ mod tests {
     #[tokio::test]
     async fn config_doctor_quick_option_refreshes_snapshot_and_uses_core_detail_panel() {
         let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let root = app.snapshot.root.clone();
         app.snapshot.config_doctor = dw_config::ConfigDoctorReport {
             root: "/tmp/old".into(),
             passed: true,
@@ -3284,13 +3288,13 @@ mod tests {
                 .expect("quick option")
         );
 
-        assert_eq!(app.snapshot.config_doctor.root, "/tmp/missing-dw-root");
+        assert_eq!(app.snapshot.config_doctor.root, root.as_str());
         let detail = app.detail.expect("detail panel");
         assert_eq!(detail.title(), "Configuration doctor");
         let crate::model::DetailPanelContent::ConfigDoctor(report) = detail.content else {
             panic!("expected config doctor panel");
         };
-        assert_eq!(report.root, "/tmp/missing-dw-root");
+        assert_eq!(report.root, root.as_str());
         assert_eq!(report, app.snapshot.config_doctor);
         assert!(app.history.entries.is_empty());
     }

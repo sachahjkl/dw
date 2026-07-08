@@ -343,21 +343,16 @@ fn oauth_error_message(body: &str) -> String {
 fn store_refresh_token(refresh_token: &str) -> Result<(), AdoAuthError> {
     delete_stored_refresh_token()?;
     keyring_entry()?
-        .set_secret(refresh_token.as_bytes())
+        .set_password(refresh_token)
         .map_err(|error| AdoAuthError::Keyring(error.to_string()))
 }
 
 fn read_refresh_token() -> Result<Option<String>, AdoAuthError> {
-    let Some(secret) = read_keyring_secret(KEYRING_USER)? else {
-        return Ok(None);
-    };
-    String::from_utf8(secret).map(Some).map_err(|error| {
-        AdoAuthError::Keyring(format!("stored refresh token is not UTF-8: {error}"))
-    })
+    read_keyring_password(KEYRING_USER)
 }
 
-fn read_keyring_secret(user: &str) -> Result<Option<Vec<u8>>, AdoAuthError> {
-    match keyring_entry_for(user)?.get_secret() {
+fn read_keyring_password(user: &str) -> Result<Option<String>, AdoAuthError> {
+    match keyring_entry_for(user)?.get_password() {
         Ok(value) if !value.is_empty() => Ok(Some(value)),
         Ok(_) => Ok(None),
         Err(error) if is_missing_keyring_entry(&error) => Ok(None),
@@ -422,5 +417,50 @@ mod tests {
             "AADSTS70016: Authorization is pending"
         ));
         assert!(!is_pending_device_auth("authorization_declined"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "writes to the real Windows Credential Manager; run explicitly when validating auth login storage"]
+    fn windows_auth_refresh_token_roundtrips_in_keyring() {
+        let original = read_refresh_token().expect("existing refresh token should be readable");
+        let token = test_refresh_token(512);
+
+        let result = (|| {
+            store_refresh_token(&token)?;
+            assert_eq!(read_refresh_token()?, Some(token));
+            Ok::<_, AdoAuthError>(())
+        })();
+
+        let _ = delete_stored_refresh_token();
+        if let Some(original) = original {
+            let _ = store_refresh_token(&original);
+        }
+
+        result.expect("refresh token should roundtrip through Windows Credential Manager");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "writes to the real Windows Credential Manager; run explicitly when validating auth login storage"]
+    fn windows_auth_refresh_token_rejects_values_above_platform_limit() {
+        let original = read_refresh_token().expect("existing refresh token should be readable");
+        let token = test_refresh_token(2048);
+
+        let result = store_refresh_token(&token).expect_err("oversized token should be rejected");
+
+        let _ = delete_stored_refresh_token();
+        if let Some(original) = original {
+            let _ = store_refresh_token(&original);
+        }
+
+        assert!(result.to_string().contains("platform limit"));
+    }
+
+    #[cfg(windows)]
+    fn test_refresh_token(length: usize) -> String {
+        (0..length)
+            .map(|index| char::from(b'a' + (index % 26) as u8))
+            .collect()
     }
 }

@@ -173,4 +173,97 @@ mod tests {
     fn target_prefix_matches_dotnet_shape() {
         assert_eq!(target(&SecretKey::from("demo")).expect("target"), "dw/demo");
     }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "writes to the real Windows Credential Manager; run explicitly when validating keyring storage"]
+    fn windows_keyring_store_roundtrips_values_with_different_lengths() {
+        let store = KeyringSecretStore;
+        for length in [1_usize, 16, 256, 1024, 1279] {
+            let key = unique_key(&format!("roundtrip-{length}"));
+            let secret = SecretValue::from(test_secret(length));
+
+            let _cleanup = KeyringCleanup::new(&store, &key);
+            store.set(&key, &secret).expect("secret should be stored");
+
+            assert_eq!(
+                store.get(&key).expect("secret should be read"),
+                Some(secret),
+                "roundtrip failed for length {length}"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "writes to the real Windows Credential Manager; run explicitly when validating keyring storage"]
+    fn windows_keyring_store_overwrites_values_with_different_lengths() {
+        let store = KeyringSecretStore;
+        let key = unique_key("overwrite");
+        let _cleanup = KeyringCleanup::new(&store, &key);
+
+        for length in [8_usize, 1024, 32, 1279, 1] {
+            let secret = SecretValue::from(test_secret(length));
+            store.set(&key, &secret).expect("secret should be stored");
+
+            assert_eq!(
+                store.get(&key).expect("secret should be read"),
+                Some(secret),
+                "overwrite failed for length {length}"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "writes to the real Windows Credential Manager; run explicitly when validating keyring storage"]
+    fn windows_keyring_store_rejects_values_above_platform_limit() {
+        let store = KeyringSecretStore;
+        let key = unique_key("too-long");
+        let _cleanup = KeyringCleanup::new(&store, &key);
+        let secret = SecretValue::from(test_secret(2048));
+
+        let error = store
+            .set(&key, &secret)
+            .expect_err("oversized secret should be rejected by Windows Credential Manager");
+
+        assert!(error.to_string().contains("platform limit"));
+    }
+
+    #[cfg(windows)]
+    fn unique_key(suffix: &str) -> SecretKey {
+        SecretKey::from(format!(
+            "dw-test/windows-keyring/{}/{}",
+            std::process::id(),
+            suffix
+        ))
+    }
+
+    #[cfg(windows)]
+    fn test_secret(length: usize) -> String {
+        (0..length)
+            .map(|index| char::from(b'a' + (index % 26) as u8))
+            .collect()
+    }
+
+    #[cfg(windows)]
+    struct KeyringCleanup<'a> {
+        store: &'a KeyringSecretStore,
+        key: &'a SecretKey,
+    }
+
+    #[cfg(windows)]
+    impl<'a> KeyringCleanup<'a> {
+        fn new(store: &'a KeyringSecretStore, key: &'a SecretKey) -> Self {
+            let _ = store.delete(key);
+            Self { store, key }
+        }
+    }
+
+    #[cfg(windows)]
+    impl Drop for KeyringCleanup<'_> {
+        fn drop(&mut self) {
+            let _ = self.store.delete(self.key);
+        }
+    }
 }

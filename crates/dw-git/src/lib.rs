@@ -5,8 +5,9 @@ use dw_core::{
     WorkItemTypeName, WorkspaceRepositoryName,
 };
 use git2::{
-    Cred, FetchOptions, IndexAddOption, ObjectType, PushOptions, RebaseOptions, RemoteCallbacks,
-    Repository, Sort, StashFlags, StatusOptions, WorktreeAddOptions, build::RepoBuilder,
+    Cred, CredentialType, FetchOptions, IndexAddOption, ObjectType, PushOptions, RebaseOptions,
+    RemoteCallbacks, Repository, Sort, StashFlags, StatusOptions, WorktreeAddOptions,
+    build::RepoBuilder,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -844,14 +845,18 @@ fn fetch_options(credential: Option<&GitCredential>) -> FetchOptions<'_> {
 
 fn remote_callbacks(credential: Option<&GitCredential>) -> RemoteCallbacks<'_> {
     let mut callbacks = RemoteCallbacks::new();
-    callbacks.credentials(move |_url, username_from_url, _allowed_types| {
-        if let Some(credential) = credential {
+    callbacks.credentials(move |_url, username_from_url, allowed_types| {
+        if let Some(credential) = credential
+            && allowed_types.contains(CredentialType::USER_PASS_PLAINTEXT)
+        {
             return Cred::userpass_plaintext(
                 username_from_url.unwrap_or("dw"),
                 credential.token().as_str(),
             );
         }
-        if let Some(username) = username_from_url {
+        if let Some(username) = username_from_url
+            && allowed_types.contains(CredentialType::SSH_KEY)
+        {
             return Cred::ssh_key_from_agent(username);
         }
         Err(git2::Error::from_str("missing Git HTTPS credential"))

@@ -1141,7 +1141,11 @@ mod tests {
     #[test]
     fn workspace_and_work_item_values_come_from_manifests() {
         let root = temp_root("completion-workspaces");
-        let workspace = root.join("projects/ha/workspaces/feature-42-demo");
+        let workspace = root
+            .join("projects")
+            .join("ha")
+            .join("workspaces")
+            .join("feature-42-demo");
         fs::create_dir_all(&workspace).expect("workspace dir");
         fs::write(
             workspace.join("task.json"),

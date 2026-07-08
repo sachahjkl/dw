@@ -2591,6 +2591,22 @@ mod tests {
         WorkspacePath::from(path.display().to_string())
     }
 
+    fn test_project_dir(root: &Path, project: &str) -> std::path::PathBuf {
+        root.join("projects").join(project)
+    }
+
+    fn test_workspace_dir(root: &Path, project: &str, workspace: &str) -> std::path::PathBuf {
+        test_project_dir(root, project)
+            .join("workspaces")
+            .join(workspace)
+    }
+
+    fn test_anchor_dir(root: &Path, project: &str, anchor: &str) -> std::path::PathBuf {
+        test_project_dir(root, project)
+            .join("repositories")
+            .join(anchor)
+    }
+
     fn init_develop_repository(path: &Path) {
         fs::create_dir_all(path).expect("source should exist");
         let repository = Repository::init(path).expect("repository should init");
@@ -2721,7 +2737,7 @@ artifacts:
     fn finds_and_filters_workspaces() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -2752,7 +2768,7 @@ artifacts:
     fn task_list_returns_detected_workspace_paths() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -2783,7 +2799,7 @@ artifacts:
     fn task_list_returns_expected_display_fields() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -2823,8 +2839,8 @@ artifacts:
     #[test]
     fn resolves_current_workspace_from_nested_path() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
-        let nested = workspace.join("front/src/app");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
+        let nested = workspace.join("front").join("src").join("app");
         fs::create_dir_all(&nested).expect("nested path should exist");
         fs::write(
             workspace.join("task.json"),
@@ -2860,7 +2876,7 @@ artifacts:
     #[test]
     fn handoff_validation_report_is_invalid_when_one_repo_stays_todo() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -2904,7 +2920,7 @@ artifacts:
     #[test]
     fn handoff_validation_report_marks_missing_file_invalid() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -2935,8 +2951,8 @@ artifacts:
     fn resolve_workspace_continue_uses_latest_matching_workspace() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let old_workspace = root.join("projects/ha/workspaces/feat-1-old");
-        let new_workspace = root.join("projects/ha/workspaces/feat-2-new");
+        let old_workspace = test_workspace_dir(root, "ha", "feat-1-old");
+        let new_workspace = test_workspace_dir(root, "ha", "feat-2-new");
         fs::create_dir_all(&old_workspace).expect("old workspace should exist");
         fs::create_dir_all(&new_workspace).expect("new workspace should exist");
         fs::write(
@@ -2967,7 +2983,7 @@ artifacts:
     fn resolve_workspace_uses_positional_work_item_id() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-11010-new");
+        let workspace = test_workspace_dir(root, "ha", "feat-11010-new");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -2992,7 +3008,7 @@ artifacts:
     fn resolve_workspace_matches_secondary_work_item_id() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-11010-new");
+        let workspace = test_workspace_dir(root, "ha", "feat-11010-new");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3017,7 +3033,7 @@ artifacts:
     fn resolve_workspace_matches_all_requested_work_items() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-11010-new");
+        let workspace = test_workspace_dir(root, "ha", "feat-11010-new");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3075,7 +3091,13 @@ artifacts:
             resolve_open_target(&workspace, &manifest, Some(&project_config), Some("front"))
                 .expect("target should resolve");
 
-        assert_eq!(target, "/tmp/workspace/custom-front");
+        assert_eq!(
+            target,
+            Path::new("/tmp/workspace")
+                .join("custom-front")
+                .display()
+                .to_string()
+        );
     }
 
     #[test]
@@ -3109,7 +3131,7 @@ artifacts:
     fn plan_task_start_rejects_existing_workspace_conflict() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3180,8 +3202,8 @@ artifacts:
     #[test]
     fn execute_task_start_rejects_unpreparable_repository() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
-        let project_root = temp.path().join("projects/ha");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
+        let project_root = test_project_dir(temp.path(), "ha");
         let plan = TaskStartPlan {
             work_item_ids: vec![WorkItemId::from("123")],
             primary_work_item_id: WorkItemId::from("123"),
@@ -3236,7 +3258,7 @@ artifacts:
       "displayName": "HA",
       "repositories": {{
         "front": {{
-          "url": "{}",
+          "url": {},
           "defaultBranch": "develop",
           "anchorName": "front.git",
           "folder": "front"
@@ -3245,7 +3267,7 @@ artifacts:
     }}
   }}
 }}"#,
-            source.display()
+            serde_json::to_string(&source.display().to_string()).expect("source path JSON")
         ))
         .expect("projects should parse");
         let plan = plan_task_start(TaskStartRequest {
@@ -3262,8 +3284,8 @@ artifacts:
 
         execute_task_start(&plan, None, None, None).expect("start should execute");
 
-        let anchor = root.join("projects/ha/repositories/front.git");
-        let worktree = root.join("projects/ha/workspaces/feat-123-demo/front");
+        let anchor = test_anchor_dir(&root, "ha", "front.git");
+        let worktree = test_workspace_dir(&root, "ha", "feat-123-demo").join("front");
         assert!(anchor.join("HEAD").exists());
         assert!(worktree.join(".git").exists());
         assert!(worktree.join("README.md").exists());
@@ -3272,7 +3294,7 @@ artifacts:
     #[test]
     fn execute_task_start_writes_manifest_plan_and_handoffs() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
         let plan = TaskStartPlan {
             work_item_ids: vec![WorkItemId::from("123")],
             primary_work_item_id: WorkItemId::from("123"),
@@ -3353,7 +3375,7 @@ artifacts:
     #[test]
     fn execute_task_start_writes_child_tasks() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
         let plan = TaskStartPlan {
             work_item_ids: vec![WorkItemId::from("123")],
             primary_work_item_id: WorkItemId::from("123"),
@@ -3399,7 +3421,7 @@ artifacts:
     #[test]
     fn preflight_report_models_warning_issues_from_ai_context_file() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-55201-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-55201-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3500,8 +3522,8 @@ artifacts:
     #[test]
     fn resolve_workspace_for_workspace_command_uses_current_workspace_when_not_continue() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
-        let nested = workspace.join("front/src");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
+        let nested = workspace.join("front").join("src");
         fs::create_dir_all(&nested).expect("nested path should exist");
         fs::write(workspace.join("task.json"), "{}").expect("manifest should exist");
 
@@ -3520,7 +3542,7 @@ artifacts:
     fn plan_task_repo_latest_uses_default_branch_and_folder_override() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3554,7 +3576,7 @@ artifacts:
     #[test]
     fn plan_task_commit_uses_repository_folder_override() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3661,7 +3683,7 @@ artifacts:
     #[test]
     fn plan_add_work_items_updates_branch_and_workspace_subject() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-11010-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3695,7 +3717,7 @@ artifacts:
     #[test]
     fn plan_add_work_item_snapshots_keeps_ado_metadata() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-11010-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3737,8 +3759,8 @@ artifacts:
     #[test]
     fn plan_add_work_item_snapshots_rejects_workspace_conflict() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
-        let other = temp.path().join("projects/ha/workspaces/bug-55206-other");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-11010-demo");
+        let other = test_workspace_dir(temp.path(), "ha", "bug-55206-other");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::create_dir_all(&other).expect("other workspace should exist");
         fs::write(
@@ -3771,7 +3793,7 @@ artifacts:
     #[test]
     fn execute_work_item_update_writes_manifest_and_renames_workspace() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-11010-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3811,7 +3833,7 @@ artifacts:
     #[test]
     fn plan_remove_work_items_rejects_empty_parent_set() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-11010-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-11010-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3833,7 +3855,7 @@ artifacts:
     fn plan_task_add_repo_uses_config_folder_anchor_and_branch() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3871,7 +3893,7 @@ artifacts:
     fn execute_task_add_repo_updates_manifest_and_handoff() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(root, "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3907,7 +3929,7 @@ artifacts:
     #[test]
     fn execute_task_sync_updates_parent_work_items_from_snapshots() {
         let temp = tempdir().expect("tempdir should be created");
-        let workspace = temp.path().join("projects/ha/workspaces/feat-123-demo");
+        let workspace = test_workspace_dir(temp.path(), "ha", "feat-123-demo");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -3956,8 +3978,8 @@ artifacts:
     fn plan_task_prune_keeps_only_workspaces_with_all_parents_final() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let final_workspace = root.join("projects/ha/workspaces/feat-1-final");
-        let active_workspace = root.join("projects/ha/workspaces/feat-2-active");
+        let final_workspace = test_workspace_dir(root, "ha", "feat-1-final");
+        let active_workspace = test_workspace_dir(root, "ha", "feat-2-active");
         fs::create_dir_all(&final_workspace).expect("final workspace should exist");
         fs::create_dir_all(&active_workspace).expect("active workspace should exist");
         fs::write(
@@ -3984,7 +4006,7 @@ artifacts:
     fn plan_task_teardown_removes_each_repo_worktree_and_prunes_git_anchors() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-55222-slug");
+        let workspace = test_workspace_dir(root, "ha", "feat-55222-slug");
         fs::create_dir_all(&workspace).expect("workspace should exist");
         fs::write(
             workspace.join("task.json"),
@@ -4002,7 +4024,7 @@ artifacts:
             &typed_workspace_path(&workspace),
         )
         .expect("plan should build");
-        let anchor = root.join("projects/ha/repositories/front.git");
+        let anchor = test_anchor_dir(root, "ha", "front.git");
 
         assert!(steps.iter().any(|step| {
             step.subject
@@ -4040,8 +4062,8 @@ artifacts:
     fn execute_task_teardown_runs_git_from_anchor_and_deletes_workspace() {
         let temp = tempdir().expect("tempdir should be created");
         let root = temp.path();
-        let workspace = root.join("projects/ha/workspaces/feat-55222-slug");
-        let anchor = root.join("projects/ha/repositories/front.git");
+        let workspace = test_workspace_dir(root, "ha", "feat-55222-slug");
+        let anchor = test_anchor_dir(root, "ha", "front.git");
         fs::create_dir_all(workspace.join("front")).expect("worktree should exist");
         fs::create_dir_all(&anchor).expect("anchor should exist");
         let steps = vec![

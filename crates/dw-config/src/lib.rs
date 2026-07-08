@@ -32,6 +32,7 @@ pub use types::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::Mutex;
     use tempfile::tempdir;
 
@@ -40,27 +41,26 @@ mod tests {
     #[test]
     fn default_root_uses_dev_dw_suffix() {
         let value = default_root();
-        assert!(value.ends_with("/dev/dw"));
+        assert!(Path::new(&value).ends_with(Path::new("dev").join("dw")));
     }
 
     #[test]
     fn config_show_reports_expected_paths() {
-        let report = config_show(Some("/tmp/demo-root"));
-        assert_eq!(report.root, "/tmp/demo-root");
-        assert!(
-            report
-                .workflow_path
-                .ends_with("/tmp/demo-root/config/workflow.json")
+        let temp = tempdir().expect("tempdir");
+        let root = temp.path().join("demo-root");
+        let report = config_show(Some(root.to_str().expect("utf8 path")));
+        assert_eq!(Path::new(&report.root), root.as_path());
+        assert_eq!(
+            Path::new(&report.workflow_path),
+            root.join("config").join("workflow.json")
         );
-        assert!(
-            report
-                .projects_path
-                .ends_with("/tmp/demo-root/config/projects.json")
+        assert_eq!(
+            Path::new(&report.projects_path),
+            root.join("config").join("projects.json")
         );
-        assert!(
-            report
-                .databases_path
-                .ends_with("/tmp/demo-root/config/databases.json")
+        assert_eq!(
+            Path::new(&report.databases_path),
+            root.join("config").join("databases.json")
         );
     }
 
@@ -75,7 +75,7 @@ mod tests {
             status
                 .missing_paths
                 .iter()
-                .any(|path| path.ends_with("config/projects.json"))
+                .any(|path| Path::new(path).ends_with(Path::new("config").join("projects.json")))
         );
     }
 

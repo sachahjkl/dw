@@ -245,7 +245,7 @@ mod tests {
         let directory = user_config_directory();
 
         restore_env("LOCALAPPDATA", local_app_data);
-        assert_eq!(directory, "C:/Users/demo/AppData/Local/DevWorkflow");
+        assert!(Path::new(&directory).ends_with("DevWorkflow"));
     }
 
     #[cfg(windows)]

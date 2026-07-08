@@ -545,7 +545,7 @@ mod tests {
 
         let lines = options_summary_lines(&app);
 
-        assert!(lines[0].contains("/tmp/missing-dw-root"));
+        assert!(lines[0].contains(app.snapshot.root.as_str()));
         assert!(lines[1].contains("1 projects"));
         assert!(lines[1].contains("2 repositories"));
         assert!(lines[1].contains("1 DB"));

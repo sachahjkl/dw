@@ -1466,8 +1466,12 @@ mod tests {
     fn suggestion_reads_from_env_values_locally() {
         let suggestions = field_suggestions("From env", &snapshot());
 
-        if std::env::var_os("PATH").is_some() {
-            assert!(suggestions.iter().any(|value| value == "PATH"));
+        if std::env::vars_os().any(|(key, _)| key.eq_ignore_ascii_case("PATH")) {
+            assert!(
+                suggestions
+                    .iter()
+                    .any(|value| value.eq_ignore_ascii_case("PATH"))
+            );
         }
         assert!(suggestions.windows(2).all(|pair| pair[0] <= pair[1]));
     }

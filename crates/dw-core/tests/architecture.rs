@@ -31,6 +31,10 @@ const ACTION_ID_DOMAINS: &[&str] = &[
     "ado", "agent", "auth", "config", "db", "external", "input", "secret", "task", "upgrade",
 ];
 
+fn contains_token(text: &str, token: &str) -> bool {
+    text.contains(token) || text.replace("\r\n", "\n").contains(token)
+}
+
 #[test]
 fn migrated_core_crates_do_not_depend_on_cli_or_tui_rendering() {
     let repo = repo_root();
@@ -299,7 +303,7 @@ fn tui_history_and_detail_store_typed_action_records_not_rendered_output() {
         "pub fn finish_running(\n        &mut self,\n        id: ActionRunId",
     ] {
         assert!(
-            history.contains(required),
+            contains_token(&history, required),
             "TUI history missing typed run contract `{required}`"
         );
     }
@@ -1153,7 +1157,7 @@ fn task_finish_contract_uses_typed_paths_repositories_and_work_items() {
         "pub verification_commands: BTreeMap<WorkspaceRepositoryName, Vec<VerificationCommand>>",
     ] {
         assert!(
-            workspace_text.contains(required),
+            contains_token(&workspace_text, required),
             "{} should expose typed workspace finish contract token `{}`",
             workspace_path.display(),
             required
@@ -1285,7 +1289,7 @@ fn app_and_tui_core_requests_use_typed_config_agent_and_secret_values() {
         let text = fs::read_to_string(&path).expect("read source file");
         for required in required_tokens {
             assert!(
-                text.contains(required),
+                contains_token(&text, required),
                 "{} should expose typed core contract token `{}`",
                 path.display(),
                 required
@@ -1560,7 +1564,7 @@ fn upgrade_events_use_typed_payloads_not_string_fields() {
         let text = fs::read_to_string(&path).expect("read source file");
         for token in *required {
             assert!(
-                text.contains(token),
+                contains_token(&text, token),
                 "{} should expose typed upgrade event token `{}`",
                 path.display(),
                 token
@@ -1997,7 +2001,7 @@ fn workspace_list_current_and_resolution_contracts_use_domain_types() {
         ") -> Result<WorkspacePath, WorkspaceError> {\n    if let Some(workspace) = workspace.filter",
     ] {
         assert!(
-            text.contains(required),
+            contains_token(&text, required),
             "{} should expose typed workspace result token `{}`",
             path.display(),
             required
@@ -2539,7 +2543,7 @@ fn workspace_teardown_contract_is_typed_not_string_protocol() {
         "WorktreePrepareFailed {\n        repository: WorkspaceRepositoryName,\n        message: WorkspaceOperationError",
     ] {
         assert!(
-            text.contains(required),
+            contains_token(&text, required),
             "workspace teardown should contain typed contract token `{}`",
             required
         );
