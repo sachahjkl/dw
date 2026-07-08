@@ -324,7 +324,8 @@ pub fn selected_ado_action(
             AdoItemAction::Context => format!("Show context · #{}", item.id),
             AdoItemAction::WorkItem => format!("Show work item · #{}", item.id),
             AdoItemAction::SetStartState => {
-                format!("Move work item to ready state · #{}", item.id)
+                let state = ado_start_state(snapshot, item)?;
+                format!("Move work item to {state} · #{}", item.id)
             }
         },
         request,
@@ -714,6 +715,10 @@ mod tests {
             _ => panic!("expected ado set-state request"),
         }
         assert!(matches!(action.kind, ActionRisk::Destructive));
+        assert_eq!(
+            action.display_label(),
+            "Move work item to En réalisation · #42"
+        );
         assert!(action.bypasses_cli_confirmation());
         assert!(!action.runs_attached_in_tui());
     }
