@@ -10,13 +10,14 @@ use crate::actions::{AdoItemAction, PullRequestAction};
 use crate::app::{App, MENU_SECTIONS, MenuSection, ModalKind, TuiInputPrompt};
 use crate::background::BackgroundKind;
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
-use crate::history::ActionRunRecord;
+use crate::history::{ActionRunRecord, JournalLogLevel};
 use crate::model::{
     ActionRisk, CockpitSeverity, DetailPanelContent, TuiAction, View, WorkspaceAction,
 };
 use crate::ui_text::{
     action_builder_preview_lines, confirmation_lines, form_preview_lines, guide_detail_lines,
-    help_lines, history_journal_lines, option_active, options_summary_lines, state_modal_lines,
+    help_lines, history_journal_lines, history_line_level, option_active, options_summary_lines,
+    state_modal_lines,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2169,10 +2170,19 @@ fn menu_row(
 }
 
 fn render_history_output(frame: &mut Frame<'_>, area: Rect, app: &App) {
-    let popup = centered_rect(82, 72, area);
+    let popup = if app.history.output_fullscreen {
+        area
+    } else {
+        centered_rect(82, 72, area)
+    };
     frame.render_widget(Clear, popup);
     let lines = history_journal_lines(app);
-    let block = Block::default().title("Journal").borders(Borders::ALL);
+    let title = if app.history.output_fullscreen {
+        "Journal fullscreen"
+    } else {
+        "Journal"
+    };
+    let block = Block::default().title(title).borders(Borders::ALL);
     let inner = block.inner(popup);
     frame.render_widget(block, popup);
     let chunks = Layout::default()
@@ -2180,17 +2190,37 @@ fn render_history_output(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .constraints([Constraint::Min(3), Constraint::Length(1)])
         .split(inner);
     frame.render_widget(
-        Paragraph::new(lines.join("\n"))
+        Paragraph::new(styled_journal_lines(lines))
             .scroll((app.history.output_scroll as u16, 0))
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
     frame.render_widget(
         Paragraph::new(styled_shortcut_line(
-            "close [Esc]    close [h]    scroll down [j]    scroll up [k]    previous run [←]    next run [→]    top [Home]    bottom [End]",
+            "close [Esc/h]    fullscreen [f]    levels [e/w/i/d/o]    all [a]    scroll [j/k]    run [←/→]    top/bottom [Home/End]",
         )),
         chunks[1],
     );
+}
+
+fn styled_journal_lines(lines: Vec<String>) -> Vec<Line<'static>> {
+    lines
+        .into_iter()
+        .map(|line| {
+            let style = match history_line_level(&line) {
+                JournalLogLevel::Error => Style::default().fg(Color::LightRed),
+                JournalLogLevel::Warn => Style::default().fg(Color::Yellow),
+                JournalLogLevel::Info => Style::default().fg(Color::Cyan),
+                JournalLogLevel::Debug => Style::default().fg(Color::Magenta),
+                JournalLogLevel::Other => Style::default().fg(Color::Gray),
+            };
+            if line.starts_with("Run") || line.starts_with("Levels") || line.starts_with("View") {
+                Line::from(Span::styled(line, Style::default().fg(Color::White)))
+            } else {
+                Line::from(Span::styled(line, style))
+            }
+        })
+        .collect()
 }
 
 fn render_action_progress_modal(frame: &mut Frame<'_>, area: Rect, app: &App) {

@@ -16,7 +16,8 @@ use crate::actions::{
 use crate::background::{ActionStart, BackgroundJobs, BackgroundKind, BackgroundResult};
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
 use crate::history::{
-    ActionRunId, ActionRunLabel, ActionRunRecord, ActionRunStatus, HistoryState, RunHistoryEntry,
+    ActionRunId, ActionRunLabel, ActionRunRecord, ActionRunStatus, HistoryState, JournalLogLevel,
+    RunHistoryEntry,
 };
 use crate::model::{
     ActionEffect, ActionRisk, AdoAssignedProject, CockpitItem, CockpitSeverity, DetailPanel,
@@ -1236,6 +1237,13 @@ impl App {
             KeyCode::Right | KeyCode::Char(']') => self.history.select_next_entry(),
             KeyCode::Home => self.history.scroll_output_home(),
             KeyCode::End => self.scroll_history_output_end(),
+            KeyCode::Char('f') => self.history.toggle_output_fullscreen(),
+            KeyCode::Char('a') => self.history.enable_all_log_levels(),
+            KeyCode::Char('e') => self.history.toggle_log_level(JournalLogLevel::Error),
+            KeyCode::Char('w') => self.history.toggle_log_level(JournalLogLevel::Warn),
+            KeyCode::Char('i') => self.history.toggle_log_level(JournalLogLevel::Info),
+            KeyCode::Char('d') => self.history.toggle_log_level(JournalLogLevel::Debug),
+            KeyCode::Char('o') => self.history.toggle_log_level(JournalLogLevel::Other),
             _ => {}
         }
         Ok(())

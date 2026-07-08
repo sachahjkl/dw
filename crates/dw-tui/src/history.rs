@@ -1,5 +1,6 @@
 use dw_app::DwActionResult;
 use dw_core::{DwActionEvent, ExternalLaunchPlan};
+use std::collections::BTreeSet;
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -46,6 +47,45 @@ pub enum ActionRunStatus {
     Running,
     Succeeded,
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum JournalLogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Other,
+}
+
+impl JournalLogLevel {
+    pub const ALL: [Self; 5] = [
+        Self::Error,
+        Self::Warn,
+        Self::Info,
+        Self::Debug,
+        Self::Other,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warn => "warn",
+            Self::Info => "info",
+            Self::Debug => "debug",
+            Self::Other => "other",
+        }
+    }
+
+    pub fn marker(self) -> &'static str {
+        match self {
+            Self::Error => "ERR",
+            Self::Warn => "WRN",
+            Self::Info => "INF",
+            Self::Debug => "DBG",
+            Self::Other => "---",
+        }
+    }
 }
 
 impl ActionRunStatus {
@@ -139,9 +179,17 @@ pub struct HistoryState {
     pub output_open: bool,
     pub output_scroll: usize,
     pub selected_entry: usize,
+    pub output_fullscreen: bool,
+    output_log_levels: BTreeSet<JournalLogLevel>,
 }
 
 impl HistoryState {
+    fn ensure_default_log_levels(&mut self) {
+        if self.output_log_levels.is_empty() {
+            self.output_log_levels = JournalLogLevel::ALL.into_iter().collect();
+        }
+    }
+
     pub fn push(&mut self, entry: RunHistoryEntry) {
         self.entries.push(entry);
         if self.entries.len() > 20 {
@@ -194,6 +242,7 @@ impl HistoryState {
     }
 
     pub fn open_output(&mut self) -> bool {
+        self.ensure_default_log_levels();
         self.output_open = true;
         self.output_scroll = 0;
         self.selected_entry = self.entries.len().saturating_sub(1);
@@ -203,6 +252,45 @@ impl HistoryState {
     pub fn close_output(&mut self) {
         self.output_open = false;
         self.output_scroll = 0;
+    }
+
+    pub fn toggle_output_fullscreen(&mut self) {
+        self.output_fullscreen = !self.output_fullscreen;
+        self.output_scroll = 0;
+    }
+
+    pub fn toggle_log_level(&mut self, level: JournalLogLevel) {
+        self.ensure_default_log_levels();
+        if !self.output_log_levels.remove(&level) {
+            self.output_log_levels.insert(level);
+        }
+        if self.output_log_levels.is_empty() {
+            self.output_log_levels.insert(level);
+        }
+        self.output_scroll = 0;
+    }
+
+    pub fn enable_all_log_levels(&mut self) {
+        self.output_log_levels = JournalLogLevel::ALL.into_iter().collect();
+        self.output_scroll = 0;
+    }
+
+    pub fn log_level_enabled(&self, level: JournalLogLevel) -> bool {
+        self.output_log_levels.is_empty() || self.output_log_levels.contains(&level)
+    }
+
+    pub fn log_level_labels(&self) -> Vec<String> {
+        JournalLogLevel::ALL
+            .into_iter()
+            .map(|level| {
+                let marker = if self.log_level_enabled(level) {
+                    "x"
+                } else {
+                    " "
+                };
+                format!("[{marker}] {}", level.label())
+            })
+            .collect()
     }
 
     pub fn scroll_output_up(&mut self) {

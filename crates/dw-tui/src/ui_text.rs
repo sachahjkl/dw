@@ -3,7 +3,7 @@ use crate::app::App;
 use crate::form::FormState;
 #[cfg(test)]
 use crate::history::{ActionRunErrorMessage, ActionRunId, ActionRunLabel};
-use crate::history::{ActionRunRecord, ActionRunStatus, RunHistoryEntry};
+use crate::history::{ActionRunRecord, ActionRunStatus, JournalLogLevel, RunHistoryEntry};
 #[cfg(test)]
 use crate::model::View;
 use crate::model::{ActionRisk, TuiAction};
@@ -218,18 +218,76 @@ pub(crate) fn history_journal_lines(app: &App) -> Vec<String> {
     } else {
         lines.push("Output captured.".into());
     }
+    lines.push(format!(
+        "Levels      : {}",
+        app.history.log_level_labels().join("  ")
+    ));
+    lines.push(format!(
+        "View        : {}    Toggle [e/w/i/d/o]    all [a]    fullscreen [f]",
+        if app.history.output_fullscreen {
+            "fullscreen"
+        } else {
+            "modal"
+        }
+    ));
     lines.push(String::new());
-    let rendered = history_entry_rendered_lines(entry);
+    let rendered = history_entry_rendered_lines(entry)
+        .into_iter()
+        .filter(|line| app.history.log_level_enabled(history_line_level(line)))
+        .map(normalize_history_log_line)
+        .collect::<Vec<_>>();
     if rendered.is_empty() {
         if entry.status.is_running() {
-            lines.push("Waiting for the first output line...".into());
+            lines.push("Waiting for the first output line; adjust level filters if needed.".into());
         } else {
-            lines.push("No output captured for this run.".into());
+            lines.push("No visible output for this run; adjust level filters if needed.".into());
         }
     } else {
         lines.extend(rendered);
     }
     lines
+}
+
+pub(crate) fn history_line_level(line: &str) -> JournalLogLevel {
+    let trimmed = line.trim_start();
+    let upper = trimmed.to_ascii_uppercase();
+    if upper.starts_with("ERROR")
+        || upper.starts_with("ERR ")
+        || upper.starts_with("KO ")
+        || upper.contains("(ERROR)")
+        || upper.contains("FAILED")
+    {
+        JournalLogLevel::Error
+    } else if upper.starts_with("WARN") || upper.starts_with("WRN ") || upper.contains("WARNING") {
+        JournalLogLevel::Warn
+    } else if upper.starts_with("DEBUG") || upper.starts_with("DBG ") || upper.starts_with("TRACE")
+    {
+        JournalLogLevel::Debug
+    } else if upper.starts_with("INFO") || upper.starts_with("INF ") || upper.starts_with("TASK.") {
+        JournalLogLevel::Info
+    } else {
+        JournalLogLevel::Other
+    }
+}
+
+pub(crate) fn normalize_history_log_line(line: String) -> String {
+    if line.trim().is_empty() {
+        return line;
+    }
+    let level = history_line_level(&line);
+    if level == JournalLogLevel::Other {
+        return line;
+    }
+    let trimmed = line.trim_start();
+    let without_level = trimmed
+        .strip_prefix("INFO ")
+        .or_else(|| trimmed.strip_prefix("WARN "))
+        .or_else(|| trimmed.strip_prefix("WARNING "))
+        .or_else(|| trimmed.strip_prefix("ERROR "))
+        .or_else(|| trimmed.strip_prefix("DEBUG "))
+        .or_else(|| trimmed.strip_prefix("TRACE "))
+        .unwrap_or(trimmed);
+    format!("{} | {}", level.marker(), without_level.trim_start())
 }
 
 fn active_operation_line(entry: &RunHistoryEntry) -> Option<String> {
