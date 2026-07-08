@@ -1778,6 +1778,10 @@ pub fn task_start_create_command(
     parts.join(" ")
 }
 
+pub fn task_start_open_command(workspace: &dw_core::WorkspacePath) -> String {
+    format!("dw task open --workspace {}", shell_arg(workspace.as_str()))
+}
+
 fn shell_arg(value: &str) -> String {
     if value.chars().all(|character| {
         character.is_ascii_alphanumeric()
@@ -1827,7 +1831,10 @@ pub fn task_start_execution_lines(report: &dw_task::start::StartExecutionReport)
             ));
         }
     }
-    lines.push("Recommended next step: open the workspace or launch the agent.".into());
+    lines.push(format!(
+        "Open command: {}",
+        task_start_open_command(&report.plan.workspace)
+    ));
     lines
 }
 

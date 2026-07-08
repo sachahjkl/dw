@@ -868,6 +868,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                             print_lines(&dw_cli_adapter::render::task_start_execution_lines(
                                 &execution,
                             ));
+                            prompt_open_created_workspace(&execution).await?;
                         }
                     }
                 }
@@ -1611,6 +1612,36 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 ));
             }
         }
+    }
+    Ok(())
+}
+
+async fn prompt_open_created_workspace(
+    execution: &dw_task::start::StartExecutionReport,
+) -> Result<()> {
+    let open_command = dw_cli_adapter::render::task_start_open_command(&execution.plan.workspace);
+    if !std::io::stdin().is_terminal() {
+        return Ok(());
+    }
+
+    if Confirm::new("Open this workspace now?")
+        .with_default(true)
+        .prompt()?
+    {
+        let launch = execute_task_open_cli_action(dw_task::open::OpenWorkspaceArgs {
+            workspace: Some(execution.plan.workspace.clone()),
+            project: None,
+            work_item_ids: Vec::new(),
+            pull_request: None,
+            r#continue: false,
+            repo: None,
+            agent: None,
+            root: None,
+        })
+        .await?;
+        run_external_launch_plan(&launch)?;
+    } else {
+        println!("Open command: {open_command}");
     }
     Ok(())
 }
