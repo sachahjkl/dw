@@ -1,14 +1,14 @@
-use dw_app::{DwActionRequest, DwActionResult, TaskActionResult};
+use dw_app::{DwActionRequest, DwActionResult};
 use dw_config::{
     ConfigDoctorReport, ConfigShow, DatabasesConfig, ProjectsConfig, WorkflowConfig, config_doctor,
     load_databases_config, load_projects_config, load_user_settings, load_workflow_config,
     project_choices, repository_config, resolve_project, resolve_root, root_status,
 };
 use dw_core::{
-    AdoRepositoryName, Agent, ConfigColorMode, DatabaseKey, DevWorkflowRoot, DwActionEvent,
-    ProjectKey, PullRequestId, WorkItemId, WorkItemState, WorkspaceRepositoryName,
+    AdoRepositoryName, Agent, ConfigColorMode, DatabaseKey, DwActionEvent, ProjectKey,
+    PullRequestId, WorkItemId, WorkItemState, WorkspaceRepositoryName,
 };
-use dw_workspace::TaskListItem;
+use dw_workspace::{TaskListItem, WorkspaceSummary};
 
 const GUIDE_DETAIL_LINE_COUNT: usize = 29;
 
@@ -710,10 +710,7 @@ impl TuiSnapshot {
         let databases = load_databases_config(&root);
         let database_entries = database_entries_for_tui(&databases);
         let config_doctor = config_doctor(Some(&root));
-        let (workspaces, prune_candidates) = tokio::join!(
-            load_workspaces_via_app(&root),
-            load_prune_candidate_count_via_app(&root)
-        );
+        let (workspaces, prune_candidates) = load_workspace_snapshot(&root).await;
         let actions = build_actions(&root, &projects, &databases, &workspaces);
         let color_mode = load_user_settings().color.unwrap_or(ConfigColorMode::Auto);
         Self {
@@ -835,42 +832,22 @@ impl TuiSnapshot {
     }
 }
 
-async fn load_workspaces_via_app(root: &str) -> Vec<TaskListItem> {
-    match dw_app::run_action(
-        DwActionRequest::TaskList {
-            root: Some(DevWorkflowRoot::from(root)),
-            project: None,
-            work_item_ids: Vec::new(),
-        },
-        |_| {},
-    )
+async fn load_workspace_snapshot(root: &str) -> (Vec<TaskListItem>, usize) {
+    let root = root.to_string();
+    tokio::task::spawn_blocking(move || {
+        let workspaces = dw_workspace::find_workspaces(&root);
+        workspace_snapshot_from_summaries(workspaces)
+    })
     .await
-    {
-        Ok(DwActionResult::Task(result)) => match *result {
-            TaskActionResult::List(report) => report.items,
-            _ => Vec::new(),
-        },
-        _ => Vec::new(),
-    }
+    .unwrap_or_default()
 }
 
-async fn load_prune_candidate_count_via_app(root: &str) -> usize {
-    let args = dw_task::prune::PruneArgs {
-        root: Some(DevWorkflowRoot::from(root)),
-        project: None,
-        work_item_ids: Vec::new(),
-        selected_workspaces: None,
-        mode: dw_core::ExecutionMode::Preview,
-        yes: false,
-        no_sync: true,
-    };
-    match dw_app::run_action(DwActionRequest::TaskPrune(args), |_| {}).await {
-        Ok(DwActionResult::Task(result)) => match *result {
-            TaskActionResult::PrunePlan(report) => report.candidates.len(),
-            _ => 0,
-        },
-        _ => 0,
-    }
+fn workspace_snapshot_from_summaries(
+    workspaces: Vec<WorkspaceSummary>,
+) -> (Vec<TaskListItem>, usize) {
+    let prune_candidates = dw_workspace::prune_candidate_count_from_workspaces(&workspaces);
+    let items = dw_workspace::task_list_from_workspaces(workspaces, None, None);
+    (items, prune_candidates)
 }
 
 fn assigned_item_prompt_label(item: &AdoAssignedItem) -> String {

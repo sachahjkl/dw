@@ -667,29 +667,55 @@ fn filter_workspaces_by_requested_ids(
 }
 
 pub fn task_list(root: &str, project: Option<&str>, work_item: Option<&str>) -> Vec<TaskListItem> {
-    filter_workspaces(find_workspaces(root), project, work_item)
+    task_list_from_workspaces(find_workspaces(root), project, work_item)
+}
+
+pub fn task_list_from_workspaces(
+    workspaces: Vec<WorkspaceSummary>,
+    project: Option<&str>,
+    work_item: Option<&str>,
+) -> Vec<TaskListItem> {
+    filter_workspaces(workspaces, project, work_item)
         .into_iter()
-        .map(|workspace| TaskListItem {
-            path: workspace.path,
-            project: workspace.manifest.project.clone(),
-            work_item_id: workspace.manifest.primary_work_item_id(),
-            work_items: workspace.manifest.parent_work_items(),
-            task_id: workspace.manifest.task_id.clone(),
-            all_known_work_item_ids: workspace
-                .manifest
-                .all_known_work_item_ids()
-                .into_iter()
-                .collect(),
-            kind: workspace.manifest.kind.clone(),
-            slug: workspace.manifest.slug.clone(),
-            branch_name: workspace.manifest.branch_name.clone(),
-            created_at: workspace.manifest.created_at.clone(),
-            work_item_type: workspace.manifest.work_item_type.clone(),
-            work_item_title: workspace.manifest.work_item_title.clone(),
-            work_item_state: workspace.manifest.work_item_state.clone(),
-            repositories: workspace.manifest.repositories.clone(),
-        })
+        .map(task_list_item_from_workspace)
         .collect()
+}
+
+fn task_list_item_from_workspace(workspace: WorkspaceSummary) -> TaskListItem {
+    TaskListItem {
+        path: workspace.path,
+        project: workspace.manifest.project.clone(),
+        work_item_id: workspace.manifest.primary_work_item_id(),
+        work_items: workspace.manifest.parent_work_items(),
+        task_id: workspace.manifest.task_id.clone(),
+        all_known_work_item_ids: workspace
+            .manifest
+            .all_known_work_item_ids()
+            .into_iter()
+            .collect(),
+        kind: workspace.manifest.kind.clone(),
+        slug: workspace.manifest.slug.clone(),
+        branch_name: workspace.manifest.branch_name.clone(),
+        created_at: workspace.manifest.created_at.clone(),
+        work_item_type: workspace.manifest.work_item_type.clone(),
+        work_item_title: workspace.manifest.work_item_title.clone(),
+        work_item_state: workspace.manifest.work_item_state.clone(),
+        repositories: workspace.manifest.repositories.clone(),
+    }
+}
+
+pub fn prune_candidate_count_from_workspaces(workspaces: &[WorkspaceSummary]) -> usize {
+    workspaces
+        .iter()
+        .filter(|workspace| {
+            workspace.manifest.parent_work_items().iter().all(|item| {
+                is_final_state(
+                    item.kind.as_ref().map(WorkItemTypeName::as_str),
+                    item.state.as_ref().map(WorkItemState::as_str),
+                )
+            })
+        })
+        .count()
 }
 
 pub fn plan_task_prune(
