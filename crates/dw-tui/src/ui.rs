@@ -10,6 +10,7 @@ use crate::actions::{AdoItemAction, PullRequestAction};
 use crate::app::{App, MENU_SECTIONS, MenuSection, ModalKind, TuiInputPrompt};
 use crate::background::BackgroundKind;
 use crate::form::{FieldKind, FormMode, FormState, FormTemplate};
+use crate::history::ActionRunRecord;
 use crate::model::{
     ActionRisk, CockpitSeverity, DetailPanelContent, TuiAction, View, WorkspaceAction,
 };
@@ -122,6 +123,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
                 ModalKind::Detail => render_detail_panel(frame, area, app),
                 ModalKind::History => render_history_output(frame, area, app),
                 ModalKind::State => render_state_modal(frame, area, app),
+                ModalKind::ActionProgress => render_action_progress_modal(frame, area, app),
             }
         }
     }
@@ -2189,6 +2191,73 @@ fn render_history_output(frame: &mut Frame<'_>, area: Rect, app: &App) {
         )),
         chunks[1],
     );
+}
+
+fn render_action_progress_modal(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let popup = centered_rect(78, 48, area);
+    frame.render_widget(Clear, popup);
+    let block = Block::default()
+        .title("Creating workspace")
+        .borders(Borders::ALL);
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(5), Constraint::Length(1)])
+        .split(inner);
+
+    frame.render_widget(
+        Paragraph::new(action_progress_lines(app).join("\n")).wrap(Wrap { trim: false }),
+        chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new(styled_shortcut_line(
+            "please wait until the action finishes    force quit [Ctrl+C]",
+        )),
+        chunks[1],
+    );
+}
+
+fn action_progress_lines(app: &App) -> Vec<String> {
+    let Some(run_id) = app.action_progress else {
+        return vec!["Waiting for action...".into()];
+    };
+    let Some(entry) = app
+        .history
+        .entries
+        .iter()
+        .rev()
+        .find(|entry| entry.id == run_id)
+    else {
+        return vec!["Waiting for action...".into()];
+    };
+    let mut lines = vec![
+        format!("Operation : {}", entry.request_label),
+        format!("Status    : {}", entry.status),
+        String::new(),
+        "Live progress".into(),
+    ];
+    let events: &[dw_core::DwActionEvent] = match &entry.record {
+        ActionRunRecord::Running { events }
+        | ActionRunRecord::Completed { events, .. }
+        | ActionRunRecord::Failed { events, .. } => events,
+        ActionRunRecord::ExternalLaunch { .. } => &[],
+    };
+    if events.is_empty() {
+        lines.push("- waiting for first event".into());
+    } else {
+        lines.extend(
+            events
+                .iter()
+                .rev()
+                .take(12)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .map(|event| format!("- {}", dw_ui::action_event_line(event))),
+        );
+    }
+    lines
 }
 
 fn render_state_modal(frame: &mut Frame<'_>, area: Rect, app: &App) {

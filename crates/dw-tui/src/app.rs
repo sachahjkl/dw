@@ -66,6 +66,14 @@ fn should_handle_key_event(key: KeyEvent) -> bool {
     !matches!(key.kind, KeyEventKind::Release)
 }
 
+fn action_blocks_until_done(action: &TuiAction) -> bool {
+    match &action.request {
+        TuiActionRequest::TaskStart(args) => args.mode.executes(),
+        TuiActionRequest::TaskStartPr(args) => args.mode.executes(),
+        _ => false,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModalKind {
     Menu,
@@ -74,6 +82,7 @@ pub enum ModalKind {
     State,
     History,
     Detail,
+    ActionProgress,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,6 +221,7 @@ pub struct App {
     pub state_open: bool,
     pub state_scroll: usize,
     pub detail: Option<DetailPanel>,
+    pub action_progress: Option<ActionRunId>,
     pub modal_stack: Vec<ModalKind>,
     pub messages: Vec<String>,
     pub history: HistoryState,
@@ -284,6 +294,7 @@ impl App {
             state_open: false,
             state_scroll: 0,
             detail: None,
+            action_progress: None,
             modal_stack: Vec::new(),
             messages,
             history: HistoryState::default(),
@@ -758,6 +769,7 @@ impl App {
                 ModalKind::State => self.handle_state_key(key),
                 ModalKind::History => self.handle_history_output_key(key),
                 ModalKind::Detail => self.handle_detail_key(key),
+                ModalKind::ActionProgress => self.handle_action_progress_key(key),
             };
         }
 
@@ -1273,6 +1285,13 @@ impl App {
             KeyCode::Home => detail.scroll_home(),
             KeyCode::End => detail.scroll_end(),
             _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_action_progress_key(&mut self, key: KeyEvent) -> Result<()> {
+        if matches!(key.code, KeyCode::Char('c')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.should_quit = true;
         }
         Ok(())
     }
@@ -1824,9 +1843,13 @@ impl App {
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     ) -> Result<()> {
         if !action.runs_attached_in_tui() {
+            let blocks_until_done = action_blocks_until_done(&action);
             match self.background.start_action(action) {
                 ActionStart::Started { run_id, label } => {
                     self.history.start_running(run_id, label.clone());
+                    if blocks_until_done {
+                        self.open_action_progress_modal(run_id);
+                    }
                     self.messages.push(format!("Background launch: {label}"));
                 }
                 ActionStart::Queued { label, position } => {
@@ -1873,6 +1896,7 @@ impl App {
     ) {
         match result {
             Ok(result) => {
+                self.close_action_progress_modal(run_id);
                 let record = ActionRunRecord::Completed {
                     events: result.events.clone(),
                     result: Box::new(result.result.clone()),
@@ -1908,6 +1932,7 @@ impl App {
                 self.continue_action_queue();
             }
             Err(error) => {
+                self.close_action_progress_modal(run_id);
                 let record = ActionRunRecord::failed(error.events.clone(), error.message.clone());
                 if !self
                     .history
@@ -2217,6 +2242,7 @@ impl App {
             }
             ModalKind::History => self.history.close_output(),
             ModalKind::Detail => self.detail = None,
+            ModalKind::ActionProgress => self.action_progress = None,
         }
     }
 
@@ -2243,6 +2269,7 @@ impl App {
                 ModalKind::State => "state",
                 ModalKind::History => "history",
                 ModalKind::Detail => "detail",
+                ModalKind::ActionProgress => "action-progress",
             })
             .collect()
     }
@@ -2253,6 +2280,21 @@ impl App {
         self.confirmation = None;
         self.form = None;
         self.push_modal(ModalKind::Detail);
+    }
+
+    fn open_action_progress_modal(&mut self, run_id: ActionRunId) {
+        self.action_progress = Some(run_id);
+        self.filter_active = false;
+        self.confirmation = None;
+        self.form = None;
+        self.push_modal(ModalKind::ActionProgress);
+    }
+
+    fn close_action_progress_modal(&mut self, run_id: ActionRunId) {
+        if self.action_progress == Some(run_id) {
+            self.action_progress = None;
+            self.sync_closed_modal(ModalKind::ActionProgress);
+        }
     }
 
     pub(crate) fn open_options(&mut self) {
@@ -2626,6 +2668,53 @@ mod tests {
             KeyModifiers::NONE,
             KeyEventKind::Release,
         )));
+    }
+
+    #[test]
+    fn workspace_creation_execute_blocks_until_done() {
+        let args = dw_task::start::StartArgs {
+            work_item_ids: vec![dw_core::WorkItemId::from("42")],
+            root: Some(dw_core::DevWorkflowRoot::from("/tmp/dw")),
+            project: Some(dw_core::ProjectKey::from("ha")),
+            repositories: Vec::new(),
+            task: None,
+            type_name: None,
+            slug: None,
+            skip_ado: false,
+            with_active_children: false,
+            create_child_tasks: false,
+            mode: dw_core::ExecutionMode::Preview,
+        };
+        let preview = TuiAction {
+            label: "Preview".into(),
+            request: TuiActionRequest::TaskStart(args.clone()),
+            description: "preview".into(),
+            kind: ActionRisk::Safe,
+        };
+        let mut execute = preview.clone();
+        execute.request = TuiActionRequest::TaskStart(dw_task::start::StartArgs {
+            mode: dw_core::ExecutionMode::Execute,
+            ..args
+        });
+
+        assert!(!action_blocks_until_done(&preview));
+        assert!(action_blocks_until_done(&execute));
+    }
+
+    #[test]
+    fn action_progress_modal_tracks_running_action() {
+        let mut app = App::new_ready(Some("/tmp/missing-dw-root".into()));
+        let run_id = ActionRunId::new(7);
+
+        app.open_action_progress_modal(run_id);
+
+        assert_eq!(app.action_progress, Some(run_id));
+        assert_eq!(app.modal_stack_labels(), vec!["action-progress"]);
+
+        app.close_action_progress_modal(run_id);
+
+        assert_eq!(app.action_progress, None);
+        assert!(app.modal_stack_labels().is_empty());
     }
 
     #[test]
