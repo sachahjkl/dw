@@ -10,7 +10,7 @@ use dw_secret::{KeyringSecretStore, SecretError, SecretStore};
 use serde::Serialize;
 use std::time::Duration;
 use thiserror::Error;
-use tiberius::{Client, ColumnData, Config, Row};
+use tiberius::{Client, ColumnData, Config, Row, error::Error as TiberiusError};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
@@ -164,15 +164,33 @@ async fn query_sql_server_async_inner(
         .map_err(|error| DbError::Sql(error.to_string()))?;
     config.readonly(true);
     config.trust_cert();
+    let mut client = connect_sql_server(config).await?;
+    read_query_result(&mut client, sql, max_rows).await
+}
+
+async fn connect_sql_server(mut config: Config) -> Result<Client<Compat<TcpStream>>, DbError> {
+    let tcp = connect_tcp(&config).await?;
+    match Client::connect(config.clone(), tcp.compat_write()).await {
+        Ok(client) => Ok(client),
+        Err(TiberiusError::Routing { host, port }) => {
+            config.host(host);
+            config.port(port);
+            let tcp = connect_tcp(&config).await?;
+            Client::connect(config, tcp.compat_write())
+                .await
+                .map_err(|error| DbError::Sql(error.to_string()))
+        }
+        Err(error) => Err(DbError::Sql(error.to_string())),
+    }
+}
+
+async fn connect_tcp(config: &Config) -> Result<TcpStream, DbError> {
     let tcp = TcpStream::connect(config.get_addr())
         .await
         .map_err(|error| DbError::Sql(error.to_string()))?;
     tcp.set_nodelay(true)
         .map_err(|error| DbError::Sql(error.to_string()))?;
-    let mut client = Client::connect(config, tcp.compat_write())
-        .await
-        .map_err(|error| DbError::Sql(error.to_string()))?;
-    read_query_result(&mut client, sql, max_rows).await
+    Ok(tcp)
 }
 
 async fn read_query_result(
