@@ -505,7 +505,7 @@ mod tests {
         fs::create_dir_all(root.path().join("config")).expect("config dir");
         fs::write(
             root.path().join("config/projects.json"),
-            &format!(
+            format!(
                 r#"{{
   "schema": 1,
   "projects": {{
