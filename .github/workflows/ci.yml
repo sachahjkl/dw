@@ -54,7 +54,9 @@ jobs:
           tag="v${version}"
           release_enabled=false
 
-          if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
+          if [[ -n "${BEFORE}" \
+            && "${BEFORE}" != "0000000000000000000000000000000000000000" \
+            && $(git cat-file -t "${BEFORE}" 2>/dev/null || true) == "commit" ]]; then
             changed_files="$(git diff --name-only "${BEFORE}" "${GITHUB_SHA}")"
           else
             changed_files="$(git diff-tree --no-commit-id --name-only -r "${GITHUB_SHA}")"
