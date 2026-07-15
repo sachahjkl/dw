@@ -1,0 +1,26 @@
+[package]
+name = "dw-tui-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+dw-agent = { path = "../dw-agent" }
+dw-ado = { path = "../dw-ado" }
+dw-ado-commands = { path = "../dw-ado-commands" }
+dw-app = { path = "../dw-app" }
+dw-config = { path = "../dw-config" }
+dw-contracts = { path = "../dw-contracts" }
+dw-core = { path = "../dw-core" }
+dw-db = { path = "../dw-db" }
+dw-doctor = { path = "../dw-doctor" }
+dw-git = { path = "../dw-git" }
+dw-secret = { path = "../dw-secret" }
+dw-task = { path = "../dw-task" }
+dw-ui = { path = "../dw-ui" }
+dw-upgrade = { path = "../dw-upgrade" }
+dw-workspace = { path = "../dw-workspace" }
+serde.workspace = true
+serde_json.workspace = true

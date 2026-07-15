@@ -1,0 +1,15 @@
+[package]
+name = "dw-doctor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+dw-agent = { path = "../dw-agent" }
+dw-config = { path = "../dw-config" }
+dw-core = { path = "../dw-core" }
+dw-process = { path = "../dw-process" }
+serde.workspace = true

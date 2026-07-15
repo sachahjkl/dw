@@ -1,0 +1,666 @@
+use crate::{load_auth_options, resolve_ado_options};
+use anyhow::Result;
+use dw_ado::auth::require_token;
+use dw_ado::{
+    CreatePullRequestInput, PullRequestCreateResult, create_pull_request_authenticated,
+    get_work_item_snapshot_authenticated, link_work_item_to_pull_request_authenticated,
+    run_blocking_ado, try_find_active_pull_request_authenticated,
+    update_work_item_state_authenticated,
+};
+use dw_config::{load_projects_config, load_workflow_config, resolve_project, resolve_root};
+use dw_core::{
+    CommitMessage, DevWorkflowRoot, GitOperation, RepositoryPath, TaskActionEvent, WorkItemId,
+    WorkItemState, WorkspacePath, WorkspaceRepositoryName,
+};
+use dw_git::{
+    RepositoryStatus, commit_repository, push_repository, push_repository_force_with_lease,
+    repository_status,
+};
+use dw_workspace::{
+    WorkspaceHandoffSummary, WorkspaceManifest, build_commit_message, ensure_verification_passed,
+    finish_state, plan_task_finish, pull_request_description, pull_request_title,
+    read_handoff_summary, read_plan, resolve_workspace_for_workspace_command, run_verification,
+    select_pull_request_candidates, task_finish_options,
+};
+use serde::Serialize;
+use std::path::Path;
+
+#[derive(Debug, Clone)]
+pub struct FinishArgs {
+    pub workspace: Option<WorkspacePath>,
+    pub r#continue: bool,
+    pub root: Option<DevWorkflowRoot>,
+    pub mode: dw_core::ExecutionMode,
+    pub yes: bool,
+    pub message: Option<CommitMessage>,
+    pub create_pr: bool,
+    pub ready: bool,
+    pub skip_verify: bool,
+    pub skip_ado: bool,
+    pub force_with_lease: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FinishPlanReport {
+    pub root: DevWorkflowRoot,
+    pub workspace: WorkspacePath,
+    pub manifest: WorkspaceManifest,
+    pub targets: Vec<FinishTargetStatus>,
+    pub handoff: dw_contracts::TaskHandoffValidationReport,
+    #[serde(rename = "handoffSummaries")]
+    pub handoff_summaries: Vec<WorkspaceHandoffSummary>,
+    #[serde(rename = "commitMessage")]
+    pub commit_message: CommitMessage,
+    #[serde(rename = "createPr")]
+    pub create_pr: bool,
+    pub ready: bool,
+    #[serde(rename = "skipAdo")]
+    pub skip_ado: bool,
+    #[serde(rename = "changedRepositories")]
+    pub changed_repositories: Vec<WorkspaceRepositoryName>,
+    #[serde(rename = "unpushedRepositories")]
+    pub unpushed_repositories: Vec<WorkspaceRepositoryName>,
+    #[serde(rename = "actionableRepositories")]
+    pub actionable_repositories: Vec<WorkspaceRepositoryName>,
+    #[serde(rename = "pullRequestCandidates")]
+    pub pull_request_candidates: Vec<dw_workspace::PullRequestCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FinishTargetStatus {
+    pub target: dw_workspace::TaskCommitTarget,
+    pub status: RepositoryStatus,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FinishExecutionReport {
+    pub plan: FinishPlanReport,
+    pub events: Vec<TaskActionEvent>,
+    #[serde(rename = "verificationResults")]
+    pub verification_results: Vec<dw_workspace::VerificationResult>,
+    #[serde(rename = "gitActions")]
+    pub git_actions: Vec<FinishGitAction>,
+    #[serde(rename = "pullRequests")]
+    pub pull_requests: Vec<FinishPullRequestResult>,
+    #[serde(rename = "workItemUpdates")]
+    pub work_item_updates: Vec<FinishWorkItemStateUpdate>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FinishGitAction {
+    pub repository: WorkspaceRepositoryName,
+    pub operation: GitOperation,
+    pub path: RepositoryPath,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FinishPullRequestResult {
+    pub repository: WorkspaceRepositoryName,
+    pub action: FinishPullRequestAction,
+    pub url: Option<String>,
+    #[serde(rename = "pullRequestId")]
+    pub pull_request_id: Option<i64>,
+    #[serde(rename = "skipReason")]
+    pub skip_reason: Option<FinishPullRequestSkipReason>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FinishPullRequestAction {
+    Created,
+    Existing,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FinishPullRequestSkipReason {
+    MissingAdoRepository,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FinishWorkItemStateUpdate {
+    pub id: WorkItemId,
+    pub label: String,
+    pub kind: Option<String>,
+    #[serde(rename = "currentState")]
+    pub current_state: Option<WorkItemState>,
+    #[serde(rename = "targetState")]
+    pub target_state: Option<WorkItemState>,
+    pub changed: bool,
+    pub outcome: FinishWorkItemStateOutcome,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FinishWorkItemStateOutcome {
+    UnsupportedWorkItemType,
+    AlreadyInTargetState,
+    Updated,
+}
+
+pub fn finish_plan(args: FinishArgs) -> Result<FinishPlanReport> {
+    let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
+    let workspace = resolve_workspace_for_workspace_command(
+        &root,
+        args.workspace.as_ref().map(WorkspacePath::as_str),
+        args.r#continue,
+        &std::env::current_dir()?.display().to_string(),
+    )?;
+    let projects = load_projects_config(&root);
+    let (manifest, targets, handoff) = plan_task_finish(&projects, &workspace)?;
+    let project_config = resolve_project(&projects, manifest.project.as_str());
+    let targets = targets
+        .into_iter()
+        .map(|target| {
+            let status = repository_status(&target.path);
+            FinishTargetStatus { target, status }
+        })
+        .collect::<Vec<_>>();
+    let handoff_summaries = targets
+        .iter()
+        .filter_map(|target| {
+            read_handoff_summary(Path::new(workspace.as_str()), &target.target.repository).ok()
+        })
+        .collect::<Vec<WorkspaceHandoffSummary>>();
+    let changed_repositories = targets
+        .iter()
+        .filter(|target| target.status.is_git_repository && target.status.has_changes)
+        .map(|target| target.target.repository.clone())
+        .collect::<Vec<_>>();
+    let unpushed_repositories = targets
+        .iter()
+        .filter(|target| target.status.is_git_repository && target.status.has_unpushed)
+        .map(|target| target.target.repository.clone())
+        .collect::<Vec<_>>();
+    let actionable_repositories = if changed_repositories.is_empty() {
+        unpushed_repositories.clone()
+    } else {
+        changed_repositories.clone()
+    };
+    let pull_request_candidates = if args.create_pr {
+        let status_refs = targets
+            .iter()
+            .map(|target| (&target.target, target.status.clone()))
+            .collect::<Vec<_>>();
+        select_pull_request_candidates(
+            &status_refs,
+            &actionable_repositories,
+            project_config.as_ref(),
+        )
+    } else {
+        Vec::new()
+    };
+
+    Ok(FinishPlanReport {
+        root: DevWorkflowRoot::from(root),
+        workspace,
+        commit_message: build_commit_message(&manifest, args.message.as_ref()),
+        manifest,
+        targets,
+        handoff,
+        handoff_summaries,
+        create_pr: args.create_pr,
+        ready: args.ready,
+        skip_ado: args.skip_ado,
+        changed_repositories,
+        unpushed_repositories,
+        actionable_repositories,
+        pull_request_candidates,
+    })
+}
+
+pub async fn execute_finish(
+    plan: FinishPlanReport,
+    args: &FinishArgs,
+) -> Result<FinishExecutionReport> {
+    execute_finish_with_events(plan, args, |_| {}).await
+}
+
+pub async fn execute_finish_with_events(
+    plan: FinishPlanReport,
+    args: &FinishArgs,
+    mut emit: impl FnMut(TaskActionEvent),
+) -> Result<FinishExecutionReport> {
+    if plan.create_pr && plan.skip_ado {
+        anyhow::bail!("PR creation cannot be combined with ADO-less mode.");
+    }
+    if !plan.handoff.is_valid {
+        anyhow::bail!(
+            "task finish blocked: invalid handoff. Fix or complete handoffs before pushing."
+        );
+    }
+
+    let projects = load_projects_config(plan.root.as_str());
+    let workflow = load_workflow_config(plan.root.as_str());
+    let finish_options = task_finish_options(&workflow);
+    let mut events = Vec::new();
+    let mut verification_results = Vec::new();
+    let mut git_actions = Vec::new();
+    let mut pull_requests = Vec::new();
+    let mut work_item_updates = Vec::new();
+
+    if !args.skip_verify && finish_options.run_verification {
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::VerifyingFinish {
+                pull_request_candidate_count: plan.pull_request_candidates.len(),
+            },
+        );
+        verification_results = run_verification(&finish_options, &plan.pull_request_candidates);
+        ensure_verification_passed(&verification_results)?;
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::FinishVerificationCompleted,
+        );
+    }
+
+    let changed = changed_targets(&plan);
+    let unpushed = unpushed_targets(&plan);
+    if !changed.is_empty() {
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::RunningGitOperation {
+                operation: GitOperation::CommitAndPush,
+                repository_count: changed.len(),
+            },
+        );
+        for target in changed {
+            push_event(
+                &mut events,
+                &mut emit,
+                TaskActionEvent::RunningRepositoryGitOperation {
+                    repository: target.target.repository.clone(),
+                    operation: GitOperation::CommitAndPush,
+                },
+            );
+            commit_repository(&target.target.path, &plan.commit_message)?;
+            push_finish_repository(
+                &target.target.path,
+                &plan.manifest.branch_name,
+                args.force_with_lease,
+            )?;
+            git_actions.push(FinishGitAction {
+                repository: target.target.repository.clone(),
+                operation: GitOperation::CommitAndPush,
+                path: target.target.path.clone(),
+            });
+        }
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::GitOperationCompleted {
+                operation: GitOperation::CommitAndPush,
+            },
+        );
+    } else if !unpushed.is_empty() {
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::RunningGitOperation {
+                operation: GitOperation::Push,
+                repository_count: unpushed.len(),
+            },
+        );
+        for target in unpushed {
+            push_event(
+                &mut events,
+                &mut emit,
+                TaskActionEvent::RunningRepositoryGitOperation {
+                    repository: target.target.repository.clone(),
+                    operation: GitOperation::Push,
+                },
+            );
+            push_finish_repository(
+                &target.target.path,
+                &plan.manifest.branch_name,
+                args.force_with_lease,
+            )?;
+            git_actions.push(FinishGitAction {
+                repository: target.target.repository.clone(),
+                operation: GitOperation::Push,
+                path: target.target.path.clone(),
+            });
+        }
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::GitOperationCompleted {
+                operation: GitOperation::Push,
+            },
+        );
+    }
+
+    if !plan.create_pr {
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::SkippingPullRequestCreation,
+        );
+        return Ok(FinishExecutionReport {
+            plan,
+            events,
+            verification_results,
+            git_actions,
+            pull_requests,
+            work_item_updates,
+        });
+    }
+
+    push_event(
+        &mut events,
+        &mut emit,
+        TaskActionEvent::AuthenticatingAdoForPullRequests {
+            pull_request_candidate_count: plan.pull_request_candidates.len(),
+        },
+    );
+    let mut options = resolve_ado_options(&projects, &workflow, plan.manifest.project.as_str())?;
+    if options.project.trim().is_empty() {
+        options.project = plan.manifest.project.to_string();
+    }
+    let token = require_token(load_auth_options(Some(plan.root.as_str()))?).await?;
+    let source_ref = format!("refs/heads/{}", plan.manifest.branch_name);
+    let task_plan = read_plan(Path::new(plan.workspace.as_str()));
+
+    for candidate in &plan.pull_request_candidates {
+        let Some(ado_repository) = candidate.ado_repository.as_ref() else {
+            pull_requests.push(FinishPullRequestResult {
+                repository: candidate.repository.clone(),
+                action: FinishPullRequestAction::Skipped,
+                url: None,
+                pull_request_id: None,
+                skip_reason: Some(FinishPullRequestSkipReason::MissingAdoRepository),
+            });
+            continue;
+        };
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::CheckingActivePullRequest {
+                repository: candidate.repository.clone(),
+            },
+        );
+        let options_for_find = options.clone();
+        let repository_for_find = ado_repository.clone();
+        let source_ref_for_find = source_ref.clone();
+        let token_for_find = token.clone();
+        if let Some(existing) = run_blocking_ado(move || {
+            try_find_active_pull_request_authenticated(
+                &options_for_find,
+                repository_for_find.as_str(),
+                &source_ref_for_find,
+                &token_for_find,
+            )
+        })
+        .await?
+        {
+            pull_requests.push(FinishPullRequestResult {
+                repository: candidate.repository.clone(),
+                action: FinishPullRequestAction::Existing,
+                url: existing.url,
+                pull_request_id: Some(existing.pull_request_id),
+                skip_reason: None,
+            });
+            continue;
+        }
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::CreatingPullRequest {
+                repository: candidate.repository.clone(),
+            },
+        );
+        let handoff_summary =
+            read_handoff_summary(Path::new(plan.workspace.as_str()), &candidate.repository)?;
+        let input = CreatePullRequestInput {
+            repository: ado_repository.to_string(),
+            source_ref_name: source_ref.clone(),
+            target_ref_name: format!("refs/heads/{}", candidate.target_branch),
+            title: pull_request_title(&plan.manifest),
+            description: pull_request_description(
+                &plan.manifest,
+                candidate,
+                &task_plan,
+                &verification_results,
+                &handoff_summary,
+            ),
+            is_draft: !plan.ready,
+            work_item_ids: plan.manifest.all_known_work_item_ids(),
+        };
+        let options_for_create = options.clone();
+        let token_for_create = token.clone();
+        let created = run_blocking_ado(move || {
+            create_pull_request_authenticated(&options_for_create, &input, &token_for_create)
+        })
+        .await?;
+        if let Some(pull_request_id) = created.pull_request_id {
+            for id in plan.manifest.all_known_work_item_ids() {
+                let options_for_link = options.clone();
+                let token_for_link = token.clone();
+                let repository_for_link = ado_repository.clone();
+                let id_for_link = id.clone();
+                if let Err(error) = run_blocking_ado(move || {
+                    link_work_item_to_pull_request_authenticated(
+                        &options_for_link,
+                        repository_for_link.as_str(),
+                        pull_request_id,
+                        id_for_link.as_str(),
+                        &token_for_link,
+                    )
+                })
+                .await
+                {
+                    push_event(
+                        &mut events,
+                        &mut emit,
+                        TaskActionEvent::PullRequestWorkItemLinkSkipped {
+                            work_item_id: id,
+                            error: error.to_string(),
+                        },
+                    );
+                }
+            }
+        }
+        pull_requests.push(created_pr_result(&candidate.repository, created));
+    }
+
+    if finish_options.update_work_item_state {
+        let ids = plan.manifest.all_known_work_item_ids();
+        push_event(
+            &mut events,
+            &mut emit,
+            TaskActionEvent::UpdatingFinishWorkItemStates {
+                work_item_ids: ids.clone(),
+            },
+        );
+        for id in ids {
+            let options_for_fetch = options.clone();
+            let token_for_fetch = token.clone();
+            let id_for_fetch = id.clone();
+            let item = run_blocking_ado(move || {
+                get_work_item_snapshot_authenticated(
+                    &options_for_fetch,
+                    id_for_fetch.as_str(),
+                    &token_for_fetch,
+                )
+            })
+            .await?;
+            let current_state = item.state.clone().map(WorkItemState::from);
+            let state = finish_state(
+                item.kind.as_deref().or(plan
+                    .manifest
+                    .work_item_type
+                    .as_ref()
+                    .map(|kind| kind.as_str())),
+                &finish_options,
+            );
+            let label = work_item_label(&item);
+            let Some(state) = state else {
+                work_item_updates.push(FinishWorkItemStateUpdate {
+                    id: item.id.clone(),
+                    label,
+                    kind: item.kind.clone(),
+                    current_state,
+                    target_state: None,
+                    changed: false,
+                    outcome: FinishWorkItemStateOutcome::UnsupportedWorkItemType,
+                });
+                continue;
+            };
+            if item
+                .state
+                .as_deref()
+                .is_some_and(|current| current.eq_ignore_ascii_case(state.as_str()))
+            {
+                work_item_updates.push(FinishWorkItemStateUpdate {
+                    id: item.id.clone(),
+                    label,
+                    kind: item.kind.clone(),
+                    current_state,
+                    target_state: Some(state.clone()),
+                    changed: false,
+                    outcome: FinishWorkItemStateOutcome::AlreadyInTargetState,
+                });
+                continue;
+            }
+            let options_for_update = options.clone();
+            let token_for_update = token.clone();
+            let id_for_update = id.clone();
+            let state_for_update = state.clone();
+            run_blocking_ado(move || {
+                update_work_item_state_authenticated(
+                    &options_for_update,
+                    id_for_update.as_str(),
+                    state_for_update.as_str(),
+                    "task finish: PR ouverte",
+                    &token_for_update,
+                )
+            })
+            .await?;
+            work_item_updates.push(FinishWorkItemStateUpdate {
+                id: item.id.clone(),
+                label,
+                kind: item.kind.clone(),
+                current_state,
+                target_state: Some(state.clone()),
+                changed: true,
+                outcome: FinishWorkItemStateOutcome::Updated,
+            });
+        }
+    }
+
+    Ok(FinishExecutionReport {
+        plan,
+        events,
+        verification_results,
+        git_actions,
+        pull_requests,
+        work_item_updates,
+    })
+}
+
+fn push_finish_repository(
+    path: &RepositoryPath,
+    branch_name: &dw_core::BranchName,
+    force_with_lease: bool,
+) -> Result<()> {
+    let result = if force_with_lease {
+        push_repository_force_with_lease(path, branch_name)
+    } else {
+        push_repository(path, branch_name)
+    };
+    result.map_err(|error| {
+        let detail = error.to_string();
+        if !force_with_lease && is_non_fast_forward_push(&detail) {
+            anyhow::anyhow!(
+                "{detail}\nThe remote branch diverged, commonly after a rebase. If replacing it is intentional, rerun the finish action with `--force-with-lease`."
+            )
+        } else {
+            error
+        }
+    })
+}
+
+fn is_non_fast_forward_push(detail: &str) -> bool {
+    let detail = detail.to_ascii_lowercase();
+    detail.contains("non-fast-forward")
+        || detail.contains("fetch first")
+        || detail.contains("stale info")
+        || detail.contains("remote branch changed")
+}
+
+pub fn changed_targets(plan: &FinishPlanReport) -> Vec<&FinishTargetStatus> {
+    plan.targets
+        .iter()
+        .filter(|target| target.status.is_git_repository && target.status.has_changes)
+        .collect()
+}
+
+pub fn unpushed_targets(plan: &FinishPlanReport) -> Vec<&FinishTargetStatus> {
+    plan.targets
+        .iter()
+        .filter(|target| target.status.is_git_repository && target.status.has_unpushed)
+        .collect()
+}
+
+pub fn finish_has_work(plan: &FinishPlanReport) -> bool {
+    !plan.changed_repositories.is_empty()
+        || !plan.unpushed_repositories.is_empty()
+        || !plan.pull_request_candidates.is_empty()
+}
+
+fn created_pr_result(
+    repository: &WorkspaceRepositoryName,
+    created: PullRequestCreateResult,
+) -> FinishPullRequestResult {
+    FinishPullRequestResult {
+        repository: repository.clone(),
+        action: FinishPullRequestAction::Created,
+        url: created.url,
+        pull_request_id: created.pull_request_id,
+        skip_reason: None,
+    }
+}
+
+fn push_event(
+    events: &mut Vec<TaskActionEvent>,
+    emit: &mut impl FnMut(TaskActionEvent),
+    event: TaskActionEvent,
+) {
+    emit(event.clone());
+    events.push(event);
+}
+
+fn work_item_label(item: &dw_ado::WorkItemSnapshot) -> String {
+    format!(
+        "#{}{}{}",
+        item.id,
+        item.kind
+            .as_ref()
+            .map(|kind| format!(" [{kind}]"))
+            .unwrap_or_default(),
+        item.title
+            .as_ref()
+            .map(|title| format!(" {title}"))
+            .unwrap_or_default()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_non_fast_forward_push;
+
+    #[test]
+    fn force_with_lease_hint_only_targets_diverged_pushes() {
+        assert!(is_non_fast_forward_push(
+            "Push rejected for refs/heads/feature: non-fast-forward"
+        ));
+        assert!(is_non_fast_forward_push(
+            "Force-with-lease rejected: remote branch changed"
+        ));
+        assert!(!is_non_fast_forward_push("authentication required"));
+    }
+}

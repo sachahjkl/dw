@@ -1,0 +1,245 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Create a release when running on master
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+
+env:
+  CARGO_TERM_COLOR: always
+  NIX_CONFIG: accept-flake-config = true
+jobs:
+  preflight:
+    name: Resolve CI mode
+    runs-on: ubuntu-latest
+    outputs:
+      release_enabled: ${{ steps.mode.outputs.release_enabled }}
+      tag: ${{ steps.mode.outputs.tag }}
+      version: ${{ steps.mode.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve mode
+        id: mode
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          BEFORE: ${{ github.event.before }}
+          RELEASE_INPUT: ${{ inputs.release }}
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          tag="v${version}"
+          release_enabled=false
+
+          if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
+            changed_files="$(git diff --name-only "${BEFORE}" "${GITHUB_SHA}")"
+          else
+            changed_files="$(git diff-tree --no-commit-id --name-only -r "${GITHUB_SHA}")"
+          fi
+          workflow_changed=false
+          if grep -Eq '^\.github/workflows/' <<<"${changed_files}"; then
+            workflow_changed=true
+          fi
+
+          if [[ "${workflow_changed}" == "true" ]]; then
+            echo "Release disabled: this commit changes workflow files, and GITHUB_TOKEN cannot tag workflow changes." >&2
+          elif [[ "${EVENT_NAME}" == "push" && "${REF_NAME}" == "master" ]]; then
+            if grep -qx 'VERSION' <<<"${changed_files}"; then
+              release_enabled=true
+            fi
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" && "${REF_NAME}" == "master" && "${RELEASE_INPUT}" == "true" ]]; then
+            release_enabled=true
+          fi
+
+          if [[ "${release_enabled}" == "true" ]] && git rev-parse --quiet --verify "refs/tags/${tag}" >/dev/null; then
+            echo "Release tag already exists: ${tag}" >&2
+            exit 1
+          fi
+
+          echo "release_enabled=${release_enabled}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+  linux:
+    name: Linux build, tests and artifact
+    runs-on: ubuntu-latest
+    needs: preflight
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v34
+        with:
+          nix_conf: |
+            accept-flake-config = true
+            keep-env-derivations = true
+            keep-outputs = true
+
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          gc-max-store-size-linux: 2G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-last-accessed: P7D
+          purge-primary-key: never
+
+      - name: Validate Nix package
+        run: nix build --accept-flake-config --no-link .#default
+
+      - name: Checks
+        run: nix run --accept-flake-config .#check
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and package release-compatible linux-x64 artifact
+        shell: bash
+        run: |
+          version="0.0.0-ci"
+          release_base_url=""
+          if [[ "${{ needs.preflight.outputs.release_enabled }}" == "true" ]]; then
+            version="${{ needs.preflight.outputs.version }}"
+            release_base_url="https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}"
+          fi
+
+          VERSION="${version}" \
+          COMMIT="${{ github.sha }}" \
+          RELEASE_BASE_URL="${release_base_url}" \
+          bash ./scripts/publish-linux-x64.sh
+
+      - name: Validate linux-x64 binary portability
+        shell: bash
+        run: |
+          ldd artifacts/linux-x64/dw
+          if grep -aFq '/nix/store' artifacts/linux-x64/dw; then
+            echo "linux-x64 binary contains /nix/store references" >&2
+            exit 1
+          fi
+          artifacts/linux-x64/dw version
+
+      - name: Upload linux artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: dw-linux-x64
+          path: |
+            artifacts/linux-x64/dw-linux-x64.tar.gz
+            artifacts/linux-x64/release.json
+
+  windows:
+    name: Windows build, tests and artifact
+    runs-on: windows-latest
+    needs: preflight
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+
+      - name: Checks
+        shell: pwsh
+        run: |
+          cargo fmt --all -- --check
+          cargo test --workspace --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Publish win-x64 artifact
+        shell: pwsh
+        run: |
+          if ("${{ needs.preflight.outputs.release_enabled }}" -eq "true") {
+            .\scripts\publish-win-x64.ps1 `
+              -Version "${{ needs.preflight.outputs.version }}" `
+              -Commit $env:GITHUB_SHA `
+              -ReleaseBaseUrl "https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}"
+          } else {
+            .\scripts\publish-win-x64.ps1 -Version 0.0.0-ci -Commit $env:GITHUB_SHA
+          }
+
+      - name: Upload win artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: dw-win-x64
+          path: |
+            artifacts/win-x64/dw-win-x64.zip
+            artifacts/win-x64/release.json
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+      - linux
+      - windows
+    if: needs.preflight.outputs.release_enabled == 'true'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+
+      - name: Write release manifest
+        shell: bash
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}" \
+          COMMIT="${{ github.sha }}" \
+          RELEASE_BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}" \
+          bash ./scripts/write-release-manifest.sh
+
+      - name: Create release tag
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ needs.preflight.outputs.tag }}" -m "${{ needs.preflight.outputs.tag }}"
+          git push origin "${{ needs.preflight.outputs.tag }}"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.preflight.outputs.tag }}
+          name: ${{ needs.preflight.outputs.tag }}
+          files: |
+            artifacts/dw-linux-x64/dw-linux-x64.tar.gz
+            artifacts/dw-win-x64/dw-win-x64.zip
+            artifacts/release.json

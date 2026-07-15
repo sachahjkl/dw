@@ -1,0 +1,22 @@
+[package]
+name = "dw-git"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+deunicode = "1"
+dw-core = { path = "../dw-core" }
+git2 = { workspace = true, features = ["https", "ssh", "vendored-libgit2"] }
+serde.workspace = true
+thiserror.workspace = true
+
+
+[target.'cfg(not(windows))'.dependencies]
+git2 = { workspace = true, features = ["vendored-openssl"] }
+
+[dev-dependencies]
+tempfile = "3"
