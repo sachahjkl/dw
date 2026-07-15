@@ -30,6 +30,7 @@
 
         nativeBuildInputs = [
           pkgs.git
+          pkgs.perl
           pkgs.pkg-config
         ];
 
