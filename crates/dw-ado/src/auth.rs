@@ -13,6 +13,8 @@ pub const DEFAULT_ADO_SCOPE: &str = "499b84ac-1321-427f-aa17-267ca6975798/.defau
 
 const KEYRING_SERVICE: &str = "dw.azure-devops";
 const KEYRING_USER: &str = "oauth-refresh-token";
+const KEYRING_CHUNK_PREFIX: &str = "dw-refresh-token-v1";
+const KEYRING_CHUNK_UTF16_UNITS: usize = 1_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AdoAuthOptions {
@@ -341,14 +343,50 @@ fn oauth_error_message(body: &str) -> String {
 }
 
 fn store_refresh_token(refresh_token: &str) -> Result<(), AdoAuthError> {
-    delete_stored_refresh_token()?;
-    keyring_entry()?
-        .set_password(refresh_token)
-        .map_err(|error| AdoAuthError::Keyring(error.to_string()))
+    let previous_manifest = read_keyring_password(KEYRING_USER)?
+        .as_deref()
+        .and_then(parse_chunk_manifest);
+    let chunks = split_keyring_chunks(refresh_token);
+
+    if chunks.len() == 1 {
+        keyring_entry()?
+            .set_password(refresh_token)
+            .map_err(|error| AdoAuthError::Keyring(error.to_string()))?;
+    } else {
+        let generation = format!("{:016x}", rand::random::<u64>());
+        for (index, chunk) in chunks.iter().enumerate() {
+            keyring_entry_for(&chunk_user(&generation, index))?
+                .set_password(chunk)
+                .map_err(|error| AdoAuthError::Keyring(error.to_string()))?;
+        }
+        keyring_entry()?
+            .set_password(&chunk_manifest(&generation, chunks.len()))
+            .map_err(|error| AdoAuthError::Keyring(error.to_string()))?;
+    }
+
+    if let Some((generation, count)) = previous_manifest {
+        delete_keyring_chunks(&generation, count)?;
+    }
+    Ok(())
 }
 
 fn read_refresh_token() -> Result<Option<String>, AdoAuthError> {
-    read_keyring_password(KEYRING_USER)
+    let Some(stored) = read_keyring_password(KEYRING_USER)? else {
+        return Ok(None);
+    };
+    let Some((generation, count)) = parse_chunk_manifest(&stored) else {
+        return Ok(Some(stored));
+    };
+
+    let mut refresh_token = String::new();
+    for index in 0..count {
+        let user = chunk_user(&generation, index);
+        let chunk = read_keyring_password(&user)?.ok_or_else(|| {
+            AdoAuthError::Keyring(format!("Stored refresh token chunk {index} is missing."))
+        })?;
+        refresh_token.push_str(&chunk);
+    }
+    Ok(Some(refresh_token))
 }
 
 fn read_keyring_password(user: &str) -> Result<Option<String>, AdoAuthError> {
@@ -361,7 +399,59 @@ fn read_keyring_password(user: &str) -> Result<Option<String>, AdoAuthError> {
 }
 
 fn delete_stored_refresh_token() -> Result<bool, AdoAuthError> {
-    delete_keyring_credential(KEYRING_USER)
+    let manifest = read_keyring_password(KEYRING_USER)?
+        .as_deref()
+        .and_then(parse_chunk_manifest);
+    let deleted = delete_keyring_credential(KEYRING_USER)?;
+    if let Some((generation, count)) = manifest {
+        delete_keyring_chunks(&generation, count)?;
+    }
+    Ok(deleted)
+}
+
+fn split_keyring_chunks(value: &str) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut chunk = String::new();
+    let mut utf16_units = 0;
+    for character in value.chars() {
+        let character_units = character.len_utf16();
+        if utf16_units + character_units > KEYRING_CHUNK_UTF16_UNITS && !chunk.is_empty() {
+            chunks.push(std::mem::take(&mut chunk));
+            utf16_units = 0;
+        }
+        chunk.push(character);
+        utf16_units += character_units;
+    }
+    chunks.push(chunk);
+    chunks
+}
+
+fn chunk_manifest(generation: &str, count: usize) -> String {
+    format!("{KEYRING_CHUNK_PREFIX}:{generation}:{count}")
+}
+
+fn parse_chunk_manifest(value: &str) -> Option<(String, usize)> {
+    let mut parts = value.split(':');
+    if parts.next()? != KEYRING_CHUNK_PREFIX {
+        return None;
+    }
+    let generation = parts.next()?;
+    let count = parts.next()?.parse().ok()?;
+    if generation.is_empty() || count < 2 || parts.next().is_some() {
+        return None;
+    }
+    Some((generation.to_string(), count))
+}
+
+fn chunk_user(generation: &str, index: usize) -> String {
+    format!("{KEYRING_USER}.{generation}.{index}")
+}
+
+fn delete_keyring_chunks(generation: &str, count: usize) -> Result<(), AdoAuthError> {
+    for index in 0..count {
+        delete_keyring_credential(&chunk_user(generation, index))?;
+    }
+    Ok(())
 }
 
 fn keyring_entry() -> Result<Entry, AdoAuthError> {
@@ -419,6 +509,36 @@ mod tests {
         assert!(!is_pending_device_auth("authorization_declined"));
     }
 
+    #[test]
+    fn keyring_chunks_respect_utf16_limit_and_roundtrip() {
+        let value = format!("{}😀{}", "a".repeat(999), "b".repeat(1_200));
+
+        let chunks = split_keyring_chunks(&value);
+
+        assert_eq!(chunks.concat(), value);
+        assert!(chunks.len() >= 3);
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk.encode_utf16().count() <= KEYRING_CHUNK_UTF16_UNITS)
+        );
+    }
+
+    #[test]
+    fn keyring_chunk_manifest_roundtrips() {
+        let manifest = chunk_manifest("0123456789abcdef", 3);
+
+        assert_eq!(
+            parse_chunk_manifest(&manifest),
+            Some(("0123456789abcdef".into(), 3))
+        );
+        assert_eq!(parse_chunk_manifest("plain-refresh-token"), None);
+        assert_eq!(
+            parse_chunk_manifest("dw-refresh-token-v1:generation:1"),
+            None
+        );
+    }
+
     #[cfg(windows)]
     #[test]
     #[ignore = "writes to the real Windows Credential Manager; run explicitly when validating auth login storage"]
@@ -443,18 +563,22 @@ mod tests {
     #[cfg(windows)]
     #[test]
     #[ignore = "writes to the real Windows Credential Manager; run explicitly when validating auth login storage"]
-    fn windows_auth_refresh_token_rejects_values_above_platform_limit() {
+    fn windows_auth_refresh_token_chunks_values_above_platform_limit() {
         let original = read_refresh_token().expect("existing refresh token should be readable");
         let token = test_refresh_token(2048);
 
-        let result = store_refresh_token(&token).expect_err("oversized token should be rejected");
+        let result = (|| {
+            store_refresh_token(&token)?;
+            assert_eq!(read_refresh_token()?, Some(token));
+            Ok::<_, AdoAuthError>(())
+        })();
 
         let _ = delete_stored_refresh_token();
         if let Some(original) = original {
             let _ = store_refresh_token(&original);
         }
 
-        assert!(result.to_string().contains("platform limit"));
+        result.expect("long refresh token should roundtrip through chunked credentials");
     }
 
     #[cfg(windows)]
