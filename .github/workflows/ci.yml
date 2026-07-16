@@ -86,7 +86,7 @@ jobs:
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
 
   linux:
-    name: Linux build, tests and artifact
+    name: Linux portable artifact
     runs-on: ubuntu-latest
     needs: preflight
     steps:
@@ -125,6 +125,21 @@ jobs:
           fi
           artifacts/linux-x64/dw version
 
+      - name: Upload linux artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: dw-linux-x64
+          path: |
+            artifacts/linux-x64/dw-linux-x64.tar.gz
+            artifacts/linux-x64/release.json
+
+  nix-package:
+    name: Nix package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
       - name: Install Nix
         uses: nixbuild/nix-quick-install-action@v34
         with:
@@ -136,11 +151,11 @@ jobs:
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
+          primary-key: nix-package-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-package-${{ runner.os }}-
           gc-max-store-size-linux: 2G
           purge: true
-          purge-prefixes: nix-${{ runner.os }}-
+          purge-prefixes: nix-package-${{ runner.os }}-
           purge-created: 0
           purge-last-accessed: P7D
           purge-primary-key: never
@@ -148,16 +163,35 @@ jobs:
       - name: Validate Nix package
         run: nix build --accept-flake-config --no-link .#default
 
-      - name: Checks
-        run: nix run --accept-flake-config .#check
+  nix-checks:
+    name: Nix checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Upload linux artifact
-        uses: actions/upload-artifact@v5
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v34
         with:
-          name: dw-linux-x64
-          path: |
-            artifacts/linux-x64/dw-linux-x64.tar.gz
-            artifacts/linux-x64/release.json
+          nix_conf: |
+            accept-flake-config = true
+            keep-env-derivations = true
+            keep-outputs = true
+
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-checks-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}
+          restore-prefixes-first-match: nix-checks-${{ runner.os }}-
+          gc-max-store-size-linux: 2G
+          purge: true
+          purge-prefixes: nix-checks-${{ runner.os }}-
+          purge-created: 0
+          purge-last-accessed: P7D
+          purge-primary-key: never
+
+      - name: Run checks
+        run: nix run --accept-flake-config .#check
 
   windows:
     name: Windows build, tests and artifact
@@ -208,6 +242,8 @@ jobs:
     needs:
       - preflight
       - linux
+      - nix-package
+      - nix-checks
       - windows
     if: needs.preflight.outputs.release_enabled == 'true'
     permissions:
