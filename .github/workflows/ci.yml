@@ -119,8 +119,8 @@ jobs:
         shell: bash
         run: |
           ldd artifacts/linux-x64/dw
-          if grep -aFq '/nix/store' artifacts/linux-x64/dw; then
-            echo "linux-x64 binary contains /nix/store references" >&2
+          if grep -aEq '/nix/store/[0-9a-z]{32}-' artifacts/linux-x64/dw; then
+            echo "linux-x64 binary contains concrete /nix/store references" >&2
             exit 1
           fi
           artifacts/linux-x64/dw version

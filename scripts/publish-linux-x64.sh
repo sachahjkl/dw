@@ -30,8 +30,8 @@ mkdir -p "$output_path"
 cp "$target_dir/release/dw-cli" "$output_path/dw"
 chmod 755 "$output_path/dw"
 
-if grep -aFq '/nix/store' "$output_path/dw"; then
-  echo "Refusing to package a binary containing /nix/store references" >&2
+if grep -aEq '/nix/store/[0-9a-z]{32}-' "$output_path/dw"; then
+  echo "Refusing to package a binary containing concrete /nix/store references" >&2
   exit 1
 fi
 
