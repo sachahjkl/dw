@@ -69,7 +69,7 @@ pub fn create_start_child_tasks(
             &parent_snapshot,
             repository.as_str(),
             &title,
-            "task start",
+            "work start",
             token,
         )?;
         created.push(WorkspaceChildTask {

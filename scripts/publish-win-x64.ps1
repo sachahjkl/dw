@@ -22,6 +22,9 @@ Push-Location $repoRoot
 try {
     $env:DW_COMMIT = $Commit
     cargo build --locked --release -p dw-cli
+    if ($LASTEXITCODE -ne 0) {
+        throw "cargo build failed with exit code $LASTEXITCODE"
+    }
 }
 finally {
     Pop-Location

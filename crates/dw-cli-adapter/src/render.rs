@@ -63,6 +63,8 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
                 .collect(),
         },
         DwActionResult::Db(result) => match result {
+            DbActionResult::List(report) => db_list_lines(report, theme),
+            DbActionResult::Collect(report) => db_collect_lines(report, theme),
             DbActionResult::Guard(report) => db_guard_lines(report, theme),
             DbActionResult::Schema(report) | DbActionResult::Query(report) => {
                 db_query_table(report, theme)
@@ -144,6 +146,7 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             }
         },
         DwActionResult::Secret(result) => match result {
+            SecretActionResult::List(report) => secret_list_lines(report),
             SecretActionResult::Get(report) => secret_get_lines(report),
             SecretActionResult::Set(report) => secret_set_lines(report),
             SecretActionResult::Delete(report) => secret_delete_lines(report),
@@ -189,42 +192,42 @@ pub fn guide_lines(version: &str, theme: &TerminalTheme) -> Vec<String> {
         "   Without --project, dw offers configured projects when the terminal is interactive.".into(),
         String::new(),
         "4. Create a task workspace".into(),
-        format!("   {}", theme.command("dw task start <work-item-id>")),
+        format!("   {}", theme.command("dw work start <work-item-id>")),
         "   Without --execute, dw shows the plan: branch, repositories, worktrees, handoffs.".into(),
-        format!("   {}", theme.command("dw task start <work-item-id> --execute")),
-        format!("   {}", theme.command("dw task open --continue")),
+        format!("   {}", theme.command("dw work start <work-item-id> --execute")),
+        format!("   {}", theme.command("dw work open --continue")),
         "   The configured agent opens in the workspace with DevWorkflow context.".into(),
         String::new(),
         "5. Daily loop".into(),
-        format!("   {}", theme.command("dw task status")),
-        format!("   {}", theme.command("dw task list")),
-        format!("   {}", theme.command("dw task current")),
-        format!("   {}", theme.command("dw task preflight --continue")),
-        format!("   {}", theme.command("dw task sync --continue")),
+        format!("   {}", theme.command("dw work status")),
+        format!("   {}", theme.command("dw work list")),
+        format!("   {}", theme.command("dw work current")),
+        format!("   {}", theme.command("dw work preflight --continue")),
+        format!("   {}", theme.command("dw work sync --continue")),
         "   Use preflight before implementation and sync to refresh task.json from ADO.".into(),
         String::new(),
         "6. Manage workspace contents".into(),
-        format!("   {}", theme.command("dw task add-work-item --continue")),
-        format!("   {}", theme.command("dw task remove-work-item --continue")),
-        format!("   {}", theme.command("dw task add-repo --continue")),
-        format!("   {}", theme.command("dw task repo-latest --continue")),
+        format!("   {}", theme.command("dw work item add --continue")),
+        format!("   {}", theme.command("dw work item remove --continue")),
+        format!("   {}", theme.command("dw work repo add <repo>")),
+        format!("   {}", theme.command("dw work repo latest --continue")),
         "   Interactive commands offer local values when available.".into(),
         String::new(),
         "7. Prepare task completion".into(),
-        format!("   {}", theme.command("dw task handoff-validate --continue")),
-        format!("   {}", theme.command("dw task commit --continue")),
-        format!("   {}", theme.command("dw task finish --continue")),
+        format!("   {}", theme.command("dw work handoff validate --continue")),
+        format!("   {}", theme.command("dw work commit --continue")),
+        format!("   {}", theme.command("dw work finish --continue")),
         "   These commands preview by default. Add --execute only after reading the plan.".into(),
-        format!("   {}", theme.command("dw task finish --continue --execute")),
+        format!("   {}", theme.command("dw work finish --continue --execute")),
         String::new(),
         "8. Clean up".into(),
-        format!("   {}", theme.command("dw task teardown --continue")),
-        format!("   {}", theme.command("dw task prune")),
+        format!("   {}", theme.command("dw work teardown --continue")),
+        format!("   {}", theme.command("dw work prune")),
         "   teardown and prune remove only with --execute, and ask for confirmation interactively.".into(),
         String::new(),
         "9. ADO, DB, and AI context".into(),
-        format!("   {}", theme.command("dw ado work-item <id>")),
-        format!("   {}", theme.command("dw ado context <id>")),
+        format!("   {}", theme.command("dw ado item show <id>")),
+        format!("   {}", theme.command("dw ado context show <id>")),
         format!("   {}", theme.command("dw ado changelog <ids>")),
         format!("   {}", theme.command("dw db schema")),
         format!("   {}", theme.command("dw db describe <table>")),
@@ -575,6 +578,7 @@ pub enum AdoActionJsonProjection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdoActionRenderedOutput {
     Lines(Vec<String>),
+    Document(String),
     Json(String),
 }
 
@@ -609,6 +613,15 @@ pub fn ado_action_output(
             }
             _ => unreachable!("ADO JSON projection is incompatible with the action result"),
         };
+    }
+
+    if let AdoActionResult::Changelog(report) = result
+        && !report.ids_only
+        && report.format != dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw
+    {
+        return Ok(AdoActionRenderedOutput::Document(
+            dw_ui::render_ado_changelog_document(report),
+        ));
     }
 
     Ok(AdoActionRenderedOutput::Lines(match result {
@@ -807,7 +820,7 @@ pub fn ado_work_item_lines(
         lines.push(format!(
             "Context   : {}",
             theme.command(&format!(
-                "dw ado context {} --project {}",
+                "dw ado context show {} --project {}",
                 item.id, report.project
             ))
         ));
@@ -898,7 +911,7 @@ pub fn ado_context_lines(
         lines.push(format!(
             "AI context: {}",
             theme.command(&format!(
-                "dw ado ai-context {} --project {}",
+                "dw ado context ai {} --project {}",
                 item.work_item.id, report.project
             ))
         ));
@@ -910,18 +923,8 @@ pub fn ado_changelog_lines(
     report: &dw_ado_commands::commands::changelog::ChangelogReport,
     theme: &TerminalTheme,
 ) -> Vec<String> {
-    if report.source_empty {
-        return vec![theme.warning(if report.from_git {
-            "No work item detected in git range commit messages."
-        } else {
-            "No work item detected for the given pull requests."
-        })];
-    }
     if report.ids_only {
         return vec![join_display_with_separator(&report.work_item_ids, " ")];
-    }
-    if report.resolved_empty {
-        return vec![theme.warning("No work item resolved in Azure DevOps.")];
     }
     let document = dw_ui::render_ado_changelog_document(report);
     if report.format == dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw {
@@ -939,6 +942,86 @@ pub fn db_guard_lines(result: &SqlGuardResult, theme: &TerminalTheme) -> Vec<Str
         .lines()
         .map(str::to_owned)
         .collect()
+}
+
+pub fn db_list_lines(report: &dw_db::DatabaseListReport, theme: &TerminalTheme) -> Vec<String> {
+    let mut lines = vec![
+        "Configured databases".into(),
+        format!("Root       : {}", report.root),
+        format!("Configured : {}", report.entries.len()),
+    ];
+    if report.entries.is_empty() {
+        lines.push(theme.warning("No database configured."));
+    }
+    for entry in &report.entries {
+        lines.push(String::new());
+        let scope = entry
+            .project
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "global".into());
+        lines.push(theme.bold(&format!("{scope}/{}", entry.database)));
+        lines.push(format!("Provider   : {}", entry.provider));
+        lines.push(format!("Source     : {}", entry.source));
+        lines.push(format!("Readonly   : {}", entry.readonly));
+        lines.push(format!(
+            "Limits     : {} rows, {}s",
+            entry.max_rows, entry.timeout_seconds
+        ));
+        for warning in &entry.warnings {
+            lines.push(theme.warning(&format!("Warning    : {warning}")));
+        }
+    }
+    for warning in &report.warnings {
+        lines.push(theme.warning(&format!("Warning    : {warning}")));
+    }
+    lines
+}
+
+pub fn db_collect_lines(
+    report: &dw_db::DatabaseCollectReport,
+    theme: &TerminalTheme,
+) -> Vec<String> {
+    let mut lines = vec![
+        "Database collection".into(),
+        format!(
+            "Mode       : {}",
+            if report.save_requested {
+                "save"
+            } else {
+                "preview"
+            }
+        ),
+        format!("Workspaces : {}", report.scanned_workspaces),
+        format!("Files      : {}", report.scanned_files),
+        format!("Detected   : {}", report.findings.len()),
+        format!("Saved      : {}", report.saved_count),
+    ];
+    if report.findings.is_empty() {
+        lines.push(theme.warning("No connection string detected in workspace appsettings files."));
+    }
+    for finding in &report.findings {
+        lines.push(String::new());
+        lines.push(theme.bold(&format!(
+            "{}/{} - {}",
+            finding.project, finding.repository, finding.database
+        )));
+        lines.push(format!("Status     : {}", finding.status));
+        lines.push(format!(
+            "Connection : {} ({})",
+            finding.name, finding.environment
+        ));
+        lines.push("Value      : <hidden>".into());
+        lines.push(format!("Credential : {}", finding.credential_key));
+        lines.push(format!("Sources    : {}", finding.source_paths.join(", ")));
+        if let Some(detail) = &finding.detail {
+            lines.push(theme.warning(&format!("Detail     : {detail}")));
+        }
+    }
+    for warning in &report.warnings {
+        lines.push(theme.warning(&format!("Warning    : {warning}")));
+    }
+    lines
 }
 
 pub fn db_query_table(result: &QueryResult, theme: &TerminalTheme) -> String {
@@ -975,6 +1058,12 @@ pub fn db_action_output(
 ) -> serde_json::Result<DbActionRenderedOutput> {
     if json {
         return match result {
+            DbActionResult::List(report) => {
+                serde_json::to_string_pretty(report).map(DbActionRenderedOutput::Json)
+            }
+            DbActionResult::Collect(report) => {
+                serde_json::to_string_pretty(report).map(DbActionRenderedOutput::Json)
+            }
             DbActionResult::Guard(report) => {
                 serde_json::to_string_pretty(report).map(DbActionRenderedOutput::Json)
             }
@@ -989,6 +1078,10 @@ pub fn db_action_output(
     }
 
     Ok(match result {
+        DbActionResult::List(report) => DbActionRenderedOutput::Lines(db_list_lines(report, theme)),
+        DbActionResult::Collect(report) => {
+            DbActionRenderedOutput::Lines(db_collect_lines(report, theme))
+        }
         DbActionResult::Guard(report) => {
             DbActionRenderedOutput::Lines(db_guard_lines(report, theme))
         }
@@ -1355,7 +1448,7 @@ pub fn task_handoff_validation_lines(report: &TaskHandoffValidationReport) -> Ve
 
     if !report.is_valid {
         lines.push(String::new());
-        lines.push("Handoff validation failed: complete/fix handoffs before task finish.".into());
+        lines.push("Handoff validation failed: complete/fix handoffs before work finish.".into());
     }
 
     lines
@@ -1367,7 +1460,7 @@ pub fn task_prune_plan_lines(report: &dw_task::prune::PrunePlanReport) -> Vec<St
         "Mode     : preview".into(),
         format!("Root      : {}", report.root),
         format!("Candidates: {}", report.candidates.len()),
-        "To do    : dw task prune --execute".into(),
+        "To do    : dw work prune --execute".into(),
         "Non-TTY  : add --yes to delete everything without interactive selection".into(),
     ];
 
@@ -1479,7 +1572,7 @@ pub fn task_commit_plan_lines(
     } else {
         lines.push(format!("Message   : {}", report.message));
         if !execute {
-            lines.push("To do    : dw task commit --execute".into());
+            lines.push("To do    : dw work commit --execute".into());
         }
     }
     lines
@@ -1515,7 +1608,7 @@ pub fn task_add_repo_plan_lines(report: &dw_task::repo::AddRepoPlanReport) -> Ve
             "Anchor    : {}/repositories/{}",
             plan.project_root, plan.anchor_name
         ),
-        format!("To do    : dw task add-repo {} --execute", plan.repository),
+        format!("To do    : dw work repo add {} --execute", plan.repository),
     ]
 }
 
@@ -1581,7 +1674,7 @@ pub fn task_teardown_plan_lines(
     }
     if !execute {
         lines.push(String::new());
-        lines.push("To do    : dw task teardown --execute".into());
+        lines.push("To do    : dw work teardown --execute".into());
         lines.push("Non-TTY  : add --yes to confirm without a prompt".into());
     }
     lines
@@ -1633,7 +1726,7 @@ pub fn task_rename_plan_lines(report: &dw_task::lifecycle::RenamePlanReport) -> 
         format!("Slug      : {} -> {}", plan.old_slug, plan.new_slug),
         format!("Branch    : {} -> {}", plan.old_branch, plan.new_branch),
         format!("Workspace : {} -> {}", plan.workspace, plan.new_workspace),
-        "To do    : dw task rename <slug> --execute".into(),
+        "To do    : dw work rename <slug> --execute".into(),
     ]
 }
 
@@ -1698,7 +1791,7 @@ pub fn task_work_item_plan_lines(
                 .join(", ")
         ),
         format!(
-            "To do    : dw task {} --execute",
+            "To do    : dw work item {} --execute",
             work_item_action_command(report.action)
         ),
     ]
@@ -1745,7 +1838,7 @@ pub fn task_start_create_command(
     options: TaskStartCreateCommandOptions,
 ) -> String {
     let plan = &report.plan;
-    let mut parts = vec!["dw".into(), "task".into(), "start".into()];
+    let mut parts = vec!["dw".into(), "work".into(), "start".into()];
     parts.push(shell_arg(&join_display_with_separator(
         &plan.work_item_ids,
         ",",
@@ -1811,7 +1904,7 @@ pub fn task_doing_execution_lines(report: &dw_task::doing::DoingExecutionReport)
 }
 
 pub fn task_start_open_command(workspace: &dw_core::WorkspacePath) -> String {
-    format!("dw task open --workspace {}", shell_arg(workspace.as_str()))
+    format!("dw work open --workspace {}", shell_arg(workspace.as_str()))
 }
 
 fn shell_arg(value: &str) -> String {
@@ -1940,7 +2033,7 @@ pub fn task_finish_plan_lines(report: &dw_task::finish::FinishPlanReport) -> Vec
     }
     if dw_task::finish::finish_has_work(report) {
         lines.push(String::new());
-        lines.push("To do    : dw task finish --execute".into());
+        lines.push("To do    : dw work finish --execute".into());
         lines.push("Non-TTY  : add --yes to confirm without a prompt".into());
     }
 
@@ -2275,7 +2368,7 @@ fn ado_start_command_line(
     let ids = join_display_with_separator(ids, ",");
     ado_assigned_field_line(
         "Start",
-        theme.command(&format!("dw task start {ids} --project {project}")),
+        theme.command(&format!("dw work start {ids} --project {project}")),
     )
 }
 
@@ -2643,8 +2736,8 @@ fn work_item_action_label(action: dw_task::work_item::WorkItemUpdateAction) -> &
 
 fn work_item_action_command(action: dw_task::work_item::WorkItemUpdateAction) -> &'static str {
     match action {
-        dw_task::work_item::WorkItemUpdateAction::Add => "add-work-item",
-        dw_task::work_item::WorkItemUpdateAction::Remove => "remove-work-item",
+        dw_task::work_item::WorkItemUpdateAction::Add => "add",
+        dw_task::work_item::WorkItemUpdateAction::Remove => "remove",
     }
 }
 
@@ -2672,6 +2765,32 @@ pub fn secret_get_lines(report: &SecretGetReport) -> Vec<String> {
         format!("Key      : {}", report.key),
         "Value    : hidden".into(),
     ]
+}
+
+pub fn secret_list_lines(report: &dw_secret::command::SecretListReport) -> Vec<String> {
+    let mut lines = vec![
+        "Configured secrets".into(),
+        format!("Root       : {}", report.root),
+        format!("Configured : {}", report.items.len()),
+    ];
+    if report.items.is_empty() {
+        lines.push("No configured secret reference found.".into());
+    }
+    lines.extend(report.items.iter().map(|item| {
+        format!(
+            "- {} | {} | {}",
+            item.key,
+            if item.exists { "present" } else { "missing" },
+            item.references.join(", ")
+        )
+    }));
+    lines.extend(
+        report
+            .warnings
+            .iter()
+            .map(|warning| format!("Warning: {warning}")),
+    );
+    lines
 }
 
 pub fn secret_delete_lines(report: &SecretDeleteReport) -> Vec<String> {
@@ -2780,7 +2899,7 @@ fn doctor_remediation_label(remediation: &DoctorRemediation) -> String {
         }
         DoctorRemediation::RunInit => "Run: dw init".into(),
         DoctorRemediation::ConfigureDefaultAgent { agent } => {
-            format!("Configure: dw agent config set-default {agent}")
+            format!("Configure: dw agent default set {agent}")
         }
         DoctorRemediation::InstallGit => "Install Git, then rerun dw doctor".into(),
         DoctorRemediation::InstallNodePackageManager => {
@@ -3080,9 +3199,9 @@ mod tests {
         assert!(lines.contains(&"ADO assigned".into()));
         assert!(lines.contains(&"Items    : 2".into()));
         assert!(lines.contains(&"Item : #42 [Bug / En developpement] Corriger".into()));
-        assert!(lines.contains(&"Start: dw task start 42 --project acme".into()));
+        assert!(lines.contains(&"Start: dw work start 42 --project acme".into()));
         assert!(lines.contains(&"Item : #43 [Task / Actif] Verifier".into()));
-        assert!(lines.contains(&"Start: dw task start 43 --project acme".into()));
+        assert!(lines.contains(&"Start: dw work start 43 --project acme".into()));
         assert!(!lines.windows(2).any(|pair| pair == ["", ""]));
     }
 
@@ -3120,7 +3239,7 @@ mod tests {
 
         assert!(lines.contains(&"Assigned work items: 1 group(s), 2 item(s)".into()));
         assert!(lines.contains(&"Parent: #42 [User Story / Actif] Parent".into()));
-        assert!(lines.contains(&"Start: dw task start 42,43 --project acme".into()));
+        assert!(lines.contains(&"Start: dw work start 42,43 --project acme".into()));
         assert!(lines.contains(&"  Child: #43 [Task / Actif] Enfant".into()));
     }
 
@@ -3135,7 +3254,7 @@ mod tests {
                     dw_core::WorkItemId::from("43"),
                 ],
                 state: "Actif".into(),
-                history: "dw ado set-state".into(),
+                history: "dw ado state set".into(),
             },
             events: vec![dw_core::AdoActionEvent::UpdatedWorkItemState {
                 id: dw_core::WorkItemId::from("42"),
@@ -3185,7 +3304,7 @@ mod tests {
         assert!(lines.contains(&"Type      : unknown type".into()));
         assert!(lines.contains(&"State     : unknown state".into()));
         assert!(lines.contains(&"Title     : (untitled)".into()));
-        assert!(lines.contains(&"Context   : dw ado context 7 --project acme".into()));
+        assert!(lines.contains(&"Context   : dw ado context show 7 --project acme".into()));
     }
 
     #[test]
@@ -3275,7 +3394,7 @@ mod tests {
         assert!(output.contains("capture.png"));
         assert!(output.contains("- Parent #1"));
         assert!(output.contains("- Bob: OK"));
-        assert!(output.contains("AI context: dw ado ai-context 42 --project acme"));
+        assert!(output.contains("AI context: dw ado context ai 42 --project acme"));
     }
 
     #[test]
@@ -3294,10 +3413,7 @@ mod tests {
                 dw_core::WorkItemId::from("42"),
                 dw_core::WorkItemId::from("43"),
             ],
-            items: Vec::new(),
-            groups: Vec::new(),
-            source_empty: false,
-            resolved_empty: false,
+            sections: Vec::new(),
             events: Vec::new(),
         };
         assert_eq!(
@@ -3306,9 +3422,19 @@ mod tests {
         );
 
         let source_empty = dw_ado_commands::commands::changelog::ChangelogReport {
-            source_empty: true,
+            ids_only: false,
             from_git: true,
-            ..ids_only
+            sections: vec![dw_ado_commands::commands::changelog::ChangelogSection {
+                repository: None,
+                repository_path: None,
+                work_item_ids: Vec::new(),
+                items: Vec::new(),
+                groups: Vec::new(),
+                source_empty: true,
+                resolved_empty: false,
+                warnings: Vec::new(),
+            }],
+            ..ids_only.clone()
         };
         assert_eq!(
             ado_changelog_lines(&source_empty, &TerminalTheme::plain()),
@@ -3329,25 +3455,31 @@ mod tests {
             options: ado_options(),
             ids_only: false,
             work_item_ids: vec!["42".into()],
-            items: vec![
-                dw_ado::WorkItemSnapshot {
-                    id: "42".into(),
-                    kind: Some("Bug".into()),
-                    state: Some("Actif".into()),
-                    title: Some("Corriger".into()),
-                    url: None,
-                },
-                dw_ado::WorkItemSnapshot {
-                    id: "43".into(),
-                    kind: Some("Task".into()),
-                    state: Some("Actif".into()),
-                    title: Some("Tester".into()),
-                    url: None,
-                },
-            ],
-            groups: Vec::new(),
-            source_empty: false,
-            resolved_empty: false,
+            sections: vec![dw_ado_commands::commands::changelog::ChangelogSection {
+                repository: None,
+                repository_path: None,
+                work_item_ids: vec!["42".into(), "43".into()],
+                items: vec![
+                    dw_ado::WorkItemSnapshot {
+                        id: "42".into(),
+                        kind: Some("Bug".into()),
+                        state: Some("Actif".into()),
+                        title: Some("Corriger".into()),
+                        url: None,
+                    },
+                    dw_ado::WorkItemSnapshot {
+                        id: "43".into(),
+                        kind: Some("Task".into()),
+                        state: Some("Actif".into()),
+                        title: Some("Tester".into()),
+                        url: None,
+                    },
+                ],
+                groups: Vec::new(),
+                source_empty: false,
+                resolved_empty: false,
+                warnings: Vec::new(),
+            }],
             events: Vec::new(),
         };
         let theme = TerminalTheme::new(dw_ui::ColorMode::Always, false, false);
@@ -3364,6 +3496,13 @@ mod tests {
         let markdown_output = ado_changelog_lines(&markdown, &theme).join("\n");
         assert!(markdown_output.contains("# Changelog"));
         assert!(markdown_output.contains("[#42]"));
+
+        let rendered = ado_action_output(&AdoActionResult::Changelog(markdown), None, &theme)
+            .expect("rendered changelog");
+        let AdoActionRenderedOutput::Document(document) = rendered else {
+            panic!("expected unstyled document output");
+        };
+        assert!(!document.contains('\u{1b}'));
     }
 
     #[test]
@@ -3462,7 +3601,7 @@ mod tests {
         assert_eq!(lines[0], "Workspace cleanup");
         assert_eq!(lines[1], "Mode     : preview");
         assert!(lines.contains(&"Candidates: 1".into()));
-        assert!(lines.contains(&"To do    : dw task prune --execute".into()));
+        assert!(lines.contains(&"To do    : dw work prune --execute".into()));
         assert!(lines.contains(&"Workspace : /tmp/dw/projects/acme/workspaces/feat-1-done".into()));
         assert!(lines.contains(&"Items    : acme / #1 Done [Valide]".into()));
         assert!(lines.contains(&"Repositories: front, back".into()));
@@ -3497,7 +3636,7 @@ mod tests {
         assert!(lines.contains(&"Repository: front".into()));
         assert!(lines.contains(&"Status    : Changes detected:".into()));
         assert!(lines.contains(&"Message   : feat(42): demo".into()));
-        assert!(lines.contains(&"To do    : dw task commit --execute".into()));
+        assert!(lines.contains(&"To do    : dw work commit --execute".into()));
     }
 
     #[test]
@@ -3577,7 +3716,7 @@ mod tests {
         assert!(lines.contains(&"Handoff front".into()));
         assert!(lines.contains(&"Done      : UI ajustée".into()));
         assert!(lines.contains(&"- front -> develop".into()));
-        assert!(lines.contains(&"To do    : dw task finish --execute".into()));
+        assert!(lines.contains(&"To do    : dw work finish --execute".into()));
         assert!(lines.contains(&"Non-TTY  : add --yes to confirm without a prompt".into()));
     }
 
@@ -3603,7 +3742,7 @@ mod tests {
 
         assert_eq!(lines[0], "Add repository (preview)");
         assert!(lines.contains(&"Anchor    : /tmp/project/repositories/front-anchor".into()));
-        assert!(lines.contains(&"To do    : dw task add-repo front --execute".into()));
+        assert!(lines.contains(&"To do    : dw work repo add front --execute".into()));
     }
 
     #[test]
@@ -3631,9 +3770,9 @@ mod tests {
         assert_eq!(execute[2], "Actions   : 1");
         assert_eq!(execute[3], "Actions applied");
         assert!(dry_run.contains(&"- [front] worktree remove: /tmp/ws/front".into()));
-        assert!(dry_run.contains(&"To do    : dw task teardown --execute".into()));
+        assert!(dry_run.contains(&"To do    : dw work teardown --execute".into()));
         assert!(dry_run.contains(&"Non-TTY  : add --yes to confirm without a prompt".into()));
-        assert!(!execute.contains(&"To do    : dw task teardown --execute".into()));
+        assert!(!execute.contains(&"To do    : dw work teardown --execute".into()));
     }
 
     #[test]
@@ -3678,7 +3817,7 @@ mod tests {
         assert!(lines.contains(&"Mode     : preview".into()));
         assert!(lines.contains(&"Slug      : old -> new".into()));
         assert!(lines.contains(&"Branch    : feat/1-old -> feat/1-new".into()));
-        assert!(lines.contains(&"To do    : dw task rename <slug> --execute".into()));
+        assert!(lines.contains(&"To do    : dw work rename <slug> --execute".into()));
     }
 
     #[test]
@@ -3751,7 +3890,7 @@ mod tests {
         assert_eq!(lines[2], "Action   : add");
         assert!(lines.contains(&"Branch    : feat/1-old -> feat/1-2-new".into()));
         assert!(lines.contains(&"Items    : #1, #2".into()));
-        assert!(lines.contains(&"To do    : dw task add-work-item --execute".into()));
+        assert!(lines.contains(&"To do    : dw work item add --execute".into()));
     }
 
     #[test]
@@ -3794,7 +3933,7 @@ mod tests {
                     create_child_tasks: false,
                 }
             ),
-            "dw task start 42 --project acme --type feat --only front,back --slug titre --execute"
+            "dw work start 42 --project acme --type feat --only front,back --slug titre --execute"
         );
     }
 
@@ -3809,12 +3948,12 @@ mod tests {
         assert!(
             lines
                 .iter()
-                .any(|line| line.contains("dw task start <work-item-id>"))
+                .any(|line| line.contains("dw work start <work-item-id>"))
         );
         assert!(
             lines
                 .iter()
-                .any(|line| line.contains("dw task finish --continue"))
+                .any(|line| line.contains("dw work finish --continue"))
         );
         assert!(lines.iter().any(|line| line.contains("dw db query")));
         assert!(lines.iter().any(|line| line.contains("dw ado assigned")));
@@ -3833,6 +3972,47 @@ mod tests {
             db_query_tsv(&result),
             "Id\tName\n1\tNULL\n-- 1 rows (truncated)"
         );
+    }
+
+    #[test]
+    fn db_collection_output_is_masked() {
+        let report = dw_db::DatabaseCollectReport {
+            root: "/tmp/dw".into(),
+            save_requested: false,
+            scanned_workspaces: 2,
+            scanned_files: 3,
+            saved_count: 0,
+            findings: vec![dw_db::DatabaseCollectFinding {
+                project: "acme".into(),
+                repository: "back".into(),
+                application: "api".into(),
+                environment: "Development".into(),
+                name: "App".into(),
+                database: "collected-back-api-development-app".into(),
+                credential_key: "db/collected/v1/acme/back/api/development/app".into(),
+                status: dw_db::DatabaseCollectStatus::Eligible,
+                detail: None,
+                value_masked: true,
+                source_paths: vec!["/tmp/api/appsettings.Development.json".into()],
+            }],
+            warnings: Vec::new(),
+        };
+
+        let output = db_collect_lines(&report, &TerminalTheme::plain()).join("\n");
+        let json = db_action_output(
+            &DbActionResult::Collect(report),
+            true,
+            false,
+            &TerminalTheme::plain(),
+        )
+        .expect("JSON output");
+
+        assert!(output.contains("Value      : <hidden>"));
+        assert!(output.contains("db/collected/v1/acme/back/api/development/app"));
+        let DbActionRenderedOutput::Json(json) = json else {
+            panic!("expected JSON output");
+        };
+        assert!(json.contains("\"valueMasked\": true"));
     }
 
     fn workspace_manifest_with_items(

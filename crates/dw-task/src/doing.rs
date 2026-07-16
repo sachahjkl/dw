@@ -148,7 +148,7 @@ fn plan_update(
         .ok_or_else(|| anyhow::anyhow!("Work item #{} has no type.", snapshot.id))?;
     let target_state = start_state(Some(&kind), options).ok_or_else(|| {
         anyhow::anyhow!(
-            "Work item #{} has unsupported type `{kind}` for `task doing`.",
+            "Work item #{} has unsupported type `{kind}` for `work item doing`.",
             snapshot.id
         )
     })?;

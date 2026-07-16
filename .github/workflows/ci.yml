@@ -172,12 +172,14 @@ jobs:
       - name: Cache Rust build outputs
         uses: Swatinem/rust-cache@v2
 
-      - name: Checks
-        shell: pwsh
-        run: |
-          cargo fmt --all -- --check
-          cargo test --workspace --locked
-          cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run tests
+        run: cargo test --workspace --locked
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Publish win-x64 artifact
         shell: pwsh

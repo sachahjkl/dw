@@ -248,7 +248,7 @@ pub async fn start_pr_plan(args: StartPrArgs) -> Result<StartPrPlanReport> {
     let ado_repositories = resolve_ado_repositories(project_config.as_ref(), &args.repositories);
     if ado_repositories.is_empty() {
         return Err(anyhow::anyhow!(
-            "task start-pr requires an explicit repository, or a project with configured azureDevOpsRepository entries."
+            "work pr start requires an explicit repository, or a project with configured azureDevOpsRepository entries."
         ));
     }
     let options = resolve_ado_options(&projects, &workflow, args.project.as_str())?;
@@ -455,7 +455,7 @@ async fn update_start_states(
                     &options_for_update,
                     id_for_update.as_str(),
                     state_for_update.as_str(),
-                    "task start",
+                    "work start",
                     &token_for_update,
                 )
             })

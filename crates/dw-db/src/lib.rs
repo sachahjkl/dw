@@ -1,8 +1,14 @@
+mod collect;
 pub mod commands;
 mod config;
 mod guard;
 mod query;
 
+pub use collect::{
+    CollectArgs, DatabaseCollectFinding, DatabaseCollectReport, DatabaseCollectStatus,
+    DatabaseConnectionSource, DatabaseListEntry, DatabaseListReport, ListArgs, collect_databases,
+    list_databases,
+};
 pub use config::{
     DatabaseCatalogEntry, DatabaseConnectionConfig, DatabaseDefaults, DatabaseProvider,
     DatabaseSelection, DbConfigError, ProjectDatabases, ResolvedDatabase, database_catalog,

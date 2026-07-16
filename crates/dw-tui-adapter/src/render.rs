@@ -529,18 +529,8 @@ pub fn ado_changelog_lines(
     report: &dw_ado_commands::commands::changelog::ChangelogReport,
     theme: &TerminalTheme,
 ) -> Vec<String> {
-    if report.source_empty {
-        return vec![theme.warning(if report.from_git {
-            "No work item detected in commit messages from the git range."
-        } else {
-            "No work item detected for the given pull requests."
-        })];
-    }
     if report.ids_only {
         return vec![join_display_with_separator(&report.work_item_ids, " ")];
-    }
-    if report.resolved_empty {
-        return vec![theme.warning("No work item resolved in Azure DevOps.")];
     }
     let document = dw_ui::render_ado_changelog_document(report);
     if report.format == dw_ado_commands::commands::changelog::ChangelogOutputFormat::Raw {
@@ -558,6 +548,54 @@ pub fn db_guard_lines(result: &SqlGuardResult, theme: &TerminalTheme) -> Vec<Str
         .lines()
         .map(str::to_owned)
         .collect()
+}
+
+pub fn db_list_lines(report: &dw_db::DatabaseListReport) -> Vec<String> {
+    let mut lines = vec![
+        "Configured databases".into(),
+        format!("Configured : {}", report.entries.len()),
+    ];
+    for entry in &report.entries {
+        let scope = entry
+            .project
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "global".into());
+        lines.push(format!(
+            "- {scope}/{} | {} | {}",
+            entry.database, entry.provider, entry.source
+        ));
+    }
+    lines.extend(
+        report
+            .warnings
+            .iter()
+            .map(|warning| format!("Warning: {warning}")),
+    );
+    lines
+}
+
+pub fn db_collect_lines(report: &dw_db::DatabaseCollectReport) -> Vec<String> {
+    let mut lines = vec![
+        "Database collection".into(),
+        format!("Workspaces : {}", report.scanned_workspaces),
+        format!("Files      : {}", report.scanned_files),
+        format!("Detected   : {}", report.findings.len()),
+        format!("Saved      : {}", report.saved_count),
+    ];
+    lines.extend(report.findings.iter().map(|finding| {
+        format!(
+            "- {}/{} | {} | {} | <hidden>",
+            finding.project, finding.repository, finding.database, finding.status
+        )
+    }));
+    lines.extend(
+        report
+            .warnings
+            .iter()
+            .map(|warning| format!("Warning: {warning}")),
+    );
+    lines
 }
 
 pub fn db_query_table(result: &QueryResult, theme: &TerminalTheme) -> String {
@@ -599,6 +637,8 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
                 .collect(),
         },
         DwActionResult::Db(result) => match result {
+            DbActionResult::List(report) => db_list_lines(report),
+            DbActionResult::Collect(report) => db_collect_lines(report),
             DbActionResult::Guard(report) => db_guard_lines(report, theme),
             DbActionResult::Schema(report) | DbActionResult::Query(report) => {
                 db_query_table(report, theme)
@@ -680,6 +720,7 @@ pub fn action_result_lines(result: &DwActionResult, theme: &TerminalTheme) -> Ve
             }
         },
         DwActionResult::Secret(result) => match result {
+            SecretActionResult::List(report) => secret_list_lines(report),
             SecretActionResult::Get(report) => secret_get_lines(report),
             SecretActionResult::Set(report) => secret_set_lines(report),
             SecretActionResult::Delete(report) => secret_delete_lines(report),
@@ -965,7 +1006,7 @@ pub fn task_handoff_validation_lines(report: &TaskHandoffValidationReport) -> Ve
 
     if !report.is_valid {
         lines.push(String::new());
-        lines.push("Handoff validation failed: complete/fix handoffs before task finish.".into());
+        lines.push("Handoff validation failed: complete/fix handoffs before work finish.".into());
     }
 
     lines
@@ -2212,6 +2253,27 @@ pub fn secret_get_lines(report: &SecretGetReport) -> Vec<String> {
     ]
 }
 
+pub fn secret_list_lines(report: &dw_secret::command::SecretListReport) -> Vec<String> {
+    let mut lines = vec![
+        "Configured secrets".into(),
+        format!("Configured : {}", report.items.len()),
+    ];
+    lines.extend(report.items.iter().map(|item| {
+        format!(
+            "- {} | {}",
+            item.key,
+            if item.exists { "present" } else { "missing" }
+        )
+    }));
+    lines.extend(
+        report
+            .warnings
+            .iter()
+            .map(|warning| format!("Warning: {warning}")),
+    );
+    lines
+}
+
 pub fn secret_delete_lines(report: &SecretDeleteReport) -> Vec<String> {
     vec![
         "Secret".into(),
@@ -2316,7 +2378,7 @@ fn doctor_remediation_label(remediation: &DoctorRemediation) -> String {
         DoctorRemediation::InitRoot { root } => format!("Initialize DevWorkflow root: {root}"),
         DoctorRemediation::RunInit => "Run: dw init".into(),
         DoctorRemediation::ConfigureDefaultAgent { agent } => {
-            format!("Configure: dw agent config set-default {agent}")
+            format!("Configure: dw agent default set {agent}")
         }
         DoctorRemediation::InstallGit => "Install Git, then run doctor again".into(),
         DoctorRemediation::InstallNodePackageManager => {
@@ -2808,10 +2870,7 @@ mod tests {
                 dw_core::WorkItemId::from("42"),
                 dw_core::WorkItemId::from("43"),
             ],
-            items: Vec::new(),
-            groups: Vec::new(),
-            source_empty: false,
-            resolved_empty: false,
+            sections: Vec::new(),
             events: Vec::new(),
         };
         assert_eq!(
@@ -2820,13 +2879,23 @@ mod tests {
         );
 
         let source_empty = dw_ado_commands::commands::changelog::ChangelogReport {
-            source_empty: true,
+            ids_only: false,
             from_git: true,
-            ..ids_only
+            sections: vec![dw_ado_commands::commands::changelog::ChangelogSection {
+                repository: None,
+                repository_path: None,
+                work_item_ids: Vec::new(),
+                items: Vec::new(),
+                groups: Vec::new(),
+                source_empty: true,
+                resolved_empty: false,
+                warnings: Vec::new(),
+            }],
+            ..ids_only.clone()
         };
         assert_eq!(
             ado_changelog_lines(&source_empty, &TerminalTheme::plain()),
-            vec!["No work item detected in commit messages from the git range.".to_string()]
+            vec!["No work item detected in git range commit messages.".to_string()]
         );
     }
 
@@ -2843,25 +2912,31 @@ mod tests {
             options: ado_options(),
             ids_only: false,
             work_item_ids: vec!["42".into()],
-            items: vec![
-                dw_ado::WorkItemSnapshot {
-                    id: "42".into(),
-                    kind: Some("Bug".into()),
-                    state: Some("Actif".into()),
-                    title: Some("Corriger".into()),
-                    url: None,
-                },
-                dw_ado::WorkItemSnapshot {
-                    id: "43".into(),
-                    kind: Some("Task".into()),
-                    state: Some("Actif".into()),
-                    title: Some("Tester".into()),
-                    url: None,
-                },
-            ],
-            groups: Vec::new(),
-            source_empty: false,
-            resolved_empty: false,
+            sections: vec![dw_ado_commands::commands::changelog::ChangelogSection {
+                repository: None,
+                repository_path: None,
+                work_item_ids: vec!["42".into(), "43".into()],
+                items: vec![
+                    dw_ado::WorkItemSnapshot {
+                        id: "42".into(),
+                        kind: Some("Bug".into()),
+                        state: Some("Actif".into()),
+                        title: Some("Corriger".into()),
+                        url: None,
+                    },
+                    dw_ado::WorkItemSnapshot {
+                        id: "43".into(),
+                        kind: Some("Task".into()),
+                        state: Some("Actif".into()),
+                        title: Some("Tester".into()),
+                        url: None,
+                    },
+                ],
+                groups: Vec::new(),
+                source_empty: false,
+                resolved_empty: false,
+                warnings: Vec::new(),
+            }],
             events: Vec::new(),
         };
         let theme = TerminalTheme::new(dw_ui::ColorMode::Always, false, false);

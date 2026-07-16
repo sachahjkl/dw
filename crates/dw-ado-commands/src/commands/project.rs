@@ -58,7 +58,7 @@ pub fn resolve_cli_ado_options(
             resolve_ado_options(&projects, &workflow, &project)
         }
         _ => Err(anyhow::anyhow!(
-            "ado ai-context requires a configured project, or an organization with an explicit project."
+            "ado context ai requires a configured project, or an organization with an explicit project."
         )),
     }
 }

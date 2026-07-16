@@ -192,7 +192,7 @@ pub async fn create_child_task_report(args: CreateChildTaskArgs) -> Result<Creat
             &parent_snapshot,
             repo_for_create.as_str(),
             task_title_for_create.as_str(),
-            "task create-child-task",
+            "work task child create",
             &token_for_create,
         )
     })

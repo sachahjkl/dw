@@ -30,6 +30,7 @@
 
         nativeBuildInputs = [
           pkgs.git
+          pkgs.gnumake
           pkgs.perl
           pkgs.pkg-config
         ];

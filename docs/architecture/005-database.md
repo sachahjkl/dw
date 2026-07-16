@@ -25,12 +25,19 @@ TRUNCATE
 EXEC
 ```
 
-## Target Commands
+## Commands
 
 ```text
+dw db list
+dw db collect [--save]
 dw db schema
 dw db describe <table>
 dw db query <sql>
 ```
 
-Later commands can include table/column search helpers.
+`db collect` scans `appsettings*.json` files in configured workspace repositories. Preview output
+always masks connection values. `--save` accepts only concrete SQL Server connection strings,
+stores them in the system keyring, and writes credential references to `databases.json`.
+
+Collection is deterministic and conservative: duplicate values are merged, conflicting values are
+not saved, and existing configuration or keyring values are never overwritten with different data.

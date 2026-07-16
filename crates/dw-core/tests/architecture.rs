@@ -63,6 +63,7 @@ fn migrated_core_crates_do_not_embed_dw_cli_command_hints() {
             let text = fs::read_to_string(&file).expect("read source file");
             for forbidden in [
                 "dw task ",
+                "dw work ",
                 "dw ado ",
                 "dw db ",
                 "dw auth ",
@@ -2231,6 +2232,7 @@ fn tui_and_ui_layers_do_not_embed_cli_command_hints() {
             let text = fs::read_to_string(&file).expect("read source file");
             for forbidden in [
                 "dw task ",
+                "dw work ",
                 "dw ado ",
                 "dw db ",
                 "dw auth ",

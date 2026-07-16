@@ -51,7 +51,7 @@ pub fn plan(args: SetStateArgs) -> Result<SetStatePlanReport> {
     } = args;
     let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
-        project.ok_or_else(|| anyhow::anyhow!("ado set-state requires a configured project."))?;
+        project.ok_or_else(|| anyhow::anyhow!("ado state set requires a configured project."))?;
     if ids.is_empty() {
         return Err(anyhow::anyhow!("At least one work item is required."));
     }

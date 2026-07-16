@@ -1,4 +1,4 @@
-use clap::{Arg, ArgAction, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{Arg, ArgAction, Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use clap_complete::Shell;
 use dw_completion::CompletionOutput;
 
@@ -33,11 +33,11 @@ impl Cli {
     pub(crate) fn localized_command() -> clap::Command {
         let display_version: &'static str =
             Box::leak(crate::version::informational_version().into_boxed_str());
-        localize_command(Self::command().version(display_version), 0)
+        localize_command(Self::command().version(display_version))
     }
 }
 
-fn localize_command(command: clap::Command, depth: usize) -> clap::Command {
+fn localize_command(command: clap::Command) -> clap::Command {
     let help_template = if command.get_name() == "dw" {
         "{about} {version}\n\nUsage: {usage}\n\n{all-args}"
     } else {
@@ -64,11 +64,7 @@ fn localize_command(command: clap::Command, depth: usize) -> clap::Command {
                 .action(ArgAction::Version)
                 .help("Show version."),
         );
-    let command = if depth < 3 {
-        command.mut_subcommands(|subcommand| localize_command(subcommand, depth + 1))
-    } else {
-        command
-    };
+    let command = command.mut_subcommands(localize_command);
 
     sort_help_options(sort_help_subcommands(command))
 }
@@ -197,10 +193,10 @@ pub(crate) enum Command {
         #[arg(long, conflicts_with = "check")]
         rid: Option<String>,
     },
-    #[command(about = "Manage the work cycle: workspace, worktrees, commits, PRs, and cleanup.")]
-    Task {
+    #[command(about = "Manage workspaces, worktrees, commits, PRs, and work items.")]
+    Work {
         #[command(subcommand)]
-        command: TaskCommand,
+        command: WorkCommand,
     },
 }
 
@@ -281,7 +277,10 @@ pub(crate) enum AdoCommand {
             help = "Extract work items from git commits."
         )]
         from_git: bool,
-        #[arg(long, help = "Local repository used for --from-git mode.")]
+        #[arg(
+            long,
+            help = "Configured repository key/name or local path; omit to scan every configured repository."
+        )]
         repo: Option<String>,
         #[arg(long = "group-by-parent", help = "Group the changelog by ADO parent.")]
         group_by_parent: bool,
@@ -305,8 +304,27 @@ pub(crate) enum AdoCommand {
         )]
         git_to: Option<String>,
     },
+    #[command(about = "Inspect Azure DevOps work items.")]
+    Item {
+        #[command(subcommand)]
+        command: AdoItemCommand,
+    },
+    #[command(about = "Manage Azure DevOps work item state.")]
+    State {
+        #[command(subcommand)]
+        command: AdoStateCommand,
+    },
+    #[command(about = "Build human-readable or AI-ready work item context.")]
+    Context {
+        #[command(subcommand)]
+        command: AdoContextCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AdoItemCommand {
     #[command(about = "Show a readable summary of Azure DevOps work items.")]
-    WorkItem {
+    Show {
         #[arg(help = "Azure DevOps work item ID, or comma-separated list.")]
         id: String,
         #[arg(long, help = "DevWorkflow root to use.")]
@@ -316,8 +334,12 @@ pub(crate) enum AdoCommand {
         #[arg(long, help = "Emit the deterministic JSON response.")]
         json: bool,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AdoStateCommand {
     #[command(about = "Change the state of one or more Azure DevOps work items.")]
-    SetState {
+    Set {
         #[arg(help = "Azure DevOps work item ID, or comma-separated list.")]
         id: String,
         #[arg(long, help = "DevWorkflow root to use.")]
@@ -326,17 +348,19 @@ pub(crate) enum AdoCommand {
         project: Option<String>,
         #[arg(long, help = "Exact new ADO state to apply.")]
         state: String,
-        #[arg(long, help = "ADO history message; default: dw ado set-state.")]
+        #[arg(long, help = "ADO history message; default: dw ado state set.")]
         history: Option<String>,
         #[arg(long, help = "Confirm the destructive state change.")]
         yes: bool,
         #[arg(long, help = "Emit the deterministic JSON response; requires --yes.")]
         json: bool,
     },
-    #[command(
-        about = "Show detailed context for one or more work items in a human-readable format."
-    )]
-    Context {
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum AdoContextCommand {
+    #[command(about = "Show detailed context in a human-readable format.")]
+    Show {
         #[arg(help = "Azure DevOps work item ID, or comma-separated list.")]
         id: String,
         #[arg(long, help = "DevWorkflow root to use.")]
@@ -354,8 +378,8 @@ pub(crate) enum AdoCommand {
         #[arg(long, help = "Emit the deterministic JSON response.")]
         json: bool,
     },
-    #[command(about = "Emit structured, deterministic AI context for one or more work items.")]
-    AiContext {
+    #[command(about = "Emit structured, deterministic AI context.")]
+    Ai {
         #[arg(help = "Azure DevOps work item ID, or comma-separated list.")]
         id: String,
         #[arg(long, help = "DevWorkflow root to use.")]
@@ -381,7 +405,7 @@ pub(crate) enum AdoCommand {
 }
 
 #[derive(Debug, Subcommand)]
-pub(crate) enum TaskCommand {
+pub(crate) enum WorkCommand {
     #[command(about = "List task workspaces detected under the root.")]
     Status {
         #[arg(long, help = "DevWorkflow root to scan.")]
@@ -403,18 +427,15 @@ pub(crate) enum TaskCommand {
         #[arg(long, help = "Emit the current workspace as deterministic JSON.")]
         json: bool,
     },
-    #[command(about = "Move ADO work items to their configured in-progress state.")]
-    Doing {
-        #[arg(help = "Azure DevOps work item ID, or comma-separated list.")]
-        id: String,
-        #[arg(long, help = "DevWorkflow root to use.")]
-        root: Option<String>,
-        #[arg(long, help = "Configured project to use.")]
-        project: Option<String>,
-        #[arg(long, help = "Confirm the work item state changes.")]
-        yes: bool,
-        #[arg(long, help = "Emit the deterministic report JSON; requires --yes.")]
-        json: bool,
+    #[command(about = "Manage work items attached to a workspace.")]
+    Item {
+        #[command(subcommand)]
+        command: WorkItemCommand,
+    },
+    #[command(about = "Manage ADO tasks linked to workspace work.")]
+    Task {
+        #[command(subcommand)]
+        command: WorkTaskCommand,
     },
     #[command(about = "Open or resume a task workspace with the configured agent.")]
     Open {
@@ -501,30 +522,10 @@ pub(crate) enum TaskCommand {
         )]
         execute: bool,
     },
-    #[command(about = "Prepare or create a workspace from work items linked to a pull request.")]
-    StartPr {
-        #[arg(help = "Azure DevOps pull request ID.")]
-        pull_request_id: String,
-        #[arg(long, help = "DevWorkflow root to use.")]
-        root: Option<String>,
-        #[arg(long, help = "Configured project to use.")]
-        project: String,
-        #[arg(long, help = "Local or Azure DevOps repository for the PR.")]
-        repo: Option<String>,
-        #[arg(
-            long = "type",
-            help = "Branch/workspace type: feature, bugfix, hotfix, or chore."
-        )]
-        type_name: Option<String>,
-        #[arg(long, help = "Explicit slug for the branch and workspace name.")]
-        slug: Option<String>,
-        #[arg(long, help = "Emit the plan or result as deterministic JSON.")]
-        json: bool,
-        #[arg(
-            long,
-            help = "Actually create the workspace; without this flag, show the plan."
-        )]
-        execute: bool,
+    #[command(about = "Manage pull-request-based workspaces.")]
+    Pr {
+        #[command(subcommand)]
+        command: WorkPrCommand,
     },
     #[command(about = "Validate blockers and warnings before implementation.")]
     Preflight {
@@ -613,29 +614,10 @@ pub(crate) enum TaskCommand {
         #[arg(help = "Positional work item alias used to resolve the workspace.")]
         positional_work_item: Option<String>,
     },
-    #[command(about = "Update workspace repositories from their target branch.")]
-    RepoLatest {
-        #[arg(
-            long,
-            conflicts_with = "continue",
-            help = "Workspace path to synchronize."
-        )]
-        workspace: Option<String>,
-        #[arg(
-            long = "continue",
-            conflicts_with = "workspace",
-            help = "Resume the most recent matching task workspace."
-        )]
-        r#continue: bool,
-        #[arg(
-            long = "only",
-            help = "Limit synchronization to one workspace repository."
-        )]
-        only: Option<String>,
-        #[arg(long, help = "DevWorkflow root to use.")]
-        root: Option<String>,
-        #[arg(long, help = "Emit the plan/result as deterministic JSON.")]
-        json: bool,
+    #[command(about = "Manage workspace repositories.")]
+    Repo {
+        #[command(subcommand)]
+        command: WorkRepoCommand,
     },
     #[command(about = "Prepare or create an intermediate commit for workspace repositories.")]
     Commit {
@@ -661,119 +643,6 @@ pub(crate) enum TaskCommand {
         message: Option<String>,
         #[arg(long, help = "Emit the deterministic JSON report.")]
         json: bool,
-    },
-    #[command(about = "Add work items to the current task workspace.")]
-    AddWorkItem {
-        #[arg(help = "Work item IDs to add, separated by commas.")]
-        work_item_ids: Option<String>,
-        #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Workspace path to modify.")]
-        workspace: Option<String>,
-        #[arg(long, help = "DevWorkflow root to use.")]
-        root: Option<String>,
-        #[arg(
-            long,
-            conflicts_with = "workspace",
-            help = "Configured project used to resolve the workspace."
-        )]
-        project: Option<String>,
-        #[arg(long = "work-item", help = "Work item used to resolve the workspace.")]
-        work_item: Option<String>,
-        #[arg(
-            long = "continue",
-            conflicts_with = "workspace",
-            help = "Resume the most recent matching task workspace."
-        )]
-        r#continue: bool,
-        #[arg(
-            long = "skip-ado",
-            help = "Do not query Azure DevOps; use the provided local values."
-        )]
-        skip_ado: bool,
-        #[arg(
-            long = "type",
-            help = "Local type to use when ADO is skipped or incomplete."
-        )]
-        type_name: Option<String>,
-        #[arg(long, help = "Local title to use when ADO is skipped or incomplete.")]
-        title: Option<String>,
-        #[arg(long, help = "Local state to use when ADO is skipped or incomplete.")]
-        state: Option<String>,
-        #[arg(
-            long,
-            help = "Actually apply the change; without this flag, show the plan."
-        )]
-        execute: bool,
-        #[arg(long, help = "Emit the plan/result as deterministic JSON.")]
-        json: bool,
-        #[arg(help = "Positional work item alias used to resolve the workspace.")]
-        positional_work_item: Option<String>,
-    },
-    #[command(about = "Remove work items from the current task workspace.")]
-    RemoveWorkItem {
-        #[arg(help = "Work item IDs to remove, separated by commas.")]
-        work_item_ids: Option<String>,
-        #[arg(long, help = "Workspace path to modify.")]
-        workspace: Option<String>,
-        #[arg(long, help = "DevWorkflow root to use.")]
-        root: Option<String>,
-        #[arg(long, help = "Configured project used to resolve the workspace.")]
-        project: Option<String>,
-        #[arg(long = "work-item", help = "Work item used to resolve the workspace.")]
-        work_item: Option<String>,
-        #[arg(
-            long = "continue",
-            help = "Resume the most recent matching task workspace."
-        )]
-        r#continue: bool,
-        #[arg(
-            long,
-            help = "Actually apply the change; without this flag, show the plan."
-        )]
-        execute: bool,
-        #[arg(long, help = "Emit the plan/result as deterministic JSON.")]
-        json: bool,
-        #[arg(help = "Positional work item alias used to resolve the workspace.")]
-        positional_work_item: Option<String>,
-    },
-    #[command(about = "Add a repository to the task workspace.")]
-    AddRepo {
-        #[arg(help = "Configured repository to add to the workspace.")]
-        repo: Option<String>,
-        #[arg(long, help = "Workspace path to modify.")]
-        workspace: Option<String>,
-        #[arg(long, help = "DevWorkflow root to use.")]
-        root: Option<String>,
-        #[arg(
-            long,
-            help = "Create the worktree and modify task.json; without this flag, show the plan."
-        )]
-        execute: bool,
-        #[arg(long, help = "Emit the plan/result as deterministic JSON.")]
-        json: bool,
-    },
-    #[command(about = "Create an ADO child task and add it to the repository handoff.")]
-    CreateChildTask {
-        #[arg(long, help = "Workspace repository that will carry the task handoff.")]
-        repo: String,
-        #[arg(long, help = "Title of the ADO child task to create.")]
-        title: String,
-        #[arg(long, help = "Workspace path to modify.")]
-        workspace: Option<String>,
-        #[arg(long, help = "DevWorkflow root to use.")]
-        root: Option<String>,
-        #[arg(long, help = "Configured project used to resolve the workspace.")]
-        project: Option<String>,
-        #[arg(long = "work-item", help = "Work item used to resolve the workspace.")]
-        work_item: Option<String>,
-        #[arg(
-            long = "continue",
-            help = "Resume the most recent matching task workspace."
-        )]
-        r#continue: bool,
-        #[arg(long, help = "Emit the deterministic result JSON.")]
-        json: bool,
-        #[arg(help = "Positional work item alias used to resolve the workspace.")]
-        positional_work_item: Option<String>,
     },
     #[command(about = "Verify, commit, push, and open a PR to finish the workspace.")]
     Finish {
@@ -828,30 +697,10 @@ pub(crate) enum TaskCommand {
         #[arg(long, help = "Emit the deterministic JSON report.")]
         json: bool,
     },
-    #[command(about = "Validate handoff files before sub-agents or finishing.")]
-    HandoffValidate {
-        #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Workspace path whose handoffs must be valid.")]
-        workspace: Option<String>,
-        #[arg(long, help = "DevWorkflow root to use.")]
-        root: Option<String>,
-        #[arg(
-            long,
-            conflicts_with = "workspace",
-            help = "Configured project used to resolve the workspace."
-        )]
-        project: Option<String>,
-        #[arg(long = "work-item", help = "Work item used to resolve the workspace.")]
-        work_item: Option<String>,
-        #[arg(
-            long = "continue",
-            conflicts_with = "workspace",
-            help = "Resume the most recent matching task workspace."
-        )]
-        r#continue: bool,
-        #[arg(long, help = "Emit the deterministic JSON report.")]
-        json: bool,
-        #[arg(help = "Positional work item alias used to resolve the workspace.")]
-        positional_work_item: Option<String>,
+    #[command(about = "Manage workspace handoff files.")]
+    Handoff {
+        #[command(subcommand)]
+        command: WorkHandoffCommand,
     },
     #[command(about = "Remove worktrees and clean up a task workspace.")]
     Teardown {
@@ -906,6 +755,253 @@ pub(crate) enum TaskCommand {
 }
 
 #[derive(Debug, Subcommand)]
+pub(crate) enum WorkPrCommand {
+    #[command(about = "Prepare or create a workspace from work items linked to a pull request.")]
+    Start(WorkPrStartArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WorkPrStartArgs {
+    #[arg(help = "Azure DevOps pull request ID.")]
+    pub pull_request_id: String,
+    #[arg(long, help = "DevWorkflow root to use.")]
+    pub root: Option<String>,
+    #[arg(long, help = "Configured project to use.")]
+    pub project: String,
+    #[arg(long, help = "Local or Azure DevOps repository for the PR.")]
+    pub repo: Option<String>,
+    #[arg(
+        long = "type",
+        help = "Branch/workspace type: feature, bugfix, hotfix, or chore."
+    )]
+    pub type_name: Option<String>,
+    #[arg(long, help = "Explicit slug for the branch and workspace name.")]
+    pub slug: Option<String>,
+    #[arg(long, help = "Emit the plan or result as deterministic JSON.")]
+    pub json: bool,
+    #[arg(
+        long,
+        help = "Actually create the workspace; without this flag, show the plan."
+    )]
+    pub execute: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WorkItemCommand {
+    #[command(about = "Move ADO work items to their configured in-progress state.")]
+    Doing(WorkItemDoingArgs),
+    #[command(about = "Add work items to the current workspace.")]
+    Add(WorkItemAddArgs),
+    #[command(about = "Remove work items from the current workspace.")]
+    Remove(WorkItemRemoveArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WorkItemDoingArgs {
+    #[arg(help = "Azure DevOps work item ID, or comma-separated list.")]
+    pub id: String,
+    #[arg(long, help = "DevWorkflow root to use.")]
+    pub root: Option<String>,
+    #[arg(long, help = "Configured project to use.")]
+    pub project: Option<String>,
+    #[arg(long, help = "Confirm the work item state changes.")]
+    pub yes: bool,
+    #[arg(long, help = "Emit the deterministic report JSON; requires --yes.")]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WorkItemAddArgs {
+    #[arg(help = "Work item IDs to add, separated by commas.")]
+    pub work_item_ids: Option<String>,
+    #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Workspace path to modify.")]
+    pub workspace: Option<String>,
+    #[arg(long, help = "DevWorkflow root to use.")]
+    pub root: Option<String>,
+    #[arg(
+        long,
+        conflicts_with = "workspace",
+        help = "Configured project used to resolve the workspace."
+    )]
+    pub project: Option<String>,
+    #[arg(long = "work-item", help = "Work item used to resolve the workspace.")]
+    pub work_item: Option<String>,
+    #[arg(
+        long = "continue",
+        conflicts_with = "workspace",
+        help = "Resume the most recent workspace."
+    )]
+    pub r#continue: bool,
+    #[arg(
+        long = "skip-ado",
+        help = "Do not query Azure DevOps; use the provided local values."
+    )]
+    pub skip_ado: bool,
+    #[arg(
+        long = "type",
+        help = "Local type to use when ADO is skipped or incomplete."
+    )]
+    pub type_name: Option<String>,
+    #[arg(long, help = "Local title to use when ADO is skipped or incomplete.")]
+    pub title: Option<String>,
+    #[arg(long, help = "Local state to use when ADO is skipped or incomplete.")]
+    pub state: Option<String>,
+    #[arg(
+        long,
+        help = "Actually apply the change; without this flag, show the plan."
+    )]
+    pub execute: bool,
+    #[arg(long, help = "Emit the plan/result as deterministic JSON.")]
+    pub json: bool,
+    #[arg(help = "Positional work item alias used to resolve the workspace.")]
+    pub positional_work_item: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WorkItemRemoveArgs {
+    #[arg(help = "Work item IDs to remove, separated by commas.")]
+    pub work_item_ids: Option<String>,
+    #[arg(long, help = "Workspace path to modify.")]
+    pub workspace: Option<String>,
+    #[arg(long, help = "DevWorkflow root to use.")]
+    pub root: Option<String>,
+    #[arg(long, help = "Configured project used to resolve the workspace.")]
+    pub project: Option<String>,
+    #[arg(long = "work-item", help = "Work item used to resolve the workspace.")]
+    pub work_item: Option<String>,
+    #[arg(long = "continue", help = "Resume the most recent workspace.")]
+    pub r#continue: bool,
+    #[arg(
+        long,
+        help = "Actually apply the change; without this flag, show the plan."
+    )]
+    pub execute: bool,
+    #[arg(long, help = "Emit the plan/result as deterministic JSON.")]
+    pub json: bool,
+    #[arg(help = "Positional work item alias used to resolve the workspace.")]
+    pub positional_work_item: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WorkRepoCommand {
+    #[command(about = "Add a repository to the workspace.")]
+    Add(WorkRepoAddArgs),
+    #[command(about = "Update workspace repositories from their target branch.")]
+    Latest(WorkRepoLatestArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WorkRepoAddArgs {
+    #[arg(help = "Configured repository to add to the workspace.")]
+    pub repo: Option<String>,
+    #[arg(long, help = "Workspace path to modify.")]
+    pub workspace: Option<String>,
+    #[arg(long, help = "DevWorkflow root to use.")]
+    pub root: Option<String>,
+    #[arg(
+        long,
+        help = "Create the worktree and modify task.json; without this flag, show the plan."
+    )]
+    pub execute: bool,
+    #[arg(long, help = "Emit the plan/result as deterministic JSON.")]
+    pub json: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WorkRepoLatestArgs {
+    #[arg(
+        long,
+        conflicts_with = "continue",
+        help = "Workspace path to synchronize."
+    )]
+    pub workspace: Option<String>,
+    #[arg(
+        long = "continue",
+        conflicts_with = "workspace",
+        help = "Resume the most recent workspace."
+    )]
+    pub r#continue: bool,
+    #[arg(
+        long = "only",
+        help = "Limit synchronization to one workspace repository."
+    )]
+    pub only: Option<String>,
+    #[arg(long, help = "DevWorkflow root to use.")]
+    pub root: Option<String>,
+    #[arg(long, help = "Emit the plan/result as deterministic JSON.")]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WorkHandoffCommand {
+    #[command(about = "Validate handoff files before sub-agents or finishing.")]
+    Validate(WorkHandoffValidateArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WorkHandoffValidateArgs {
+    #[arg(long, conflicts_with_all = ["project", "work_item", "continue"], help = "Workspace path whose handoffs must be valid.")]
+    pub workspace: Option<String>,
+    #[arg(long, help = "DevWorkflow root to use.")]
+    pub root: Option<String>,
+    #[arg(
+        long,
+        conflicts_with = "workspace",
+        help = "Configured project used to resolve the workspace."
+    )]
+    pub project: Option<String>,
+    #[arg(long = "work-item", help = "Work item used to resolve the workspace.")]
+    pub work_item: Option<String>,
+    #[arg(
+        long = "continue",
+        conflicts_with = "workspace",
+        help = "Resume the most recent workspace."
+    )]
+    pub r#continue: bool,
+    #[arg(long, help = "Emit the deterministic JSON report.")]
+    pub json: bool,
+    #[arg(help = "Positional work item alias used to resolve the workspace.")]
+    pub positional_work_item: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WorkTaskCommand {
+    #[command(about = "Manage child tasks.")]
+    Child {
+        #[command(subcommand)]
+        command: WorkTaskChildCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WorkTaskChildCommand {
+    #[command(about = "Create an ADO child task and add it to the repository handoff.")]
+    Create(WorkTaskChildCreateArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WorkTaskChildCreateArgs {
+    #[arg(long, help = "Workspace repository that will carry the task handoff.")]
+    pub repo: String,
+    #[arg(long, help = "Title of the ADO child task to create.")]
+    pub title: String,
+    #[arg(long, help = "Workspace path to modify.")]
+    pub workspace: Option<String>,
+    #[arg(long, help = "DevWorkflow root to use.")]
+    pub root: Option<String>,
+    #[arg(long, help = "Configured project used to resolve the workspace.")]
+    pub project: Option<String>,
+    #[arg(long = "work-item", help = "Work item used to resolve the workspace.")]
+    pub work_item: Option<String>,
+    #[arg(long = "continue", help = "Resume the most recent workspace.")]
+    pub r#continue: bool,
+    #[arg(long, help = "Emit the deterministic result JSON.")]
+    pub json: bool,
+    #[arg(help = "Positional work item alias used to resolve the workspace.")]
+    pub positional_work_item: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
 pub(crate) enum ConfigCommand {
     #[command(about = "Show the root, color mode, and configuration paths.")]
     Show {
@@ -921,13 +1017,31 @@ pub(crate) enum ConfigCommand {
         #[arg(long, help = "Emit the deterministic JSON report.")]
         json: bool,
     },
+    #[command(about = "Manage the configured DevWorkflow root.")]
+    Root {
+        #[command(subcommand)]
+        command: ConfigRootCommand,
+    },
+    #[command(about = "Manage terminal color configuration.")]
+    Color {
+        #[command(subcommand)]
+        command: ConfigColorCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ConfigRootCommand {
     #[command(about = "Save the user DevWorkflow root.")]
-    SetRoot {
+    Set {
         #[arg(help = "DevWorkflow root path to save.")]
         path: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ConfigColorCommand {
     #[command(about = "Configure color mode: auto, always, or never.")]
-    SetColor {
+    Set {
         #[arg(help = "Color mode to save: auto, always, or never.")]
         mode: String,
     },
@@ -981,14 +1095,10 @@ pub(crate) enum AgentCommand {
         #[arg(long, help = "DevWorkflow root to read.")]
         root: Option<String>,
     },
-    #[command(about = "Set the default agent for the DevWorkflow root.")]
-    SetDefault {
-        #[arg(
-            help = "Agent to use by default: opencode, cursor, claude, codex, codex-cli, or copilot."
-        )]
-        agent: String,
-        #[arg(long, help = "DevWorkflow root to modify.")]
-        root: Option<String>,
+    #[command(about = "Manage the default agent.")]
+    Default {
+        #[command(subcommand)]
+        command: AgentDefaultCommand,
     },
     #[command(about = "Diagnose installed agent availability.")]
     Doctor {
@@ -998,7 +1108,30 @@ pub(crate) enum AgentCommand {
 }
 
 #[derive(Debug, Subcommand)]
+pub(crate) enum AgentDefaultCommand {
+    #[command(about = "Set the default agent for the DevWorkflow root.")]
+    Set {
+        #[arg(
+            help = "Agent to use by default: opencode, cursor, claude, codex, codex-cli, or copilot."
+        )]
+        agent: String,
+        #[arg(long, help = "DevWorkflow root to modify.")]
+        root: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub(crate) enum SecretCommand {
+    #[command(about = "List configured secret keys and whether they exist.")]
+    List {
+        #[arg(
+            long,
+            help = "DevWorkflow root whose configuration should be inspected."
+        )]
+        root: Option<String>,
+        #[arg(long, help = "Emit deterministic JSON without secret values.")]
+        json: bool,
+    },
     #[command(about = "Save a secret in the system keyring.")]
     Set {
         #[arg(help = "Logical secret key, for example a credentialReference.")]
@@ -1028,6 +1161,28 @@ pub(crate) enum SecretCommand {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum DbCommand {
+    #[command(about = "List configured databases without resolving connection secrets.")]
+    List {
+        #[arg(long, help = "DevWorkflow root to inspect.")]
+        root: Option<String>,
+        #[arg(long, help = "Emit the deterministic JSON result.")]
+        json: bool,
+    },
+    #[command(about = "Discover database connections in workspace appsettings files.")]
+    Collect {
+        #[arg(long, help = "DevWorkflow root whose workspaces should be scanned.")]
+        root: Option<String>,
+        #[arg(
+            long,
+            help = "Store eligible values in the system keyring and add credential references to databases.json."
+        )]
+        save: bool,
+        #[arg(
+            long,
+            help = "Emit the deterministic JSON result without secret values."
+        )]
+        json: bool,
+    },
     #[command(about = "Verify that a SQL query respects read-only mode.")]
     Guard {
         #[arg(long, help = "SQL query to analyze without executing.")]
@@ -1134,7 +1289,9 @@ pub(crate) enum CompletionCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Command, TaskCommand};
+    use super::{
+        AdoCommand, Cli, Command, DbCommand, WorkCommand, WorkItemCommand, WorkItemDoingArgs,
+    };
     use clap::Parser;
 
     #[test]
@@ -1154,7 +1311,7 @@ mod tests {
     #[test]
     fn localized_subcommand_help_uses_english_builtin_labels() {
         let error = Cli::localized_command()
-            .try_get_matches_from(["dw", "ado", "ai-context", "--help"])
+            .try_get_matches_from(["dw", "ado", "context", "ai", "--help"])
             .expect_err("help exits through clap");
         let help = error.to_string();
 
@@ -1165,6 +1322,15 @@ mod tests {
     }
 
     #[test]
+    fn localized_help_supports_the_deepest_work_hierarchy() {
+        let error = Cli::localized_command()
+            .try_get_matches_from(["dw", "work", "task", "child", "create", "--help"])
+            .expect_err("help exits through clap");
+
+        assert!(error.to_string().contains("Create an ADO child task"));
+    }
+
+    #[test]
     fn verbose_flag_counts_globally() {
         let cli = Cli::parse_from(["dw", "-vv", "version"]);
 
@@ -1172,20 +1338,126 @@ mod tests {
     }
 
     #[test]
-    fn task_doing_accepts_ids_without_hash_prefix() {
-        let cli = Cli::parse_from(["dw", "task", "doing", "116", "--project", "acme", "--yes"]);
+    fn work_item_doing_accepts_ids_without_hash_prefix() {
+        let cli = Cli::parse_from([
+            "dw",
+            "work",
+            "item",
+            "doing",
+            "116",
+            "--project",
+            "acme",
+            "--yes",
+        ]);
 
-        let Command::Task {
-            command: TaskCommand::Doing {
-                id, project, yes, ..
-            },
+        let Command::Work {
+            command:
+                WorkCommand::Item {
+                    command:
+                        WorkItemCommand::Doing(WorkItemDoingArgs {
+                            id, project, yes, ..
+                        }),
+                },
         } = cli.command
         else {
-            panic!("expected task doing command");
+            panic!("expected work item doing command");
         };
         assert_eq!(id, "116");
         assert_eq!(project.as_deref(), Some("acme"));
         assert!(yes);
+    }
+
+    #[test]
+    fn changelog_accepts_html_tables_and_repository_paths() {
+        let cli = Cli::parse_from([
+            "dw",
+            "ado",
+            "changelog",
+            "v1",
+            "--from-git",
+            "--git-to",
+            "v2",
+            "--repo",
+            "C:/src/front",
+            "--format",
+            "html",
+            "--table",
+        ]);
+
+        let Command::Ado {
+            command:
+                AdoCommand::Changelog {
+                    from_git,
+                    git_to,
+                    repo,
+                    format,
+                    table,
+                    ..
+                },
+        } = cli.command
+        else {
+            panic!("expected changelog command");
+        };
+        assert!(from_git);
+        assert_eq!(git_to.as_deref(), Some("v2"));
+        assert_eq!(repo.as_deref(), Some("C:/src/front"));
+        assert_eq!(format.as_deref(), Some("html"));
+        assert!(table);
+    }
+
+    #[test]
+    fn database_collection_is_preview_unless_save_is_explicit() {
+        let preview = Cli::parse_from(["dw", "db", "collect"]);
+        let Command::Db {
+            command: DbCommand::Collect { save, .. },
+        } = preview.command
+        else {
+            panic!("expected database collection command");
+        };
+        assert!(!save);
+
+        let save = Cli::parse_from(["dw", "db", "collect", "--save", "--json"]);
+        let Command::Db {
+            command: DbCommand::Collect { save, json, .. },
+        } = save.command
+        else {
+            panic!("expected database collection command");
+        };
+        assert!(save);
+        assert!(json);
+    }
+
+    #[test]
+    fn legacy_hierarchies_are_rejected() {
+        for args in [
+            vec!["dw", "task", "status"],
+            vec!["dw", "work", "start-pr", "1"],
+            vec!["dw", "ado", "work-item", "1"],
+            vec!["dw", "ado", "set-state", "1", "--state", "Active"],
+            vec!["dw", "ado", "ai-context", "1"],
+            vec!["dw", "agent", "set-default", "codex"],
+            vec!["dw", "config", "set-root", "."],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+    }
+
+    #[test]
+    fn deepest_work_hierarchy_parses() {
+        assert!(
+            Cli::try_parse_from([
+                "dw",
+                "work",
+                "task",
+                "child",
+                "create",
+                "--repo",
+                "front",
+                "--title",
+                "Implement UI",
+            ])
+            .is_ok()
+        );
     }
 
     #[test]
@@ -1200,9 +1472,9 @@ mod tests {
     }
 
     #[test]
-    fn task_finish_help_exposes_force_with_lease() {
+    fn work_finish_help_exposes_force_with_lease() {
         let error = Cli::localized_command()
-            .try_get_matches_from(["dw", "task", "finish", "--help"])
+            .try_get_matches_from(["dw", "work", "finish", "--help"])
             .expect_err("help exits through clap");
         let help = error.to_string();
 
@@ -1213,7 +1485,7 @@ mod tests {
     #[test]
     fn localized_options_are_sorted_alphabetically_in_help() {
         let error = Cli::localized_command()
-            .try_get_matches_from(["dw", "task", "open", "--help"])
+            .try_get_matches_from(["dw", "work", "open", "--help"])
             .expect_err("help exits through clap");
         let help = error.to_string();
         let options = help
@@ -1270,10 +1542,10 @@ mod tests {
                 "init",
                 "refresh",
                 "secret",
-                "task",
                 "tui",
                 "upgrade",
                 "version",
+                "work",
             ]
         );
     }

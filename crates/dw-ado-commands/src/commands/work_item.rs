@@ -34,7 +34,7 @@ pub async fn report_with_events(
     let WorkItemArgs { ids, root, project } = args;
     let root = DevWorkflowRoot::from(resolve_root(root.as_ref().map(DevWorkflowRoot::as_str)));
     let project_key =
-        project.ok_or_else(|| anyhow::anyhow!("ado work-item requires a configured project."))?;
+        project.ok_or_else(|| anyhow::anyhow!("ado item show requires a configured project."))?;
     let projects = load_projects_config(root.as_str());
     let workflow = load_workflow_config(root.as_str());
     let options = resolve_ado_options(&projects, &workflow, &project_key)?;

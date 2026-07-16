@@ -412,7 +412,7 @@ pub fn update_repository(
         repository
             .stash_save(
                 &signature,
-                "dw task repo-latest autostash",
+                "dw repository update autostash",
                 Some(StashFlags::INCLUDE_UNTRACKED),
             )
             .map_err(git2_command_error)?;
@@ -538,7 +538,14 @@ pub fn has_commits_ahead_of(repository_path: &RepositoryPath, base: &GitRevision
 }
 
 pub fn commit_messages_in_range(range: &GitRevisionRange) -> Result<GitCommitMessages> {
-    let repository = Repository::discover(".").map_err(git2_command_error)?;
+    commit_messages_in_range_at(&RepositoryPath::from("."), range)
+}
+
+pub fn commit_messages_in_range_at(
+    repository_path: &RepositoryPath,
+    range: &GitRevisionRange,
+) -> Result<GitCommitMessages> {
+    let repository = Repository::discover(repository_path.as_str()).map_err(git2_command_error)?;
     let from = repository
         .revparse_single(range.from.as_str())
         .map_err(git2_command_error)?;
@@ -1335,6 +1342,30 @@ mod tests {
                 .target(),
             Some(rewritten)
         );
+    }
+
+    #[test]
+    fn commit_messages_in_range_reads_the_requested_repository() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repository_path = temp.path().join("repository");
+        let nested_path = repository_path.join("nested");
+        let repository = Repository::init(&repository_path).expect("repository");
+        fs::create_dir(&nested_path).expect("nested directory");
+        let from = test_commit(&repository, "initial #10");
+        let to = test_commit(&repository, "change #42");
+        let range = GitRevisionRange::new(
+            GitRevision::from(from.to_string()),
+            GitRevision::from(to.to_string()),
+        );
+
+        let messages = commit_messages_in_range_at(
+            &RepositoryPath::from(nested_path.display().to_string()),
+            &range,
+        )
+        .expect("messages");
+
+        assert!(messages.as_str().contains("change #42"));
+        assert!(!messages.as_str().contains("initial #10"));
     }
 
     fn test_commit(repository: &Repository, contents: &str) -> Oid {

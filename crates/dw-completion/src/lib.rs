@@ -247,13 +247,13 @@ fn complete_positional_value(words: &[String], current: &str) -> Option<Vec<Comp
 fn positional_values_for_path(path: &[&str], root: &str) -> Option<Vec<String>> {
     match path {
         ["completion", "generate"] | ["completion", "install"] => Some(completion_shell_values()),
-        ["config", "set-color"] => Some(
+        ["config", "color", "set"] => Some(
             dw_config::COLOR_MODE_CHOICES
                 .iter()
                 .map(|value| (*value).to_string())
                 .collect(),
         ),
-        ["agent", "set-default"] => Some(
+        ["agent", "default", "set"] => Some(
             dw_config::AGENT_DEFAULT_CHOICES
                 .iter()
                 .map(ToString::to_string)
@@ -274,7 +274,7 @@ fn completion_shell_values() -> Vec<String> {
 }
 
 fn positional_words_after_path(words: &[String]) -> Vec<&str> {
-    let mut path_count = 0usize;
+    let mut remaining_path_words = command_path(words).len();
     let mut index = 0usize;
     let mut positionals = Vec::new();
     while index < words.len() {
@@ -295,8 +295,8 @@ fn positional_words_after_path(words: &[String]) -> Vec<&str> {
             }
             continue;
         }
-        if path_count < 2 {
-            path_count += 1;
+        if remaining_path_words > 0 {
+            remaining_path_words -= 1;
         } else {
             positionals.push(word);
         }
@@ -340,7 +340,7 @@ fn complete_options(words: &[String]) -> Vec<CompletionItem> {
 fn command_path(words: &[String]) -> Vec<&str> {
     let mut path = Vec::new();
     let mut index = 0;
-    while index < words.len() && path.len() < 2 {
+    while index < words.len() {
         let word = words[index].as_str();
         if word == "--" {
             index += 1;
@@ -358,7 +358,20 @@ fn command_path(words: &[String]) -> Vec<&str> {
             }
             continue;
         }
-        path.push(word);
+        if word.is_empty() {
+            break;
+        }
+        let Some(subcommands) = subcommands_for_path(&path) else {
+            break;
+        };
+        if subcommands.contains(&word) || (path == ["completion"] && word == "complete") {
+            path.push(word);
+        } else if index == words.len() - 1 {
+            path.push(word);
+            break;
+        } else {
+            break;
+        }
         index += 1;
     }
     path
@@ -422,6 +435,7 @@ fn option_description(option: &str) -> String {
         "--yes" => "Confirm without interactive prompt".into(),
         "--dry-run" => "Preview without writing".into(),
         "--no-save" => "Do not save the default root".into(),
+        "--save" => "Save eligible collected connections securely".into(),
         "--fix" => "Apply automatic fixes".into(),
         "--format" => "Output format".into(),
         "--agent" => "AI agent to launch".into(),
@@ -446,6 +460,7 @@ fn option_description(option: &str) -> String {
         "--create-pr" => "Create or verify ADO PRs".into(),
         "--ready" => "Mark the PR as ready".into(),
         "--skip-verify" => "Skip local validations".into(),
+        "--force-with-lease" => "Safely replace rewritten remote branches".into(),
         "--no-sync" => "Skip ADO synchronization".into(),
         "--ai-context-file" => "AI context file".into(),
         "--from-pr" => "Read from pull requests".into(),
@@ -487,13 +502,13 @@ fn value_description(option: &str, value: &str) -> String {
 
 fn positional_value_description(path: &[&str], value: &str) -> String {
     match path {
-        ["config", "set-color"] => match value {
+        ["config", "color", "set"] => match value {
             "auto" => "Color based on terminal".into(),
             "always" => "Force color".into(),
             "never" => "Disable color".into(),
             _ => "Color mode".into(),
         },
-        ["agent", "set-default"] => "Default AI agent".into(),
+        ["agent", "default", "set"] => "Default AI agent".into(),
         ["completion", "generate"] => "Target shell for static completion".into(),
         ["completion", "install"] => "Target shell for dynamic snippet".into(),
         ["secret", "set"] | ["secret", "get"] | ["secret", "delete"] => {
@@ -520,43 +535,56 @@ fn root_command_description(label: &str) -> String {
         "db" => "Read-only database access".into(),
         "secret" => "Local secrets".into(),
         "upgrade" => "Update the binary".into(),
-        "task" => "Workspace/worktrees/PR lifecycle".into(),
+        "work" => "Workspace, repository, PR, and work-item lifecycle".into(),
         _ => String::new(),
     }
 }
 
 fn subcommand_description(path: &[&str], label: &str) -> String {
     match (path, label) {
-        (["task"], "start") => "Create/prepare a task workspace".into(),
-        (["task"], "doing") => "Move work items to their configured in-progress state".into(),
-        (["task"], "start-pr") => "Create/prepare a workspace from a PR".into(),
-        (["task"], "status") => "Workspace summary view".into(),
-        (["task"], "list") => "List filterable workspaces".into(),
-        (["task"], "current") => "Show the current workspace".into(),
-        (["task"], "sync") => "Synchronize task.json with ADO".into(),
-        (["task"], "preflight") => "Check blockers before development".into(),
-        (["task"], "handoff-validate") => "Validate workspace handoff".into(),
-        (["task"], "rename") => "Rename workspace and branch".into(),
-        (["task"], "open") => "Open the workspace with an agent".into(),
-        (["task"], "add-repo") => "Add a repository to the workspace".into(),
-        (["task"], "create-child-task") => "Create an ADO child task".into(),
-        (["task"], "repo-latest") => "Update repositories".into(),
-        (["task"], "add-work-item") => "Add work items to the workspace".into(),
-        (["task"], "remove-work-item") => "Remove work items from the workspace".into(),
-        (["task"], "commit") => "Prepare or create commits".into(),
-        (["task"], "finish") => "Commit, push, PR, and ADO state".into(),
-        (["task"], "prune") => "Clean up finished workspaces".into(),
-        (["task"], "teardown") => "Delete a workspace".into(),
+        (["work"], "start") => "Create/prepare a workspace".into(),
+        (["work"], "status") => "Workspace summary view".into(),
+        (["work"], "list") => "List filterable workspaces".into(),
+        (["work"], "current") => "Show the current workspace".into(),
+        (["work"], "sync") => "Synchronize task.json with ADO".into(),
+        (["work"], "preflight") => "Check blockers before development".into(),
+        (["work"], "rename") => "Rename workspace and branch".into(),
+        (["work"], "open") => "Open the workspace with an agent".into(),
+        (["work"], "commit") => "Prepare or create commits".into(),
+        (["work"], "finish") => "Commit, push, PR, and ADO state".into(),
+        (["work"], "prune") => "Clean up finished workspaces".into(),
+        (["work"], "teardown") => "Delete a workspace".into(),
+        (["work"], "pr") => "Pull-request-based workspaces".into(),
+        (["work", "pr"], "start") => "Create/prepare a workspace from a PR".into(),
+        (["work"], "item") => "Workspace work items".into(),
+        (["work", "item"], "doing") => {
+            "Move work items to their configured in-progress state".into()
+        }
+        (["work", "item"], "add") => "Add work items to the workspace".into(),
+        (["work", "item"], "remove") => "Remove work items from the workspace".into(),
+        (["work"], "repo") => "Workspace repositories".into(),
+        (["work", "repo"], "add") => "Add a repository to the workspace".into(),
+        (["work", "repo"], "latest") => "Update repositories".into(),
+        (["work"], "handoff") => "Workspace handoffs".into(),
+        (["work", "handoff"], "validate") => "Validate workspace handoff".into(),
+        (["work"], "task") => "ADO tasks linked to work".into(),
+        (["work", "task"], "child") => "Child tasks".into(),
+        (["work", "task", "child"], "create") => "Create an ADO child task".into(),
         (["auth"], "login") => "Interactive Azure DevOps login".into(),
         (["auth"], "status") => "Azure DevOps connection state".into(),
         (["auth"], "logout") => "Delete the local ADO session".into(),
         (["ado"], "assigned") => "Assigned work items".into(),
         (["ado"], "prs") => "Active pull requests".into(),
         (["ado"], "changelog") => "Changelog from PRs/git/work items".into(),
-        (["ado"], "work-item") => "Work item details".into(),
-        (["ado"], "set-state") => "Change ADO state".into(),
-        (["ado"], "context") => "Detailed human-readable context".into(),
-        (["ado"], "ai-context") => "Structured context for AI".into(),
+        (["ado"], "item") => "Work item operations".into(),
+        (["ado", "item"], "show") => "Work item details".into(),
+        (["ado"], "state") => "Work item state operations".into(),
+        (["ado", "state"], "set") => "Change ADO state".into(),
+        (["ado"], "context") => "Work item context".into(),
+        (["ado", "context"], "show") => "Detailed human-readable context".into(),
+        (["ado", "context"], "ai") => "Structured context for AI".into(),
+        (["db"], "list") => "List configured databases safely".into(),
+        (["db"], "collect") => "Discover workspace database connections".into(),
         (["db"], "schema") => "List tables and views".into(),
         (["db"], "describe") => "Describe a table".into(),
         (["db"], "query") => "Run a read-only query".into(),
@@ -565,15 +593,19 @@ fn subcommand_description(path: &[&str], label: &str) -> String {
         (["agent"], "open") => "Open an agent on a workspace".into(),
         (["agent"], "config") => "Show agent configuration".into(),
         (["agent"], "show") => "Agent configuration alias".into(),
-        (["agent"], "set-default") => "Set the default agent".into(),
+        (["agent"], "default") => "Default agent operations".into(),
+        (["agent", "default"], "set") => "Set the default agent".into(),
         (["agent"], "doctor") => "Diagnose installed agents".into(),
         (["completion"], "show") => "Show installation commands".into(),
         (["completion"], "generate") => "Generate static completion".into(),
         (["completion"], "install") => "Show the dynamic shell snippet".into(),
         (["config"], "show") => "Show effective configuration".into(),
-        (["config"], "set-root") => "Set the DevWorkflow root".into(),
-        (["config"], "set-color") => "Set color mode".into(),
+        (["config"], "root") => "Root configuration".into(),
+        (["config", "root"], "set") => "Set the DevWorkflow root".into(),
+        (["config"], "color") => "Color configuration".into(),
+        (["config", "color"], "set") => "Set color mode".into(),
         (["config"], "doctor") => "Validate config files".into(),
+        (["secret"], "list") => "List configured secret keys safely".into(),
         (["secret"], "set") => "Save a local secret".into(),
         (["secret"], "get") => "Check whether a secret exists".into(),
         (["secret"], "delete") => "Delete a local secret".into(),
@@ -589,11 +621,11 @@ mod tests {
 
     #[test]
     fn finish_ready_requires_create_pr() {
-        let without_create_pr = labels(complete_words(&words(&["task", "finish", "--"])));
+        let without_create_pr = labels(complete_words(&words(&["work", "finish", "--"])));
         assert!(!without_create_pr.contains(&"--ready".into()));
 
         let with_create_pr = labels(complete_words(&words(&[
-            "task",
+            "work",
             "finish",
             "--create-pr",
             "--",
@@ -604,7 +636,7 @@ mod tests {
     #[test]
     fn workspace_hides_project_work_item_and_continue() {
         let values = labels(complete_words(&words(&[
-            "task",
+            "work",
             "open",
             "--workspace",
             "/tmp/ws",
@@ -629,18 +661,27 @@ mod tests {
         let root_commands = complete_words(&words(&[]));
         let task = root_commands
             .iter()
-            .find(|item| item.label == "task")
-            .expect("task command");
-        assert_eq!(task.description, "Workspace/worktrees/PR lifecycle");
+            .find(|item| item.label == "work")
+            .expect("work command");
+        assert_eq!(
+            task.description,
+            "Workspace, repository, PR, and work-item lifecycle"
+        );
 
-        let task_subcommands = complete_words(&words(&["task"]));
-        let start_pr = task_subcommands
+        let task_subcommands = complete_words(&words(&["work"]));
+        let pr = task_subcommands
             .iter()
-            .find(|item| item.label == "start-pr")
-            .expect("start-pr command");
+            .find(|item| item.label == "pr")
+            .expect("pr command");
+        assert_eq!(pr.description, "Pull-request-based workspaces");
+        let pr_subcommands = complete_words(&words(&["work", "pr"]));
+        let start_pr = pr_subcommands
+            .iter()
+            .find(|item| item.label == "start")
+            .expect("pr start command");
         assert_eq!(start_pr.description, "Create/prepare a workspace from a PR");
 
-        let options = complete_words(&words(&["task", "open", "--"]));
+        let options = complete_words(&words(&["work", "open", "--"]));
         let workspace = options
             .iter()
             .find(|item| item.label == "--workspace")
@@ -653,7 +694,7 @@ mod tests {
         for root in [
             "auth",
             "completion",
-            "task",
+            "work",
             "ado",
             "db",
             "agent",
@@ -680,14 +721,14 @@ mod tests {
             &["init"][..],
             &["doctor"][..],
             &["upgrade"][..],
-            &["task", "start"][..],
-            &["task", "finish"][..],
-            &["task", "prune"][..],
-            &["task", "preflight"][..],
+            &["work", "start"][..],
+            &["work", "finish"][..],
+            &["work", "prune"][..],
+            &["work", "preflight"][..],
             &["ado", "assigned"][..],
             &["ado", "changelog"][..],
-            &["ado", "context"][..],
-            &["ado", "ai-context"][..],
+            &["ado", "context", "show"][..],
+            &["ado", "context", "ai"][..],
             &["db", "query"][..],
             &["secret", "set"][..],
         ];
@@ -714,14 +755,14 @@ mod tests {
 
     #[test]
     fn ado_set_state_completion_has_rich_descriptions() {
-        let subcommands = complete_words(&words(&["ado"]));
+        let subcommands = complete_words(&words(&["ado", "state"]));
         let set_state = subcommands
             .iter()
-            .find(|item| item.label == "set-state")
-            .expect("set-state command");
+            .find(|item| item.label == "set")
+            .expect("state set command");
         assert_eq!(set_state.description, "Change ADO state");
 
-        let options = complete_words(&words(&["ado", "set-state", "--"]));
+        let options = complete_words(&words(&["ado", "state", "set", "--"]));
         let state = options
             .iter()
             .find(|item| item.label == "--state")
@@ -747,8 +788,8 @@ mod tests {
 
     #[test]
     fn config_set_commands_do_not_offer_show_options() {
-        let set_root = labels(complete_words(&words(&["config", "set-root", "--"])));
-        let set_color = labels(complete_words(&words(&["config", "set-color", "--"])));
+        let set_root = labels(complete_words(&words(&["config", "root", "set", "--"])));
+        let set_color = labels(complete_words(&words(&["config", "color", "set", "--"])));
 
         assert!(set_root.is_empty());
         assert!(set_color.is_empty());
@@ -756,27 +797,24 @@ mod tests {
 
     #[test]
     fn config_set_color_offers_positional_modes() {
-        let values = complete_words(&words(&["config", "set-color", ""]));
+        let values = complete_words(&words(&["config", "color", "set", ""]));
         let value_labels = labels(values.clone());
 
         assert_eq!(value_labels, vec!["auto", "always", "never"]);
         assert_eq!(values[0].description, "Color based on terminal");
 
-        let filtered = labels(complete_words(&words(&["config", "set-color", "a"])));
+        let filtered = labels(complete_words(&words(&["config", "color", "set", "a"])));
         assert_eq!(filtered, vec!["auto", "always"]);
 
         let after_value = labels(complete_words(&words(&[
-            "config",
-            "set-color",
-            "always",
-            "",
+            "config", "color", "set", "always", "",
         ])));
         assert!(after_value.is_empty());
     }
 
     #[test]
     fn agent_set_default_offers_positional_agents() {
-        let values = complete_words(&words(&["agent", "set-default", ""]));
+        let values = complete_words(&words(&["agent", "default", "set", ""]));
         let value_labels = labels(values.clone());
 
         assert_eq!(
@@ -792,7 +830,9 @@ mod tests {
                 .all(|item| item.description == "Default AI agent")
         );
 
-        let filtered = labels(complete_words(&words(&["agent", "set-default", "codex"])));
+        let filtered = labels(complete_words(&words(&[
+            "agent", "default", "set", "codex",
+        ])));
         assert_eq!(filtered, vec!["codex", "codex-cli"]);
     }
 
@@ -861,13 +901,44 @@ mod tests {
         let auth_values = labels(complete_words(&words(&["auth", "l"])));
         assert_eq!(auth_values, vec!["login", "logout"]);
 
-        let task_values = labels(complete_words(&words(&["task", "st"])));
-        assert_eq!(task_values, vec!["start", "start-pr", "status"]);
+        let task_values = labels(complete_words(&words(&["work", "st"])));
+        assert_eq!(task_values, vec!["start", "status"]);
+    }
+
+    #[test]
+    fn completion_catalog_contains_no_legacy_command_paths() {
+        let root = labels(complete_words(&words(&[])));
+        assert!(root.contains(&"work".into()));
+        assert!(!root.contains(&"task".into()));
+
+        let work = labels(complete_words(&words(&["work"])));
+        for legacy in [
+            "start-pr",
+            "add-work-item",
+            "remove-work-item",
+            "add-repo",
+            "repo-latest",
+            "handoff-validate",
+            "create-child-task",
+        ] {
+            assert!(!work.contains(&legacy.to_string()));
+        }
+
+        let ado = labels(complete_words(&words(&["ado"])));
+        for legacy in ["work-item", "set-state", "ai-context"] {
+            assert!(!ado.contains(&legacy.to_string()));
+        }
+
+        let agent = labels(complete_words(&words(&["agent"])));
+        assert!(!agent.contains(&"set-default".into()));
+        let config = labels(complete_words(&words(&["config"])));
+        assert!(!config.contains(&"set-root".into()));
+        assert!(!config.contains(&"set-color".into()));
     }
 
     #[test]
     fn task_agent_completion_uses_canonical_agent_choices() {
-        let values = labels(complete_words(&words(&["task", "open", "--agent", ""])));
+        let values = labels(complete_words(&words(&["work", "open", "--agent", ""])));
 
         assert_eq!(
             values,
@@ -893,13 +964,13 @@ mod tests {
 
     #[test]
     fn task_start_skip_ado_and_active_children_conflict() {
-        let initial = labels(complete_words(&words(&["task", "start", "--"])));
+        let initial = labels(complete_words(&words(&["work", "start", "--"])));
         assert!(initial.contains(&"--skip-ado".into()));
         assert!(initial.contains(&"--with-active-children".into()));
         assert!(initial.contains(&"--create-child-tasks".into()));
 
         let offline = labels(complete_words(&words(&[
-            "task",
+            "work",
             "start",
             "--skip-ado",
             "--",
@@ -908,7 +979,7 @@ mod tests {
         assert!(!offline.contains(&"--create-child-tasks".into()));
 
         let with_children = labels(complete_words(&words(&[
-            "task",
+            "work",
             "start",
             "--with-active-children",
             "--",
@@ -934,7 +1005,7 @@ mod tests {
         assert!(!init.contains(&"--root".into()));
 
         let task = labels(complete_words(&words(&[
-            "task", "start", "42", "--root", "/tmp/dw", "--",
+            "work", "start", "42", "--root", "/tmp/dw", "--",
         ])));
         assert!(task.contains(&"--project".into()));
         assert!(!task.contains(&"--help".into()));
@@ -942,17 +1013,17 @@ mod tests {
 
     #[test]
     fn option_value_completion_only_uses_current_option_context() {
-        let option_name = labels(complete_words(&words(&["task", "start", "--type"])));
+        let option_name = labels(complete_words(&words(&["work", "start", "--type"])));
         assert_eq!(option_name, vec!["feature", "bugfix", "hotfix", "chore"]);
 
-        let option_value = labels(complete_words(&words(&["task", "start", "--type", "b"])));
+        let option_value = labels(complete_words(&words(&["work", "start", "--type", "b"])));
         assert_eq!(option_value, vec!["bugfix"]);
 
         let positional_after_option_value = labels(complete_words(&words(&[
-            "task", "start", "--root", "/tmp/dw", "42",
+            "work", "start", "--root", "/tmp/dw", "42",
         ])));
         assert!(positional_after_option_value.is_empty());
-        assert!(!positional_after_option_value.contains(&"task".into()));
+        assert!(!positional_after_option_value.contains(&"work".into()));
     }
 
     #[test]
@@ -972,6 +1043,15 @@ mod tests {
 
     #[test]
     fn db_commands_offer_database_env_and_max_rows_where_supported() {
+        assert_eq!(labels(complete_words(&words(&["db", "l"]))), vec!["list"]);
+        assert_eq!(
+            labels(complete_words(&words(&["db", "c"]))),
+            vec!["collect"]
+        );
+
+        let collect = labels(complete_words(&words(&["db", "collect", "--"])));
+        assert!(collect.contains(&"--save".into()));
+
         let schema = labels(complete_words(&words(&["db", "schema", "--"])));
         assert!(schema.contains(&"--database".into()));
         assert!(schema.contains(&"--env".into()));
@@ -986,18 +1066,43 @@ mod tests {
 
     #[test]
     fn validation_commands_offer_workspace_resolution_options() {
-        let preflight = labels(complete_words(&words(&["task", "preflight", "--"])));
+        let preflight = labels(complete_words(&words(&["work", "preflight", "--"])));
         assert!(preflight.contains(&"--workspace".into()));
         assert!(preflight.contains(&"--project".into()));
         assert!(preflight.contains(&"--work-item".into()));
         assert!(preflight.contains(&"--continue".into()));
         assert!(preflight.contains(&"--ai-context-file".into()));
 
-        let handoff = labels(complete_words(&words(&["task", "handoff-validate", "--"])));
+        let handoff = labels(complete_words(&words(&[
+            "work", "handoff", "validate", "--",
+        ])));
         assert!(handoff.contains(&"--workspace".into()));
         assert!(handoff.contains(&"--project".into()));
         assert!(handoff.contains(&"--work-item".into()));
         assert!(handoff.contains(&"--continue".into()));
+    }
+
+    #[test]
+    fn arbitrary_depth_commands_complete_subcommands_and_options() {
+        let child = complete_words(&words(&["work", "task", "child", ""]));
+        assert_eq!(labels(child.clone()), vec!["create"]);
+        assert_eq!(child[0].description, "Create an ADO child task");
+
+        let create = labels(complete_words(&words(&[
+            "work", "task", "child", "create", "--",
+        ])));
+        assert!(create.contains(&"--repo".into()));
+        assert!(create.contains(&"--title".into()));
+        assert!(create.contains(&"--workspace".into()));
+    }
+
+    #[test]
+    fn newly_exposed_flags_are_completed() {
+        let finish = labels(complete_words(&words(&["work", "finish", "--"])));
+        assert!(finish.contains(&"--force-with-lease".into()));
+
+        let delete = labels(complete_words(&words(&["secret", "delete", "--"])));
+        assert_eq!(delete, vec!["--yes"]);
     }
 
     #[test]
@@ -1009,6 +1114,9 @@ mod tests {
 
     #[test]
     fn completion_complete_format_offers_completion_formats() {
+        let visible = labels(complete_words(&words(&["completion"])));
+        assert!(!visible.contains(&"complete".into()));
+
         let values = labels(complete_words(&words(&[
             "completion",
             "complete",
@@ -1021,7 +1129,7 @@ mod tests {
 
     #[test]
     fn rich_shell_rows_include_tab_separated_descriptions() {
-        let items = complete_words(&words(&["task", "open", "--"]));
+        let items = complete_words(&words(&["work", "open", "--"]));
         let workspace = items
             .iter()
             .find(|item| item.label == "--workspace")
@@ -1066,7 +1174,7 @@ mod tests {
         .expect("projects config");
 
         let values = labels(complete_words(&words(&[
-            "task",
+            "work",
             "start",
             "--root",
             root.to_str().expect("root"),
@@ -1086,7 +1194,7 @@ mod tests {
         .expect("projects config");
 
         let task_values = labels(complete_words(&words(&[
-            "task",
+            "work",
             "start",
             "--root",
             root.to_str().expect("root"),
@@ -1155,7 +1263,7 @@ mod tests {
         .expect("manifest");
 
         let workspace_values = labels(complete_words(&words(&[
-            "task",
+            "work",
             "open",
             "--root",
             root.to_str().expect("root"),
@@ -1165,7 +1273,7 @@ mod tests {
             "",
         ])));
         let work_item_values = labels(complete_words(&words(&[
-            "task",
+            "work",
             "open",
             "--root",
             root.to_str().expect("root"),
@@ -1175,7 +1283,7 @@ mod tests {
             "",
         ])));
         let repository_values = labels(complete_words(&words(&[
-            "task",
+            "work",
             "open",
             "--root",
             root.to_str().expect("root"),

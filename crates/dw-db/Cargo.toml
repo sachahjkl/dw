@@ -12,8 +12,10 @@ dw-config = { path = "../dw-config" }
 dw-contracts = { path = "../dw-contracts" }
 dw-core = { path = "../dw-core" }
 dw-secret = { path = "../dw-secret" }
+dw-workspace = { path = "../dw-workspace" }
 serde.workspace = true
 serde_json.workspace = true
+tempfile = "3"
 tiberius.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

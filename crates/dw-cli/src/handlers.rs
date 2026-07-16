@@ -99,7 +99,7 @@ pub(crate) async fn run(cli: Cli) -> Result<()> {
         Command::Upgrade { check, rid } => {
             handle_upgrade_command(check, rid).await?;
         }
-        Command::Task { command } => handle_task(command).await?,
+        Command::Work { command } => handle_work(command).await?,
     }
 
     Ok(())
@@ -707,15 +707,15 @@ async fn handle_auth(command: AuthCommand) -> Result<()> {
     Ok(())
 }
 
-async fn handle_task(command: TaskCommand) -> Result<()> {
+async fn handle_work(command: WorkCommand) -> Result<()> {
     match command {
-        TaskCommand::Status { root } => {
+        WorkCommand::Status { root } => {
             run_cli_action(dw_app::DwActionRequest::TaskStatus {
                 root: root.map(DevWorkflowRoot::from),
             })
             .await?;
         }
-        TaskCommand::List {
+        WorkCommand::List {
             root,
             project,
             work_item,
@@ -742,7 +742,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 run_cli_action(request).await?;
             }
         }
-        TaskCommand::Current { json } => {
+        WorkCommand::Current { json } => {
             if json {
                 let result = execute_cli_action(dw_app::DwActionRequest::TaskCurrent).await?;
                 match result {
@@ -756,17 +756,21 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 run_cli_action(dw_app::DwActionRequest::TaskCurrent).await?;
             }
         }
-        TaskCommand::Doing {
-            id,
-            root,
-            project,
-            yes,
-            json,
+        WorkCommand::Item {
+            command:
+                WorkItemCommand::Doing(WorkItemDoingArgs {
+                    id,
+                    root,
+                    project,
+                    yes,
+                    json,
+                }),
         } => {
             if json && !yes {
-                anyhow::bail!("task doing --json requires --yes to stay deterministic.");
+                anyhow::bail!("work item doing --json requires --yes to stay deterministic.");
             }
-            let project = resolve_ado_project_interactively(root.clone(), project, "task doing")?;
+            let project =
+                resolve_ado_project_interactively(root.clone(), project, "work item doing")?;
             let result = execute_cli_action(dw_app::DwActionRequest::TaskDoingPlan(
                 dw_task::doing::DoingArgs {
                     ids: parse_work_item_ids(&id),
@@ -776,10 +780,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             ))
             .await?;
             let dw_app::DwActionResult::Task(result) = result else {
-                anyhow::bail!("Unexpected task doing plan result: {result:?}");
+                anyhow::bail!("Unexpected work item doing plan result: {result:?}");
             };
             let dw_app::TaskActionResult::DoingPlan(plan) = *result else {
-                anyhow::bail!("Unexpected task doing plan result: {result:?}");
+                anyhow::bail!("Unexpected work item doing plan result: {result:?}");
             };
             if !json {
                 print_lines(&dw_cli_adapter::render::task_doing_plan_lines(&plan));
@@ -791,10 +795,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
             )
             .await?;
             let dw_app::DwActionResult::Task(result) = result else {
-                anyhow::bail!("Unexpected task doing execution result: {result:?}");
+                anyhow::bail!("Unexpected work item doing execution result: {result:?}");
             };
             let dw_app::TaskActionResult::DoingExecution(execution) = *result else {
-                anyhow::bail!("Unexpected task doing execution result: {result:?}");
+                anyhow::bail!("Unexpected work item doing execution result: {result:?}");
             };
             if json {
                 print_json(&execution)?;
@@ -804,7 +808,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 ));
             }
         }
-        TaskCommand::Open {
+        WorkCommand::Open {
             workspace,
             project,
             work_item,
@@ -836,7 +840,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 run_external_launch_plan(&launch)?;
             }
         }
-        TaskCommand::Start {
+        WorkCommand::Start {
             work_item_id,
             root,
             project,
@@ -923,15 +927,18 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 result => anyhow::bail!("Unexpected task start result: {result:?}"),
             }
         }
-        TaskCommand::StartPr {
-            pull_request_id,
-            root,
-            project,
-            repo,
-            type_name,
-            slug,
-            json,
-            execute,
+        WorkCommand::Pr {
+            command:
+                WorkPrCommand::Start(WorkPrStartArgs {
+                    pull_request_id,
+                    root,
+                    project,
+                    repo,
+                    type_name,
+                    slug,
+                    json,
+                    execute,
+                }),
         } => {
             let args = dw_task::start::StartPrArgs {
                 pull_request_id: PullRequestId::from(pull_request_id),
@@ -964,10 +971,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_start_pr_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Unexpected task start-pr result: {result:?}"),
+                result => anyhow::bail!("Unexpected work pr start result: {result:?}"),
             }
         }
-        TaskCommand::Preflight {
+        WorkCommand::Preflight {
             workspace,
             root,
             project,
@@ -1004,14 +1011,17 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 print_lines(&dw_cli_adapter::render::task_preflight_lines(&report));
             }
         }
-        TaskCommand::HandoffValidate {
-            workspace,
-            root,
-            project,
-            work_item,
-            r#continue,
-            json,
-            positional_work_item,
+        WorkCommand::Handoff {
+            command:
+                WorkHandoffCommand::Validate(WorkHandoffValidateArgs {
+                    workspace,
+                    root,
+                    project,
+                    work_item,
+                    r#continue,
+                    json,
+                    positional_work_item,
+                }),
         } => {
             let report =
                 match *execute_task_cli_action(dw_app::DwActionRequest::TaskHandoffValidate(
@@ -1039,7 +1049,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 ));
             }
         }
-        TaskCommand::Prune {
+        WorkCommand::Prune {
             root,
             project,
             work_item,
@@ -1107,12 +1117,15 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 ));
             }
         }
-        TaskCommand::RepoLatest {
-            workspace,
-            r#continue,
-            only,
-            root,
-            json,
+        WorkCommand::Repo {
+            command:
+                WorkRepoCommand::Latest(WorkRepoLatestArgs {
+                    workspace,
+                    r#continue,
+                    only,
+                    root,
+                    json,
+                }),
         } => {
             let mode = if json {
                 ExecutionMode::Preview
@@ -1149,10 +1162,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         ));
                     }
                 }
-                result => anyhow::bail!("Unexpected task repo-latest result: {result:?}"),
+                result => anyhow::bail!("Unexpected work repo latest result: {result:?}"),
             }
         }
-        TaskCommand::Commit {
+        WorkCommand::Commit {
             workspace,
             r#continue,
             root,
@@ -1193,12 +1206,15 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 result => anyhow::bail!("Unexpected task commit result: {result:?}"),
             }
         }
-        TaskCommand::AddRepo {
-            repo,
-            workspace,
-            root,
-            execute,
-            json,
+        WorkCommand::Repo {
+            command:
+                WorkRepoCommand::Add(WorkRepoAddArgs {
+                    repo,
+                    workspace,
+                    root,
+                    execute,
+                    json,
+                }),
         } => {
             let repo = resolve_add_repo_selection(repo, workspace.clone(), root.clone())?;
             match *execute_task_cli_action(dw_app::DwActionRequest::TaskAddRepo(
@@ -1228,10 +1244,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_add_repo_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Unexpected task add-repo result: {result:?}"),
+                result => anyhow::bail!("Unexpected work repo add result: {result:?}"),
             }
         }
-        TaskCommand::Teardown {
+        WorkCommand::Teardown {
             workspace,
             root,
             project,
@@ -1314,7 +1330,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 ));
             }
         }
-        TaskCommand::Sync {
+        WorkCommand::Sync {
             workspace,
             root,
             project,
@@ -1346,7 +1362,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 print_lines(&dw_cli_adapter::render::task_sync_lines(&report));
             }
         }
-        TaskCommand::Rename {
+        WorkCommand::Rename {
             slug,
             workspace,
             root,
@@ -1392,16 +1408,22 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 result => anyhow::bail!("Unexpected task rename result: {result:?}"),
             }
         }
-        TaskCommand::CreateChildTask {
-            repo,
-            title,
-            workspace,
-            root,
-            project,
-            work_item,
-            r#continue,
-            positional_work_item,
-            json,
+        WorkCommand::Task {
+            command:
+                WorkTaskCommand::Child {
+                    command:
+                        WorkTaskChildCommand::Create(WorkTaskChildCreateArgs {
+                            repo,
+                            title,
+                            workspace,
+                            root,
+                            project,
+                            work_item,
+                            r#continue,
+                            positional_work_item,
+                            json,
+                        }),
+                },
         } => {
             let report =
                 match *execute_task_cli_action(dw_app::DwActionRequest::TaskCreateChildTask(
@@ -1421,7 +1443,7 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 .await?
                 {
                     dw_app::TaskActionResult::CreateChildTask(report) => report,
-                    result => anyhow::bail!("Unexpected task create-child-task result: {result:?}"),
+                    result => anyhow::bail!("Unexpected work task child create result: {result:?}"),
                 };
             if json {
                 print_json(&report)?;
@@ -1429,20 +1451,23 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                 print_lines(&dw_cli_adapter::render::task_child_task_lines(&report));
             }
         }
-        TaskCommand::AddWorkItem {
-            work_item_ids,
-            workspace,
-            root,
-            project,
-            work_item,
-            r#continue,
-            positional_work_item,
-            skip_ado,
-            type_name,
-            title,
-            state,
-            execute,
-            json,
+        WorkCommand::Item {
+            command:
+                WorkItemCommand::Add(WorkItemAddArgs {
+                    work_item_ids,
+                    workspace,
+                    root,
+                    project,
+                    work_item,
+                    r#continue,
+                    positional_work_item,
+                    skip_ado,
+                    type_name,
+                    title,
+                    state,
+                    execute,
+                    json,
+                }),
         } => {
             let choices_args = dw_task::work_item::WorkItemChoicesArgs {
                 workspace: workspace.clone().map(WorkspacePath::from),
@@ -1499,19 +1524,22 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Unexpected task add-work-item result: {result:?}"),
+                result => anyhow::bail!("Unexpected work item add result: {result:?}"),
             }
         }
-        TaskCommand::RemoveWorkItem {
-            work_item_ids,
-            workspace,
-            root,
-            project,
-            work_item,
-            r#continue,
-            positional_work_item,
-            execute,
-            json,
+        WorkCommand::Item {
+            command:
+                WorkItemCommand::Remove(WorkItemRemoveArgs {
+                    work_item_ids,
+                    workspace,
+                    root,
+                    project,
+                    work_item,
+                    r#continue,
+                    positional_work_item,
+                    execute,
+                    json,
+                }),
         } => {
             let choices_args = dw_task::work_item::WorkItemChoicesArgs {
                 workspace: workspace.clone().map(WorkspacePath::from),
@@ -1563,10 +1591,10 @@ async fn handle_task(command: TaskCommand) -> Result<()> {
                         print_lines(&dw_cli_adapter::render::task_work_item_plan_lines(&report));
                     }
                 }
-                result => anyhow::bail!("Unexpected task remove-work-item result: {result:?}"),
+                result => anyhow::bail!("Unexpected work item remove result: {result:?}"),
             }
         }
-        TaskCommand::Finish {
+        WorkCommand::Finish {
             workspace,
             r#continue,
             root,
@@ -1833,24 +1861,29 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 true,
             )
         }
-        AdoCommand::SetState {
-            id,
-            root,
-            project,
-            state,
-            history,
-            yes,
-            json,
+        AdoCommand::State {
+            command:
+                AdoStateCommand::Set {
+                    id,
+                    root,
+                    project,
+                    state,
+                    history,
+                    yes,
+                    json,
+                },
         } => {
             if json && !yes {
-                anyhow::bail!("ado set-state --json requires --yes to stay deterministic.");
+                anyhow::bail!("ado state set --json requires --yes to stay deterministic.");
             }
             let args = dw_ado_commands::commands::set_state::SetStateArgs {
                 ids: parse_work_item_ids(&id),
                 root: root.map(DevWorkflowRoot::from),
                 project: project.map(ProjectKey::from),
                 state: dw_core::WorkItemState::parse(state)?,
-                history: history.map(dw_core::WorkItemHistoryComment::from),
+                history: Some(dw_core::WorkItemHistoryComment::from(
+                    history.unwrap_or_else(|| "dw ado state set".into()),
+                )),
                 yes,
             };
             let plan = execute_ado_set_state_plan(args).await?;
@@ -1861,11 +1894,14 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
                 !json,
             )
         }
-        AdoCommand::WorkItem {
-            id,
-            root,
-            project,
-            json,
+        AdoCommand::Item {
+            command:
+                AdoItemCommand::Show {
+                    id,
+                    root,
+                    project,
+                    json,
+                },
         } => (
             dw_app::DwActionRequest::AdoWorkItem(
                 dw_ado_commands::commands::work_item::WorkItemArgs {
@@ -1878,12 +1914,15 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             !json,
         ),
         AdoCommand::Context {
-            id,
-            root,
-            project,
-            summary,
-            comments,
-            json,
+            command:
+                AdoContextCommand::Show {
+                    id,
+                    root,
+                    project,
+                    summary,
+                    comments,
+                    json,
+                },
         } => (
             dw_app::DwActionRequest::AdoContext(dw_ado_commands::commands::context::ContextArgs {
                 ids: parse_work_item_ids(&id),
@@ -1900,14 +1939,17 @@ async fn handle_ado(command: AdoCommand) -> Result<()> {
             json.then_some(dw_cli_adapter::render::AdoActionJsonProjection::ContextExpanded),
             !json,
         ),
-        AdoCommand::AiContext {
-            root,
-            organization,
-            project,
-            id,
-            summary,
-            comments,
-            include_comments,
+        AdoCommand::Context {
+            command:
+                AdoContextCommand::Ai {
+                    root,
+                    organization,
+                    project,
+                    id,
+                    summary,
+                    comments,
+                    include_comments,
+                },
         } => (
             dw_app::DwActionRequest::AdoAiContext(
                 dw_ado_commands::commands::context::AiContextArgs {
@@ -1945,7 +1987,7 @@ async fn execute_ado_set_state_plan(
         execute_ado_cli_action(dw_app::DwActionRequest::AdoSetStatePlan(args), false).await?;
     match result {
         dw_app::DwActionResult::Ado(dw_app::AdoActionResult::SetStatePlan(plan)) => Ok(plan),
-        result => anyhow::bail!("Unexpected ADO set-state plan: {result:?}"),
+        result => anyhow::bail!("Unexpected ADO state set plan: {result:?}"),
     }
 }
 
@@ -1998,7 +2040,7 @@ fn confirm_ado_set_state(
         return Ok(());
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("ADO state change refused: add --yes with ado set-state.");
+        anyhow::bail!("ADO state change refused: add --yes with ado state set.");
     }
     let prompt = format!(
         "Move {} work item(s) from project {} to state `{}`?\n{}",
@@ -2024,7 +2066,7 @@ fn confirm_task_doing(yes: bool, plan: &dw_task::doing::DoingPlanReport) -> Resu
         return Ok(());
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Task state change refused: add --yes with task doing.");
+        anyhow::bail!("Task state change refused: add --yes with work item doing.");
     }
     let changed = plan
         .updates
@@ -2254,7 +2296,7 @@ fn resolve_add_repo_selection(
         return Ok(WorkspaceRepositoryName::from(repo));
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Missing repository. Provide `dw task add-repo <repo>`.");
+        anyhow::bail!("Missing repository. Provide `dw work repo add <repo>`.");
     }
 
     let report = dw_task::repo::add_repo_choices(dw_task::repo::AddRepoChoicesArgs {
@@ -2291,7 +2333,7 @@ async fn resolve_add_work_item_ids_interactively(
         return Ok(Some(parse_work_item_ids(&ids)));
     }
     if skip_ado || !std::io::stdin().is_terminal() {
-        anyhow::bail!("Missing work items to add. Provide `dw task add-work-item <ids>`.");
+        anyhow::bail!("Missing work items to add. Provide `dw work item add <ids>`.");
     }
 
     print_lines(&[add_work_item_choices_loading_line()]);
@@ -2314,7 +2356,7 @@ fn resolve_remove_work_item_ids_interactively(
         return Ok(Some(parse_work_item_ids(&ids)));
     }
     if !std::io::stdin().is_terminal() {
-        anyhow::bail!("Missing work items to remove. Provide `dw task remove-work-item <ids>`.");
+        anyhow::bail!("Missing work items to remove. Provide `dw work item remove <ids>`.");
     }
 
     let report = dw_task::work_item::removable_work_item_choices_report(choices_args)?;
@@ -2476,6 +2518,19 @@ fn prompt_choice_value_from_label(spec: &PromptSpec, selected: &str) -> Result<P
 
 async fn handle_db(command: DbCommand) -> Result<()> {
     let (request, json) = match command {
+        DbCommand::List { root, json } => (
+            dw_app::DwActionRequest::DbList(dw_db::ListArgs {
+                root: root.map(DevWorkflowRoot::from),
+            }),
+            json,
+        ),
+        DbCommand::Collect { root, save, json } => (
+            dw_app::DwActionRequest::DbCollect(dw_db::CollectArgs {
+                root: root.map(DevWorkflowRoot::from),
+                mode: ExecutionMode::from_execute(save),
+            }),
+            json,
+        ),
         DbCommand::Guard { sql } => (
             dw_app::DwActionRequest::DbGuard(dw_db::commands::GuardArgs {
                 sql: dw_core::SqlQuery::from(sql),
@@ -2635,6 +2690,22 @@ fn write_db_event_line(event: &dw_core::DbActionEvent, theme: &TerminalTheme) ->
 
 async fn handle_secret(command: SecretCommand) -> Result<()> {
     match command {
+        SecretCommand::List { root, json } => {
+            let request = dw_app::DwActionRequest::SecretList {
+                root: root.map(DevWorkflowRoot::from),
+            };
+            if json {
+                let result = execute_cli_action(request).await?;
+                let dw_app::DwActionResult::Secret(dw_app::SecretActionResult::List(report)) =
+                    result
+                else {
+                    anyhow::bail!("Unexpected secret list result: {result:?}");
+                };
+                print_json(&report)?;
+            } else {
+                run_cli_action(request).await?;
+            }
+        }
         SecretCommand::Set {
             key,
             value,
@@ -2723,7 +2794,9 @@ async fn handle_agent(command: AgentCommand) -> Result<()> {
             })
             .await?;
         }
-        AgentCommand::SetDefault { root, agent } => {
+        AgentCommand::Default {
+            command: AgentDefaultCommand::Set { root, agent },
+        } => {
             run_cli_action(dw_app::DwActionRequest::AgentSetDefault {
                 root: root.map(DevWorkflowRoot::from),
                 agent: agent.parse::<Agent>()?,
@@ -2790,13 +2863,17 @@ async fn handle_config(command: ConfigCommand) -> Result<()> {
                 }
             }
         }
-        ConfigCommand::SetRoot { path } => {
+        ConfigCommand::Root {
+            command: ConfigRootCommand::Set { path },
+        } => {
             run_cli_action(dw_app::DwActionRequest::ConfigSetRoot {
                 path: ConfigRootPath::from(path),
             })
             .await?;
         }
-        ConfigCommand::SetColor { mode } => {
+        ConfigCommand::Color {
+            command: ConfigColorCommand::Set { mode },
+        } => {
             run_cli_action(dw_app::DwActionRequest::ConfigSetColor {
                 mode: mode.parse::<ConfigColorMode>()?,
             })

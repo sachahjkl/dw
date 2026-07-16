@@ -72,11 +72,26 @@ pub(super) fn options_for_path(path: &[&str]) -> Vec<&'static str> {
         ["completion", "complete"] => vec!["--format"],
         ["completion", _] => Vec::new(),
         ["auth", _] => vec!["--root"],
-        ["task", subcommand] => task_options(subcommand),
+        ["work", subcommand] => work_options(subcommand),
+        ["work", "pr", "start"] => work_options("start-pr"),
+        ["work", "item", "doing"] => work_options("doing"),
+        ["work", "item", "add"] => work_options("add-work-item"),
+        ["work", "item", "remove"] => work_options("remove-work-item"),
+        ["work", "repo", "add"] => work_options("add-repo"),
+        ["work", "repo", "latest"] => work_options("repo-latest"),
+        ["work", "handoff", "validate"] => work_options("handoff-validate"),
+        ["work", "task", "child", "create"] => work_options("create-child-task"),
+        ["ado", "item" | "state" | "context"] => Vec::new(),
         ["ado", subcommand] => ado_options(subcommand),
+        ["ado", "item", "show"] => ado_options("work-item"),
+        ["ado", "state", "set"] => ado_options("set-state"),
+        ["ado", "context", "show"] => ado_options("context"),
+        ["ado", "context", "ai"] => ado_options("ai-context"),
         ["db", subcommand] => db_options(subcommand),
         ["agent", subcommand] => agent_options(subcommand),
+        ["agent", "default", "set"] => vec!["--root"],
         ["config", subcommand] => config_options(subcommand),
+        ["config", "root", "set"] | ["config", "color", "set"] => Vec::new(),
         ["secret", subcommand] => secret_options(subcommand),
         _ => vec!["--help"],
     }
@@ -87,41 +102,41 @@ pub(super) fn subcommands_for_path(path: &[&str]) -> Option<&'static [&'static s
         [] | [""] => Some(root_command_labels()),
         ["auth"] => Some(&["login", "status", "logout"]),
         ["completion"] => Some(&["show", "generate", "install"]),
-        ["task"] => Some(&[
-            "doing",
-            "start",
-            "start-pr",
-            "status",
-            "list",
+        ["work"] => Some(&[
+            "commit",
             "current",
-            "sync",
+            "finish",
+            "handoff",
+            "item",
+            "list",
+            "open",
+            "pr",
             "preflight",
-            "handoff-validate",
             "prune",
             "rename",
-            "open",
+            "repo",
+            "start",
+            "status",
+            "sync",
+            "task",
             "teardown",
-            "add-repo",
-            "create-child-task",
-            "repo-latest",
-            "add-work-item",
-            "remove-work-item",
-            "commit",
-            "finish",
         ]),
-        ["ado"] => Some(&[
-            "assigned",
-            "prs",
-            "changelog",
-            "work-item",
-            "set-state",
-            "context",
-            "ai-context",
-        ]),
-        ["db"] => Some(&["schema", "describe", "query", "guard"]),
-        ["agent"] => Some(&["context", "open", "config", "show", "set-default", "doctor"]),
-        ["config"] => Some(&["show", "set-root", "set-color", "doctor"]),
-        ["secret"] => Some(&["set", "get", "delete"]),
+        ["work", "pr"] => Some(&["start"]),
+        ["work", "item"] => Some(&["add", "doing", "remove"]),
+        ["work", "repo"] => Some(&["add", "latest"]),
+        ["work", "handoff"] => Some(&["validate"]),
+        ["work", "task"] => Some(&["child"]),
+        ["work", "task", "child"] => Some(&["create"]),
+        ["ado"] => Some(&["assigned", "changelog", "context", "item", "prs", "state"]),
+        ["ado", "item"] => Some(&["show"]),
+        ["ado", "state"] => Some(&["set"]),
+        ["ado", "context"] => Some(&["ai", "show"]),
+        ["db"] => Some(&["collect", "describe", "guard", "list", "query", "schema"]),
+        ["agent"] => Some(&["config", "context", "default", "doctor", "open", "show"]),
+        ["agent", "default"] => Some(&["set"]),
+        ["config"] => Some(&["color", "doctor", "root", "show"]),
+        ["config", "root"] | ["config", "color"] => Some(&["set"]),
+        ["secret"] => Some(&["delete", "get", "list", "set"]),
         _ => None,
     }
 }
@@ -136,37 +151,41 @@ pub(super) fn values_for_path(
             vec!["bash".into(), "fish".into(), "json".into(), "zsh".into()]
         }
         (["init"] | ["refresh"], "--profile") => vec!["default".into()],
-        (["task", _] | ["agent", _], "--project") | (["ado", _], "--project") => {
+        (path, "--project")
+            if is_work_path(path) || path.first() == Some(&"agent") || is_ado_path(path) =>
+        {
             dw_config::completion::project_values(context.root)
         }
-        (["task", _] | ["agent", _], "--repo" | "--only") => {
+        (path, "--repo" | "--only") if is_work_path(path) || path.first() == Some(&"agent") => {
             dw_workspace::completion::repository_values(
                 context.root,
                 context.project,
                 context.workspace,
             )
         }
-        (["task", _] | ["agent", _], "--workspace") => dw_workspace::completion::workspace_values(
-            context.root,
-            context.project,
-            context.work_item,
-        ),
-        (["task", _] | ["agent", _], "--work-item") => {
+        (path, "--workspace") if is_work_path(path) || path.first() == Some(&"agent") => {
+            dw_workspace::completion::workspace_values(
+                context.root,
+                context.project,
+                context.work_item,
+            )
+        }
+        (path, "--work-item") if is_work_path(path) || path.first() == Some(&"agent") => {
             dw_workspace::completion::work_item_values(context.root, context.project)
         }
-        (["task", _], "--type") => ["feature", "bugfix", "hotfix", "chore"]
+        (path, "--type") if is_work_path(path) => ["feature", "bugfix", "hotfix", "chore"]
             .into_iter()
             .map(str::to_string)
             .collect(),
-        (["task", _] | ["agent", _], "--agent") => agent_values(),
-        (["ado", _], "--repo") => {
+        (path, "--agent") if is_work_path(path) || path.first() == Some(&"agent") => agent_values(),
+        (path, "--repo") if is_ado_path(path) => {
             dw_workspace::completion::repository_values(context.root, context.project, None)
         }
         (["ado", "changelog"], "--format") => ["raw", "markdown", "html"]
             .into_iter()
             .map(str::to_string)
             .collect(),
-        (["ado", "set-state"], "--state") => ado_state_values(context.root),
+        (["ado", "state", "set"], "--state") => ado_state_values(context.root),
         (["db", _], "--project") => dw_config::completion::project_values(context.root),
         (["db", _], "--database") => {
             dw_config::completion::database_values(context.root, context.project)
@@ -199,11 +218,11 @@ pub(super) fn root_command_labels() -> &'static [&'static str] {
         "db",
         "secret",
         "upgrade",
-        "task",
+        "work",
     ]
 }
 
-fn task_options(subcommand: &str) -> Vec<&'static str> {
+fn work_options(subcommand: &str) -> Vec<&'static str> {
     match subcommand {
         "doing" => vec!["--root", "--project", "--yes", "--json"],
         "start" => vec![
@@ -263,6 +282,7 @@ fn task_options(subcommand: &str) -> Vec<&'static str> {
             "--ready",
             "--skip-verify",
             "--skip-ado",
+            "--force-with-lease",
             "--json",
         ],
         "status" => vec!["--root"],
@@ -330,6 +350,8 @@ fn ado_options(subcommand: &str) -> Vec<&'static str> {
 
 fn db_options(subcommand: &str) -> Vec<&'static str> {
     match subcommand {
+        "list" => vec!["--root", "--json"],
+        "collect" => vec!["--root", "--save", "--json"],
         "guard" => vec!["--sql"],
         "query" => vec![
             "--sql",
@@ -347,7 +369,7 @@ fn db_options(subcommand: &str) -> Vec<&'static str> {
 fn agent_options(subcommand: &str) -> Vec<&'static str> {
     match subcommand {
         "open" => workspace_resolution_options(&["--repo", "--agent"]),
-        "config" | "show" | "set-default" => vec!["--root"],
+        "config" | "show" => vec!["--root"],
         "doctor" => vec!["--agent"],
         _ => Vec::new(),
     }
@@ -356,15 +378,24 @@ fn agent_options(subcommand: &str) -> Vec<&'static str> {
 fn config_options(subcommand: &str) -> Vec<&'static str> {
     match subcommand {
         "show" | "doctor" => vec!["--root", "--json"],
-        "set-root" | "set-color" => Vec::new(),
         _ => Vec::new(),
     }
+}
+
+fn is_work_path(path: &[&str]) -> bool {
+    path.first() == Some(&"work")
+}
+
+fn is_ado_path(path: &[&str]) -> bool {
+    path.first() == Some(&"ado")
 }
 
 fn secret_options(subcommand: &str) -> Vec<&'static str> {
     match subcommand {
         "set" => vec!["--value", "--from-env"],
-        "get" | "delete" => Vec::new(),
+        "list" => vec!["--root", "--json"],
+        "delete" => vec!["--yes"],
+        "get" => Vec::new(),
         _ => Vec::new(),
     }
 }

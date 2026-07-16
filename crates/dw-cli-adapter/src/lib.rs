@@ -29,6 +29,7 @@ pub fn print_db_action_output(output: &render::DbActionRenderedOutput) {
 pub fn print_ado_action_output(output: &render::AdoActionRenderedOutput) {
     match output {
         render::AdoActionRenderedOutput::Lines(lines) => print_lines(lines),
+        render::AdoActionRenderedOutput::Document(document) => println!("{document}"),
         render::AdoActionRenderedOutput::Json(json) => println!("{json}"),
     }
 }

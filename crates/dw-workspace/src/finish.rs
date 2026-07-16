@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum TaskFinishError {
-    #[error("task finish blocked: verification failed.")]
+    #[error("work finish blocked: verification failed.")]
     VerificationFailed,
     #[error("Missing handoff for {repository}: {path}")]
     MissingHandoff {

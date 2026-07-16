@@ -122,7 +122,7 @@ pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<Ex
     if let Some(pull_request) = args.pull_request.take() {
         let root = resolve_root(args.root.as_ref().map(DevWorkflowRoot::as_str));
         let project = args.project.clone().ok_or_else(|| {
-            anyhow::anyhow!("task open --pr requires --project to resolve Azure DevOps settings.")
+            anyhow::anyhow!("work open --pr requires --project to resolve Azure DevOps settings.")
         })?;
         let projects = load_projects_config(&root);
         let workflow = load_workflow_config(&root);
@@ -131,7 +131,7 @@ pub async fn resolve_open_launch_async(mut args: OpenWorkspaceArgs) -> Result<Ex
         let repositories = resolve_ado_repositories(project_config.as_ref(), &repositories);
         if repositories.is_empty() {
             return Err(anyhow::anyhow!(
-                "task open --pr requires --repo, or a project with configured Azure DevOps repositories."
+                "work open --pr requires --repo, or a project with configured Azure DevOps repositories."
             ));
         }
         let options = resolve_ado_options(&projects, &workflow, project.as_str())?;

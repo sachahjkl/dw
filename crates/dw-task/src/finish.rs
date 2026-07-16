@@ -227,7 +227,7 @@ pub async fn execute_finish_with_events(
     }
     if !plan.handoff.is_valid {
         anyhow::bail!(
-            "task finish blocked: invalid handoff. Fix or complete handoffs before pushing."
+            "work finish blocked: invalid handoff. Fix or complete handoffs before pushing."
         );
     }
 
@@ -535,7 +535,7 @@ pub async fn execute_finish_with_events(
                     &options_for_update,
                     id_for_update.as_str(),
                     state_for_update.as_str(),
-                    "task finish: PR ouverte",
+                    "work finish: PR ouverte",
                     &token_for_update,
                 )
             })

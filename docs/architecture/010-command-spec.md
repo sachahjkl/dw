@@ -57,14 +57,14 @@ Implemented.
 
 Prints stable AI-agent context.
 
-## `dw task start`
+## `dw work start`
 
 Implemented.
 
 Current behavior:
 
 ```text
-dw task start <workItemId> --project <project> --task <taskId> --slug <slug> --type <feat|fix|bug|chore> --only front,back [--create-child-tasks] [--skip-ado]
+dw work start <workItemId> --project <project> --task <taskId> --slug <slug> --type <feature|bugfix|hotfix|chore> --only front [--create-child-tasks] [--skip-ado]
 ```
 
 Creates:
@@ -77,13 +77,13 @@ Creates:
 - optional ADO child tasks named `[FRONT][AI] ...` / `[BACK][AI] ...`
 - optional ADO start-state transition when auth is available
 
-## `dw task status`
+## `dw work status`
 
 Implemented as first pass.
 
 Lists detected `task.json` files under the configured root.
 
-## `dw task finish`
+## `dw work finish`
 
 Implemented.
 
@@ -99,7 +99,7 @@ Current behavior:
 - move Bug/Task work items to `PR en attente`
 - never move User Story/Anomalie to `PR en attente`
 
-Status: functionally implemented. Remaining work is real-environment validation against BUSINESS Azure DevOps boards/repositories and tuning configured verification commands per repo.
+Status: functionally implemented. Remaining work is real-environment validation against live Azure DevOps boards/repositories and tuning configured verification commands per repo.
 
 ## `dw auth`
 
@@ -123,6 +123,9 @@ Target behavior:
 - guarded query execution
 - max rows and timeout enforcement
 - connection strings from config, environment variables, or Windows Credential Manager `credentialKey`
+- safe database inventory with `db list`
+- masked `appsettings*.json` discovery with `db collect`
+- explicit keyring/config persistence with `db collect --save`
 
 ## `dw upgrade`
 

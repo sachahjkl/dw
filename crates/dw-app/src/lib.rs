@@ -41,6 +41,8 @@ pub enum DwActionRequest {
         agent: Option<Agent>,
     },
     AgentContext,
+    DbList(dw_db::ListArgs),
+    DbCollect(dw_db::CollectArgs),
     DbGuard(dw_db::commands::GuardArgs),
     DbSchema(dw_db::commands::SchemaArgs),
     DbDescribe(dw_db::commands::DescribeArgs),
@@ -91,6 +93,9 @@ pub enum DwActionRequest {
     TaskCreateChildTask(dw_task::lifecycle::CreateChildTaskArgs),
     TaskAddWorkItem(dw_task::work_item::AddWorkItemArgs),
     TaskRemoveWorkItem(dw_task::work_item::RemoveWorkItemArgs),
+    SecretList {
+        root: Option<DevWorkflowRoot>,
+    },
     SecretGet {
         key: SecretKey,
     },
@@ -128,6 +133,8 @@ impl DwActionRequest {
             Self::AgentSetDefault { .. } => "agent.default.set",
             Self::AgentDoctor { .. } => "agent.doctor",
             Self::AgentContext => "agent.context",
+            Self::DbList(_) => "db.list",
+            Self::DbCollect(_) => "db.collect",
             Self::DbGuard(_) => "db.guard",
             Self::DbSchema(_) => "db.schema",
             Self::DbDescribe(_) => "db.describe",
@@ -165,6 +172,7 @@ impl DwActionRequest {
             Self::TaskCreateChildTask(_) => "task.child.create",
             Self::TaskAddWorkItem(_) => "task.workitem.add",
             Self::TaskRemoveWorkItem(_) => "task.workitem.remove",
+            Self::SecretList { .. } => "secret.list",
             Self::SecretGet { .. } => "secret.get",
             Self::SecretSetFromEnv { .. } => "secret.set.from.env",
             Self::SecretSet { .. } => "secret.set",
@@ -218,6 +226,8 @@ pub enum AgentActionResult {
 
 #[derive(Debug, Clone)]
 pub enum DbActionResult {
+    List(dw_db::DatabaseListReport),
+    Collect(dw_db::DatabaseCollectReport),
     Guard(dw_db::SqlGuardResult),
     Schema(dw_db::QueryResult),
     Describe(Option<dw_db::QueryResult>),
@@ -289,6 +299,7 @@ pub enum TaskActionResult {
 
 #[derive(Debug, Clone)]
 pub enum SecretActionResult {
+    List(dw_secret::command::SecretListReport),
     Get(dw_secret::command::SecretGetReport),
     Set(dw_secret::command::SecretSetReport),
     Delete(dw_secret::command::SecretDeleteReport),
@@ -438,6 +449,13 @@ async fn run_action_inner(
                 dw_agent::agent_context(&root),
             )))
         }
+        DwActionRequest::DbList(args) => Ok(DwActionResult::Db(DbActionResult::List(
+            dw_db::commands::list_with_events(args, |event| emit(DwActionEvent::Db(event))).await?,
+        ))),
+        DwActionRequest::DbCollect(args) => Ok(DwActionResult::Db(DbActionResult::Collect(
+            dw_db::commands::collect_with_events(args, |event| emit(DwActionEvent::Db(event)))
+                .await?,
+        ))),
         DwActionRequest::DbGuard(args) => Ok(DwActionResult::Db(DbActionResult::Guard(
             dw_db::commands::guard_with_events(args, |event| emit(DwActionEvent::Db(event))),
         ))),
@@ -772,6 +790,9 @@ async fn run_action_inner(
                 Ok(task_result(TaskActionResult::WorkItemPlan(plan)))
             }
         }
+        DwActionRequest::SecretList { root } => Ok(DwActionResult::Secret(
+            SecretActionResult::List(dw_secret::command::list_secrets(root)?),
+        )),
         DwActionRequest::SecretGet { key } => Ok(DwActionResult::Secret(SecretActionResult::Get(
             dw_secret::command::get_secret(&key)?,
         ))),

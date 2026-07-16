@@ -1,8 +1,9 @@
 use crate::{
-    DatabaseSelection, QueryResult, describe_table_sql, query_sql_server, resolve_connection,
-    schema_sql, validate_read_only_sql,
+    CollectArgs, DatabaseCollectReport, DatabaseListReport, DatabaseSelection, ListArgs,
+    QueryResult, collect_databases, describe_table_sql, list_databases, query_sql_server,
+    resolve_connection, schema_sql, validate_read_only_sql,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use dw_config::{load_databases_config, resolve_root};
 use dw_core::{
     DatabaseEnvironmentName, DatabaseKey, DatabaseTableName, DbActionEvent, ProjectKey, SqlQuery,
@@ -35,6 +36,24 @@ pub struct QueryArgs {
     pub database: Option<DatabaseKey>,
     pub env: Option<DatabaseEnvironmentName>,
     pub max_rows: Option<usize>,
+}
+
+pub async fn list_with_events(
+    args: ListArgs,
+    _emit: impl FnMut(DbActionEvent),
+) -> Result<DatabaseListReport> {
+    tokio::task::spawn_blocking(move || list_databases(args))
+        .await
+        .context("listing configured databases was interrupted")?
+}
+
+pub async fn collect_with_events(
+    args: CollectArgs,
+    _emit: impl FnMut(DbActionEvent),
+) -> Result<DatabaseCollectReport> {
+    tokio::task::spawn_blocking(move || collect_databases(args))
+        .await
+        .context("collecting workspace database connections was interrupted")?
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -117,11 +117,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-win-x64.ps1 -Version 
 - `dw init`: create/update a DevWorkflow root with config, schemas and templates.
 - `dw doctor`: inspect environment/configuration health.
 - `dw auth login/status/logout`: Azure DevOps auth through OAuth/keyring or PAT fallback.
-- `dw ado assigned/work-item/context/ai-context/changelog`: Azure DevOps read workflows.
-- `dw db guard/schema/describe/query`: SQL Server readonly helpers.
-- `dw task doing/start/open/list/current/status/sync/rename/preflight/handoff-validate/add-work-item/remove-work-item/add-repo/repo-latest/commit/finish/teardown/prune`: task workspace lifecycle.
-- `dw agent open/config`: agent launch and workspace config generation.
-- `dw secret get/set/delete`: local secret storage.
+- `dw ado assigned/prs/changelog`, `dw ado item show`, `dw ado state set`, `dw ado context show/ai`: Azure DevOps workflows.
+- `dw db list/collect/guard/schema/describe/query`: SQL Server discovery and readonly helpers.
+- `dw work start/open/list/current/status/sync/rename/preflight/commit/finish/teardown/prune`: workspace lifecycle.
+- `dw work item doing/add/remove`, `dw work repo add/latest`, `dw work pr start`, `dw work handoff validate`, `dw work task child create`: grouped workspace operations.
+- `dw agent open/config/default set`: agent launch, workspace config generation, and default selection.
+- `dw config show/doctor/root set/color set`: local configuration inspection and updates.
+- `dw secret list/get/set/delete`: local secret inventory and storage.
 - `dw upgrade --check`: release manifest check for binary installs.
 
 ## Release Artifacts
@@ -189,25 +191,25 @@ docs/               architecture and agent reference material
 
 The intended end-to-end flow is:
 
-1. `dw task start ...` creates the workspace, agent files and handoffs.
-2. The AI reads `dw ado work-item` and `dw ado ai-context`.
-3. The AI runs `dw task preflight --continue` before implementation or child-task creation.
+1. `dw work start ...` creates the workspace, agent files and handoffs.
+2. The AI reads `dw ado item show` and `dw ado context ai`.
+3. The AI runs `dw work preflight --continue` before implementation or child-task creation.
 4. The plan is written in `plan.md` and split by domain when useful.
 5. Domain handoffs such as `handoff-front.md`, `handoff-back.md`, `handoff-db.md` guide sub-agents.
-6. The AI implements, verifies, commits with `dw task commit`, then finishes with `dw task finish`.
+6. The AI implements, verifies, commits with `dw work commit`, then finishes with `dw work finish`.
 
 ```mermaid
 flowchart TD
-    A[ADO Work Item] --> B[dw task start]
+    A[ADO Work Item] --> B[dw work start]
     B --> C[Workspace Created]
     C --> C1[task.json]
     C --> C2[plan.md]
     C --> C3[AGENTS.md]
     C --> C4[handoff-front/back/db.md]
 
-    C --> D[AI reads dw ado work-item]
-    D --> E[AI reads dw ado ai-context]
-    E --> F[AI runs dw task preflight]
+    C --> D[AI reads dw ado item show]
+    D --> E[AI reads dw ado context ai]
+    E --> F[AI runs dw work preflight]
 
     F -->|blocking or warning| G[AI surfaces checks to user]
     G --> H{Proceed?}
@@ -223,7 +225,7 @@ flowchart TD
     M --> N
     N --> O[Update handoff summary blocks]
     O --> P[Run verification]
-    P --> Q[dw task commit]
-    Q --> R[dw task finish]
+    P --> Q[dw work commit]
+    Q --> R[dw work finish]
     R --> S[Push + PR + ADO updates]
 ```

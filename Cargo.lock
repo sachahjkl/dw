@@ -1128,8 +1128,10 @@ dependencies = [
  "dw-contracts",
  "dw-core",
  "dw-secret",
+ "dw-workspace",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tiberius",
  "tokio",
@@ -1170,10 +1172,12 @@ name = "dw-secret"
 version = "0.1.1"
 dependencies = [
  "anyhow",
+ "dw-config",
  "dw-contracts",
  "dw-core",
  "keyring",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.18",
 ]
