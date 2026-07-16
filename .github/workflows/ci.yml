@@ -93,6 +93,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build and package release-compatible linux-x64 artifact
+        shell: bash
+        run: |
+          version="0.0.0-ci"
+          release_base_url=""
+          if [[ "${{ needs.preflight.outputs.release_enabled }}" == "true" ]]; then
+            version="${{ needs.preflight.outputs.version }}"
+            release_base_url="https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}"
+          fi
+
+          CARGO_TARGET_DIR="${RUNNER_TEMP}/dw-portable-target" \
+          VERSION="${version}" \
+          COMMIT="${{ github.sha }}" \
+          RELEASE_BASE_URL="${release_base_url}" \
+          bash ./scripts/publish-linux-x64.sh
+
+      - name: Validate linux-x64 binary portability
+        shell: bash
+        run: |
+          ldd artifacts/linux-x64/dw
+          if grep -aFq '/nix/store' artifacts/linux-x64/dw; then
+            echo "linux-x64 binary contains /nix/store references" >&2
+            exit 1
+          fi
+          artifacts/linux-x64/dw version
+
       - name: Install Nix
         uses: nixbuild/nix-quick-install-action@v34
         with:
@@ -118,37 +150,6 @@ jobs:
 
       - name: Checks
         run: nix run --accept-flake-config .#check
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build outputs
-        uses: Swatinem/rust-cache@v2
-
-      - name: Build and package release-compatible linux-x64 artifact
-        shell: bash
-        run: |
-          version="0.0.0-ci"
-          release_base_url=""
-          if [[ "${{ needs.preflight.outputs.release_enabled }}" == "true" ]]; then
-            version="${{ needs.preflight.outputs.version }}"
-            release_base_url="https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}"
-          fi
-
-          VERSION="${version}" \
-          COMMIT="${{ github.sha }}" \
-          RELEASE_BASE_URL="${release_base_url}" \
-          bash ./scripts/publish-linux-x64.sh
-
-      - name: Validate linux-x64 binary portability
-        shell: bash
-        run: |
-          ldd artifacts/linux-x64/dw
-          if grep -aFq '/nix/store' artifacts/linux-x64/dw; then
-            echo "linux-x64 binary contains /nix/store references" >&2
-            exit 1
-          fi
-          artifacts/linux-x64/dw version
 
       - name: Upload linux artifact
         uses: actions/upload-artifact@v5

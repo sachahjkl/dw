@@ -15,6 +15,10 @@ else
 fi
 archive_name="dw-linux-x64.tar.gz"
 archive_path="$output_path/$archive_name"
+target_dir="${CARGO_TARGET_DIR:-$repo_root/target}"
+if [[ "$target_dir" != /* ]]; then
+  target_dir="$repo_root/$target_dir"
+fi
 
 mkdir -p "$output_path"
 
@@ -23,7 +27,7 @@ mkdir -p "$output_path"
   DW_COMMIT="$COMMIT" cargo build --locked --release -p dw-cli
 )
 
-cp "$repo_root/target/release/dw-cli" "$output_path/dw"
+cp "$target_dir/release/dw-cli" "$output_path/dw"
 chmod 755 "$output_path/dw"
 
 if grep -aFq '/nix/store' "$output_path/dw"; then
