@@ -243,7 +243,6 @@ jobs:
       - preflight
       - linux
       - nix-package
-      - nix-checks
       - windows
     if: needs.preflight.outputs.release_enabled == 'true'
     permissions:

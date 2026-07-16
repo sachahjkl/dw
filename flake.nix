@@ -12,14 +12,26 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, crane, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
         lib = pkgs.lib;
+        craneLib = crane.mkLib pkgs;
+        cargoSrc = craneLib.cleanCargoSource ./.;
+        src = lib.fileset.toSource {
+          root = ./.;
+          fileset = lib.fileset.unions [
+            (craneLib.fileset.commonCargoSources ./.)
+            ./LICENSE
+            ./VERSION
+            ./schemas
+          ];
+        };
         versionPrefix = lib.strings.trim (builtins.readFile ./VERSION);
         sourceRevision =
           if self ? shortRev then self.shortRev
@@ -42,15 +54,24 @@
           pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
         ];
 
-        dwPackage = pkgs.rustPlatform.buildRustPackage {
+        commonArgs = {
+          pname = "dw-workspace";
+          inherit src;
+          inherit nativeBuildInputs buildInputs;
+          strictDeps = true;
+        };
+
+        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
+          src = cargoSrc;
+          cargoExtraArgs = "--locked --workspace";
+        });
+
+        dwPackage = craneLib.buildPackage (commonArgs // {
           pname = "dw";
           version = packageVersion;
-          src = ./.;
+          inherit cargoArtifacts;
 
-          cargoLock.lockFile = ./Cargo.lock;
-          inherit nativeBuildInputs buildInputs;
-
-          cargoBuildFlags = [ "-p" "dw-cli" ];
+          cargoExtraArgs = "--locked -p dw-cli";
           # CI runs the full workspace check app; the package build only produces the release binary.
           doCheck = false;
 
@@ -61,7 +82,24 @@
               mv "$out/bin/dw-cli" "$out/bin/dw"
             fi
           '';
+        });
+
+        formatCheck = craneLib.cargoFmt {
+          pname = "dw-workspace";
+          version = "0.1.1";
+          inherit src;
         };
+
+        testCheck = craneLib.cargoTest (commonArgs // {
+          inherit cargoArtifacts;
+          cargoExtraArgs = "--locked --workspace";
+        });
+
+        clippyCheck = craneLib.cargoClippy (commonArgs // {
+          inherit cargoArtifacts;
+          cargoExtraArgs = "--locked --workspace";
+          cargoClippyExtraArgs = "--all-targets -- -D warnings";
+        });
 
         cargoScript = name: command: pkgs.writeShellApplication {
           inherit name;
@@ -76,12 +114,16 @@
           text = command;
         };
 
-        checkScript = cargoScript "dw-check" ''
-          ${architectureCheckScript}/bin/dw-architecture-check
-          cargo fmt --all -- --check
-          cargo test --workspace --locked
-          cargo clippy --workspace --all-targets --locked -- -D warnings
-        '';
+        checkScript = pkgs.writeShellApplication {
+          name = "dw-check";
+          text = ''
+            test -e ${architectureCheck}
+            test -e ${formatCheck}
+            test -e ${testCheck}
+            test -e ${clippyCheck}
+            echo "Crane checks passed."
+          '';
+        };
 
         fmtScript = cargoScript "dw-fmt" ''
           cargo fmt --all
@@ -133,12 +175,26 @@
             echo "Architecture check passed."
           '';
         };
+
+        architectureCheck = pkgs.runCommand "dw-architecture-check-result" {
+          nativeBuildInputs = [ architectureCheckScript ];
+        } ''
+          cd ${src}
+          dw-architecture-check
+          touch $out
+        '';
       in
       {
         packages.default = dwPackage;
         packages.dw = dwPackage;
 
-        checks.default = dwPackage;
+        checks = {
+          default = dwPackage;
+          formatting = formatCheck;
+          tests = testCheck;
+          clippy = clippyCheck;
+          architecture = architectureCheck;
+        };
 
         apps = {
           dw = {
