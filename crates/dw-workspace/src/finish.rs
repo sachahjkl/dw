@@ -209,7 +209,7 @@ pub fn finish_state(
     options: &TaskFinishOptions,
 ) -> Option<WorkItemState> {
     match normalize_work_item_type(work_item_type).as_str() {
-        "bug" => Some(options.bug_state.clone()),
+        "bug" | "activite" | "activité" => Some(options.bug_state.clone()),
         "task" | "tache" | "tâche" => Some(options.task_state.clone()),
         _ => None,
     }
@@ -586,6 +586,14 @@ mod tests {
         assert_eq!(finish_state(Some("Anomalie"), &options), None);
         assert_eq!(
             finish_state(Some("Bug"), &options),
+            Some(WorkItemState::from("PR en attente"))
+        );
+        assert_eq!(
+            finish_state(Some("Activité"), &options),
+            Some(WorkItemState::from("PR en attente"))
+        );
+        assert_eq!(
+            finish_state(Some("Activite"), &options),
             Some(WorkItemState::from("PR en attente"))
         );
         assert_eq!(

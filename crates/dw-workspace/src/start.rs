@@ -50,7 +50,7 @@ pub fn start_state(
     match normalize_work_item_type(work_item_type).as_str() {
         "user story" => Some(options.user_story_state.clone()),
         "anomalie" => Some(options.anomaly_state.clone()),
-        "bug" => Some(options.bug_state.clone()),
+        "bug" | "activite" | "activité" => Some(options.bug_state.clone()),
         "task" | "tache" | "tâche" => Some(options.task_state.clone()),
         _ => None,
     }
@@ -95,6 +95,14 @@ mod tests {
         );
         assert_eq!(
             start_state(Some("Bug"), &options),
+            Some(WorkItemState::from("En développement"))
+        );
+        assert_eq!(
+            start_state(Some("Activité"), &options),
+            Some(WorkItemState::from("En développement"))
+        );
+        assert_eq!(
+            start_state(Some("Activite"), &options),
             Some(WorkItemState::from("En développement"))
         );
         assert_eq!(

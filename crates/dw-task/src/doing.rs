@@ -213,6 +213,28 @@ mod tests {
     }
 
     #[test]
+    fn plan_update_maps_activity_to_configured_bug_state() {
+        let options = dw_workspace::TaskStartOptions {
+            bug_state: WorkItemState::from("En cours"),
+            ..dw_workspace::TaskStartOptions::default()
+        };
+        let update = plan_update(
+            WorkItemSnapshot {
+                id: WorkItemId::from("56395"),
+                kind: Some("Activité".into()),
+                state: Some("Nouveau".into()),
+                title: Some("Corriger".into()),
+                url: None,
+            },
+            &options,
+        )
+        .expect("doing update");
+
+        assert_eq!(update.target_state.as_str(), "En cours");
+        assert!(update.changed);
+    }
+
+    #[test]
     fn plan_update_rejects_unsupported_types() {
         let error = plan_update(
             WorkItemSnapshot {
