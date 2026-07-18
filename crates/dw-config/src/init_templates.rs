@@ -157,12 +157,12 @@ const AGENTS_MD: &str = r#"# DevWorkflow workspace
 This root is managed by DevWorkflow.
 
 1. Use Azure DevOps work items as the source of truth for tracked work.
-2. Use current DevWorkflow commands (`dw auth`, `dw ado`, `dw work`, `dw db`, `dw agent`, `dw secret`) for Azure DevOps and worktree operations.
+2. Use current DevWorkflow auth, ADO, work, DB, agent, and secret actions for Azure DevOps and worktree operations.
 3. Follow the local `AGENTS.md` in a task workspace.
 4. Preserve project terminology and repository conventions.
 5. Ask for clarification when requirements or supporting material are ambiguous.
 
-Primary commands: `dw ado item show`, `dw ado context ai`, `dw work current`, `dw work sync`, `dw work preflight`, `dw work task child create`, `dw work handoff validate`, `dw work commit`, `dw work finish`.
+Primary actions: ADO item show, ADO context ai, work current, work sync, work preflight, work task child create, work handoff validate, work commit, and work finish.
 "#;
 
 const OPENCODE_JSONC: &str = r#"{

@@ -266,32 +266,32 @@ Contexte:
 - Work items:
 {items}
 
-Commandes DevWorkflow:
+Actions DevWorkflow:
 
-- ADO: `dw ado assigned`, `dw ado item show`, `dw ado context ai`, `dw ado state set`.
-- Workspace: `dw work current`, `dw work open`, `dw work sync`, `dw work preflight`.
-- Contenu: `dw work item doing`, `dw work item add`, `dw work item remove`, `dw work repo add`, `dw work repo latest`, `dw work pr start`.
-- Child tasks et handoffs: `dw work task child create`, `dw work handoff validate`.
-- Cycle de vie: `dw work commit`, `dw work finish`, `dw work teardown`, `dw work prune`.
-- Base de données: `dw db schema`, `dw db describe`, `dw db query`.
+- ADO: assigned, item show, context ai et state set.
+- Work: current, open, sync et preflight.
+- Contenu: work item doing/add/remove, work repo add/latest et work PR start.
+- Child tasks et handoffs: work task child create et work handoff validate.
+- Cycle de vie: work commit, finish, teardown et prune.
+- Base de données: schema, describe et query.
 
 Règles:
 
-1. Identifier le workspace courant avec `dw work current` avant d'agir.
-2. Lire chaque work item avec `dw ado item show` avant de coder.
-3. Lire le contexte IA avec `dw ado context ai` avant d'agir sur le contexte ADO.
-4. Utiliser `dw db schema`, `dw db describe` et `dw db query` quand le contexte base de données peut clarifier le changement.
+1. Identifier le workspace courant avec l'action work current avant d'agir.
+2. Lire chaque work item avec l'action ADO item show avant de coder.
+3. Lire le contexte IA avec l'action ADO context ai avant d'agir sur le contexte ADO.
+4. Utiliser les actions DB schema, describe et query quand le contexte base de données peut clarifier le changement.
 5. Avant de travailler, vérifier que le setup initial requis par l'environnement est en place.
 6. Remplir `plan.md` avant d'implémenter.
-7. Lancer `dw work preflight` avant implémentation, création de child tasks ou autre action irréversible.
-8. Lancer `dw work handoff validate` avant les sub-agents et avant `dw work finish`.
-9. Si le work item principal est une `User Story` ou une `Anomalie`, une fois `plan.md` complet et avant le début de l'implémentation, créer au moins une child task ADO avec `dw work task child create`, puis autant que nécessaire depuis le plan.
+7. Lancer l'action work preflight avant implémentation, création de child tasks ou autre action irréversible.
+8. Lancer l'action work handoff validate avant les sub-agents et avant l'action work finish.
+9. Si le work item principal est une `User Story` ou une `Anomalie`, une fois `plan.md` complet et avant le début de l'implémentation, créer au moins une child task ADO avec l'action work task child create, puis autant que nécessaire depuis le plan.
 10. Écrire tout texte utilisateur/projet en français: plans, commentaires, messages de commit/PR, titres des tasks, synthèses d'avancement et explications finales.
 11. Structurer le plan explicitement par domaine quand c'est possible: front, back, db ou autres repositories. Utiliser des sub-agents pour les chantiers indépendants quand c'est possible.
-12. Lancer `dw work sync` avant les décisions de cycle de vie si le contexte ADO local peut être obsolète.
-13. Utiliser `dw work commit` pour les commits intermédiaires.
-14. Utiliser `dw work finish` pour les flows finaux push/PR.
-15. Utiliser `dw work teardown` ou `dw work prune` pour le nettoyage.
+12. Lancer l'action work sync avant les décisions de cycle de vie si le contexte ADO local peut être obsolète.
+13. Utiliser l'action work commit pour les commits intermédiaires.
+14. Utiliser l'action work finish pour les flows finaux push/PR.
+15. Utiliser les actions work teardown ou prune pour le nettoyage.
 "#
     )
 }
@@ -393,13 +393,12 @@ mod tests {
         assert!(agents.content.contains("# Workspace DevWorkflow"));
         assert!(agents.content.contains("#101"));
         assert!(agents.content.contains("child task ADO"));
-        assert!(agents.content.contains("dw work preflight"));
-        assert!(agents.content.contains("dw work task child create"));
-        assert!(agents.content.contains("dw work handoff validate"));
-        assert!(agents.content.contains("dw work finish"));
-        assert!(agents.content.contains("dw ado item show"));
-        assert!(agents.content.contains("dw ado context ai"));
-        assert!(!agents.content.contains("dw task "));
+        assert!(agents.content.contains("action work preflight"));
+        assert!(agents.content.contains("action work task child create"));
+        assert!(agents.content.contains("action work handoff validate"));
+        assert!(agents.content.contains("action work finish"));
+        assert!(agents.content.contains("action ADO item show"));
+        assert!(agents.content.contains("action ADO context ai"));
         assert!(
             agents
                 .content

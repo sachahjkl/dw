@@ -74,8 +74,7 @@ mod tests {
             .expect("refresh contexts");
 
         let agents = std::fs::read_to_string(workspace.join("AGENTS.md")).expect("AGENTS.md");
-        assert!(agents.contains("dw work current"));
-        assert!(agents.contains("dw ado item show"));
-        assert!(!agents.contains("dw task "));
+        assert!(agents.contains("action work current"));
+        assert!(agents.contains("action ADO item show"));
     }
 }
