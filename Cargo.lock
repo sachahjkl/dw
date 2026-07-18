@@ -1197,6 +1197,7 @@ dependencies = [
  "dw-workspace",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

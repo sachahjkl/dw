@@ -403,9 +403,11 @@ async fn run_action_inner(
             topic: GuideTopic::Main,
         })),
         DwActionRequest::Doctor { fix } => Ok(DwActionResult::Doctor(dw_doctor::run_doctor(fix)?)),
-        DwActionRequest::Refresh(args) => Ok(DwActionResult::Config(ConfigActionResult::Refresh(
-            dw_config::command::refresh(args)?,
-        ))),
+        DwActionRequest::Refresh(args) => {
+            let report = dw_config::command::refresh(args)?;
+            dw_task::refresh_workspace_agent_configs(&report.root)?;
+            Ok(DwActionResult::Config(ConfigActionResult::Refresh(report)))
+        }
         DwActionRequest::ConfigShow { root } => Ok(DwActionResult::Config(
             ConfigActionResult::Show(dw_config::command::show(root.as_ref())),
         )),

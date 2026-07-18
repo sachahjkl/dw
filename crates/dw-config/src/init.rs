@@ -487,7 +487,7 @@ mod tests {
         assert!(
             fs::read_to_string(root.path().join("config/opencode/AGENTS.md"))
                 .expect("agents")
-                .contains("source of truth for tracked work")
+                .contains("dw work preflight")
         );
         assert_eq!(
             fs::read_to_string(root.path().join("config/workflow.json")).expect("workflow"),

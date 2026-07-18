@@ -488,22 +488,23 @@ pub fn agent_context_markdown(report: &AgentContextReport) -> String {
 
 Tu travailles dans un environnement géré par DevWorkflow.
 
-Utilise les actions DevWorkflow pour les opérations du workflow:
+Utilise les commandes DevWorkflow actuelles pour les opérations du workflow:
 
-- Diagnostic local vérifie les prérequis.
-- Authentification Azure DevOps connecte l'environnement quand la connexion silencieuse est indisponible.
-- Liste ADO assignée affiche les work items assignés pour le projet courant.
-- Lecture work item ADO charge le résumé d'un work item.
-- Contexte IA ADO lit le contexte work item structuré et déterministe pour usage IA.
-- Workspace courant affiche le workspace task actif et la branche.
-- Synchronisation task rafraîchit `task.json` depuis ADO quand le contexte local peut être obsolète.
-- Préflight task vérifie les blocages et alertes déterministes avant implémentation ou découpage en child tasks.
-- Validation handoff vérifie les contrats handoff avant finalisation task ou exécution de sub-agents.
-- Ouverture task ouvre ou reprend une session agent pour un workspace.
-- Création child task crée des child tasks ADO après rédaction du plan.
-- Commit task crée un commit intermédiaire sans push ni PR.
-- Finalisation task est le flow commit/push/PR attendu en fin de travail.
-- Actions DB schema, describe et query sont les points d'entrée SQL et restent read-only par défaut.
+- `dw doctor` vérifie les prérequis locaux.
+- `dw auth login` connecte Azure DevOps quand la connexion silencieuse est indisponible.
+- `dw ado assigned`, `dw ado item show` et `dw ado context ai` fournissent les work items et leur contexte IA.
+- `dw work current`, `dw work open`, `dw work sync` et `dw work preflight` pilotent le workspace courant.
+- `dw work item doing`, `dw work item add` et `dw work item remove` gèrent les work items.
+- `dw work repo add` et `dw work repo latest` gèrent les repositories du workspace.
+- `dw work pr start` crée un workspace depuis une PR existante.
+- `dw work task child create` crée une child task ADO après rédaction du plan.
+- `dw work handoff validate` vérifie les contrats handoff avant finalisation ou exécution de sub-agents.
+- `dw work commit` crée un commit intermédiaire sans push ni PR.
+- `dw work finish` est le flow commit/push/PR attendu en fin de travail.
+- `dw work teardown` et `dw work prune` nettoient les workspaces.
+- `dw db schema`, `dw db describe` et `dw db query` sont les points d'entrée SQL et restent read-only par défaut.
+- `dw agent default set` configure l'agent.
+- `dw secret list`, `dw secret get`, `dw secret set` et `dw secret delete` gèrent les secrets locaux.
 
 Root configuré courant:
 
@@ -3082,6 +3083,38 @@ mod tests {
         HANDOFF_VALIDATION_VERSION, PREFLIGHT_VERSION, TaskHandoffValidationItem,
         TaskPreflightIssue, TaskPreflightIssueCode, TaskPreflightIssueDetail,
     };
+
+    #[test]
+    fn agent_context_uses_current_command_groups() {
+        let context = agent_context_markdown(&AgentContextReport {
+            root: dw_core::DevWorkflowRoot::from("/tmp/dw"),
+        });
+
+        for command in [
+            "dw ado item show",
+            "dw ado context ai",
+            "dw work current",
+            "dw work item doing",
+            "dw work item add",
+            "dw work item remove",
+            "dw work repo add",
+            "dw work repo latest",
+            "dw work pr start",
+            "dw work task child create",
+            "dw work handoff validate",
+            "dw work finish",
+            "dw agent default set",
+            "dw secret list",
+            "dw secret get",
+            "dw secret set",
+            "dw secret delete",
+        ] {
+            assert!(context.contains(command), "missing command `{command}`");
+        }
+        assert!(!context.contains("dw task "));
+        assert!(!context.contains("dw ado work-item"));
+        assert!(!context.contains("dw ado ai-context"));
+    }
 
     #[test]
     fn upgrade_event_line_renders_one_step_per_action() {

@@ -14,7 +14,7 @@ use anyhow::Result;
 use dw_ado::{AzureDevOpsOptions, auth::AdoAuthOptions};
 use dw_config::{WorkflowConfig, load_workflow_config, resolve_project, resolve_root};
 
-pub use agent_config::write_workspace_agent_configs;
+pub use agent_config::{refresh_workspace_agent_configs, write_workspace_agent_configs};
 
 pub fn load_auth_options(root: Option<&str>) -> Result<Option<AdoAuthOptions>> {
     let root = resolve_root(root);
