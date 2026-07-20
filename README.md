@@ -1,15 +1,19 @@
 # dw
 
-`dw` is the Dev Workflow CLI for AI-assisted work across Azure DevOps, Git worktrees, multi-repository projects, agent context, and read-only SQL Server introspection.
+`dw` is the Dev Workflow CLI for AI-assisted work across external work providers, local Git workspaces, multi-repository projects, agent context, and guarded data-source inspection.
 
-The CLI is the deterministic rail. AI agents still do the reasoning and editing, but `dw` keeps workflow state, filesystem layout, Git operations, ADO context, database access, and release/update mechanics predictable.
+The CLI is the deterministic rail. AI agents still do the reasoning and editing, but `dw` keeps provider interaction, workflow state, filesystem layout, Git operations, data access, and release/update mechanics predictable.
 
 ## Build
 
+Source builds require Go 1.26 and Git on `PATH`:
+
 ```bash
-cargo run -p dw-cli -- version
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
+go run ./cmd/dw version
+go fmt ./...
+go test ./...
+go vet ./...
+go build -o ./dw ./cmd/dw
 ```
 
 With Nix:
@@ -28,6 +32,8 @@ Dev Workflow YYYY.MM.DD.N+COMMIT
 ```
 
 ## Install
+
+Release binaries support Linux x64 and Windows x64. Git is a runtime prerequisite for repository and worktree operations. macOS is not supported.
 
 ### Nix
 
@@ -93,11 +99,11 @@ For release-binary installs, `dw upgrade --check` can inspect the latest release
 
 ### Local Build
 
-Build and run the binary from source:
+Build and run the binary from source with Go 1.26:
 
 ```bash
-cargo build --locked --release -p dw-cli
-./target/release/dw-cli version
+go build -o ./dw ./cmd/dw
+./dw version
 ```
 
 Build local release artifacts:
@@ -114,17 +120,21 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-win-x64.ps1 -Version 
 
 ## Main Commands
 
-- `dw init`: create/update a DevWorkflow root with config, schemas and templates.
-- `dw doctor`: inspect environment/configuration health.
-- `dw auth login/status/logout`: Azure DevOps auth through OAuth/keyring or PAT fallback.
-- `dw ado assigned/prs/changelog`, `dw ado item show`, `dw ado state set`, `dw ado context show/ai`: Azure DevOps workflows.
-- `dw db list/collect/guard/schema/describe/query`: SQL Server discovery and readonly helpers.
-- `dw work start/open/list/current/status/sync/rename/preflight/commit/finish/teardown/prune`: workspace lifecycle.
-- `dw work item doing/add/remove`, `dw work repo add/latest`, `dw work pr start`, `dw work handoff validate`, `dw work task child create`: grouped workspace operations.
-- `dw agent open/config/default set`: agent launch, workspace config generation, and default selection.
-- `dw config show/doctor/root set/color set`: local configuration inspection and updates.
-- `dw secret list/get/set/delete`: local secret inventory and storage.
-- `dw upgrade --check`: release manifest check for binary installs.
+- `dw work item list|show|doing|state set|child create`: provider-neutral work-item operations.
+- `dw work pr list`: pull requests from the selected work provider.
+- `dw work context show|ai` and `dw work changelog`: provider-neutral context and changelog output.
+- `dw workspace status|list|current|open|start|preflight|sync|rename|commit|finish|teardown|prune`: local workspace and Git lifecycle.
+- `dw workspace pr start`, `dw workspace repo add|latest`, `dw workspace item add|remove`, and `dw workspace handoff validate`: grouped local workspace operations.
+- `dw data source list|collect`: configured data-source discovery and collection.
+- `dw data guard|catalog|describe|query`: generic guarded data access.
+- `dw provider list|show|capabilities`: inspect statically registered providers and their supported operations.
+- `dw provider auth login|status|logout <provider>`: authenticate a selected work provider.
+- `dw agent open|config|default set`: agent launch, workspace config generation, and default selection.
+- `dw config show|doctor|root set|color set`: local configuration inspection and updates.
+- `dw secret list|get|set|delete`: local secret inventory and storage.
+- `dw init`, `dw doctor`, and `dw upgrade --check`: root setup, health, and release management.
+
+Work commands accept optional `--provider`; otherwise the configured project work provider is used. Data-source configuration names its provider; generic data commands select it with `--source`, accept `RESOURCE` where needed, and take query text through `--query` or trailing `QUERY` values. Applicable data commands also accept `--provider`. Authentication always selects the provider positionally. `dw provider capabilities <provider>` shows which optional interfaces the provider implements before an operation is attempted.
 
 ## Release Artifacts
 
@@ -154,78 +164,53 @@ artifacts/win-x64/dw-win-x64.zip
 
 Release workflows also produce `release.json`, consumed by `dw upgrade --check` and `dw upgrade`.
 
-## CI
+## CI and Releases
 
-GitHub Actions runs CI on Linux and Windows:
+GitHub Actions uses Go 1.26 and Nix to:
 
-- `cargo fmt --all -- --check`
-- `cargo test --workspace --locked`
-- `cargo clippy --workspace --all-targets --locked -- -D warnings`
-- Nix flake build/check on Linux
-- Linux and Windows artifact publishing smoke paths
+- check formatting, run `go test ./...`, and run `go vet ./...`
+- enforce the package dependency boundaries defined by the Nix architecture check
+- build and smoke-test CGO-disabled Linux x64 and Windows x64 artifacts
+- validate the Nix package on Linux
+- publish `dw-linux-x64.tar.gz`, `dw-win-x64.zip`, and their combined `release.json` manifest when a release is enabled
+
+Each platform archive contains one standalone executable: `dw` on Linux or `dw.exe` on Windows. There is no macOS artifact.
 
 ## Repository Layout
 
 ```text
-crates/
-  dw-cli            top-level CLI and cross-domain orchestration
-  dw-completion     dynamic shell completion engine
-  dw-config         config files, init, refresh and config diagnostics
-  dw-ado            Azure DevOps auth/client/mapping
-  dw-ado-commands   ADO command handlers and rendering
-  dw-db             SQL Server readonly commands
-  dw-doctor         machine/config diagnostics
-  dw-task           task command handlers and UX
-  dw-upgrade        release manifest checks and binary self-upgrade
-  dw-workspace      workspace planning, manifests and contracts
-  dw-agent          agent launch/config support
-  dw-secret         secret storage
-  dw-git            git/worktree helpers
-  dw-ui             terminal styling and prompts
+cmd/dw/             process entry point
+internal/           application, provider, CLI, console, TUI, and platform packages
+locales/            embedded English localization catalog
 schemas/            JSON schemas copied into DevWorkflow roots
-scripts/            release artifact scripts
-docs/               architecture and agent reference material
+scripts/            Linux and Windows x64 release pipelines
 ```
+
+The executable is composed from ordered, static work and data provider registries. Provider reports are derived from those registries and capability interfaces rather than a hardcoded product list. Azure DevOps is the current work implementation; GitHub and Jira can be added behind the same work contracts. SQL Server is the current data implementation; SQLite, Excel, and NoSQL sources can implement the relevant data capabilities. The interactive interface uses Charm v2; CLI, TUI, and console text crosses the English localization bridge in `internal/l10n`.
 
 ## Workflow
 
 The intended end-to-end flow is:
 
-1. `dw work start ...` creates the workspace, agent files and handoffs.
-2. The AI reads `dw ado item show` and `dw ado context ai`.
-3. The AI runs `dw work preflight --continue` before implementation or child-task creation.
-4. The plan is written in `plan.md` and split by domain when useful.
-5. Domain handoffs such as `handoff-front.md`, `handoff-back.md`, `handoff-db.md` guide sub-agents.
-6. The AI implements, verifies, commits with `dw work commit`, then finishes with `dw work finish`.
+1. Inspect the project provider with `dw provider show <provider>` or `dw provider capabilities <provider>`.
+2. Authenticate when needed with `dw provider auth login <provider>`.
+3. Read external work with `dw work item show ...` and `dw work context ai ...`.
+4. Create or resume local state with `dw workspace start ...` or `dw workspace open ...`.
+5. Run `dw workspace preflight --continue` before implementation or child creation.
+6. Implement and verify, then use `dw workspace commit` and `dw workspace finish`.
 
 ```mermaid
 flowchart TD
-    A[ADO Work Item] --> B[dw work start]
-    B --> C[Workspace Created]
-    C --> C1[task.json]
-    C --> C2[plan.md]
-    C --> C3[AGENTS.md]
-    C --> C4[handoff-front/back/db.md]
-
-    C --> D[AI reads dw ado item show]
-    D --> E[AI reads dw ado context ai]
-    E --> F[AI runs dw work preflight]
-
-    F -->|blocking or warning| G[AI surfaces checks to user]
-    G --> H{Proceed?}
-    H -->|no| I[Clarify or wait]
-    H -->|yes| J[Write plan.md]
-    F -->|clean| J
-
-    J --> K[Split work by domain]
-    K --> L[Create child tasks if needed]
-    K --> M[Launch sub-agents on independent tracks]
-
-    L --> N[Implement in repos]
-    M --> N
-    N --> O[Update handoff summary blocks]
-    O --> P[Run verification]
-    P --> Q[dw work commit]
-    Q --> R[dw work finish]
-    R --> S[Push + PR + ADO updates]
+    A[External work item] --> B[dw work item show]
+    B --> C[dw work context ai]
+    C --> D[dw workspace start]
+    D --> E[Local workspace and worktrees]
+    E --> F[dw workspace preflight]
+    F -->|blocking or warning| G[Clarify or wait]
+    F -->|clean| H[Write plan and implement]
+    G --> H
+    H --> I[Run verification]
+    I --> J[dw workspace commit]
+    J --> K[dw workspace finish]
+    K --> L[Push, pull request, provider updates]
 ```

@@ -1,8 +1,8 @@
 # Azure DevOps
 
-Azure DevOps is the workflow source of truth.
+Azure DevOps is the current implementation of the work-provider contracts. Projects select it by the provider name `azure-devops`; work and workspace orchestration remain provider-neutral.
 
-The target design uses REST APIs with MSAL/browser authentication. The CLI must not require Azure CLI.
+The provider uses Azure DevOps REST APIs with Microsoft Entra browser or device-code OAuth. The CLI does not require Azure CLI.
 
 Default REST API version: `7.1`, configurable in `workflow.json`.
 
@@ -28,6 +28,7 @@ The default delegated scope is:
 - create PRs
 - link PRs to work items when automatic linking is insufficient
 - add traceability comments for AI-created work items
+- extract work-item references from provider-specific commit conventions
 
 ## REST Endpoints
 
@@ -43,25 +44,66 @@ PR creation:
 POST {organizationUrl}/{project}/_apis/git/repositories/{repositoryIdOrName}/pullrequests?api-version=7.1
 ```
 
-The first implementation keeps these calls behind `AzureDevOpsClient` so auth, retries and payload conventions can evolve without leaking into commands.
+These calls stay behind the statically registered provider in `internal/work/ado`. Command orchestration requests its typed work capabilities, so authentication, retries, and payload conventions do not leak into commands and a future GitHub or Jira provider can implement only the capabilities it supports.
 
-## Auth Configuration
+## CLI Selection
 
-`workflow.json` should provide:
+```text
+dw provider show azure-devops
+dw provider capabilities azure-devops
+dw provider auth login azure-devops
+dw work item show <work-item> --provider azure-devops
+```
+
+The product name is a provider value, never a command namespace. Project `workProvider` configuration supplies the default when `--provider` is absent.
+
+## Provider Configuration
+
+`workflow.json` stores provider-specific extension data beneath the generic provider registry. A project selects the entry through `workProvider`; repository mappings use `providerRepository` when the remote provider name differs from the local key.
 
 ```json
 {
-  "auth": {
-    "tenantId": "organizations",
-    "clientId": "<public-client-application-id>",
-    "scopes": [
-      "499b84ac-1321-427f-aa17-267ca6975798/.default"
-    ]
+  "providers": {
+    "azure-devops": {
+      "organization": "https://dev.azure.com/example",
+      "project": "Example",
+      "apiVersion": "7.1",
+      "auth": {
+        "tenantId": "organizations",
+        "clientId": "<public-client-application-id>",
+        "scopes": [
+          "499b84ac-1321-427f-aa17-267ca6975798/.default"
+        ]
+      }
+    }
   }
 }
 ```
 
-For automation or emergency fallback, `DW_ADO_TOKEN` can provide an already acquired bearer token.
+`projects.json` keeps provider selection and repository mapping in generic fields:
+
+```json
+{
+  "projects": {
+    "example": {
+      "displayName": "Example",
+      "workProvider": "azure-devops",
+      "providers": {
+        "azure-devops": {
+          "project": "Example"
+        }
+      },
+      "repositories": {
+        "api": {
+          "providerRepository": "Api"
+        }
+      }
+    }
+  }
+}
+```
+
+For automation or emergency fallback, `DW_ADO_TOKEN` can provide an already acquired bearer token to this provider.
 
 ## Source of Truth for Rules
 

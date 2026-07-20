@@ -15,25 +15,35 @@ else
 fi
 archive_name="dw-linux-x64.tar.gz"
 archive_path="$output_path/$archive_name"
-target_dir="${CARGO_TARGET_DIR:-$repo_root/target}"
-if [[ "$target_dir" != /* ]]; then
-  target_dir="$repo_root/$target_dir"
-fi
 
 mkdir -p "$output_path"
 
 (
   cd "$repo_root"
-  DW_COMMIT="$COMMIT" cargo build --locked --release -p dw-cli
+  CGO_ENABLED=0 \
+  GOOS=linux \
+  GOARCH=amd64 \
+  GOTOOLCHAIN=local \
+    go build \
+      -trimpath \
+      -buildvcs=false \
+      -tags timetzdata \
+      -ldflags "-s -w -X github.com/sachahjkl/dw/internal/buildinfo.Version=$VERSION -X github.com/sachahjkl/dw/internal/buildinfo.Commit=$COMMIT" \
+      -o "$output_path/dw" \
+      ./cmd/dw
 )
-
-cp "$target_dir/release/dw-cli" "$output_path/dw"
 chmod 755 "$output_path/dw"
 
-if grep -aEq '/nix/store/[0-9a-z]{32}-' "$output_path/dw"; then
-  echo "Refusing to package a binary containing concrete /nix/store references" >&2
+nix_path_pattern='/nix/store/[0-9a-z]{32}-mailcap-[-A-Za-z0-9._+?=]+/etc/mime\.types|/nix/store/[0-9a-z]{32}-tzdata-[-A-Za-z0-9._+?=]+/share/zoneinfo|/nix/store/[0-9a-z]{32}-iana-etc-[-A-Za-z0-9._+?=]+/|/nix/store/[0-9a-z]{32}-[-A-Za-z0-9._+?=]+/'
+while IFS= read -r -d '' nix_path; do
+  if [[ "$nix_path" =~ ^/nix/store/[0-9a-z]{32}-mailcap-[^/]+/etc/mime\.types$ \
+    || "$nix_path" =~ ^/nix/store/[0-9a-z]{32}-tzdata-[^/]+/share/zoneinfo$ \
+    || "$nix_path" =~ ^/nix/store/[0-9a-z]{32}-iana-etc-[^/]+/$ ]]; then
+    continue
+  fi
+  echo "Refusing to package a binary containing concrete Nix store reference: $nix_path" >&2
   exit 1
-fi
+done < <(grep -aozE "$nix_path_pattern" "$output_path/dw" || true)
 
 "$output_path/dw" version >/dev/null
 tar -czf "$archive_path" -C "$output_path" dw

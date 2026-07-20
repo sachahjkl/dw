@@ -24,7 +24,7 @@ Project repositories should be anchored as bare repositories. They are not the p
 
 ## Subject Workspaces
 
-A subject workspace groups everything for one Azure DevOps subject:
+A subject workspace groups local state for one external work subject, regardless of work provider:
 
 - `task.json`: machine-readable task metadata
 - `plan.md`: analysis and execution plan
@@ -32,6 +32,8 @@ A subject workspace groups everything for one Azure DevOps subject:
 - `back/`: optional back worktree
 
 Even if only one repository is involved, the subject folder still exists.
+
+All local lifecycle commands live under `dw workspace`. When start or finish needs external work or pull-request capabilities, the operation resolves the configured project work provider (or an applicable `--provider`) through the registry; local Git and filesystem code never imports a concrete provider.
 
 ## Naming
 
@@ -47,4 +49,4 @@ Branch:
 type/id-task-short-slug
 ```
 
-The detailed naming rules live in `docs/references/agents/skills/ado-workitem/references/git-naming.md`.
+Provider-specific work-item and Git naming rules belong in provider configuration or agent skills; the workspace engine consumes only normalized subject, repository, and branch values.

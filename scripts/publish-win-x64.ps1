@@ -15,23 +15,33 @@ else {
 }
 $archiveName = "dw-win-x64.zip"
 $archivePath = Join-Path $outputPath $archiveName
+$binaryPath = Join-Path $outputPath "dw.exe"
+
 
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 
+$ldflags = "-s -w -X github.com/sachahjkl/dw/internal/buildinfo.Version=$Version -X github.com/sachahjkl/dw/internal/buildinfo.Commit=$Commit"
 Push-Location $repoRoot
 try {
-    $env:DW_COMMIT = $Commit
-    cargo build --locked --release -p dw-cli
+    $env:CGO_ENABLED = "0"
+    $env:GOOS = "windows"
+    $env:GOARCH = "amd64"
+    $env:GOTOOLCHAIN = "local"
+    go build -trimpath -buildvcs=false -tags timetzdata -ldflags $ldflags -o $binaryPath ./cmd/dw
     if ($LASTEXITCODE -ne 0) {
-        throw "cargo build failed with exit code $LASTEXITCODE"
+        throw "go build failed with exit code $LASTEXITCODE"
     }
 }
 finally {
     Pop-Location
 }
 
-Copy-Item -Force (Join-Path $repoRoot "target\release\dw-cli.exe") (Join-Path $outputPath "dw.exe")
-Compress-Archive -Path (Join-Path $outputPath "dw.exe") -DestinationPath $archivePath -Force
+& $binaryPath version | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "dw version failed with exit code $LASTEXITCODE"
+}
+
+Compress-Archive -Path $binaryPath -DestinationPath $archivePath -Force
 
 $hash = (Get-FileHash -Algorithm SHA256 -Path $archivePath).Hash.ToLowerInvariant()
 $url = if ([string]::IsNullOrWhiteSpace($ReleaseBaseUrl)) { "" } else { "$ReleaseBaseUrl/$archiveName" }
