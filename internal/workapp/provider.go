@@ -12,19 +12,21 @@ import (
 	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/wirejson"
 	"github.com/sachahjkl/dw/internal/work"
+	"github.com/sachahjkl/dw/internal/workspace"
 )
 
 type Service struct {
-	Providers    *work.Registry
-	GitChangelog GitChangelogPort
-	Choices      InteractiveCatalog
-	Lookup       WorkspaceLookup
-	Starter      WorkspaceStarter
-	Syncer       WorkspaceSyncer
-	Children     WorkspaceChildWriter
-	Opener       WorkspaceOpener
-	Pruner       WorkspacePruner
-	Finisher     WorkspaceFinisher
+	Providers       *work.Registry
+	ResolveProvider func(root, project string) string
+	GitChangelog    GitChangelogPort
+	Choices         InteractiveCatalog
+	Lookup          WorkspaceLookup
+	Starter         WorkspaceStarter
+	Syncer          WorkspaceSyncer
+	Children        WorkspaceChildWriter
+	Opener          WorkspaceOpener
+	Pruner          WorkspacePruner
+	Finisher        WorkspaceFinisher
 }
 
 func New(providers *work.Registry) *Service { return &Service{Providers: providers} }
@@ -42,6 +44,30 @@ func (s *Service) provider(name string) (work.Provider, error) {
 	}
 	return providers[0], nil
 }
+
+func (s *Service) providerName(selected, root, project string) string {
+	if selected = strings.TrimSpace(selected); selected != "" || s == nil || s.ResolveProvider == nil {
+		return selected
+	}
+	return strings.TrimSpace(s.ResolveProvider(root, project))
+}
+
+func (s *Service) LoadWorkspaceItems(ctx context.Context, selected, root, project string, ids []string) ([]workspace.WorkItem, error) {
+	provider, err := s.provider(s.providerName(selected, root, project))
+	if err != nil {
+		return nil, err
+	}
+	reader, err := work.Require[work.ItemReader](provider, work.CapabilityItemReader)
+	if err != nil {
+		return nil, err
+	}
+	items, err := reader.ReadItems(ctx, projectRef(root, project), itemIDs(ids), work.ReadOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return workItemsToWorkspace(items), nil
+}
+
 func projectRef(root, key string) work.ProjectRef {
 	return work.ProjectRef{Key: contract.ProjectKey(key), Root: root}
 }
@@ -131,9 +157,9 @@ func (s *Service) AuthLogout(ctx context.Context, request AuthLogoutRequest) (Au
 
 func (s *Service) Assigned(ctx context.Context, request AssignedRequest, sink EventSink) (AssignedReport, error) {
 	if request.Project == "" {
-		return AssignedReport{}, projectRequired("ado assigned")
+		return AssignedReport{}, projectRequired("work item list")
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 	if err != nil {
 		return AssignedReport{}, err
 	}
@@ -187,12 +213,12 @@ func (s *Service) Assigned(ctx context.Context, request AssignedRequest, sink Ev
 
 func (s *Service) PullRequests(ctx context.Context, request PullRequestsRequest, sink EventSink) (PullRequestsReport, error) {
 	if request.Project == "" {
-		return PullRequestsReport{}, projectRequired("ado prs")
+		return PullRequestsReport{}, projectRequired("work pr list")
 	}
 	if len(request.Repositories) == 0 {
-		return PullRequestsReport{}, repositoriesRequired("ado prs", "requires an explicit repository, or a project with configured work repositories")
+		return PullRequestsReport{}, repositoriesRequired("work pr list", "requires an explicit repository, or a project with configured work repositories")
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 	if err != nil {
 		return PullRequestsReport{}, err
 	}
@@ -228,13 +254,13 @@ func (s *Service) PullRequests(ctx context.Context, request PullRequestsRequest,
 
 func (s *Service) ItemShow(ctx context.Context, request ItemShowRequest, sink EventSink) (ItemShowReport, error) {
 	if request.Project == "" {
-		return ItemShowReport{}, projectRequired("ado item show")
+		return ItemShowReport{}, projectRequired("work item show")
 	}
 	ids := distinctNonEmpty(request.IDs)
 	if len(ids) == 0 {
 		return ItemShowReport{}, ErrWorkItemsRequired
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 	if err != nil {
 		return ItemShowReport{}, err
 	}
@@ -259,7 +285,7 @@ func (s *Service) ItemShow(ctx context.Context, request ItemShowRequest, sink Ev
 
 func PlanState(request StatePlanRequest) (StatePlanReport, error) {
 	if request.Project == "" {
-		return StatePlanReport{}, projectRequired("ado state set")
+		return StatePlanReport{}, projectRequired("work item state set")
 	}
 	if len(request.IDs) == 0 {
 		return StatePlanReport{}, ErrWorkItemsRequired
@@ -267,7 +293,7 @@ func PlanState(request StatePlanRequest) (StatePlanReport, error) {
 	return StatePlanReport{Provider: request.Provider, Root: request.Root, Project: request.Project, IDs: append([]string(nil), request.IDs...), State: request.State, History: request.History}, nil
 }
 func (s *Service) ExecuteState(ctx context.Context, plan StatePlanReport, sink EventSink) (StateExecutionReport, error) {
-	provider, err := s.provider(plan.Provider)
+	provider, err := s.provider(s.providerName(plan.Provider, plan.Root, plan.Project))
 	if err != nil {
 		return StateExecutionReport{}, err
 	}
@@ -300,12 +326,12 @@ func (s *Service) ExecuteState(ctx context.Context, plan StatePlanReport, sink E
 
 func (s *Service) Context(ctx context.Context, request ContextRequest, sink EventSink) (ContextReport, error) {
 	if request.Project == "" {
-		return ContextReport{}, projectRequired("ado context")
+		return ContextReport{}, projectRequired("work context")
 	}
 	if len(request.IDs) == 0 {
 		return ContextReport{}, ErrWorkItemsRequired
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 	if err != nil {
 		return ContextReport{}, err
 	}
@@ -362,7 +388,7 @@ func (s *Service) DoingPlan(ctx context.Context, request DoingRequest) (DoingPla
 	if len(request.IDs) == 0 {
 		return DoingPlanReport{}, ErrWorkItemsRequired
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 	if err != nil {
 		return DoingPlanReport{}, err
 	}
@@ -394,10 +420,10 @@ func (s *Service) DoingPlan(ctx context.Context, request DoingRequest) (DoingPla
 		current := optionalString(string(item.State))
 		updates = append(updates, DoingPlanUpdate{ID: id, Type: string(item.Type), CurrentState: current, TargetState: target, Changed: !strings.EqualFold(string(item.State), target)})
 	}
-	return DoingPlanReport{Provider: request.Provider, Root: request.Root, Project: request.Project, Updates: updates}, nil
+	return DoingPlanReport{Provider: string(provider.Name()), Root: request.Root, Project: request.Project, Updates: updates}, nil
 }
 func (s *Service) DoingExecute(ctx context.Context, plan DoingPlanReport, sink EventSink) (DoingExecutionReport, error) {
-	provider, err := s.provider(plan.Provider)
+	provider, err := s.provider(s.providerName(plan.Provider, plan.Root, plan.Project))
 	if err != nil {
 		return DoingExecutionReport{}, err
 	}

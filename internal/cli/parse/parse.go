@@ -21,7 +21,6 @@ type ErrorKind string
 
 const (
 	UnknownCommand     ErrorKind = "unknown-command"
-	LegacyRoute        ErrorKind = "legacy-route"
 	MissingCommand     ErrorKind = "missing-command"
 	UnknownOption      ErrorKind = "unknown-option"
 	MissingValue       ErrorKind = "missing-value"
@@ -115,9 +114,6 @@ type Result struct {
 func Parse(root *spec.Command, args []string) (*Result, *Error) {
 	if root == nil {
 		panic("parse: nil command grammar")
-	}
-	if route := rejectedRoute(root, args); route != "" {
-		return nil, parseError(root, nil, LegacyRoute, spec.MsgErrLegacyRoute, route, "")
 	}
 	current := root
 	path := make([]string, 0, 5)
@@ -408,53 +404,4 @@ func argumentToken(command *spec.Command, name string) string {
 		}
 	}
 	return name
-}
-
-func rejectedRoute(root *spec.Command, args []string) string {
-	words := make([]string, 0, len(args))
-	for _, token := range args {
-		if isGlobalCountToken(root, token) {
-			continue
-		}
-		if strings.HasPrefix(token, "-") {
-			break
-		}
-		words = append(words, token)
-	}
-	for _, route := range root.RejectedPaths {
-		if len(words) < len(route) {
-			continue
-		}
-		matched := true
-		for i := range route {
-			if words[i] != route[i] {
-				matched = false
-				break
-			}
-		}
-		if matched {
-			return strings.Join(route, " ")
-		}
-	}
-	return ""
-}
-
-func isGlobalCountToken(root *spec.Command, token string) bool {
-	if strings.HasPrefix(token, "--") {
-		arg, ok := root.ArgumentByLong(strings.TrimPrefix(token, "--"))
-		return ok && arg.Global && arg.Kind == spec.Count
-	}
-	if len(token) < 2 || token[0] != '-' || token[1] == '-' {
-		return false
-	}
-	arg, ok := root.ArgumentByShort(rune(token[1]))
-	if !ok || !arg.Global || arg.Kind != spec.Count {
-		return false
-	}
-	for _, char := range token[1:] {
-		if char != arg.Short {
-			return false
-		}
-	}
-	return true
 }

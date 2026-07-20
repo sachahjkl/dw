@@ -1,141 +1,78 @@
 # Command Specification
 
-This document describes command intent and current implementation status.
+This document defines the public namespace contract. Command paths are generic; concrete product names belong in provider configuration and provider-specific output only.
 
-## `dw version`
-
-Implemented.
-
-Prints:
-
-- informational version
-- runtime version
-- OS platform
-
-## `dw doctor [--fix]`
-
-Implemented as first pass.
-
-Checks:
-
-- DevWorkflow root
-- user settings
-- Git
-- configured agents on PATH
-
-`--fix` initializes the default root if it is missing.
-
-## `dw init [--root <path>] [--no-save]`
-
-Implemented.
-
-Creates:
+## External Work
 
 ```text
-config/projects.json
-config/workflow.json
-config/databases.json
-config/opencode/AGENTS.md
-config/opencode/opencode.jsonc
-schemas/projects.schema.json
-schemas/workflow.schema.json
-schemas/databases.schema.json
-schemas/release.schema.json
-projects/
-cache/
+dw work item list [--provider <provider>]
+dw work item show <work-item>... [--provider <provider>]
+dw work item doing <work-item>... [--provider <provider>]
+dw work item state set <state> <work-item>... [--provider <provider>]
+dw work item child create ... [--provider <provider>]
+dw work pr list [--provider <provider>]
+dw work context show <work-item>... [--provider <provider>]
+dw work context ai <work-item>... [--provider <provider>]
+dw work changelog ... [--provider <provider>]
 ```
 
-By default it persists the selected root in the user settings file.
+These commands resolve an optional `--provider` first, then the configured project work provider. They request typed capabilities such as item reads, state writes, child creation, pull-request reads, or rich context. Unsupported operations return a provider capability error rather than switching providers or invoking product-specific code.
 
-Generated config files include local `$schema` links that resolve to the generated `schemas/` directory.
-
-`--no-save` is intended for tests/smoke runs.
-
-## `dw agent context`
-
-Implemented.
-
-Prints stable AI-agent context.
-
-## `dw work start`
-
-Implemented.
-
-Current behavior:
+## Local Workspaces
 
 ```text
-dw work start <workItemId> --project <project> --task <taskId> --slug <slug> --type <feature|bugfix|hotfix|chore> --only front [--create-child-tasks] [--skip-ado]
+dw workspace status
+dw workspace list
+dw workspace current
+dw workspace open ...
+dw workspace start ...
+dw workspace pr start ...
+dw workspace preflight ...
+dw workspace sync ...
+dw workspace rename ...
+dw workspace repo add ...
+dw workspace repo latest ...
+dw workspace item add ...
+dw workspace item remove ...
+dw workspace commit ...
+dw workspace finish ...
+dw workspace handoff validate ...
+dw workspace teardown ...
+dw workspace prune ...
 ```
 
-Creates:
+`workspace` owns local filesystem, Git repository, worktree, manifest, preflight, commit, handoff, and teardown lifecycle. Provider calls needed by start or finish use the configured project work provider without changing the local namespace.
 
-- subject workspace
-- per-repo Git worktrees when repository URLs are configured
-- placeholder directories when repository URLs are intentionally empty
-- `task.json`
-- `plan.md`
-- optional ADO child tasks named `[FRONT][AI] ...` / `[BACK][AI] ...`
-- optional ADO start-state transition when auth is available
+## Data Sources
 
-## `dw work status`
+```text
+dw data source list [--provider <provider>]
+dw data source collect [--provider <provider>] [--save]
+dw data guard --query <query> [--provider <provider>]
+dw data catalog [--source <source> | --env <environment>] [--provider <provider>]
+dw data describe [RESOURCE] [--source <source> | --env <environment>] [--provider <provider>]
+dw data query [QUERY...] [--query <query>] [--source <source> | --env <environment>] [--provider <provider>]
+```
 
-Implemented as first pass.
+Each configured source names a provider. An explicit `--provider` may narrow source listing and select a provider for discovery, guard policy, catalog, description, or query operations. Provider capabilities decide whether a source supports native queries, tabular reads, workbooks, documents, catalogs, descriptions, or a read policy; orchestration never constructs a concrete SQL implementation directly.
 
-Lists detected `task.json` files under the configured root.
+## Provider Administration
 
-## `dw work finish`
+```text
+dw provider list
+dw provider show <provider>
+dw provider capabilities <provider>
+dw provider auth login <provider>
+dw provider auth status <provider>
+dw provider auth logout <provider>
+```
 
-Implemented.
+Provider names are positional for administration and authentication. List, show, and capabilities reports are derived from the ordered work and data registries. A provider registered for both kinds appears once with kinds ordered `work`, then `data`; capability names are deterministic. Authentication requires the selected provider to implement the work authentication capability.
 
-Current behavior:
+Azure DevOps is the current work provider. GitHub and Jira are expected future work providers. SQL Server is the current data provider; SQLite, Excel, and NoSQL providers can supply narrower capability sets without changing these paths.
 
-- inspect repo changes
-- dry-run by default
-- run configured `taskFinish.verificationCommands`
-- with `--execute --message "<message>"`: `git add`, `git commit`, `git push -u origin <branch>`
-- with `--execute --create-pr`: attempts Azure DevOps PR creation for changed repositories
-- enrich PR descriptions from `plan.md`
-- link known work item ids to PR creation payload
-- move Bug/Task work items to `PR en attente`
-- never move User Story/Anomalie to `PR en attente`
+## Other Commands
 
-Status: functionally implemented. Remaining work is real-environment validation against live Azure DevOps boards/repositories and tuning configured verification commands per repo.
+`version`, `guide`, `doctor`, `init`, `refresh`, `tui`, `agent`, `completion`, `config`, `secret`, and `upgrade` retain their existing behavior and output contracts. Help and completion are generated from the authoritative command grammar.
 
-## `dw auth`
-
-Implemented.
-
-Current behavior:
-
-- browser/MSAL login
-- token acquisition using configured Azure DevOps scopes
-- PAT/environment fallback for non-interactive usage
-- status
-- logout placeholder
-
-## `dw db`
-
-Implemented.
-
-Target behavior:
-
-- SQL Server read-only introspection
-- guarded query execution
-- max rows and timeout enforcement
-- connection strings from config, environment variables, or Windows Credential Manager `credentialKey`
-- safe database inventory with `db list`
-- masked `appsettings*.json` discovery with `db collect`
-- explicit keyring/config persistence with `db collect --save`
-
-## `dw upgrade`
-
-Implemented first pass.
-
-Current behavior:
-
-- GitHub Releases lookup
-- `release.json` asset parsing
-- SHA256 validation
-- direct binary upgrade
-
-Nix-managed installs must use Nix upgrade commands instead.
+The namespace cutover is clean: removed namespaces and misplaced lifecycle commands are ordinary unknown commands. There are no aliases, deprecated routes, or special rejection shims.

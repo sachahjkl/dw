@@ -28,7 +28,7 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 	var err error
 	needsRead := !request.SkipWork && (request.WithActiveChildren || request.Execute || strings.TrimSpace(request.Slug) == "")
 	if !request.SkipWork {
-		provider, err = s.provider(request.Provider)
+		provider, err = s.provider(s.providerName(request.Provider, request.Root, project))
 		if err != nil {
 			return StartPlanReport{}, nil, err
 		}
@@ -87,7 +87,7 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 		if len(items) > 0 {
 			for _, repository := range plan.Repositories {
 				title := workspace.ChildTaskTitle(repository, firstNonEmpty(items[0].Title, string(items[0].ID)))
-				created, createErr := creator.CreateChild(ctx, projectRef(request.Root, project), work.ChildCreate{ParentID: items[0].ID, Type: work.ItemType("Task"), Title: title, History: "work start"})
+				created, createErr := creator.CreateChild(ctx, projectRef(request.Root, project), work.ChildCreate{ParentID: items[0].ID, Type: work.ItemType("Task"), Title: title, History: "workspace start"})
 				if createErr != nil {
 					return StartPlanReport{}, nil, createErr
 				}
@@ -110,7 +110,7 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 			}
 			changed := !strings.EqualFold(string(item.State), target)
 			if changed {
-				_, updateErr := writer.UpdateStates(ctx, projectRef(request.Root, project), []work.StateChange{{ID: item.ID, State: work.State(target), Comment: "work start"}})
+				_, updateErr := writer.UpdateStates(ctx, projectRef(request.Root, project), []work.StateChange{{ID: item.ID, State: work.State(target), Comment: "workspace start"}})
 				if updateErr != nil {
 					return StartPlanReport{}, nil, updateErr
 				}
@@ -128,10 +128,10 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 
 func (s *Service) StartPullRequest(ctx context.Context, request StartPullRequestRequest, sink EventSink) (StartPullRequestPlanReport, *StartExecutionReport, error) {
 	if request.Project == "" {
-		return StartPullRequestPlanReport{}, nil, projectRequired("work pr start")
+		return StartPullRequestPlanReport{}, nil, projectRequired("workspace pr start")
 	}
 	if len(request.Repositories) == 0 {
-		return StartPullRequestPlanReport{}, nil, repositoriesRequired("work pr start", "requires an explicit repository, or a project with configured work repository entries")
+		return StartPullRequestPlanReport{}, nil, repositoriesRequired("workspace pr start", "requires an explicit repository, or a project with configured work repository entries")
 	}
 	providerRepositories := request.ProviderRepositories
 	if len(providerRepositories) == 0 {
@@ -141,7 +141,7 @@ func (s *Service) StartPullRequest(ctx context.Context, request StartPullRequest
 	if idErr != nil {
 		return StartPullRequestPlanReport{}, nil, idErr
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 	if err != nil {
 		return StartPullRequestPlanReport{}, nil, err
 	}
@@ -181,16 +181,16 @@ func (s *Service) Open(ctx context.Context, request OpenRequest, sink EventSink)
 	ids := append([]string(nil), request.WorkItemIDs...)
 	if request.PullRequestID != nil {
 		if request.Project == "" {
-			return OpenReport{}, problem(msgOpenPRProject, "work open --pr requires --project to resolve work provider settings")
+			return OpenReport{}, problem(msgOpenPRProject, "workspace open --pr requires --project to resolve work provider settings")
 		}
 		if request.Repository == "" {
-			return OpenReport{}, problem(msgOpenPRRepository, "work open --pr requires --repo, or a project with configured work repositories")
+			return OpenReport{}, problem(msgOpenPRRepository, "workspace open --pr requires --repo, or a project with configured work repositories")
 		}
 		providerID, idErr := formatPullRequestID(*request.PullRequestID)
 		if idErr != nil {
 			return OpenReport{}, idErr
 		}
-		provider, err := s.provider(request.Provider)
+		provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 		if err != nil {
 			return OpenReport{}, err
 		}
@@ -240,7 +240,7 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest, sink EventSink)
 		return SyncReport{}, err
 	}
 	ids := parentWorkItemIDs(manifest)
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, manifest.Project))
 	if err != nil {
 		return SyncReport{}, err
 	}
@@ -284,7 +284,7 @@ func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink Ev
 	if !workspace.RequiresChildTasks(parent.Type) {
 		return ChildReport{}, problem(msgChildUnsupported, "this command is only available for User Story and Anomalie")
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, manifest.Project))
 	if err != nil {
 		return ChildReport{}, err
 	}
@@ -293,7 +293,7 @@ func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink Ev
 		return ChildReport{}, err
 	}
 	title := workspace.ChildTaskTitle(request.Repository, request.Title)
-	created, err := creator.CreateChild(ctx, projectRef(request.Root, manifest.Project), work.ChildCreate{ParentID: work.ItemID(parent.ID), Type: work.ItemType("Task"), Title: title, History: "work task child create"})
+	created, err := creator.CreateChild(ctx, projectRef(request.Root, manifest.Project), work.ChildCreate{ParentID: work.ItemID(parent.ID), Type: work.ItemType("Task"), Title: title, History: "work item child create"})
 	if err != nil {
 		return ChildReport{}, err
 	}
@@ -320,7 +320,7 @@ func (s *Service) Prune(ctx context.Context, request PruneRequest, sink EventSin
 			manifest := candidate.Manifest
 			ids := parentWorkItemIDs(manifest)
 			result := workspace.PruneSyncReport{Workspace: candidate.Path, Status: "skipped"}
-			provider, providerErr := s.provider(request.Provider)
+			provider, providerErr := s.provider(s.providerName(request.Provider, request.Root, manifest.Project))
 			if providerErr != nil {
 				result.Detail = workspace.PruneSyncDetail{Kind: "auth-unavailable", Error: providerErr.Error()}
 				syncReports = append(syncReports, result)

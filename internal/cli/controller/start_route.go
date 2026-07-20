@@ -13,8 +13,8 @@ import (
 )
 
 func startRoute() Route {
-	return Route{Key: "work.start", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
-		built, err := buildWorkStart(invocation)
+	return Route{Key: "workspace.start", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
+		built, err := buildWorkspaceStart(invocation)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -27,7 +27,7 @@ func startRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "work.start", format, projection)
+		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "workspace.start", format, projection)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -38,7 +38,7 @@ func startRoute() Route {
 		if err := console.WriteOutput(execution.Policy.Streams.Stdout, output); err != nil {
 			return Outcome{}, err
 		}
-		accepted, err := askConfirmation(ctx, execution, "work-start-create", promptStartCreate)
+		accepted, err := askConfirmation(ctx, execution, "workspace-start-create", promptStartCreate)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -50,7 +50,7 @@ func startRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		executedOutput, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), executed, "work.start", console.FormatHuman, nil)
+		executedOutput, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), executed, "workspace.start", console.FormatHuman, nil)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -58,7 +58,7 @@ func startRoute() Route {
 			return Outcome{}, err
 		}
 
-		open, err := askConfirmation(ctx, execution, "work-start-open", promptStartOpen)
+		open, err := askConfirmation(ctx, execution, "workspace-start-open", promptStartOpen)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -67,19 +67,19 @@ func startRoute() Route {
 		}
 		start, ok := executed.Result.(workapp.StartResult)
 		if !ok || start.Execution == nil {
-			return Outcome{}, fmt.Errorf("cli.invalid-result:work.start:%T", executed.Result)
+			return Outcome{}, fmt.Errorf("cli.invalid-result:workspace.start:%T", executed.Result)
 		}
-		opened, err := dispatchDirect(ctx, execution, invocation, workapp.OpenRequest{Root: request.Root, Workspace: &start.Execution.Plan.Workspace})
+		opened, err := dispatchDirect(ctx, execution, invocation, workapp.OpenRequest{Provider: request.Provider, Root: request.Root, Workspace: &start.Execution.Plan.Workspace})
 		if err != nil {
 			return Outcome{}, err
 		}
 		report, ok := opened.Result.(workapp.OpenReport)
 		if !ok {
-			return Outcome{}, fmt.Errorf("cli.invalid-result:work.open:%T", opened.Result)
+			return Outcome{}, fmt.Errorf("cli.invalid-result:workspace.open:%T", opened.Result)
 		}
 		launch, ok := report.Launch.(agent.Launch)
 		if !ok {
-			return Outcome{}, fmt.Errorf("cli.invalid-external-launch:work.open:%T", report.Launch)
+			return Outcome{}, fmt.Errorf("cli.invalid-external-launch:workspace.open:%T", report.Launch)
 		}
 		if err := agent.RunLaunch(ctx, launch, execution.Policy.Streams.Stdin, execution.Policy.Streams.Stdout, execution.Policy.Streams.Stderr); err != nil {
 			return Outcome{}, err

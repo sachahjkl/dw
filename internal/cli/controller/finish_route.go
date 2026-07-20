@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/cli/parse"
@@ -12,10 +13,10 @@ import (
 )
 
 func finishRoute() Route {
-	return Route{Key: "work.finish", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
+	return Route{Key: "workspace.finish", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
 		createPR := invocation.Values.Bool("create_pr")
 		ready := invocation.Values.Bool("ready")
-		skipWork := invocation.Values.Bool("skip_ado")
+		skipWork := invocation.Values.Bool("skip_provider")
 		execute := invocation.Values.Bool("execute")
 		machine := invocation.Values.Bool("json")
 		if execute && !machine && execution.Policy.Interactive() && !createPR && !ready && !skipWork {
@@ -39,16 +40,16 @@ func finishRoute() Route {
 			}
 		}
 		root := resolvedRoot(invocation.Values)
-		request := workapp.FinishRequest{Root: root, Workspace: optional(invocation.Values, "workspace"), Continue: invocation.Values.Bool("continue"), CreatePR: createPR, Ready: ready, SkipVerify: invocation.Values.Bool("skip_verify"), SkipWork: skipWork, ForceWithLease: invocation.Values.Bool("force_with_lease"), Message: optional(invocation.Values, "message"), FinishStates: taskFinishStates(root)}
+		request := workapp.FinishRequest{Provider: strings.TrimSpace(invocation.Values.String("provider")), Root: root, Workspace: optional(invocation.Values, "workspace"), Continue: invocation.Values.Bool("continue"), CreatePR: createPR, Ready: ready, SkipVerify: invocation.Values.Bool("skip_verify"), SkipWork: skipWork, ForceWithLease: invocation.Values.Bool("force_with_lease"), Message: optional(invocation.Values, "message"), FinishStates: taskFinishStates(root)}
 		preview, err := dispatchDirect(ctx, execution, invocation, request)
 		if err != nil {
 			return Outcome{}, err
 		}
 		plan, ok := preview.Result.(workapp.FinishReport)
 		if !ok {
-			return Outcome{}, fmt.Errorf("cli.invalid-result:work.finish:%T", preview.Result)
+			return Outcome{}, fmt.Errorf("cli.invalid-result:workspace.finish:%T", preview.Result)
 		}
-		previewOutput, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), preview, "work.finish", console.FormatHuman, nil)
+		previewOutput, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), preview, "workspace.finish", console.FormatHuman, nil)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -58,7 +59,7 @@ func finishRoute() Route {
 				if err != nil {
 					return Outcome{}, err
 				}
-				output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), preview, "work.finish", format, projection)
+				output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), preview, "workspace.finish", format, projection)
 				return Outcome{Output: output, Code: console.ExitSuccess}, err
 			}
 			return success(previewOutput), nil
@@ -71,7 +72,7 @@ func finishRoute() Route {
 		if len(plan.Plan.ActionableRepositories) == 0 && len(plan.Plan.PullRequestCandidates) == 0 && skipWork {
 			return success(console.Output{}), nil
 		}
-		if _, err := confirmExecution(ctx, execution, invocation, true, invocation.Values.Bool("yes"), machine, promptWorkFinish); err != nil {
+		if _, err := confirmExecution(ctx, execution, invocation, true, invocation.Values.Bool("yes"), machine, promptWorkspaceFinish); err != nil {
 			return Outcome{}, err
 		}
 		request.Execute = true
@@ -83,7 +84,7 @@ func finishRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "work.finish", format, projection)
+		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "workspace.finish", format, projection)
 		if err != nil {
 			return Outcome{}, err
 		}

@@ -91,7 +91,7 @@ type RepositoryConfig struct {
 	SSHURL                  *string `json:"sshUrl,omitempty"`
 	DefaultBranch           string  `json:"defaultBranch"`
 	PullRequestTargetBranch string  `json:"pullRequestTargetBranch,omitempty"`
-	WorkRepository          string  `json:"workRepository,omitempty"`
+	ProviderRepository      string  `json:"providerRepository,omitempty"`
 	AnchorName              string  `json:"anchorName,omitempty"`
 	GitCredentialSecret     string  `json:"gitCredentialSecret,omitempty"`
 	Folder                  string  `json:"folder,omitempty"`
@@ -99,6 +99,7 @@ type RepositoryConfig struct {
 
 type ProjectConfig struct {
 	Key          string             `json:"key"`
+	WorkProvider string             `json:"workProvider,omitempty"`
 	Repositories []RepositoryConfig `json:"repositories"`
 }
 
@@ -347,30 +348,30 @@ type VerificationResult struct {
 }
 
 type PullRequestCandidate struct {
-	Repository     string `json:"repository"`
-	Path           string `json:"path"`
-	WorkRepository string `json:"adoRepository,omitempty"`
-	TargetBranch   string `json:"targetBranch"`
+	Repository         string `json:"repository"`
+	Path               string `json:"path"`
+	ProviderRepository string `json:"providerRepository,omitempty"`
+	TargetBranch       string `json:"targetBranch"`
 }
 
 func (p PullRequestCandidate) MarshalJSON() ([]byte, error) {
 	var repository *string
-	if p.WorkRepository != "" {
-		value := p.WorkRepository
+	if p.ProviderRepository != "" {
+		value := p.ProviderRepository
 		repository = &value
 	}
 	return json.Marshal(struct {
-		Repository    string  `json:"repository"`
-		Path          string  `json:"path"`
-		ADORepository *string `json:"adoRepository"`
-		TargetBranch  string  `json:"targetBranch"`
+		Repository         string  `json:"repository"`
+		Path               string  `json:"path"`
+		ProviderRepository *string `json:"providerRepository"`
+		TargetBranch       string  `json:"targetBranch"`
 	}{p.Repository, p.Path, repository, p.TargetBranch})
 }
 
 type PullRequestInput struct {
-	Repository, SourceRefName, TargetRefName, Title, Description string
-	IsDraft                                                      bool
-	WorkItemIDs                                                  []string
+	ProviderRepository, SourceRefName, TargetRefName, Title, Description string
+	IsDraft                                                              bool
+	WorkItemIDs                                                          []string
 }
 type PullRequestResult struct {
 	Repository    string  `json:"repository"`
@@ -382,9 +383,6 @@ type PullRequestResult struct {
 
 func (p PullRequestResult) MarshalJSON() ([]byte, error) {
 	reason := p.SkipReason
-	if reason == "missingWorkRepository" {
-		reason = "missingAdoRepository"
-	}
 	var skipReason *string
 	if reason != "" {
 		skipReason = &reason

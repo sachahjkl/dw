@@ -6,23 +6,6 @@ import (
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
-var rejectedLegacyRoutes = [][]string{
-	{"task"},
-	{"work", "start-pr"},
-	{"work", "add-work-item"},
-	{"work", "remove-work-item"},
-	{"work", "add-repo"},
-	{"work", "repo-latest"},
-	{"work", "handoff-validate"},
-	{"work", "create-child-task"},
-	{"ado", "work-item"},
-	{"ado", "set-state"},
-	{"ado", "ai-context"},
-	{"agent", "set-default"},
-	{"config", "set-root"},
-	{"config", "set-color"},
-}
-
 // EnglishEntries returns the deterministic CLI catalog for composition with l10n.NewEnglish.
 func EnglishEntries() []l10n.Entry {
 	root := Root(nil)
@@ -53,11 +36,7 @@ func Root(localizer l10n.Localizer) *Command {
 
 	root := b.command("dw", "root", "Dev Workflow", []Argument{verbose, help, version},
 		b.command("version", "version", "Show the CLI version.", nil),
-		func() *Command {
-			c := b.command("guide", "guide", "Explain the getting-started flow.", nil)
-			c.Aliases = []string{"get-started"}
-			return c
-		}(),
+		b.command("guide", "guide", "Explain the getting-started flow.", nil),
 		b.command("doctor", "doctor", "Diagnose machine prerequisites and local configuration.", []Argument{
 			b.option("doctor", "fix", Bool, "Apply automatic fixes."),
 		}),
@@ -74,25 +53,16 @@ func Root(localizer l10n.Localizer) *Command {
 		b.command("tui", "tui", "Open the DevWorkflow TUI dashboard.", []Argument{
 			b.option("tui", "root", String, "DevWorkflow root to use."),
 		}),
-		agentGrammar(b), authGrammar(b), completionGrammar(b), configGrammar(b), adoGrammar(b), dbGrammar(b), secretGrammar(b),
+		agentGrammar(b), completionGrammar(b), configGrammar(b),
+		workGrammar(b), workspaceGrammar(b), dataGrammar(b), providerGrammar(b), secretGrammar(b),
 		b.command("upgrade", "upgrade", "Upgrade the dw binary.", []Argument{
 			conflict(b.option("upgrade", "check", Bool, "Check without updating."), "rid"),
 			conflict(b.option("upgrade", "rid", String, "Artifact runtime identifier."), "check"),
 		}),
-		workGrammar(b),
 	)
 	root.CompletionAlphabetical = false
-	root.RejectedPaths = rejectedLegacyRoutes
 	attach(root, nil, localizer, b.english)
 	return root
-}
-
-func authGrammar(b *builder) *Command {
-	return b.command("auth", "auth", "Manage Azure DevOps authentication.", nil,
-		b.command("login", "auth.login", "Connect Azure DevOps.", []Argument{b.option("auth.login", "root", String, "DevWorkflow root to use for auth configuration.")}),
-		b.command("status", "auth.status", "Show Azure DevOps connection status.", []Argument{b.option("auth.status", "root", String, "DevWorkflow root to use for auth configuration.")}),
-		b.command("logout", "auth.logout", "Remove the local Azure DevOps session.", []Argument{b.option("auth.logout", "root", String, "DevWorkflow root to use for auth configuration.")}),
-	)
 }
 
 func completionGrammar(b *builder) *Command {

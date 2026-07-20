@@ -12,79 +12,82 @@ import (
 type ResultKind = action.ID
 
 const (
-	ResultVersion             ResultKind = "version"
-	ResultGuide               ResultKind = "guide"
-	ResultDoctor              ResultKind = "doctor"
-	ResultInit                ResultKind = "init"
-	ResultRefresh             ResultKind = "refresh"
-	ResultTUI                 ResultKind = "tui"
-	ResultAgentContext        ResultKind = "agent.context"
-	ResultAgentOpen           ResultKind = "agent.open"
-	ResultAgentConfig         ResultKind = "agent.config"
-	ResultAgentShow           ResultKind = "agent.show"
-	ResultAgentDefaultSet     ResultKind = "agent.default.set"
-	ResultAgentDoctor         ResultKind = "agent.doctor"
-	ResultAuthLogin           ResultKind = "auth.login"
-	ResultAuthStatus          ResultKind = "auth.status"
-	ResultAuthLogout          ResultKind = "auth.logout"
-	ResultCompletionShow      ResultKind = "completion.show"
-	ResultCompletionGenerate  ResultKind = "completion.generate"
-	ResultCompletionInstall   ResultKind = "completion.install"
-	ResultCompletionComplete  ResultKind = "completion.complete"
-	ResultConfigShow          ResultKind = "config.show"
-	ResultConfigDoctor        ResultKind = "config.doctor"
-	ResultConfigRootSet       ResultKind = "config.root.set"
-	ResultConfigColorSet      ResultKind = "config.color.set"
-	ResultADOAssigned         ResultKind = "ado.assigned"
-	ResultADOPullRequests     ResultKind = "ado.prs"
-	ResultADOChangelog        ResultKind = "ado.changelog"
-	ResultADOWorkItem         ResultKind = "ado.item.show"
-	ResultADOSetState         ResultKind = "ado.state.set"
-	ResultADOContext          ResultKind = "ado.context.show"
-	ResultADOAIContext        ResultKind = "ado.context.ai"
-	ResultDBList              ResultKind = "db.list"
-	ResultDBCollect           ResultKind = "db.collect"
-	ResultDBGuard             ResultKind = "db.guard"
-	ResultDBSchema            ResultKind = "db.schema"
-	ResultDBDescribe          ResultKind = "db.describe"
-	ResultDBQuery             ResultKind = "db.query"
-	ResultSecretList          ResultKind = "secret.list"
-	ResultSecretSet           ResultKind = "secret.set"
-	ResultSecretGet           ResultKind = "secret.get"
-	ResultSecretDelete        ResultKind = "secret.delete"
-	ResultUpgrade             ResultKind = "upgrade.run"
-	ResultWorkStatus          ResultKind = "work.status"
-	ResultWorkList            ResultKind = "work.list"
-	ResultWorkCurrent         ResultKind = "work.current"
-	ResultWorkDoing           ResultKind = "work.item.doing"
-	ResultWorkItemAdd         ResultKind = "work.item.add"
-	ResultWorkItemRemove      ResultKind = "work.item.remove"
-	ResultWorkCreateChild     ResultKind = "work.task.child.create"
-	ResultWorkOpen            ResultKind = "work.open"
-	ResultWorkStart           ResultKind = "work.start"
-	ResultWorkStartPR         ResultKind = "work.pr.start"
-	ResultWorkPreflight       ResultKind = "work.preflight"
-	ResultWorkSync            ResultKind = "work.sync"
-	ResultWorkRename          ResultKind = "work.rename"
-	ResultWorkAddRepo         ResultKind = "work.repo.add"
-	ResultWorkRepoLatest      ResultKind = "work.repo.latest"
-	ResultWorkCommit          ResultKind = "work.commit"
-	ResultWorkFinish          ResultKind = "work.finish"
-	ResultWorkHandoffValidate ResultKind = "work.handoff.validate"
-	ResultWorkTeardown        ResultKind = "work.teardown"
-	ResultWorkPrune           ResultKind = "work.prune"
+	ResultVersion                  ResultKind = "version"
+	ResultGuide                    ResultKind = "guide"
+	ResultDoctor                   ResultKind = "doctor"
+	ResultInit                     ResultKind = "init"
+	ResultRefresh                  ResultKind = "refresh"
+	ResultTUI                      ResultKind = "tui"
+	ResultAgentContext             ResultKind = "agent.context"
+	ResultAgentConfig              ResultKind = "agent.config"
+	ResultAgentShow                ResultKind = "agent.show"
+	ResultAgentDefaultSet          ResultKind = "agent.default.set"
+	ResultAgentDoctor              ResultKind = "agent.doctor"
+	ResultProviderList             ResultKind = "provider.list"
+	ResultProviderShow             ResultKind = "provider.show"
+	ResultProviderCapabilities     ResultKind = "provider.capabilities"
+	ResultProviderAuthLogin        ResultKind = "provider.auth.login"
+	ResultProviderAuthStatus       ResultKind = "provider.auth.status"
+	ResultProviderAuthLogout       ResultKind = "provider.auth.logout"
+	ResultCompletionShow           ResultKind = "completion.show"
+	ResultCompletionGenerate       ResultKind = "completion.generate"
+	ResultCompletionInstall        ResultKind = "completion.install"
+	ResultCompletionComplete       ResultKind = "completion.complete"
+	ResultConfigShow               ResultKind = "config.show"
+	ResultConfigDoctor             ResultKind = "config.doctor"
+	ResultConfigRootSet            ResultKind = "config.root.set"
+	ResultConfigColorSet           ResultKind = "config.color.set"
+	ResultWorkItemList             ResultKind = "work.item.list"
+	ResultWorkPullRequestList      ResultKind = "work.pr.list"
+	ResultWorkChangelog            ResultKind = "work.changelog"
+	ResultWorkItemShow             ResultKind = "work.item.show"
+	ResultWorkItemStateSet         ResultKind = "work.item.state.set"
+	ResultWorkContextShow          ResultKind = "work.context.show"
+	ResultWorkContextAI            ResultKind = "work.context.ai"
+	ResultDataSourceList           ResultKind = "data.source.list"
+	ResultDataSourceCollect        ResultKind = "data.source.collect"
+	ResultDataGuard                ResultKind = "data.guard"
+	ResultDataCatalog              ResultKind = "data.catalog"
+	ResultDataDescribe             ResultKind = "data.describe"
+	ResultDataQuery                ResultKind = "data.query"
+	ResultSecretList               ResultKind = "secret.list"
+	ResultSecretSet                ResultKind = "secret.set"
+	ResultSecretGet                ResultKind = "secret.get"
+	ResultSecretDelete             ResultKind = "secret.delete"
+	ResultUpgrade                  ResultKind = "upgrade"
+	ResultWorkspaceStatus          ResultKind = "workspace.status"
+	ResultWorkspaceList            ResultKind = "workspace.list"
+	ResultWorkspaceCurrent         ResultKind = "workspace.current"
+	ResultWorkItemDoing            ResultKind = "work.item.doing"
+	ResultWorkspaceItemAdd         ResultKind = "workspace.item.add"
+	ResultWorkspaceItemRemove      ResultKind = "workspace.item.remove"
+	ResultWorkItemChildCreate      ResultKind = "work.item.child.create"
+	ResultWorkspaceOpen            ResultKind = "workspace.open"
+	ResultWorkspaceStart           ResultKind = "workspace.start"
+	ResultWorkspaceStartPR         ResultKind = "workspace.pr.start"
+	ResultWorkspacePreflight       ResultKind = "workspace.preflight"
+	ResultWorkspaceSync            ResultKind = "workspace.sync"
+	ResultWorkspaceRename          ResultKind = "workspace.rename"
+	ResultWorkspaceAddRepo         ResultKind = "workspace.repo.add"
+	ResultWorkspaceRepoLatest      ResultKind = "workspace.repo.latest"
+	ResultWorkspaceCommit          ResultKind = "workspace.commit"
+	ResultWorkspaceFinish          ResultKind = "workspace.finish"
+	ResultWorkspaceHandoffValidate ResultKind = "workspace.handoff.validate"
+	ResultWorkspaceTeardown        ResultKind = "workspace.teardown"
+	ResultWorkspacePrune           ResultKind = "workspace.prune"
 )
 
 var RequiredResultKinds = []ResultKind{
 	"init", "refresh", "config.show", "config.doctor", "config.root.set", "config.color.set",
-	"agent.config", "agent.show", "agent.default.set", "agent.context", "agent.open", "doctor", "agent.doctor",
-	"db.list", "db.collect", "db.guard", "db.schema", "db.describe", "db.query",
+	"agent.config", "agent.show", "agent.default.set", "agent.context", "doctor", "agent.doctor",
 	"secret.list", "secret.set", "secret.get", "secret.delete", "upgrade",
-	"auth.login", "auth.status", "auth.logout", "ado.assigned", "ado.prs", "ado.changelog",
-	"ado.context.show", "ado.context.ai", "ado.item.show", "ado.state.set", "work.item.doing",
-	"work.status", "work.list", "work.current", "work.item.add", "work.item.remove", "work.preflight",
-	"work.rename", "work.repo.add", "work.repo.latest", "work.commit", "work.handoff.validate", "work.teardown",
-	"work.start", "work.pr.start", "work.open", "work.sync", "work.task.child.create", "work.prune", "work.finish",
+	"work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create",
+	"work.pr.list", "work.context.show", "work.context.ai", "work.changelog",
+	"workspace.status", "workspace.list", "workspace.current", "workspace.open", "workspace.start", "workspace.pr.start",
+	"workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest",
+	"workspace.item.add", "workspace.item.remove", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune",
+	"data.source.list", "data.source.collect", "data.guard", "data.catalog", "data.describe", "data.query",
+	"provider.list", "provider.show", "provider.capabilities", "provider.auth.login", "provider.auth.status", "provider.auth.logout",
 }
 
 type RenderContext struct {
@@ -127,54 +130,6 @@ func (r *Registry) Register(kind ResultKind, renderer ResultRenderer) error {
 		return errors.New("console.duplicate-renderer:" + string(kind))
 	}
 	r.renderers[kind] = renderer
-	return nil
-}
-
-func (r *Registry) Alias(alias, target ResultKind) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if alias == "" || target == "" {
-		return errors.New("console.invalid-renderer-alias")
-	}
-	if _, exists := r.renderers[alias]; exists {
-		return errors.New("console.duplicate-renderer:" + string(alias))
-	}
-	renderer, exists := r.renderers[target]
-	if !exists {
-		return RendererNotFoundError{Kind: string(target)}
-	}
-	r.renderers[alias] = renderer
-	return nil
-}
-
-func (r *Registry) Union(kind ResultKind, targets ...ResultKind) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if kind == "" || len(targets) == 0 {
-		return errors.New("console.invalid-renderer-union")
-	}
-	if _, exists := r.renderers[kind]; exists {
-		return errors.New("console.duplicate-renderer:" + string(kind))
-	}
-	renderers := make([]ResultRenderer, len(targets))
-	for i, target := range targets {
-		renderer, exists := r.renderers[target]
-		if !exists {
-			return RendererNotFoundError{Kind: string(target)}
-		}
-		renderers[i] = renderer
-	}
-	r.renderers[kind] = func(context RenderContext, payload any) (Output, error) {
-		for _, renderer := range renderers {
-			output, err := renderer(context, payload)
-			var mismatch PayloadTypeError
-			if errors.As(err, &mismatch) {
-				continue
-			}
-			return output, err
-		}
-		return Output{}, PayloadTypeError{Kind: string(kind)}
-	}
 	return nil
 }
 

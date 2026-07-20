@@ -43,7 +43,7 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 		report.Execution = &local
 		return report, nil
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, plan.Manifest.Project))
 	if err != nil {
 		return FinishReport{}, err
 	}
@@ -59,12 +59,12 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 	reference := projectRef(request.Root, plan.Manifest.Project)
 	sourceRef := "refs/heads/" + plan.Manifest.BranchName
 	for _, candidate := range plan.PullRequestCandidates {
-		if strings.TrimSpace(candidate.WorkRepository) == "" {
-			local.PullRequests = append(local.PullRequests, workspace.PullRequestResult{Repository: candidate.Repository, Action: "skipped", SkipReason: "missingWorkRepository"})
+		if strings.TrimSpace(candidate.ProviderRepository) == "" {
+			local.PullRequests = append(local.PullRequests, workspace.PullRequestResult{Repository: candidate.Repository, Action: "skipped", SkipReason: "missingProviderRepository"})
 			continue
 		}
 		local.Events = append(local.Events, workspace.ActionEvent{Type: "checkingActivePullRequest", Repository: candidate.Repository})
-		existing, findErr := prReader.ActivePullRequest(ctx, reference, work.RepositoryName(candidate.WorkRepository), sourceRef)
+		existing, findErr := prReader.ActivePullRequest(ctx, reference, work.RepositoryName(candidate.ProviderRepository), sourceRef)
 		if findErr != nil {
 			return FinishReport{}, findErr
 		}
@@ -78,7 +78,7 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 		}
 		local.Events = append(local.Events, workspace.ActionEvent{Type: "creatingPullRequest", Repository: candidate.Repository})
 		handoff := handoffFor(plan.HandoffSummaries, candidate.Repository)
-		created, createErr := prWriter.CreatePullRequest(ctx, reference, work.PullRequestCreate{Repository: work.RepositoryName(candidate.WorkRepository), SourceRef: sourceRef, TargetRef: "refs/heads/" + candidate.TargetBranch, Title: finishPullRequestTitle(plan.Manifest), Description: workspace.PullRequestDescription(plan.Manifest, candidate, "", local.VerificationResults, handoff), Draft: !plan.Ready, WorkItemIDs: itemIDs(plan.Manifest.AllKnownWorkItemIDs())})
+		created, createErr := prWriter.CreatePullRequest(ctx, reference, work.PullRequestCreate{Repository: work.RepositoryName(candidate.ProviderRepository), SourceRef: sourceRef, TargetRef: "refs/heads/" + candidate.TargetBranch, Title: finishPullRequestTitle(plan.Manifest), Description: workspace.PullRequestDescription(plan.Manifest, candidate, "", local.VerificationResults, handoff), Draft: !plan.Ready, WorkItemIDs: itemIDs(plan.Manifest.AllKnownWorkItemIDs())})
 		if createErr != nil {
 			return FinishReport{}, createErr
 		}
@@ -88,7 +88,7 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 		}
 		local.PullRequests = append(local.PullRequests, projected)
 		for _, id := range plan.Manifest.AllKnownWorkItemIDs() {
-			if linkErr := prWriter.LinkPullRequestWorkItem(ctx, reference, work.RepositoryName(candidate.WorkRepository), created.ID, work.ItemID(id)); linkErr != nil {
+			if linkErr := prWriter.LinkPullRequestWorkItem(ctx, reference, work.RepositoryName(candidate.ProviderRepository), created.ID, work.ItemID(id)); linkErr != nil {
 				local.Events = append(local.Events, workspace.ActionEvent{Type: "pullRequestWorkItemLinkSkipped", WorkItemID: id, Error: linkErr.Error()})
 			}
 		}
@@ -128,7 +128,7 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 				local.WorkItemUpdates = append(local.WorkItemUpdates, update)
 				continue
 			}
-			_, writeErr := writer.UpdateStates(ctx, projectRef(request.Root, plan.Manifest.Project), []work.StateChange{{ID: item.ID, State: work.State(target), Comment: "work finish: PR ouverte"}})
+			_, writeErr := writer.UpdateStates(ctx, projectRef(request.Root, plan.Manifest.Project), []work.StateChange{{ID: item.ID, State: work.State(target), Comment: "dw workspace finish: pull request opened"}})
 			if writeErr != nil {
 				return FinishReport{}, writeErr
 			}

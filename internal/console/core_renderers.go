@@ -5,7 +5,7 @@ import (
 
 	"github.com/sachahjkl/dw/internal/config"
 	"github.com/sachahjkl/dw/internal/data"
-	"github.com/sachahjkl/dw/internal/dbcompat"
+	"github.com/sachahjkl/dw/internal/dataapp"
 	"github.com/sachahjkl/dw/internal/doctor"
 	"github.com/sachahjkl/dw/internal/secret"
 	"github.com/sachahjkl/dw/internal/workapp"
@@ -69,126 +69,140 @@ func RegisterCoreRenderers(results *Registry) error {
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, dbcompat.ActionList, func(r dbcompat.ListResult) Page {
+			return RegisterPageResult(results, dataapp.ActionDataSourceList, func(r dataapp.DataSourceListResult) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Root, Style: ValuePath}, countField("result.items", len(r.Entries)), countField("result.warnings", len(r.Warnings)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, dbcompat.ActionCollect, func(r dbcompat.CollectResult) Page {
+			return RegisterPageResult(results, dataapp.ActionDataSourceCollect, func(r dataapp.DataSourceCollectResult) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Root, Style: ValuePath}, countField("result.workspaces", r.ScannedWorkspaces), countField("result.files", r.ScannedFiles), countField("result.items", len(r.Findings)), countField("result.saved", r.SavedCount))
 			})
 		},
-		func() error { return RegisterPageResult(results, dbcompat.ActionGuard, guardPage) },
+		func() error { return RegisterPageResult(results, dataapp.ActionDataGuard, guardPage) },
 		func() error {
-			return RegisterResult(results, dbcompat.ActionSchema, func(c RenderContext, r dbcompat.SchemaResult) (Output, error) {
-				return renderLegacyQuery(r.QueryResult, c), nil
+			return RegisterResult(results, dataapp.ActionDataCatalog, func(c RenderContext, r dataapp.CatalogResult) (Output, error) {
+				return renderDataQuery(r.NativeQueryReport, c), nil
 			})
 		},
 		func() error {
-			return RegisterResult(results, dbcompat.ActionQuery, func(c RenderContext, r dbcompat.QueryActionResult) (Output, error) {
-				return renderLegacyQuery(r.QueryResult, c), nil
+			return RegisterResult(results, dataapp.ActionDataQuery, func(c RenderContext, r dataapp.DataQueryResult) (Output, error) {
+				return renderDataQuery(r.NativeQueryReport, c), nil
 			})
 		},
 		func() error {
-			return RegisterResult(results, dbcompat.ActionDescribe, func(c RenderContext, r dbcompat.DescribeResult) (Output, error) {
+			return RegisterResult(results, dataapp.ActionDataDescribe, func(c RenderContext, r dataapp.DescribeResult) (Output, error) {
 				if r.Result == nil {
 					return Output{}, nil
 				}
-				return renderLegacyQuery(*r.Result, c), nil
+				return renderDataQuery(*r.Result, c), nil
 			})
 		},
-		func() error { return RegisterPageResult(results, workapp.ActionAuthLogin, authLoginPage) },
-		func() error { return RegisterPageResult(results, workapp.ActionAuthStatus, authStatusPage) },
+		func() error { return RegisterPageResult(results, workapp.ActionProviderAuthLogin, authLoginPage) },
+		func() error { return RegisterPageResult(results, workapp.ActionProviderAuthStatus, authStatusPage) },
 		func() error {
-			return RegisterPageResult(results, workapp.ActionAuthLogout, func(r workapp.AuthLogoutReport) Page {
+			return RegisterPageResult(results, workapp.ActionProviderAuthLogout, func(r workapp.AuthLogoutReport) Page {
 				return actionPage(r.ActionID(), boolStatus("result.removed", r.RemovedLocalSession))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionAssigned, func(r workapp.AssignedReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkItemList, func(r workapp.AssignedReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)), countField("result.groups", len(r.Groups)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionPullRequests, func(r workapp.PullRequestsReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkPullRequestList, func(r workapp.PullRequestsReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.repositories", len(r.Repositories)), countField("result.items", len(r.Items)))
 			})
 		},
 		func() error {
-			return RegisterChangelogRenderer(results, workapp.ActionChangelog, projectChangelogComplete)
+			return RegisterChangelogRenderer(results, workapp.ActionWorkChangelog, projectChangelogComplete)
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionContext, func(r workapp.ContextReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkContextShow, func(r workapp.ContextReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)), countField("result.expanded", len(r.Expanded)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionAIContext, func(r workapp.AIContextResult) Page {
+			return RegisterPageResult(results, workapp.ActionWorkContextAI, func(r workapp.AIContextResult) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionItemShow, func(r workapp.ItemShowReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkItemShow, func(r workapp.ItemShowReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionStatePlan, func(r workapp.StatePlanReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkItemStatePlan, func(r workapp.StatePlanReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, Field{Label: "result.state", Value: r.State}, countField("result.items", len(r.IDs)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionStateExecute, func(r workapp.StateExecutionReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkItemStateExecute, func(r workapp.StateExecutionReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Plan.Project}, Field{Label: "result.state", Value: r.Plan.State}, countField("result.updated", len(r.Updated)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionStateSet, func(r workapp.StateSetResult) Page {
+			return RegisterPageResult(results, workapp.ActionWorkItemStateSet, func(r workapp.StateSetResult) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Plan.Project}, Field{Label: "result.state", Value: r.Plan.State}, countField("result.updated", len(r.Updated)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionDoingPlan, func(r workapp.DoingPlanReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkItemDoingPlan, func(r workapp.DoingPlanReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.updates", len(r.Updates)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionDoingExecute, func(r workapp.DoingExecutionReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkItemDoingExecute, func(r workapp.DoingExecutionReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Plan.Project}, countField("result.updated", len(r.Updated)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionStart, func(r workapp.StartResult) Page {
+			return results.Register(ResultWorkItemDoing, func(context RenderContext, payload any) (Output, error) {
+				var page Page
+				switch result := payload.(type) {
+				case workapp.DoingPlanReport:
+					page = actionPage(ResultWorkItemDoing, Field{Label: "result.project", Value: result.Project}, countField("result.updates", len(result.Updates)))
+				case workapp.DoingExecutionReport:
+					page = actionPage(ResultWorkItemDoing, Field{Label: "result.project", Value: result.Plan.Project}, countField("result.updated", len(result.Updated)))
+				default:
+					return Output{}, PayloadTypeError{Kind: string(ResultWorkItemDoing)}
+				}
+				return TextOutput(FormatHuman, RenderPage(page, context.Localizer, context.Theme)), nil
+			})
+		},
+		func() error {
+			return RegisterPageResult(results, workapp.ActionWorkspaceStart, func(r workapp.StartResult) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Plan.Root, Style: ValuePath}, countField("result.items", len(r.Plan.WorkItems)), boolStatus("result.executed", r.Execution != nil))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionStartPullRequest, func(r workapp.StartPullRequestResult) Page {
+			return RegisterPageResult(results, workapp.ActionWorkspacePullRequestStart, func(r workapp.StartPullRequestResult) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.pull-request", Value: strconv.FormatInt(r.Plan.PullRequestID, 10)}, countField("result.repositories", len(r.Plan.Repositories)), boolStatus("result.executed", r.Execution != nil))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionOpen, func(r workapp.OpenReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkspaceOpen, func(r workapp.OpenReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.workspace", Value: r.Workspace, Style: ValuePath})
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionSync, func(r workapp.SyncReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkspaceSync, func(r workapp.SyncReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.workspace", Value: r.Workspace, Style: ValuePath}, countField("result.items", len(r.Snapshots)))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionChild, func(r workapp.ChildReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkItemChildCreate, func(r workapp.ChildReport) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.workspace", Value: r.Workspace, Style: ValuePath}, Field{Label: "result.repository", Value: r.Repository}, Field{Label: "result.item", Value: r.Created.ID, Style: ValueSuccess})
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionPrune, func(r workapp.PruneReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkspacePrune, func(r workapp.PruneReport) Page {
 				return actionPage(r.ActionID(), boolStatus("result.executed", r.Execution != nil))
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionFinish, func(r workapp.FinishReport) Page {
+			return RegisterPageResult(results, workapp.ActionWorkspaceFinish, func(r workapp.FinishReport) Page {
 				return actionPage(r.ActionID(), boolStatus("result.executed", r.Execution != nil))
 			})
 		},
@@ -258,14 +272,14 @@ func secretListPage(r secret.ListReport) Page {
 	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.key", "result.exists", "result.references"}, Rows: rows}}}
 	return p
 }
-func guardPage(r dbcompat.GuardResult) Page {
+func guardPage(r dataapp.GuardResult) Page {
 	p := actionPage(r.ActionID(), boolStatus("result.allowed", r.IsAllowed))
 	if r.Reason != nil {
 		p.Summary = append(p.Summary, Field{Label: "result.reason", Value: *r.Reason, Style: ValueFailure})
 	}
 	return p
 }
-func renderLegacyQuery(r dbcompat.QueryResult, c RenderContext) Output {
+func renderDataQuery(r dataapp.NativeQueryReport, c RenderContext) Output {
 	t := data.Table{Columns: make([]data.Column, len(r.Columns)), Rows: make([][]data.Value, len(r.Rows)), Truncated: r.Truncated}
 	for i, n := range r.Columns {
 		t.Columns[i] = data.Column{Name: n}

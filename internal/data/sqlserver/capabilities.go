@@ -23,7 +23,7 @@ func (provider *Provider) ValidateRead(_ context.Context, connection data.Connec
 	if guard.IsAllowed {
 		return nil
 	}
-	reason := l10n.Text("db.error.unknown_reason")
+	reason := l10n.Text("data.error.unknown_reason")
 	if guard.Reason != nil {
 		reason = *guard.Reason
 	}
@@ -65,7 +65,7 @@ func (provider *Provider) Catalog(ctx context.Context, connection data.Connectio
 	if err != nil {
 		return nil, err
 	}
-	result, err := provider.Schema(ctx, resolved)
+	result, err := provider.CatalogNative(ctx, resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (provider *Provider) Describe(ctx context.Context, connection data.Connecti
 	if strings.TrimSpace(schema) == "" {
 		schema = "dbo"
 	}
-	result, err := provider.DescribeLegacy(ctx, resolved, schema+"."+object.Name)
+	result, err := provider.DescribeNative(ctx, resolved, schema+"."+object.Name)
 	if err != nil {
 		return data.Description{}, err
 	}
@@ -111,8 +111,8 @@ func (provider *Provider) Describe(ctx context.Context, connection data.Connecti
 	return data.Description{Object: data.ObjectRef{Catalog: object.Catalog, Schema: schema, Name: object.Name}, Columns: columns}, nil
 }
 
-// DescribeTable preserves SQL Server's native describe projection for legacy presentation while
-// Describe remains the provider-neutral metadata capability.
+// DescribeTable preserves SQL Server's native describe projection while Describe remains the
+// provider-neutral metadata capability.
 func (provider *Provider) DescribeTable(ctx context.Context, connection data.Connection, object data.ObjectRef) (data.Table, error) {
 	resolved, err := provider.resolveGeneric(connection)
 	if err != nil {
@@ -122,7 +122,7 @@ func (provider *Provider) DescribeTable(ctx context.Context, connection data.Con
 	if strings.TrimSpace(schema) == "" {
 		schema = "dbo"
 	}
-	result, err := provider.DescribeLegacy(ctx, resolved, schema+"."+object.Name)
+	result, err := provider.DescribeNative(ctx, resolved, schema+"."+object.Name)
 	if err != nil {
 		return data.Table{}, err
 	}
@@ -187,7 +187,7 @@ func (provider *Provider) resolveGeneric(connection data.Connection) (ResolvedCo
 	return Resolve(config, defaults)
 }
 
-func genericTable(result QueryResult) data.Table {
+func genericTable(result NativeQueryReport) data.Table {
 	columns := make([]data.Column, len(result.Columns))
 	for index, name := range result.Columns {
 		columns[index] = data.Column{Name: name, Ordinal: index + 1}

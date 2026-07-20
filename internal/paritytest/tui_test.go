@@ -17,13 +17,13 @@ func TestTUIHotkeyViewAndModalTransitions(t *testing.T) {
 		view tui.View
 	}{
 		{key: "2", view: tui.Workspaces},
-		{key: "3", view: tui.ADO},
+		{key: "3", view: tui.Work},
 		{key: "4", view: tui.PullRequests},
-		{key: "5", view: tui.Databases},
+		{key: "5", view: tui.Data},
 		{key: "6", view: tui.Composer},
 		{key: "tab", view: tui.Dashboard},
 		{key: "shift+tab", view: tui.Composer},
-		{key: "left", view: tui.Databases},
+		{key: "left", view: tui.Data},
 		{key: "right", view: tui.Composer},
 	} {
 		model.HandleKey(tui.Key{Code: transition.key})

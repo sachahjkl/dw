@@ -25,37 +25,6 @@ type ResultEnvelope struct {
 	Result Result
 }
 
-// Domain and Risk are stable machine tokens used for policy decisions.
-type Domain string
-type Risk string
-
-const (
-	DomainConfig  Domain = "config"
-	DomainAgent   Domain = "agent"
-	DomainAuth    Domain = "auth"
-	DomainWork    Domain = "work"
-	DomainData    Domain = "data"
-	DomainTask    Domain = "task"
-	DomainSecret  Domain = "secret"
-	DomainUpgrade Domain = "upgrade"
-
-	RiskReadOnly       Risk = "read-only"
-	RiskPreview        Risk = "preview"
-	RiskMutating       Risk = "mutating"
-	RiskDestructive    Risk = "destructive"
-	RiskExternalLaunch Risk = "external-launch"
-)
-
-// Descriptor contains action policy and localized presentation references.
-type Descriptor struct {
-	ID                  ID
-	Domain              Domain
-	Risk                Risk
-	Label               l10n.ID
-	Description         l10n.ID
-	RefreshAfterSuccess bool
-}
-
 // PromptID and ChoiceValue are distinct to prevent labels entering responses.
 type PromptID string
 type ChoiceValue string

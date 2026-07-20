@@ -82,19 +82,11 @@ func loadWorkflowPath(path string) (WorkflowConfig, error) {
 			return WorkflowConfig{}, err
 		}
 	}
-	if value, ok := document.Lookup("azureDevOps"); ok && !value.IsNull() {
-		var options AzureDevOpsOptions
-		if err = decodeValue(value, &options); err != nil {
+	if value, ok := document.Lookup("providers"); ok && !value.IsNull() {
+		config.Providers, err = parseProviderConfigurations(value)
+		if err != nil {
 			return WorkflowConfig{}, err
 		}
-		config.AzureDevOps = &options
-	}
-	if value, ok := document.Lookup("auth"); ok && !value.IsNull() {
-		var options AuthOptions
-		if err = decodeValue(value, &options); err != nil {
-			return WorkflowConfig{}, err
-		}
-		config.Auth = &options
 	}
 	if value, ok := document.Lookup("updates"); ok && !value.IsNull() {
 		var options UpdateOptions
@@ -211,6 +203,7 @@ func parseProject(value *wirejson.Value) (ProjectConfig, error) {
 	}
 	project := ProjectConfig{}
 	project.DisplayName, _ = objectString(value, "displayName")
+	project.WorkProvider, _ = objectString(value, "workProvider")
 	if included, ok := value.Lookup("includedProjects"); ok && !included.IsNull() {
 		if err := decodeValue(included, &project.IncludedProjects); err != nil {
 			return ProjectConfig{}, err
@@ -223,12 +216,12 @@ func parseProject(value *wirejson.Value) (ProjectConfig, error) {
 		}
 		project.Agent = &agent
 	}
-	if options, ok := value.Lookup("azureDevOps"); ok && !options.IsNull() {
-		var ado AzureDevOpsOptions
-		if err := decodeValue(options, &ado); err != nil {
+	if providers, ok := value.Lookup("providers"); ok && !providers.IsNull() {
+		var err error
+		project.Providers, err = parseProviderConfigurations(providers)
+		if err != nil {
 			return ProjectConfig{}, err
 		}
-		project.AzureDevOps = &ado
 	}
 	if repositories, ok := value.Lookup("repositories"); ok && !repositories.IsNull() {
 		members, object := effectiveMembers(repositories)
@@ -243,7 +236,7 @@ func parseProject(value *wirejson.Value) (ProjectConfig, error) {
 			project.Repositories = append(project.Repositories, RepositoryEntry{Key: member.Name, Repository: repository})
 		}
 	}
-	project.Unknown = unknownMembers(value, "displayName", "repositories", "includedProjects", "agent", "azureDevOps")
+	project.Unknown = unknownMembers(value, "displayName", "workProvider", "providers", "repositories", "includedProjects", "agent")
 	return project, nil
 }
 
@@ -267,11 +260,11 @@ func parseRepository(value *wirejson.Value) (RepositoryConfig, error) {
 	}
 	repository.DefaultBranch, _ = objectString(value, "defaultBranch")
 	repository.PullRequestTargetBranch = optionalString(value, "pullRequestTargetBranch")
-	repository.AzureDevOpsRepository = optionalString(value, "azureDevOpsRepository")
+	repository.ProviderRepository = optionalString(value, "providerRepository")
 	repository.AnchorName = optionalString(value, "anchorName")
 	repository.GitCredentialSecret = optionalString(value, "gitCredentialSecret")
 	repository.Folder = optionalString(value, "folder")
-	repository.Unknown = unknownMembers(value, "url", "defaultBranch", "pullRequestTargetBranch", "azureDevOpsRepository", "anchorName", "gitCredentialSecret", "folder")
+	repository.Unknown = unknownMembers(value, "url", "defaultBranch", "pullRequestTargetBranch", "providerRepository", "anchorName", "gitCredentialSecret", "folder")
 	return repository, nil
 }
 
@@ -397,6 +390,22 @@ func effectiveMembers(value *wirejson.Value) ([]wirejson.Member, bool) {
 		result = append(result, wirejson.Member{Name: member.Name, Value: last.Clone()})
 	}
 	return result, true
+}
+
+func parseProviderConfigurations(value *wirejson.Value) ([]ProviderConfiguration, error) {
+	members, ok := effectiveMembers(value)
+	if !ok {
+		return nil, errors.New("config.providers-not-object")
+	}
+	providers := make([]ProviderConfiguration, 0, len(members))
+	for _, member := range members {
+		raw, err := wirejson.Compact(member.Value)
+		if err != nil {
+			return nil, err
+		}
+		providers = append(providers, ProviderConfiguration{Name: member.Name, Raw: raw})
+	}
+	return providers, nil
 }
 
 func orderedStrings(value *wirejson.Value) ([]NamedString, error) {

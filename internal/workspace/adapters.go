@@ -20,16 +20,16 @@ func (FileConfigPort) Project(_ context.Context, root, key string) (ProjectConfi
 	if !found {
 		return ProjectConfig{}, false, nil
 	}
-	result := ProjectConfig{Key: key, Repositories: make([]RepositoryConfig, 0, len(project.Repositories))}
+	result := ProjectConfig{Key: key, WorkProvider: project.WorkProvider, Repositories: make([]RepositoryConfig, 0, len(project.Repositories))}
 	for _, entry := range project.Repositories {
 		repository := entry.Repository
 		target := ""
 		if repository.PullRequestTargetBranch != nil {
 			target = *repository.PullRequestTargetBranch
 		}
-		workRepository := ""
-		if repository.AzureDevOpsRepository != nil {
-			workRepository = *repository.AzureDevOpsRepository
+		providerRepository := ""
+		if repository.ProviderRepository != nil {
+			providerRepository = *repository.ProviderRepository
 		}
 		anchor := ""
 		if repository.AnchorName != nil {
@@ -43,7 +43,7 @@ func (FileConfigPort) Project(_ context.Context, root, key string) (ProjectConfi
 		if repository.Folder != nil {
 			folder = *repository.Folder
 		}
-		result.Repositories = append(result.Repositories, RepositoryConfig{Name: entry.Key, HTTPURL: repository.URL.HTTP, SSHURL: repository.URL.SSH, DefaultBranch: repository.DefaultBranch, PullRequestTargetBranch: target, WorkRepository: workRepository, AnchorName: anchor, GitCredentialSecret: secret, Folder: folder})
+		result.Repositories = append(result.Repositories, RepositoryConfig{Name: entry.Key, HTTPURL: repository.URL.HTTP, SSHURL: repository.URL.SSH, DefaultBranch: repository.DefaultBranch, PullRequestTargetBranch: target, ProviderRepository: providerRepository, AnchorName: anchor, GitCredentialSecret: secret, Folder: folder})
 	}
 	return result, true, nil
 }

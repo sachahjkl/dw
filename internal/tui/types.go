@@ -16,13 +16,13 @@ type View uint8
 const (
 	Dashboard View = iota
 	Workspaces
-	ADO
+	Work
 	PullRequests
-	Databases
+	Data
 	Composer
 )
 
-var allViews = [...]View{Dashboard, Workspaces, ADO, PullRequests, Databases, Composer}
+var allViews = [...]View{Dashboard, Workspaces, Work, PullRequests, Data, Composer}
 
 // Risk controls confirmation and visual treatment. Machine action identifiers
 // remain separate from these human-facing labels.
@@ -106,7 +106,7 @@ type StateEffectProjection func(action.Result) *StateEffect
 
 // SnapshotLoader functions are independent and generation-safe in Model.
 type SnapshotLoader func(context.Context, string) (Snapshot, error)
-type AssignedLoader func(context.Context, Snapshot) ([]ADOProject, error)
+type WorkLoader func(context.Context, Snapshot) ([]WorkProject, error)
 type PullRequestLoader func(context.Context, Snapshot) ([]PullRequest, error)
 
 // Dependencies are all side effects required by the TUI.
@@ -114,7 +114,7 @@ type Dependencies struct {
 	Root            string
 	Runner          Runner
 	Snapshot        SnapshotLoader
-	Assigned        AssignedLoader
+	WorkItems       WorkLoader
 	PullRequests    PullRequestLoader
 	ProjectEvent    EventProjection
 	ProjectResult   ResultProjection
@@ -127,26 +127,29 @@ type Dependencies struct {
 
 // Snapshot is the presentation projection shared with the application layer.
 type Snapshot struct {
-	Root            string
-	NeedsInit       bool
-	ProjectCount    int
-	RepositoryCount int
-	PruneCandidates int
-	DefaultAgent    string
-	ColorMode       string
-	DoctorOK        bool
-	Projects        []string
-	Repositories    []string
-	States          []string
-	SecretKeys      []string
-	Environment     []string
-	Workspaces      []Workspace
-	ADOProjects     []ADOProject
-	PullRequests    []PullRequest
-	Databases       []Database
-	Cockpit         []CockpitItem
-	Actions         []Action
-	InitAction      *Action
+	Root             string
+	NeedsInit        bool
+	ProjectCount     int
+	RepositoryCount  int
+	PruneCandidates  int
+	DefaultAgent     string
+	ColorMode        string
+	DoctorOK         bool
+	Projects         []string
+	Repositories     []string
+	WorkProviders    []string
+	ProjectProviders map[string]string
+	DataProviders    []string
+	States           []string
+	SecretKeys       []string
+	Environment      []string
+	Workspaces       []Workspace
+	WorkProjects     []WorkProject
+	PullRequests     []PullRequest
+	DataSources      []DataSource
+	Cockpit          []CockpitItem
+	Actions          []Action
+	InitAction       *Action
 }
 
 type Workspace struct {
@@ -160,14 +163,15 @@ type Workspace struct {
 	Actions      []Action
 }
 
-type ADOProject struct {
-	Key   string
-	Label string
-	Error string
-	Items []ADOItem
+type WorkProject struct {
+	Key      string
+	Label    string
+	Provider string
+	Error    string
+	Items    []WorkItem
 }
 
-type ADOItem struct {
+type WorkItem struct {
 	ID      string
 	Type    string
 	State   string
@@ -179,6 +183,7 @@ type ADOItem struct {
 type PullRequest struct {
 	ID           string
 	Project      string
+	Provider     string
 	Repository   string
 	Branch       string
 	TargetBranch string
@@ -191,10 +196,11 @@ type PullRequest struct {
 	Actions      []Action
 }
 
-type Database struct {
-	Project string
-	Key     string
-	Actions []Action
+type DataSource struct {
+	Project  string
+	Key      string
+	Provider string
+	Actions  []Action
 }
 
 type CockpitItem struct {

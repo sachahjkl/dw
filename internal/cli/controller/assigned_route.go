@@ -12,19 +12,19 @@ import (
 	"github.com/sachahjkl/dw/internal/workapp"
 )
 
-func assignedRoute() Route {
-	return Route{Key: "ado.assigned", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
+func workItemListRoute() Route {
+	return Route{Key: "work.item.list", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
 		project := invocation.Values.String("project")
 		if project == "" {
 			if invocation.Values.Bool("json") {
-				return Outcome{}, usage(fmt.Errorf("cli.ado-assigned-project-required"))
+				return Outcome{}, usage(fmt.Errorf("cli.work-item-list-project-required"))
 			}
 			if !execution.Policy.Interactive() {
-				return Outcome{}, usage(fmt.Errorf("cli.ado-assigned-project-required"))
+				return Outcome{}, usage(fmt.Errorf("cli.work-item-list-project-required"))
 			}
 			projects := config.ProjectValues(resolvedRoot(invocation.Values))
 			if len(projects) == 0 {
-				return Outcome{}, fmt.Errorf("cli.ado-assigned-no-projects")
+				return Outcome{}, fmt.Errorf("cli.work-item-list-no-projects")
 			}
 			if len(projects) == 1 {
 				project = projects[0]
@@ -34,7 +34,7 @@ func assignedRoute() Route {
 					choices[index] = action.Choice{Value: action.ChoiceValue(candidate), Label: l10n.M(promptChoiceValue, l10n.A("value", candidate))}
 				}
 				response, err := NewTerminalInput(execution.Policy.Streams, execution.Localizer).Request(ctx, action.Prompt{
-					ID: "ado-assigned-project", Kind: action.PromptSelectOne, Label: l10n.M(promptProject), Required: true, Choices: choices,
+					ID: "work-item-list-project", Kind: action.PromptSelectOne, Label: l10n.M(promptProject), Required: true, Choices: choices,
 				})
 				if err != nil {
 					return Outcome{}, err
@@ -42,7 +42,8 @@ func assignedRoute() Route {
 				project = string(response.Value)
 			}
 		}
-		request := workapp.AssignedRequest{Root: resolvedRoot(invocation.Values), Project: project, Top: int(invocation.Values.Int("top")), IncludeFinalStates: invocation.Values.Bool("all"), GroupByParent: invocation.Values.Bool("group_by_parent")}
+		root := resolvedRoot(invocation.Values)
+		request := workapp.AssignedRequest{Provider: selectedWorkProvider(invocation.Values, root, project), Root: root, Project: project, Top: int(invocation.Values.Int("top")), IncludeFinalStates: invocation.Values.Bool("all"), GroupByParent: invocation.Values.Bool("group_by_parent")}
 		result, err := dispatchDirect(ctx, execution, invocation, request)
 		if err != nil {
 			return Outcome{}, err
@@ -51,7 +52,7 @@ func assignedRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "ado.assigned", format, projection)
+		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "work.item.list", format, projection)
 		if err != nil {
 			return Outcome{}, err
 		}

@@ -73,9 +73,9 @@ func QueryJSONProjection(table data.Table) JSONProjection {
 	)
 }
 
-// ADOAIContextJSONProjection preserves the public ado context ai wire schema
+// WorkAIContextJSONProjection preserves the established AI context wire schema
 // while workapp remains provider-neutral.
-func ADOAIContextJSONProjection(items []workapp.RichContextItem) (JSONProjection, error) {
+func WorkAIContextJSONProjection(items []workapp.RichContextItem) (JSONProjection, error) {
 	projection, err := JSONProjectionOf(items)
 	if err != nil {
 		return JSONProjection{}, err

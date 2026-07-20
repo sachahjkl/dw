@@ -22,9 +22,6 @@ func RegisterAll(results *Registry, events *EventRegistry, registrations ...Regi
 	if err := RegisterUpdateRenderers(results, events); err != nil {
 		return err
 	}
-	if err := RegisterGrammarAliases(results); err != nil {
-		return err
-	}
 	for _, registration := range registrations {
 		if registration.Result != nil {
 			if err := results.Register(registration.Action, registration.Result); err != nil {
@@ -38,22 +35,6 @@ func RegisterAll(results *Registry, events *EventRegistry, registrations ...Regi
 		}
 	}
 	return results.ValidateComplete(RequiredResultKinds)
-}
-
-func RegisterGrammarAliases(results *Registry) error {
-	aliases := [][2]ResultKind{
-		{"auth.login", "ado.auth.login"}, {"auth.status", "ado.auth.status"}, {"auth.logout", "ado.auth.logout"},
-		{"ado.item.show", "ado.workitem"}, {"ado.context.show", "ado.context"}, {"ado.context.ai", "ado.ai.context"},
-		{"upgrade", "upgrade.run"}, {"work.start", "task.start"}, {"work.pr.start", "task.start.pr"},
-		{"agent.open", "task.open"}, {"work.open", "task.open"}, {"work.sync", "task.sync"}, {"work.task.child.create", "task.child.create"},
-		{"work.prune", "task.prune"}, {"work.finish", "task.finish"},
-	}
-	for _, alias := range aliases {
-		if err := results.Alias(alias[0], alias[1]); err != nil {
-			return err
-		}
-	}
-	return results.Union("work.item.doing", "task.doing.plan", "task.doing.execute")
 }
 
 func PageRenderer[T any](project func(T) Page) ResultRenderer {

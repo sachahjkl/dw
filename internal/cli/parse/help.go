@@ -77,19 +77,8 @@ func Diagnostic(root *spec.Command, problem *Error) string {
 		return ""
 	}
 	command, path, message := problem.Command, problem.Path, "error: "+problem.Error()
-	if problem.Kind == LegacyRoute || problem.Kind == UnknownCommand {
-		token := problem.Token
-		if problem.Kind == LegacyRoute {
-			parts := strings.Fields(problem.Token)
-			if len(parts) != 0 {
-				token = parts[len(parts)-1]
-				path = append([]string(nil), parts[:len(parts)-1]...)
-				if parent, ok := spec.Lookup(root, path); ok {
-					command = parent
-				}
-			}
-		}
-		message = fmt.Sprintf(command.Text(spec.MsgErrSubcommand), token)
+	if problem.Kind == UnknownCommand {
+		message = fmt.Sprintf(command.Text(spec.MsgErrSubcommand), problem.Token)
 	}
 	return message + "\n\n" + command.Text(spec.MsgUsage) + ": " + usage(root, command, path) + "\n\n" + command.Text(spec.MsgHelpHint) + "\n"
 }

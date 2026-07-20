@@ -16,7 +16,7 @@ import (
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
-const SchemaStatement = `select TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
+const CatalogStatement = `select TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE
 from INFORMATION_SCHEMA.TABLES
 order by TABLE_SCHEMA, TABLE_NAME`
 
@@ -36,7 +36,7 @@ func (cell Cell) MarshalJSON() ([]byte, error) {
 	return strconv.AppendQuote(nil, cell.Value), nil
 }
 
-type QueryResult struct {
+type NativeQueryReport struct {
 	Columns   []string `json:"columns"`
 	Rows      [][]Cell `json:"rows"`
 	Truncated bool     `json:"truncated"`
@@ -64,37 +64,37 @@ func DescribeStatement(table string) string {
 		"order by ORDINAL_POSITION"
 }
 
-func (provider *Provider) Schema(ctx context.Context, connection ResolvedConnection) (QueryResult, error) {
+func (provider *Provider) CatalogNative(ctx context.Context, connection ResolvedConnection) (NativeQueryReport, error) {
 	unlimited := 0
-	return provider.Query(ctx, connection, SchemaStatement, &unlimited)
+	return provider.Query(ctx, connection, CatalogStatement, &unlimited)
 }
 
-func (provider *Provider) DescribeLegacy(ctx context.Context, connection ResolvedConnection, table string) (QueryResult, error) {
+func (provider *Provider) DescribeNative(ctx context.Context, connection ResolvedConnection, table string) (NativeQueryReport, error) {
 	unlimited := 0
 	return provider.Query(ctx, connection, DescribeStatement(table), &unlimited)
 }
 
 // Query executes only guarded SQL, asks SQL Server for a read-only connection, consumes the first
 // result set completely, and exposes every non-null database value as text.
-func (provider *Provider) Query(ctx context.Context, connection ResolvedConnection, statement string, maxRowsOverride *int) (QueryResult, error) {
+func (provider *Provider) Query(ctx context.Context, connection ResolvedConnection, statement string, maxRowsOverride *int) (NativeQueryReport, error) {
 	if !IsProviderName(connection.Config.Provider) {
-		return QueryResult{}, &ProviderError{Kind: ErrorUnsupportedProvider, Provider: strings.TrimSpace(connection.Config.Provider)}
+		return NativeQueryReport{}, &ProviderError{Kind: ErrorUnsupportedProvider, Provider: strings.TrimSpace(connection.Config.Provider)}
 	}
 	if !connection.Defaults.ReadOnly || connection.Config.ReadOnly != nil && !*connection.Config.ReadOnly {
-		return QueryResult{}, &ProviderError{Kind: ErrorReadOnlyRequired}
+		return NativeQueryReport{}, &ProviderError{Kind: ErrorReadOnlyRequired}
 	}
 	guard := ValidateReadOnlySQL(statement)
 	if !guard.IsAllowed {
-		reason := l10n.Text("db.error.unknown_reason")
+		reason := l10n.Text("data.error.unknown_reason")
 		if guard.Reason != nil {
 			reason = *guard.Reason
 		}
-		return QueryResult{}, &ProviderError{Kind: ErrorBlockedQuery, Reason: reason}
+		return NativeQueryReport{}, &ProviderError{Kind: ErrorBlockedQuery, Reason: reason}
 	}
 
 	connectionString, err := ResolveConnectionString(ctx, connection.Config, provider.secrets)
 	if err != nil {
-		return QueryResult{}, err
+		return NativeQueryReport{}, err
 	}
 	maxRows := connection.Defaults.MaxRows
 	if connection.Config.MaxRows != nil {
@@ -121,7 +121,7 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 	plainConnectionString := connectionString.Reveal()
 	database, err := sql.Open("sqlserver", EnforceReadOnlyConnectionString(plainConnectionString))
 	if err != nil {
-		return QueryResult{}, sqlProblem(err, plainConnectionString)
+		return NativeQueryReport{}, sqlProblem(err, plainConnectionString)
 	}
 	database.SetMaxOpenConns(1)
 	database.SetMaxIdleConns(0)
@@ -129,19 +129,19 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 
 	rows, err := database.QueryContext(queryContext, statement)
 	if err != nil {
-		return QueryResult{}, queryProblem(queryContext, timeoutSeconds, err, plainConnectionString)
+		return NativeQueryReport{}, queryProblem(queryContext, timeoutSeconds, err, plainConnectionString)
 	}
 	defer rows.Close()
 	columnNames, err := rows.Columns()
 	if err != nil {
-		return QueryResult{}, sqlProblem(err, plainConnectionString)
+		return NativeQueryReport{}, sqlProblem(err, plainConnectionString)
 	}
 	columnTypes, err := rows.ColumnTypes()
 	if err != nil {
-		return QueryResult{}, sqlProblem(err, plainConnectionString)
+		return NativeQueryReport{}, sqlProblem(err, plainConnectionString)
 	}
 
-	result := QueryResult{Rows: make([][]Cell, 0)}
+	result := NativeQueryReport{Rows: make([][]Cell, 0)}
 	for rows.Next() {
 		values := make([]any, len(columnNames))
 		destinations := make([]any, len(values))
@@ -149,10 +149,10 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 			destinations[index] = &values[index]
 		}
 		if err := rows.Scan(destinations...); err != nil {
-			return QueryResult{}, sqlProblem(err, plainConnectionString)
+			return NativeQueryReport{}, sqlProblem(err, plainConnectionString)
 		}
 		if result.Columns == nil {
-			// Rust compatibility: a zero-row first result set reports no columns.
+			// A zero-row first result set reports no columns.
 			result.Columns = append([]string(nil), columnNames...)
 		}
 		if maxRows > 0 && len(result.Rows) >= maxRows {
@@ -163,13 +163,13 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 		for index, value := range values {
 			row[index], err = cellFromDriverValue(value, columnTypes[index].DatabaseTypeName())
 			if err != nil {
-				return QueryResult{}, sqlProblem(err, plainConnectionString)
+				return NativeQueryReport{}, sqlProblem(err, plainConnectionString)
 			}
 		}
 		result.Rows = append(result.Rows, row)
 	}
 	if err := rows.Err(); err != nil {
-		return QueryResult{}, queryProblem(queryContext, timeoutSeconds, err, plainConnectionString)
+		return NativeQueryReport{}, queryProblem(queryContext, timeoutSeconds, err, plainConnectionString)
 	}
 	if result.Columns == nil {
 		result.Columns = []string{}

@@ -1,4 +1,4 @@
-package dbcompat
+package dataapp
 
 import (
 	"bytes"
@@ -9,20 +9,36 @@ import (
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/data"
-	"github.com/sachahjkl/dw/internal/data/sqlserver"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
-type QueryResult = sqlserver.QueryResult
-type Cell = sqlserver.Cell
-type SQLGuardResult = sqlserver.GuardResult
+type Cell struct {
+	Valid bool
+	Value string
+}
 
-func Guard(statement string) SQLGuardResult { return sqlserver.ValidateReadOnlySQL(statement) }
+func (cell Cell) MarshalJSON() ([]byte, error) {
+	if !cell.Valid {
+		return []byte("null"), nil
+	}
+	return strconv.AppendQuote(nil, cell.Value), nil
+}
 
-// ProjectTable preserves the legacy dw db string-or-null machine contract over the provider-neutral
-// table model. Binary data uses the historical uppercase 0xHEX representation.
-func ProjectTable(table data.Table) QueryResult {
-	result := QueryResult{Columns: make([]string, len(table.Columns)), Rows: make([][]Cell, len(table.Rows)), Truncated: table.Truncated}
+type NativeQueryReport struct {
+	Columns   []string `json:"columns"`
+	Rows      [][]Cell `json:"rows"`
+	Truncated bool     `json:"truncated"`
+}
+
+type GuardReport struct {
+	IsAllowed bool    `json:"isAllowed"`
+	Reason    *string `json:"reason"`
+}
+
+// ProjectTable preserves the string-or-null tabular machine contract over the
+// provider-neutral table model. Binary data uses uppercase 0xHEX.
+func ProjectTable(table data.Table) NativeQueryReport {
+	result := NativeQueryReport{Columns: make([]string, len(table.Columns)), Rows: make([][]Cell, len(table.Rows)), Truncated: table.Truncated}
 	for index, column := range table.Columns {
 		result.Columns[index] = column.Name
 	}
@@ -31,19 +47,19 @@ func ProjectTable(table data.Table) QueryResult {
 		for columnIndex, value := range row {
 			switch value.Kind() {
 			case data.ValueNull:
-				projected[columnIndex] = sqlserver.NullCell()
+				projected[columnIndex] = Cell{}
 			case data.ValueBoolean:
 				boolean, _ := value.Boolean()
-				projected[columnIndex] = sqlserver.StringCell(strconv.FormatBool(boolean))
+				projected[columnIndex] = Cell{Valid: true, Value: strconv.FormatBool(boolean)}
 			case data.ValueBinary:
 				binary, _ := value.Binary()
 				encoded := make([]byte, hex.EncodedLen(len(binary)))
 				hex.Encode(encoded, binary)
-				projected[columnIndex] = sqlserver.StringCell("0x" + strings.ToUpper(string(encoded)))
+				projected[columnIndex] = Cell{Valid: true, Value: "0x" + strings.ToUpper(string(encoded))}
 			default:
 				text, ok := value.Text()
 				if ok {
-					projected[columnIndex] = sqlserver.StringCell(text)
+					projected[columnIndex] = Cell{Valid: true, Value: text}
 				}
 			}
 		}
@@ -52,7 +68,7 @@ func ProjectTable(table data.Table) QueryResult {
 	return result
 }
 
-func QueryTSV(result QueryResult) string {
+func QueryTSV(result NativeQueryReport) string {
 	var output strings.Builder
 	for index, column := range result.Columns {
 		if index > 0 {
@@ -146,7 +162,7 @@ func (source ConnectionSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(projection)
 }
 
-type DatabaseListEntry struct {
+type DataSourceListEntry struct {
 	Project        *string          `json:"project"`
 	Database       string           `json:"database"`
 	Provider       string           `json:"provider"`
@@ -157,23 +173,23 @@ type DatabaseListEntry struct {
 	Warnings       []string         `json:"warnings"`
 }
 
-type DatabaseListReport struct {
-	Root     string              `json:"root"`
-	Entries  []DatabaseListEntry `json:"entries"`
-	Warnings []string            `json:"warnings"`
+type DataSourceListReport struct {
+	Root     string                `json:"root"`
+	Entries  []DataSourceListEntry `json:"entries"`
+	Warnings []string              `json:"warnings"`
 }
 
-func Inventory(root string) (DatabaseListReport, error) {
+func Inventory(root string) (DataSourceListReport, error) {
 	path := databasesPath(root)
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return DatabaseListReport{}, localized("db.error.config_read", l10n.A("path", path), l10n.A("error", err))
+		return DataSourceListReport{}, localized("data.error.config_read", l10n.A("path", path), l10n.A("error", err))
 	}
 	var wire catalogWire
 	if err := json.Unmarshal(content, &wire); err != nil {
-		return DatabaseListReport{}, localized("db.error.config_parse", l10n.A("path", path), l10n.A("error", err))
+		return DataSourceListReport{}, localized("data.error.config_parse", l10n.A("path", path), l10n.A("error", err))
 	}
-	defaults := sqlserver.DefaultSettings()
+	defaults := catalogDefaults{ReadOnly: true, MaxRows: defaultMaximumRows, TimeoutSeconds: defaultTimeoutSeconds}
 	if len(wire.Defaults) > 0 {
 		var values struct {
 			ReadOnly       *bool `json:"readonly"`
@@ -192,19 +208,19 @@ func Inventory(root string) (DatabaseListReport, error) {
 			}
 		}
 	}
-	report := DatabaseListReport{Root: root, Entries: []DatabaseListEntry{}, Warnings: []string{}}
+	report := DataSourceListReport{Root: root, Entries: []DataSourceListEntry{}, Warnings: []string{}}
 	for _, database := range sortedKeys(wire.Globals) {
 		entry, ok := inventoryEntry(nil, database, wire.Globals[database], defaults)
 		if ok {
 			report.Entries = append(report.Entries, entry)
 		} else {
-			report.Warnings = append(report.Warnings, l10n.Render(l10n.M("db.inventory.invalid_global", l10n.A("database", database))))
+			report.Warnings = append(report.Warnings, l10n.Render(l10n.M("data.inventory.invalid_global", l10n.A("database", database))))
 		}
 	}
 	for _, project := range sortedKeys(wire.Projects) {
 		var projectConfig projectWire
 		if json.Unmarshal(wire.Projects[project], &projectConfig) != nil || projectConfig.Databases == nil {
-			report.Warnings = append(report.Warnings, l10n.Render(l10n.M("db.inventory.invalid_project", l10n.A("project", project))))
+			report.Warnings = append(report.Warnings, l10n.Render(l10n.M("data.inventory.invalid_project", l10n.A("project", project))))
 			continue
 		}
 		for _, database := range sortedKeys(projectConfig.Databases) {
@@ -213,23 +229,23 @@ func Inventory(root string) (DatabaseListReport, error) {
 			if ok {
 				report.Entries = append(report.Entries, entry)
 			} else {
-				report.Warnings = append(report.Warnings, l10n.Render(l10n.M("db.inventory.invalid_entry", l10n.A("project", project), l10n.A("database", database))))
+				report.Warnings = append(report.Warnings, l10n.Render(l10n.M("data.inventory.invalid_entry", l10n.A("project", project), l10n.A("database", database))))
 			}
 		}
 	}
 	return report, nil
 }
 
-func inventoryEntry(project *string, database string, raw json.RawMessage, defaults sqlserver.Defaults) (DatabaseListEntry, bool) {
+func inventoryEntry(project *string, database string, raw json.RawMessage, defaults catalogDefaults) (DataSourceListEntry, bool) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var object map[string]any
 	if decoder.Decode(&object) != nil {
-		return DatabaseListEntry{}, false
+		return DataSourceListEntry{}, false
 	}
 	provider, ok := object["provider"].(string)
 	if !ok {
-		return DatabaseListEntry{}, false
+		return DataSourceListEntry{}, false
 	}
 	inline := nonblankValue(object["connectionString"])
 	environment := nonblankValue(object["connectionStringEnvironmentVariable"])
@@ -253,18 +269,15 @@ func inventoryEntry(project *string, database string, raw json.RawMessage, defau
 	maxRows := integerValue(object["maxRows"], defaults.MaxRows)
 	timeout := integerValue(object["timeoutSeconds"], defaults.TimeoutSeconds)
 	warnings := []string{}
-	if !sqlserver.IsProviderName(provider) {
-		warnings = append(warnings, l10n.Text("db.warning.unsupported"))
-	}
 	if count == 0 {
-		warnings = append(warnings, l10n.Text("db.warning.missing_source"))
+		warnings = append(warnings, l10n.Text("data.warning.missing_source"))
 	} else if count > 1 {
-		warnings = append(warnings, l10n.Text("db.warning.multiple_sources"))
+		warnings = append(warnings, l10n.Text("data.warning.multiple_sources"))
 	}
 	if !readonly {
-		warnings = append(warnings, l10n.Text("db.warning.readonly_false"))
+		warnings = append(warnings, l10n.Text("data.warning.readonly_false"))
 	}
-	return DatabaseListEntry{Project: project, Database: database, Provider: provider, Source: source, ReadOnly: readonly, MaxRows: maxRows, TimeoutSeconds: timeout, Warnings: warnings}, true
+	return DataSourceListEntry{Project: project, Database: database, Provider: provider, Source: source, ReadOnly: readonly, MaxRows: maxRows, TimeoutSeconds: timeout, Warnings: warnings}, true
 }
 
 func nonblankValue(value any) string {

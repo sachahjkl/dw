@@ -39,9 +39,9 @@ OpenCode/Codex:
 
 `dw`:
 
-- creates workspaces
+- creates local workspaces
 - manages deterministic Git operations
 - reads/writes local config
-- performs guarded SQL access
-- runs Azure DevOps workflow operations
+- performs guarded data-source access
+- runs provider-neutral external work operations
 - checks environment health

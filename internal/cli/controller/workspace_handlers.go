@@ -17,19 +17,19 @@ import (
 )
 
 const (
-	actionAgentContext   = action.ID("agent.context")
-	actionWorkStatus     = action.ID("work.status")
-	actionWorkList       = action.ID("work.list")
-	actionWorkCurrent    = action.ID("work.current")
-	actionWorkItemAdd    = action.ID("work.item.add")
-	actionWorkItemRemove = action.ID("work.item.remove")
-	actionWorkPreflight  = action.ID("work.preflight")
-	actionWorkRename     = action.ID("work.rename")
-	actionWorkRepoAdd    = action.ID("work.repo.add")
-	actionWorkRepoLatest = action.ID("work.repo.latest")
-	actionWorkCommit     = action.ID("work.commit")
-	actionWorkHandoff    = action.ID("work.handoff.validate")
-	actionWorkTeardown   = action.ID("work.teardown")
+	actionAgentContext        = action.ID("agent.context")
+	actionWorkspaceStatus     = action.ID("workspace.status")
+	actionWorkspaceList       = action.ID("workspace.list")
+	actionWorkspaceCurrent    = action.ID("workspace.current")
+	actionWorkspaceItemAdd    = action.ID("workspace.item.add")
+	actionWorkspaceItemRemove = action.ID("workspace.item.remove")
+	actionWorkspacePreflight  = action.ID("workspace.preflight")
+	actionWorkspaceRename     = action.ID("workspace.rename")
+	actionWorkspaceRepoAdd    = action.ID("workspace.repo.add")
+	actionWorkspaceRepoLatest = action.ID("workspace.repo.latest")
+	actionWorkspaceCommit     = action.ID("workspace.commit")
+	actionWorkspaceHandoff    = action.ID("workspace.handoff.validate")
+	actionWorkspaceTeardown   = action.ID("workspace.teardown")
 )
 
 type AgentContextRequest struct {
@@ -60,6 +60,7 @@ type WorkspaceCurrentRequest struct{}
 type WorkspaceItemAddRequest struct {
 	Selection          WorkspaceSelection `json:"selection"`
 	IDs                []string           `json:"ids"`
+	Provider           string             `json:"provider,omitempty"`
 	SkipWork           bool               `json:"skipWork"`
 	Type, Title, State string
 	Execute            bool `json:"execute"`
@@ -101,18 +102,18 @@ type WorkspaceTeardownRequest struct {
 	Execute, Approved bool
 }
 
-func (WorkspaceStatusRequest) ActionID() action.ID     { return actionWorkStatus }
-func (WorkspaceListRequest) ActionID() action.ID       { return actionWorkList }
-func (WorkspaceCurrentRequest) ActionID() action.ID    { return actionWorkCurrent }
-func (WorkspaceItemAddRequest) ActionID() action.ID    { return actionWorkItemAdd }
-func (WorkspaceItemRemoveRequest) ActionID() action.ID { return actionWorkItemRemove }
-func (WorkspacePreflightRequest) ActionID() action.ID  { return actionWorkPreflight }
-func (WorkspaceRenameRequest) ActionID() action.ID     { return actionWorkRename }
-func (WorkspaceRepoAddRequest) ActionID() action.ID    { return actionWorkRepoAdd }
-func (WorkspaceRepoLatestRequest) ActionID() action.ID { return actionWorkRepoLatest }
-func (WorkspaceCommitRequest) ActionID() action.ID     { return actionWorkCommit }
-func (WorkspaceHandoffRequest) ActionID() action.ID    { return actionWorkHandoff }
-func (WorkspaceTeardownRequest) ActionID() action.ID   { return actionWorkTeardown }
+func (WorkspaceStatusRequest) ActionID() action.ID     { return actionWorkspaceStatus }
+func (WorkspaceListRequest) ActionID() action.ID       { return actionWorkspaceList }
+func (WorkspaceCurrentRequest) ActionID() action.ID    { return actionWorkspaceCurrent }
+func (WorkspaceItemAddRequest) ActionID() action.ID    { return actionWorkspaceItemAdd }
+func (WorkspaceItemRemoveRequest) ActionID() action.ID { return actionWorkspaceItemRemove }
+func (WorkspacePreflightRequest) ActionID() action.ID  { return actionWorkspacePreflight }
+func (WorkspaceRenameRequest) ActionID() action.ID     { return actionWorkspaceRename }
+func (WorkspaceRepoAddRequest) ActionID() action.ID    { return actionWorkspaceRepoAdd }
+func (WorkspaceRepoLatestRequest) ActionID() action.ID { return actionWorkspaceRepoLatest }
+func (WorkspaceCommitRequest) ActionID() action.ID     { return actionWorkspaceCommit }
+func (WorkspaceHandoffRequest) ActionID() action.ID    { return actionWorkspaceHandoff }
+func (WorkspaceTeardownRequest) ActionID() action.ID   { return actionWorkspaceTeardown }
 
 type WorkspaceStatusResult struct{ workspace.StatusReport }
 type WorkspaceListResult struct{ workspace.ListReport }
@@ -147,40 +148,45 @@ type WorkspaceTeardownResult struct {
 	Execution *workspace.TeardownExecutionReport `json:"execution,omitempty"`
 }
 
-func (WorkspaceStatusResult) ActionID() action.ID       { return actionWorkStatus }
-func (WorkspaceListResult) ActionID() action.ID         { return actionWorkList }
-func (WorkspaceCurrentResult) ActionID() action.ID      { return actionWorkCurrent }
+func (WorkspaceStatusResult) ActionID() action.ID       { return actionWorkspaceStatus }
+func (WorkspaceListResult) ActionID() action.ID         { return actionWorkspaceList }
+func (WorkspaceCurrentResult) ActionID() action.ID      { return actionWorkspaceCurrent }
 func (r WorkspaceItemUpdateResult) ActionID() action.ID { return r.operation }
-func (WorkspacePreflightResult) ActionID() action.ID    { return actionWorkPreflight }
-func (WorkspaceRenameResult) ActionID() action.ID       { return actionWorkRename }
-func (WorkspaceRepoAddResult) ActionID() action.ID      { return actionWorkRepoAdd }
-func (WorkspaceRepoLatestResult) ActionID() action.ID   { return actionWorkRepoLatest }
-func (WorkspaceCommitResult) ActionID() action.ID       { return actionWorkCommit }
-func (WorkspaceHandoffResult) ActionID() action.ID      { return actionWorkHandoff }
-func (WorkspaceTeardownResult) ActionID() action.ID     { return actionWorkTeardown }
+func (WorkspacePreflightResult) ActionID() action.ID    { return actionWorkspacePreflight }
+func (WorkspaceRenameResult) ActionID() action.ID       { return actionWorkspaceRename }
+func (WorkspaceRepoAddResult) ActionID() action.ID      { return actionWorkspaceRepoAdd }
+func (WorkspaceRepoLatestResult) ActionID() action.ID   { return actionWorkspaceRepoLatest }
+func (WorkspaceCommitResult) ActionID() action.ID       { return actionWorkspaceCommit }
+func (WorkspaceHandoffResult) ActionID() action.ID      { return actionWorkspaceHandoff }
+func (WorkspaceTeardownResult) ActionID() action.ID     { return actionWorkspaceTeardown }
+
+type WorkspaceWorkItemLoader interface {
+	LoadWorkspaceItems(context.Context, string, string, string, []string) ([]workspace.WorkItem, error)
+}
 
 type workspaceActions struct {
 	engine           *workspace.Engine
+	workItems        WorkspaceWorkItemLoader
 	currentDirectory string
 }
 
 // WorkspaceHandlers adapts provider-neutral workspace lifecycle operations to
 // the shared dispatcher without leaking CLI command IDs into the domain.
-func WorkspaceHandlers(engine *workspace.Engine, currentDirectory string) []action.Handler {
-	service := workspaceActions{engine: engine, currentDirectory: currentDirectory}
+func WorkspaceHandlers(engine *workspace.Engine, workItems WorkspaceWorkItemLoader, currentDirectory string) []action.Handler {
+	service := workspaceActions{engine: engine, workItems: workItems, currentDirectory: currentDirectory}
 	return []action.Handler{
-		controllerHandler[WorkspaceStatusRequest](actionWorkStatus, service.status),
-		controllerHandler[WorkspaceListRequest](actionWorkList, service.list),
-		controllerHandler[WorkspaceCurrentRequest](actionWorkCurrent, service.current),
-		controllerHandler[WorkspaceItemAddRequest](actionWorkItemAdd, service.itemAdd),
-		controllerHandler[WorkspaceItemRemoveRequest](actionWorkItemRemove, service.itemRemove),
-		controllerHandler[WorkspacePreflightRequest](actionWorkPreflight, service.preflight),
-		controllerHandler[WorkspaceRenameRequest](actionWorkRename, service.rename),
-		controllerHandler[WorkspaceRepoAddRequest](actionWorkRepoAdd, service.repoAdd),
-		controllerHandler[WorkspaceRepoLatestRequest](actionWorkRepoLatest, service.repoLatest),
-		controllerHandler[WorkspaceCommitRequest](actionWorkCommit, service.commit),
-		controllerHandler[WorkspaceHandoffRequest](actionWorkHandoff, service.handoff),
-		controllerHandler[WorkspaceTeardownRequest](actionWorkTeardown, service.teardown),
+		controllerHandler[WorkspaceStatusRequest](actionWorkspaceStatus, service.status),
+		controllerHandler[WorkspaceListRequest](actionWorkspaceList, service.list),
+		controllerHandler[WorkspaceCurrentRequest](actionWorkspaceCurrent, service.current),
+		controllerHandler[WorkspaceItemAddRequest](actionWorkspaceItemAdd, service.itemAdd),
+		controllerHandler[WorkspaceItemRemoveRequest](actionWorkspaceItemRemove, service.itemRemove),
+		controllerHandler[WorkspacePreflightRequest](actionWorkspacePreflight, service.preflight),
+		controllerHandler[WorkspaceRenameRequest](actionWorkspaceRename, service.rename),
+		controllerHandler[WorkspaceRepoAddRequest](actionWorkspaceRepoAdd, service.repoAdd),
+		controllerHandler[WorkspaceRepoLatestRequest](actionWorkspaceRepoLatest, service.repoLatest),
+		controllerHandler[WorkspaceCommitRequest](actionWorkspaceCommit, service.commit),
+		controllerHandler[WorkspaceHandoffRequest](actionWorkspaceHandoff, service.handoff),
+		controllerHandler[WorkspaceTeardownRequest](actionWorkspaceTeardown, service.teardown),
 	}
 }
 
@@ -265,10 +271,10 @@ func (s workspaceActions) itemAdd(ctx context.Context, request WorkspaceItemAddR
 			items = append(items, item)
 		}
 	} else {
-		if s.engine.Work == nil {
+		if s.workItems == nil {
 			return nil, workspace.ErrWorkCapabilityRequired
 		}
-		items, err = s.engine.Work.GetWorkItems(ctx, manifest.Project, request.IDs)
+		items, err = s.workItems.LoadWorkspaceItems(ctx, request.Provider, root, manifest.Project, request.IDs)
 		if err != nil {
 			return nil, err
 		}
@@ -277,7 +283,7 @@ func (s workspaceActions) itemAdd(ctx context.Context, request WorkspaceItemAddR
 	if err != nil {
 		return nil, err
 	}
-	result := WorkspaceItemUpdateResult{Plan: plan, operation: actionWorkItemAdd}
+	result := WorkspaceItemUpdateResult{Plan: plan, operation: actionWorkspaceItemAdd}
 	if request.Execute {
 		execution, err := workspace.ExecuteWorkItemUpdate(original, plan, "add")
 		if err != nil {
@@ -300,7 +306,7 @@ func (s workspaceActions) itemRemove(ctx context.Context, request WorkspaceItemR
 	if err != nil {
 		return nil, err
 	}
-	result := WorkspaceItemUpdateResult{Plan: plan, operation: actionWorkItemRemove}
+	result := WorkspaceItemUpdateResult{Plan: plan, operation: actionWorkspaceItemRemove}
 	if request.Execute {
 		execution, err := workspace.ExecuteWorkItemUpdate(manifest, plan, "remove")
 		if err != nil {
@@ -460,8 +466,8 @@ func (s workspaceActions) teardown(ctx context.Context, request WorkspaceTeardow
 }
 
 func stateSetRoute() Route {
-	return Route{Key: "ado.state.set", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
-		built, err := buildADOStateSet(invocation)
+	return Route{Key: "work.item.state.set", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
+		built, err := buildWorkItemStateSet(invocation)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -472,7 +478,7 @@ func stateSetRoute() Route {
 		case workapp.StateSetRequest:
 			request = value.Request
 		default:
-			return Outcome{}, fmt.Errorf("cli.invalid-request:ado.state.set:%T", built)
+			return Outcome{}, fmt.Errorf("cli.invalid-request:work.item.state.set:%T", built)
 		}
 		planEnvelope, err := dispatchDirect(ctx, execution, invocation, request)
 		if err != nil {
@@ -480,10 +486,10 @@ func stateSetRoute() Route {
 		}
 		_, ok := planEnvelope.Result.(workapp.StatePlanReport)
 		if !ok {
-			return Outcome{}, fmt.Errorf("cli.invalid-result:ado.state.plan:%T", planEnvelope.Result)
+			return Outcome{}, fmt.Errorf("cli.invalid-result:work.item.state.plan:%T", planEnvelope.Result)
 		}
 		if !invocation.Values.Bool("json") {
-			preview, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), planEnvelope, "ado.state.plan", console.FormatHuman, nil)
+			preview, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), planEnvelope, "work.item.state.plan", console.FormatHuman, nil)
 			if err != nil {
 				return Outcome{}, err
 			}
@@ -491,7 +497,7 @@ func stateSetRoute() Route {
 				return Outcome{}, err
 			}
 		}
-		if _, err := confirmExecution(ctx, execution, invocation, true, invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptADOState); err != nil {
+		if _, err := confirmExecution(ctx, execution, invocation, true, invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkState); err != nil {
 			return Outcome{}, err
 		}
 		result, err := dispatchDirect(ctx, execution, invocation, workapp.StateSetRequest{Request: request})
@@ -502,7 +508,7 @@ func stateSetRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "ado.state.set", format, projection)
+		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "work.item.state.set", format, projection)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -514,7 +520,8 @@ func doingRoute() Route {
 	return Route{Key: "work.item.doing", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
 		root := resolvedRoot(invocation.Values)
 		states, _, _ := taskStartSettings(root)
-		request := workapp.DoingRequest{Root: root, Project: invocation.Values.String("project"), IDs: split(invocation.Values.String("id")), States: states}
+		project := invocation.Values.String("project")
+		request := workapp.DoingRequest{Provider: selectedWorkProvider(invocation.Values, root, project), Root: root, Project: project, IDs: split(invocation.Values.String("id")), States: states}
 		planEnvelope, err := dispatchDirect(ctx, execution, invocation, request)
 		if err != nil {
 			return Outcome{}, err
@@ -524,7 +531,7 @@ func doingRoute() Route {
 			return Outcome{}, fmt.Errorf("cli.invalid-result:work.item.doing:%T", planEnvelope.Result)
 		}
 		if !invocation.Values.Bool("json") {
-			preview, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), planEnvelope, actionWorkDoingRoute, console.FormatHuman, nil)
+			preview, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), planEnvelope, actionWorkItemDoingRoute, console.FormatHuman, nil)
 			if err != nil {
 				return Outcome{}, err
 			}
@@ -543,7 +550,7 @@ func doingRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, actionWorkDoingRoute, format, projection)
+		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, actionWorkItemDoingRoute, format, projection)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -551,7 +558,7 @@ func doingRoute() Route {
 	}}
 }
 
-const actionWorkDoingRoute = action.ID("work.item.doing")
+const actionWorkItemDoingRoute = action.ID("work.item.doing")
 
 func dispatchDirect(ctx context.Context, execution Execution, invocation *parse.Result, request action.Request) (action.ResultEnvelope, error) {
 	runtime := action.Runtime{Events: NewEventSink(execution.Console, execution.Policy, execution.Localizer, invocation.Verbosity), Input: NewTerminalInput(execution.Policy.Streams, execution.Localizer)}

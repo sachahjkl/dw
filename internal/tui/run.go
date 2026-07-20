@@ -17,9 +17,9 @@ type snapshotLoadedMsg struct {
 	snapshot   Snapshot
 	err        error
 }
-type assignedLoadedMsg struct {
+type workLoadedMsg struct {
 	generation uint64
-	items      []ADOProject
+	items      []WorkProject
 	err        error
 }
 type prsLoadedMsg struct {
@@ -116,8 +116,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case snapshotLoadedMsg:
 		return m, m.acceptSnapshot(msg)
-	case assignedLoadedMsg:
-		m.acceptAssigned(msg)
+	case workLoadedMsg:
+		m.acceptWork(msg)
 		return m, nil
 	case prsLoadedMsg:
 		m.acceptPullRequests(msg)
@@ -190,9 +190,9 @@ func (m *Model) startSnapshotLoad() tea.Cmd {
 	m.snapshotLoad.generation++
 	generation := m.snapshotLoad.generation
 	m.snapshotLoad.running, m.snapshotLoad.started, m.snapshotLoad.errorText = true, time.Now(), ""
-	m.assignedLoad.generation++
+	m.workLoad.generation++
 	m.prLoad.generation++
-	m.assignedLoad.running, m.prLoad.running = false, false
+	m.workLoad.running, m.prLoad.running = false, false
 	root, loader, ctx := m.snapshot.Root, m.deps.Snapshot, m.ctx
 	if root == "" {
 		root = m.deps.Root
@@ -204,17 +204,17 @@ func (m *Model) startSnapshotLoad() tea.Cmd {
 	}
 }
 
-func (m *Model) startAssignedLoad() tea.Cmd {
-	if m.deps.Assigned == nil || m.assignedLoad.running || m.snapshot.NeedsInit {
+func (m *Model) startWorkLoad() tea.Cmd {
+	if m.deps.WorkItems == nil || m.workLoad.running || m.snapshot.NeedsInit {
 		return nil
 	}
-	m.assignedLoad.generation++
-	generation := m.assignedLoad.generation
-	m.assignedLoad.running, m.assignedLoad.started, m.assignedLoad.errorText = true, time.Now(), ""
-	loader, snapshot, ctx := m.deps.Assigned, m.snapshot, m.ctx
+	m.workLoad.generation++
+	generation := m.workLoad.generation
+	m.workLoad.running, m.workLoad.started, m.workLoad.errorText = true, time.Now(), ""
+	loader, snapshot, ctx := m.deps.WorkItems, m.snapshot, m.ctx
 	return func() tea.Msg {
 		items, err := loader(ctx, snapshot)
-		return assignedLoadedMsg{generation: generation, items: items, err: err}
+		return workLoadedMsg{generation: generation, items: items, err: err}
 	}
 }
 
@@ -251,26 +251,26 @@ func (m *Model) acceptSnapshot(msg snapshotLoadedMsg) tea.Cmd {
 	if m.snapshot.NeedsInit {
 		return nil
 	}
-	return tea.Batch(m.startAssignedLoad(), m.startPRLoad())
+	return tea.Batch(m.startWorkLoad(), m.startPRLoad())
 }
 
-func (m *Model) acceptAssigned(msg assignedLoadedMsg) {
-	if !m.assignedLoad.running || msg.generation != m.assignedLoad.generation {
+func (m *Model) acceptWork(msg workLoadedMsg) {
+	if !m.workLoad.running || msg.generation != m.workLoad.generation {
 		return
 	}
-	m.assignedLoad.running = false
+	m.workLoad.running = false
 	if msg.err != nil {
-		m.assignedLoad.errorText = msg.err.Error()
-		m.addMessage(m.message("tui.message.load-failed", l10n.A("label", m.l10n.Text("tui.status.assigned")), l10n.A("error", msg.err)))
+		m.workLoad.errorText = msg.err.Error()
+		m.addMessage(m.message("tui.message.load-failed", l10n.A("label", m.l10n.Text("tui.status.work")), l10n.A("error", msg.err)))
 		return
 	}
-	m.snapshot.ADOProjects = msg.items
+	m.snapshot.WorkProjects = msg.items
 	m.clampSelections()
 	count := 0
 	for _, project := range msg.items {
 		count += len(project.Items)
 	}
-	m.addMessage(m.message("tui.message.loaded", l10n.A("label", m.l10n.Text("tui.status.assigned")), l10n.A("count", count)))
+	m.addMessage(m.message("tui.message.loaded", l10n.A("label", m.l10n.Text("tui.status.work")), l10n.A("count", count)))
 }
 
 func (m *Model) acceptPullRequests(msg prsLoadedMsg) {

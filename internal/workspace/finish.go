@@ -92,16 +92,16 @@ func candidateFor(name string, targets []RepositoryTarget, project ProjectConfig
 	}
 	repository, ok := project.Repository(name)
 	targetBranch := "main"
-	workRepository := ""
+	providerRepository := ""
 	if ok {
 		if strings.TrimSpace(repository.PullRequestTargetBranch) != "" {
 			targetBranch = repository.PullRequestTargetBranch
 		} else if strings.TrimSpace(repository.DefaultBranch) != "" {
 			targetBranch = repository.DefaultBranch
 		}
-		workRepository = repository.WorkRepository
+		providerRepository = repository.ProviderRepository
 	}
-	return PullRequestCandidate{Repository: name, Path: target.Path, WorkRepository: workRepository, TargetBranch: targetBranch}, true
+	return PullRequestCandidate{Repository: name, Path: target.Path, ProviderRepository: providerRepository, TargetBranch: targetBranch}, true
 }
 func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, options FinishExecuteOptions, emit func(ActionEvent)) (FinishExecutionReport, error) {
 	if !plan.Handoff.IsValid {
@@ -169,12 +169,12 @@ func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, optio
 	sourceRef := "refs/heads/" + plan.Manifest.BranchName
 	taskPlan, _ := os.ReadFile(filepath.Join(plan.Workspace, PlanFile))
 	for _, candidate := range plan.PullRequestCandidates {
-		if strings.TrimSpace(candidate.WorkRepository) == "" {
-			pullRequests = append(pullRequests, PullRequestResult{Repository: candidate.Repository, Action: "skipped", SkipReason: "missingWorkRepository"})
+		if strings.TrimSpace(candidate.ProviderRepository) == "" {
+			pullRequests = append(pullRequests, PullRequestResult{Repository: candidate.Repository, Action: "skipped", SkipReason: "missingProviderRepository"})
 			continue
 		}
 		pushEvent(&events, emit, ActionEvent{Type: "checkingActivePullRequest", Repository: candidate.Repository})
-		existing, err := e.Work.FindActivePullRequest(ctx, plan.Manifest.Project, candidate.WorkRepository, sourceRef)
+		existing, err := e.Work.FindActivePullRequest(ctx, plan.Manifest.Project, candidate.ProviderRepository, sourceRef)
 		if err != nil {
 			return FinishExecutionReport{}, err
 		}
@@ -186,14 +186,14 @@ func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, optio
 		if err != nil {
 			return FinishExecutionReport{}, err
 		}
-		input := PullRequestInput{Repository: candidate.WorkRepository, SourceRefName: sourceRef, TargetRefName: "refs/heads/" + candidate.TargetBranch, Title: BuildCommitMessage(plan.Manifest, ""), Description: PullRequestDescription(plan.Manifest, candidate, string(taskPlan), verification, summary), IsDraft: !plan.Ready, WorkItemIDs: plan.Manifest.AllKnownWorkItemIDs()}
+		input := PullRequestInput{ProviderRepository: candidate.ProviderRepository, SourceRefName: sourceRef, TargetRefName: "refs/heads/" + candidate.TargetBranch, Title: BuildCommitMessage(plan.Manifest, ""), Description: PullRequestDescription(plan.Manifest, candidate, string(taskPlan), verification, summary), IsDraft: !plan.Ready, WorkItemIDs: plan.Manifest.AllKnownWorkItemIDs()}
 		pushEvent(&events, emit, ActionEvent{Type: "creatingPullRequest", Repository: candidate.Repository})
 		created, err := e.Work.CreatePullRequest(ctx, plan.Manifest.Project, input)
 		if err != nil {
 			return FinishExecutionReport{}, err
 		}
 		for _, id := range plan.Manifest.AllKnownWorkItemIDs() {
-			if linkErr := e.Work.LinkWorkItemToPullRequest(ctx, plan.Manifest.Project, candidate.WorkRepository, created.ID, id); linkErr != nil {
+			if linkErr := e.Work.LinkWorkItemToPullRequest(ctx, plan.Manifest.Project, candidate.ProviderRepository, created.ID, id); linkErr != nil {
 				pushEvent(&events, emit, ActionEvent{Type: "pullRequestWorkItemLinkSkipped", WorkItemID: id, Error: linkErr.Error()})
 			}
 		}
@@ -280,7 +280,7 @@ func (e *Engine) verifier() VerificationPort {
 }
 func PullRequestDescription(manifest Manifest, candidate PullRequestCandidate, plan string, verification []VerificationResult, handoff HandoffSummary) string {
 	if strings.TrimSpace(plan) == "" {
-		plan = "_Plan non trouvé._"
+		plan = "_Plan not found._"
 	} else {
 		plan = strings.TrimSpace(plan)
 	}
@@ -288,14 +288,14 @@ func PullRequestDescription(manifest Manifest, candidate PullRequestCandidate, p
 	for _, id := range manifest.AllKnownWorkItemIDs() {
 		ids = append(ids, "#"+id)
 	}
-	return fmt.Sprintf("## Résumé\n- Travail réalisé pour `%s`\n- Repository concerné : `%s`\n- Work items : `%s`\n\n## Plan\n%s\n\n## Handoff\n%s\n\n## Vérifications\n%s\n", manifest.Slug, candidate.Repository, strings.Join(ids, ", "), plan, StructuredHandoff(handoff), renderVerification(candidate.Repository, verification))
+	return fmt.Sprintf("## Summary\n- Work completed for `%s`\n- Repository: `%s`\n- Work items: `%s`\n\n## Plan\n%s\n\n## Handoff\n%s\n\n## Verification\n%s\n", manifest.Slug, candidate.Repository, strings.Join(ids, ", "), plan, StructuredHandoff(handoff), renderVerification(candidate.Repository, verification))
 }
 func StructuredHandoff(summary HandoffSummary) string {
-	return fmt.Sprintf("### Statut\n- `%s`\n\n### Travail Fait\n%s\n\n### Décisions\n%s\n\n### Risques\n%s\n\n### Blockers\n%s\n\n### Follow-up\n%s\n", summary.Status, renderList(summary.Done), renderList(summary.Decisions), renderList(summary.Risks), renderList(summary.Blockers), renderList(summary.FollowUp))
+	return fmt.Sprintf("### Status\n- `%s`\n\n### Work Completed\n%s\n\n### Decisions\n%s\n\n### Risks\n%s\n\n### Blockers\n%s\n\n### Follow-up\n%s\n", summary.Status, renderList(summary.Done), renderList(summary.Decisions), renderList(summary.Risks), renderList(summary.Blockers), renderList(summary.FollowUp))
 }
 func renderList(items []string) string {
 	if len(items) == 0 {
-		return "- (aucun)"
+		return "- (none)"
 	}
 	lines := make([]string, len(items))
 	for index, item := range items {
@@ -307,15 +307,15 @@ func renderVerification(repository string, results []VerificationResult) string 
 	lines := make([]string, 0)
 	for _, result := range results {
 		if equalFold(result.Repository, repository) {
-			status := "OK"
+			status := "passed"
 			if result.ExitCode != 0 {
-				status = "KO"
+				status = "failed"
 			}
 			lines = append(lines, fmt.Sprintf("- `%s`: %s", result.Command, status))
 		}
 	}
 	if len(lines) == 0 {
-		return "- Aucune commande configurée dans `taskFinish.verificationCommands`."
+		return "- No command configured in `taskFinish.verificationCommands`."
 	}
 	return strings.Join(lines, "\n")
 }

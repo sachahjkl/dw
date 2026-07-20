@@ -44,7 +44,7 @@ func Doctor(explicitRoot string) ConfigDoctorReport {
 	root := ResolveRoot(explicitRoot)
 	checks := []ConfigDoctorCheck{
 		checkKnownConfig(filepath.Join(root, "config", "projects.json"), []string{"schema", "projects"}),
-		checkKnownConfig(filepath.Join(root, "config", "workflow.json"), []string{"schema", "branchPrefixes", "azureDevOps", "auth", "updates"}),
+		checkKnownConfig(filepath.Join(root, "config", "workflow.json"), []string{"schema", "branchPrefixes", "providers", "updates"}),
 		checkKnownConfig(filepath.Join(root, "config", "databases.json"), []string{"schema", "defaults", "globals", "projects"}),
 		checkJSONC(filepath.Join(root, "config", "opencode", "opencode.jsonc")),
 		checkExists(filepath.Join(root, "schemas", "projects.schema.json")),

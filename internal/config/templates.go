@@ -18,12 +18,14 @@ const (
   "projects": {
     "default": {
       "displayName": "Default project",
+      "workProvider": "azure-devops",
+      "providers": {},
       "repositories": {
         "front": {
           "url": "",
           "defaultBranch": "main",
           "pullRequestTargetBranch": "main",
-          "azureDevOpsRepository": "",
+          "providerRepository": "",
           "anchorName": "front.git",
           "folder": "front"
         },
@@ -31,7 +33,7 @@ const (
           "url": "",
           "defaultBranch": "master",
           "pullRequestTargetBranch": "master",
-          "azureDevOpsRepository": "",
+          "providerRepository": "",
           "anchorName": "back.git",
           "folder": "back"
         }
@@ -56,9 +58,18 @@ const (
   "agent": {
     "default": "opencode"
   },
-  "azureDevOps": {
-    "organizationUrl": "https://dev.azure.com/acme",
-    "apiVersion": "7.1"
+  "providers": {
+    "azure-devops": {
+      "organization": "https://dev.azure.com/acme",
+      "apiVersion": "7.1",
+      "auth": {
+        "tenantId": "organizations",
+        "clientId": "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+        "scopes": [
+          "499b84ac-1321-427f-aa17-267ca6975798/.default"
+        ]
+      }
+    }
   },
   "taskStart": {
     "updateWorkItemState": true,
@@ -74,13 +85,6 @@ const (
     "bugState": "Resolved",
     "taskState": "Resolved",
     "verificationCommands": {}
-  },
-  "auth": {
-    "tenantId": "organizations",
-    "clientId": "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
-    "scopes": [
-      "499b84ac-1321-427f-aa17-267ca6975798/.default"
-    ]
   },
   "updates": {
     "owner": "sachahjkl",
@@ -106,13 +110,13 @@ const (
 
 This root is managed by DevWorkflow.
 
-1. Use Azure DevOps work items as the source of truth for tracked work.
-2. Use current DevWorkflow auth, ADO, work, DB, agent, and secret actions for Azure DevOps and worktree operations.
+1. Use the configured work provider as the source of truth for tracked work.
+2. Use current DevWorkflow provider, work, data, agent, and secret actions for external work and workspace operations.
 3. Follow the local ` + "`AGENTS.md`" + ` in a task workspace.
 4. Preserve project terminology and repository conventions.
 5. Ask for clarification when requirements or supporting material are ambiguous.
 
-Primary actions: ADO item show, ADO context ai, work current, work sync, work preflight, work task child create, work handoff validate, work commit, and work finish.
+Primary actions: provider show, work item show, work context ai, workspace current, workspace sync, workspace preflight, work item child create, workspace handoff validate, workspace commit, and workspace finish.
 `
 	opencodeJSONC = `{
   "$schema": "https://opencode.ai/config.json",

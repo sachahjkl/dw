@@ -15,7 +15,7 @@ func assignedProject(envelope action.ResultEnvelope, invocation *parse.Result) (
 	}
 	report, ok := envelope.Result.(workapp.AssignedReport)
 	if !ok {
-		return projectionTypeError("ado.assigned", envelope)
+		return projectionTypeError("work.item.list", envelope)
 	}
 	if report.GroupByParent {
 		return marshalProjection(report.Groups)
@@ -29,7 +29,7 @@ func pullRequestsProject(envelope action.ResultEnvelope, invocation *parse.Resul
 	}
 	report, ok := envelope.Result.(workapp.PullRequestsReport)
 	if !ok {
-		return projectionTypeError("ado.prs", envelope)
+		return projectionTypeError("work.pr.list", envelope)
 	}
 	return marshalProjection(report.Items)
 }
@@ -40,7 +40,7 @@ func workItemsProject(envelope action.ResultEnvelope, invocation *parse.Result) 
 	}
 	report, ok := envelope.Result.(workapp.ItemShowReport)
 	if !ok {
-		return projectionTypeError("ado.item.show", envelope)
+		return projectionTypeError("work.item.show", envelope)
 	}
 	return marshalProjection(report.Items)
 }
@@ -51,7 +51,7 @@ func contextProject(envelope action.ResultEnvelope, invocation *parse.Result) (c
 	}
 	report, ok := envelope.Result.(workapp.ContextReport)
 	if !ok {
-		return projectionTypeError("ado.context.show", envelope)
+		return projectionTypeError("work.context.show", envelope)
 	}
 	return marshalProjection(report.Expanded)
 }
@@ -59,9 +59,9 @@ func contextProject(envelope action.ResultEnvelope, invocation *parse.Result) (c
 func aiContextProject(envelope action.ResultEnvelope, _ *parse.Result) (console.OutputFormat, *console.JSONProjection, error) {
 	report, ok := envelope.Result.(workapp.AIContextResult)
 	if !ok {
-		return projectionTypeError("ado.context.ai", envelope)
+		return projectionTypeError("work.context.ai", envelope)
 	}
-	projection, err := console.ADOAIContextJSONProjection(report.Items)
+	projection, err := console.WorkAIContextJSONProjection(report.Items)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -74,7 +74,7 @@ func workListProject(envelope action.ResultEnvelope, invocation *parse.Result) (
 	}
 	report, ok := envelope.Result.(WorkspaceListResult)
 	if !ok {
-		return projectionTypeError("work.list", envelope)
+		return projectionTypeError("workspace.list", envelope)
 	}
 	return marshalProjection(report.Items)
 }

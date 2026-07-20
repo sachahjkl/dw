@@ -233,7 +233,7 @@ func Normalize(outcome Outcome, substitutions ...Substitution) Outcome {
 // Difference returns a channel-specific mismatch description.
 func Difference(want, got Outcome) error {
 	if want.ExitCode != got.ExitCode {
-		return fmt.Errorf("exit status differs: oracle=%d candidate=%d", want.ExitCode, got.ExitCode)
+		return fmt.Errorf("exit status differs: reference=%d subject=%d", want.ExitCode, got.ExitCode)
 	}
 	if !bytes.Equal(want.Stdout, got.Stdout) {
 		return fmt.Errorf("stdout differs:\n%s", byteDifference(want.Stdout, got.Stdout))
@@ -245,41 +245,41 @@ func Difference(want, got Outcome) error {
 }
 
 func byteDifference(want, got []byte) string {
-	return fmt.Sprintf("oracle (%d bytes): %q\ncandidate (%d bytes): %q", len(want), want, len(got), got)
+	return fmt.Sprintf("reference (%d bytes): %q\nsubject (%d bytes): %q", len(want), want, len(got), got)
 }
 
-// Pair runs an oracle and candidate with equivalent fresh sandboxes. Seed may
+// Pair runs a reference and subject with equivalent fresh sandboxes. Seed may
 // populate each sandbox with identical real filesystem state.
-func Pair(ctx context.Context, parent, name string, oracle, candidate Command, seed func(Sandbox) error, substitutions ...Substitution) error {
-	oracleSandbox, err := NewSandbox(parent, name+"-oracle")
+func Pair(ctx context.Context, parent, name string, reference, subject Command, seed func(Sandbox) error, substitutions ...Substitution) error {
+	referenceSandbox, err := NewSandbox(parent, name+"-reference")
 	if err != nil {
 		return err
 	}
-	defer oracleSandbox.Cleanup()
-	candidateSandbox, err := NewSandbox(parent, name+"-candidate")
+	defer referenceSandbox.Cleanup()
+	subjectSandbox, err := NewSandbox(parent, name+"-subject")
 	if err != nil {
 		return err
 	}
-	defer candidateSandbox.Cleanup()
+	defer subjectSandbox.Cleanup()
 
-	for _, sandbox := range []Sandbox{oracleSandbox, candidateSandbox} {
+	for _, sandbox := range []Sandbox{referenceSandbox, subjectSandbox} {
 		if seed != nil {
 			if err := seed(sandbox); err != nil {
 				return fmt.Errorf("seed %q: %w", name, err)
 			}
 		}
 	}
-	oracleOutcome, err := Run(ctx, oracleSandbox, oracle)
+	referenceOutcome, err := Run(ctx, referenceSandbox, reference)
 	if err != nil {
-		return fmt.Errorf("oracle: %w", err)
+		return fmt.Errorf("reference: %w", err)
 	}
-	candidateOutcome, err := Run(ctx, candidateSandbox, candidate)
+	subjectOutcome, err := Run(ctx, subjectSandbox, subject)
 	if err != nil {
-		return fmt.Errorf("candidate: %w", err)
+		return fmt.Errorf("subject: %w", err)
 	}
-	oracleSubs := append(SandboxSubstitutions(oracleSandbox), substitutions...)
-	candidateSubs := append(SandboxSubstitutions(candidateSandbox), substitutions...)
-	return Difference(Normalize(oracleOutcome, oracleSubs...), Normalize(candidateOutcome, candidateSubs...))
+	referenceSubs := append(SandboxSubstitutions(referenceSandbox), substitutions...)
+	subjectSubs := append(SandboxSubstitutions(subjectSandbox), substitutions...)
+	return Difference(Normalize(referenceOutcome, referenceSubs...), Normalize(subjectOutcome, subjectSubs...))
 }
 
 // Fixture describes a reusable CLI process case. Exact expected values are
@@ -410,60 +410,60 @@ func RunSequence(ctx context.Context, sandbox Sandbox, commands []Command) ([]Ou
 
 // PairSequence compares every process outcome and the resulting HOME/root
 // filesystem trees. This is intended for init/refresh and local Git lifecycles.
-func PairSequence(ctx context.Context, parent, name string, oracle, candidate []Command, seed func(Sandbox) error, substitutions ...Substitution) error {
-	if len(oracle) != len(candidate) {
-		return fmt.Errorf("sequence length differs: oracle=%d candidate=%d", len(oracle), len(candidate))
+func PairSequence(ctx context.Context, parent, name string, reference, subject []Command, seed func(Sandbox) error, substitutions ...Substitution) error {
+	if len(reference) != len(subject) {
+		return fmt.Errorf("sequence length differs: reference=%d subject=%d", len(reference), len(subject))
 	}
-	oracleSandbox, err := NewSandbox(parent, name+"-oracle")
+	referenceSandbox, err := NewSandbox(parent, name+"-reference")
 	if err != nil {
 		return err
 	}
-	defer oracleSandbox.Cleanup()
-	candidateSandbox, err := NewSandbox(parent, name+"-candidate")
+	defer referenceSandbox.Cleanup()
+	subjectSandbox, err := NewSandbox(parent, name+"-subject")
 	if err != nil {
 		return err
 	}
-	defer candidateSandbox.Cleanup()
-	for _, sandbox := range []Sandbox{oracleSandbox, candidateSandbox} {
+	defer subjectSandbox.Cleanup()
+	for _, sandbox := range []Sandbox{referenceSandbox, subjectSandbox} {
 		if seed != nil {
 			if err := seed(sandbox); err != nil {
 				return fmt.Errorf("seed %q: %w", name, err)
 			}
 		}
 	}
-	oracleOutcomes, err := RunSequence(ctx, oracleSandbox, oracle)
+	referenceOutcomes, err := RunSequence(ctx, referenceSandbox, reference)
 	if err != nil {
-		return fmt.Errorf("oracle: %w", err)
+		return fmt.Errorf("reference: %w", err)
 	}
-	candidateOutcomes, err := RunSequence(ctx, candidateSandbox, candidate)
+	subjectOutcomes, err := RunSequence(ctx, subjectSandbox, subject)
 	if err != nil {
-		return fmt.Errorf("candidate: %w", err)
+		return fmt.Errorf("subject: %w", err)
 	}
-	oracleSubs := append(SandboxSubstitutions(oracleSandbox), substitutions...)
-	candidateSubs := append(SandboxSubstitutions(candidateSandbox), substitutions...)
-	for index := range oracleOutcomes {
-		if err := Difference(Normalize(oracleOutcomes[index], oracleSubs...), Normalize(candidateOutcomes[index], candidateSubs...)); err != nil {
+	referenceSubs := append(SandboxSubstitutions(referenceSandbox), substitutions...)
+	subjectSubs := append(SandboxSubstitutions(subjectSandbox), substitutions...)
+	for index := range referenceOutcomes {
+		if err := Difference(Normalize(referenceOutcomes[index], referenceSubs...), Normalize(subjectOutcomes[index], subjectSubs...)); err != nil {
 			return fmt.Errorf("command %d: %w", index, err)
 		}
 	}
 	for _, tree := range []struct {
 		name      string
-		oracle    string
-		candidate string
+		reference string
+		subject   string
 	}{
-		{name: "HOME", oracle: oracleSandbox.Home, candidate: candidateSandbox.Home},
-		{name: "root", oracle: oracleSandbox.Root, candidate: candidateSandbox.Root},
+		{name: "HOME", reference: referenceSandbox.Home, subject: subjectSandbox.Home},
+		{name: "root", reference: referenceSandbox.Root, subject: subjectSandbox.Root},
 	} {
-		want, err := Snapshot(tree.oracle)
+		want, err := Snapshot(tree.reference)
 		if err != nil {
 			return err
 		}
-		got, err := Snapshot(tree.candidate)
+		got, err := Snapshot(tree.subject)
 		if err != nil {
 			return err
 		}
-		want = normalizeSnapshot(want, oracleSubs)
-		got = normalizeSnapshot(got, candidateSubs)
+		want = normalizeSnapshot(want, referenceSubs)
+		got = normalizeSnapshot(got, subjectSubs)
 		if err := snapshotDifference(want, got); err != nil {
 			return fmt.Errorf("%s filesystem: %w", tree.name, err)
 		}
@@ -483,12 +483,12 @@ func normalizeSnapshot(entries []SnapshotEntry, substitutions []Substitution) []
 
 func snapshotDifference(want, got []SnapshotEntry) error {
 	if len(want) != len(got) {
-		return fmt.Errorf("entry count differs: oracle=%d candidate=%d", len(want), len(got))
+		return fmt.Errorf("entry count differs: reference=%d subject=%d", len(want), len(got))
 	}
 	for index := range want {
 		left, right := want[index], got[index]
 		if left.Path != right.Path || left.Mode != right.Mode || left.Link != right.Link || !bytes.Equal(left.Content, right.Content) {
-			return fmt.Errorf("entry %d differs: oracle=%#v candidate=%#v", index, left, right)
+			return fmt.Errorf("entry %d differs: reference=%#v subject=%#v", index, left, right)
 		}
 	}
 	return nil

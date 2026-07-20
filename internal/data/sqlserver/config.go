@@ -11,13 +11,12 @@ import (
 )
 
 const (
-	ProviderName       = "sql-server"
-	LegacyProviderName = "sqlserver"
+	ProviderName = "sql-server"
 )
 
 func IsProviderName(value string) bool {
 	value = strings.TrimSpace(value)
-	return strings.EqualFold(value, ProviderName) || strings.EqualFold(value, LegacyProviderName)
+	return strings.EqualFold(value, ProviderName)
 }
 
 const (
@@ -41,7 +40,7 @@ func DefaultSettings() Defaults {
 }
 
 // ConnectionConfig cannot serialize its inline secret; configuration loading is an explicit
-// dbcompat boundary and all report DTOs contain only masked source metadata.
+// data application boundary and all report DTOs contain only masked source metadata.
 type ConnectionConfig struct {
 	Provider                            string               `json:"provider"`
 	ConnectionString                    contract.SecretValue `json:"-"`
@@ -81,21 +80,21 @@ type ProviderError struct {
 func (problem *ProviderError) Error() string {
 	switch problem.Kind {
 	case ErrorUnsupportedProvider:
-		return l10n.Render(l10n.M("db.error.unsupported_provider", l10n.A("provider", problem.Provider)))
+		return l10n.Render(l10n.M("data.error.unsupported_provider", l10n.A("provider", problem.Provider)))
 	case ErrorBlockedQuery:
-		return l10n.Render(l10n.M("db.error.blocked", l10n.A("reason", problem.Reason)))
+		return l10n.Render(l10n.M("data.error.blocked", l10n.A("reason", problem.Reason)))
 	case ErrorMissingConnection:
-		return l10n.Text("db.error.missing_connection")
+		return l10n.Text("data.error.missing_connection")
 	case ErrorMissingSecret:
-		return l10n.Render(l10n.M("db.error.missing_secret", l10n.A("key", problem.Key)))
+		return l10n.Render(l10n.M("data.error.missing_secret", l10n.A("key", problem.Key)))
 	case ErrorSecretStore:
-		return l10n.Text("db.error.secret_store")
+		return l10n.Text("data.error.secret_store")
 	case ErrorTimeout:
-		return l10n.Render(l10n.M("db.error.timeout", l10n.A("seconds", problem.Seconds)))
+		return l10n.Render(l10n.M("data.error.timeout", l10n.A("seconds", problem.Seconds)))
 	case ErrorReadOnlyRequired:
-		return l10n.Text("db.error.readonly")
+		return l10n.Text("data.error.readonly")
 	default:
-		return l10n.Render(l10n.M("db.error.sql", l10n.A("error", problem.Reason)))
+		return l10n.Render(l10n.M("data.error.sql", l10n.A("error", problem.Reason)))
 	}
 }
 
@@ -104,7 +103,7 @@ func IsErrorKind(err error, kind ErrorKind) bool {
 	return errors.As(err, &problem) && problem.Kind == kind
 }
 
-// Resolve validates the non-negotiable read-only invariant and applies compatibility defaults.
+// Resolve validates the non-negotiable read-only invariant and applies configured defaults.
 func Resolve(config ConnectionConfig, defaults Defaults) (ResolvedConnection, error) {
 	if !defaults.ReadOnly || config.ReadOnly != nil && !*config.ReadOnly {
 		return ResolvedConnection{}, &ProviderError{Kind: ErrorReadOnlyRequired}

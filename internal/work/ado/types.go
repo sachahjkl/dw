@@ -227,41 +227,6 @@ type Event struct {
 	State               string   `json:"state,omitempty"`
 }
 
-func (e Event) ActionID() string {
-	switch e.Kind {
-	case "authenticating":
-		return "ado.auth"
-	case "device-login-required":
-		return "ado.auth.device.login"
-	case "loading-assigned-work-items":
-		return "ado.assigned.load"
-	case "grouping-assigned-work-items":
-		return "ado.assigned.group"
-	case "loading-pull-requests":
-		return "ado.pr.load"
-	case "resolving-pull-request-work-items":
-		return "ado.pr.resolve.workitems"
-	case "extracting-git-work-items":
-		return "ado.git.extract.workitems"
-	case "loading-work-item":
-		return "ado.workitem.load"
-	case "loading-work-items":
-		return "ado.workitems.load"
-	case "loading-work-item-context":
-		return "ado.workitem.context.load"
-	case "loading-changelog":
-		return "ado.changelog.load"
-	case "loading-changelog-items":
-		return "ado.changelog.items.load"
-	case "updating-work-item-state":
-		return "ado.workitem.state.update"
-	case "updated-work-item-state":
-		return "ado.workitem.state.updated"
-	default:
-		return ""
-	}
-}
-
 type ErrorKind string
 
 const (

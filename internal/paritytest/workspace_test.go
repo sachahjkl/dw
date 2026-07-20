@@ -12,7 +12,7 @@ import (
 )
 
 func TestLegacyTaskManifestNormalizesWithoutLosingExtensions(t *testing.T) {
-	fixture := filepath.Join("..", "..", "testdata", "oracle", "legacy-task.json")
+	fixture := filepath.Join("..", "..", "testdata", "contract", "legacy-task.json")
 	manifest, err := workspace.ReadManifest(fixture)
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestLegacyTaskManifestNormalizesWithoutLosingExtensions(t *testing.T) {
 }
 
 func TestManifestJSONIsByteStableAndFieldOrdered(t *testing.T) {
-	fixture := filepath.Join("..", "..", "testdata", "oracle", "legacy-task.json")
+	fixture := filepath.Join("..", "..", "testdata", "contract", "legacy-task.json")
 	manifest, err := workspace.ReadManifest(fixture)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestManifestJSONIsByteStableAndFieldOrdered(t *testing.T) {
 }
 
 func TestWriteManifestUsesAtomicRealFilesystemRoundTrip(t *testing.T) {
-	fixture := filepath.Join("..", "..", "testdata", "oracle", "legacy-task.json")
+	fixture := filepath.Join("..", "..", "testdata", "contract", "legacy-task.json")
 	manifest, err := workspace.ReadManifest(fixture)
 	if err != nil {
 		t.Fatal(err)

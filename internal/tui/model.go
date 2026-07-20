@@ -18,29 +18,29 @@ const (
 	WorkspaceOpenSlot       action.ID = "tui.workspace.open"
 	WorkspacePreflightSlot  action.ID = "tui.workspace.preflight"
 	WorkspaceSyncSlot       action.ID = "tui.workspace.sync"
-	WorkspaceLatestSlot     action.ID = "tui.workspace.latest"
-	WorkspaceHandoffSlot    action.ID = "tui.workspace.handoff"
+	WorkspaceLatestSlot     action.ID = "tui.workspace.repo.latest"
+	WorkspaceHandoffSlot    action.ID = "tui.workspace.handoff.validate"
 	WorkspaceCommitSlot     action.ID = "tui.workspace.commit-preview"
 	WorkspaceFinishPlanSlot action.ID = "tui.workspace.finish-preview"
 	WorkspaceFinishSlot     action.ID = "tui.workspace.finish-execute"
-	WorkspaceRemovePlanSlot action.ID = "tui.workspace.remove-preview"
-	WorkspaceRemoveSlot     action.ID = "tui.workspace.remove-execute"
-	ADOStartPlanSlot        action.ID = "tui.ado.start-preview"
-	ADOStartSlot            action.ID = "tui.ado.start-execute"
-	ADOOpenAgentSlot        action.ID = "tui.ado.open-agent"
-	ADOContextSlot          action.ID = "tui.ado.context"
-	ADOWorkItemSlot         action.ID = "tui.ado.work-item"
-	ADOSetStateSlot         action.ID = "tui.ado.set-state"
-	ADOOpenURLSlot          action.ID = "tui.ado.open-url"
-	PRStartPlanSlot         action.ID = "tui.pr.start-preview"
-	PRStartSlot             action.ID = "tui.pr.start-execute"
-	PROpenAgentSlot         action.ID = "tui.pr.open-agent"
-	PRFinishPlanSlot        action.ID = "tui.pr.finish-preview"
-	PRFinishSlot            action.ID = "tui.pr.finish-execute"
-	PRChangelogSlot         action.ID = "tui.pr.changelog"
-	PRDiffSlot              action.ID = "tui.pr.diff-preview"
-	PROpenURLSlot           action.ID = "tui.pr.open-url"
-	DBSchemaSlot            action.ID = "tui.db.schema"
+	WorkspaceRemovePlanSlot action.ID = "tui.workspace.teardown-preview"
+	WorkspaceRemoveSlot     action.ID = "tui.workspace.teardown-execute"
+	WorkStartPlanSlot       action.ID = "tui.workspace.start-preview"
+	WorkStartSlot           action.ID = "tui.workspace.start-execute"
+	WorkOpenAgentSlot       action.ID = "tui.workspace.open-from-work"
+	WorkContextSlot         action.ID = "tui.work.context.show"
+	WorkItemSlot            action.ID = "tui.work.item.show"
+	WorkSetStateSlot        action.ID = "tui.work.item.state.set"
+	WorkOpenURLSlot         action.ID = "tui.work.open-url"
+	PRStartPlanSlot         action.ID = "tui.workspace.pr.start-preview"
+	PRStartSlot             action.ID = "tui.workspace.pr.start-execute"
+	PROpenAgentSlot         action.ID = "tui.workspace.open-from-pr"
+	PRFinishPlanSlot        action.ID = "tui.workspace.finish-from-pr-preview"
+	PRFinishSlot            action.ID = "tui.workspace.finish-from-pr-execute"
+	PRChangelogSlot         action.ID = "tui.work.changelog"
+	PRDiffSlot              action.ID = "tui.workspace.diff-preview"
+	PROpenURLSlot           action.ID = "tui.work.pr.open-url"
+	DataCatalogSlot         action.ID = "tui.data.catalog"
 )
 
 type KeyKind uint8
@@ -141,10 +141,10 @@ type Model struct {
 	selectedAction      int
 	selectedCockpit     int
 	selectedWorkspace   int
-	selectedADOProject  int
-	selectedADOItem     int
+	selectedWorkProject int
+	selectedWorkItem    int
 	selectedPR          int
-	selectedDB          int
+	selectedDataSource  int
 	selectedMenuSection int
 	selectedMenuItem    int
 
@@ -170,7 +170,7 @@ type Model struct {
 	pendingExternal  *externalRun
 
 	snapshotLoad loaderState
-	assignedLoad loaderState
+	workLoad     loaderState
 	prLoad       loaderState
 
 	quit     bool
@@ -221,25 +221,25 @@ func activateRequestlessParityActions(snapshot *Snapshot) {
 	for index := range snapshot.Workspaces {
 		activate(snapshot.Workspaces[index].Actions)
 	}
-	for project := range snapshot.ADOProjects {
-		for item := range snapshot.ADOProjects[project].Items {
-			activate(snapshot.ADOProjects[project].Items[item].Actions)
+	for project := range snapshot.WorkProjects {
+		for item := range snapshot.WorkProjects[project].Items {
+			activate(snapshot.WorkProjects[project].Items[item].Actions)
 		}
 	}
 	for index := range snapshot.PullRequests {
 		activate(snapshot.PullRequests[index].Actions)
 	}
-	for index := range snapshot.Databases {
-		activate(snapshot.Databases[index].Actions)
+	for index := range snapshot.DataSources {
+		activate(snapshot.DataSources[index].Actions)
 	}
 }
 
 type SelectionState struct {
-	Action, Cockpit, Workspace, ADOProject, ADOItem, PullRequest, Database int
+	Action, Cockpit, Workspace, WorkProject, WorkItem, PullRequest, DataSource int
 }
 
 func (m *Model) Selection() SelectionState {
-	return SelectionState{m.selectedAction, m.selectedCockpit, m.selectedWorkspace, m.selectedADOProject, m.selectedADOItem, m.selectedPR, m.selectedDB}
+	return SelectionState{m.selectedAction, m.selectedCockpit, m.selectedWorkspace, m.selectedWorkProject, m.selectedWorkItem, m.selectedPR, m.selectedDataSource}
 }
 
 func (m *Model) ConfirmationOpen() bool { return m.confirmation != nil }
@@ -424,7 +424,7 @@ func (m *Model) HandleKey(key Key) []Effect {
 		m.confirmation = nil
 		return nil
 	case "n":
-		if m.view != ADO && m.view != PullRequests {
+		if m.view != Work && m.view != PullRequests {
 			m.openForm("")
 			return nil
 		}
@@ -878,28 +878,28 @@ func (m *Model) handleNavigationKey(key Key) bool {
 			m.selectedCockpit = clampIndex(m.selectedCockpit+delta, len(m.snapshot.Cockpit))
 		case Workspaces:
 			m.selectedWorkspace = clampIndex(m.selectedWorkspace+delta, len(m.snapshot.Workspaces))
-		case ADO:
-			m.selectedADOItem = clampIndex(m.selectedADOItem+delta, m.adoItemCount())
+		case Work:
+			m.selectedWorkItem = clampIndex(m.selectedWorkItem+delta, m.workItemCount())
 		case PullRequests:
 			m.selectedPR = clampIndex(m.selectedPR+delta, len(m.snapshot.PullRequests))
-		case Databases:
-			m.selectedDB = clampIndex(m.selectedDB+delta, len(m.snapshot.Databases))
+		case Data:
+			m.selectedDataSource = clampIndex(m.selectedDataSource+delta, len(m.snapshot.DataSources))
 		case Composer:
 			m.composer.move(delta)
 		}
 		return true
 	}
-	if key.Code == "K" || (key.Code == "[" && m.view == ADO) {
-		if m.view == ADO {
-			m.cycleADOProject(-1)
+	if key.Code == "K" || (key.Code == "[" && m.view == Work) {
+		if m.view == Work {
+			m.cycleWorkProject(-1)
 		} else {
 			m.selectedWorkspace = clampIndex(m.selectedWorkspace-1, len(m.snapshot.Workspaces))
 		}
 		return true
 	}
-	if key.Code == "J" || (key.Code == "]" && m.view == ADO) {
-		if m.view == ADO {
-			m.cycleADOProject(1)
+	if key.Code == "J" || (key.Code == "]" && m.view == Work) {
+		if m.view == Work {
+			m.cycleWorkProject(1)
 		} else {
 			m.selectedWorkspace = clampIndex(m.selectedWorkspace+1, len(m.snapshot.Workspaces))
 		}
@@ -910,25 +910,25 @@ func (m *Model) handleNavigationKey(key Key) bool {
 
 func (m *Model) handleViewActionKey(key Key) ([]Effect, bool) {
 	switch m.view {
-	case ADO:
+	case Work:
 		switch key.Code {
 		case "enter", "n", "s":
-			return m.adoAction(ADOStartPlanSlot), true
+			return m.workAction(WorkStartPlanSlot), true
 		case "x":
-			return m.adoAction(ADOStartSlot), true
+			return m.workAction(WorkStartSlot), true
 		case "c":
-			return m.adoAction(ADOContextSlot), true
+			return m.workAction(WorkContextSlot), true
 		case "w":
-			return m.adoAction(ADOWorkItemSlot), true
+			return m.workAction(WorkItemSlot), true
 		case "e":
-			return m.adoAction(ADOSetStateSlot), true
+			return m.workAction(WorkSetStateSlot), true
 		case "E":
-			m.openADOStateForm()
+			m.openWorkStateForm()
 			return nil, true
 		case "o":
-			return m.adoAction(ADOOpenAgentSlot), true
+			return m.workAction(WorkOpenAgentSlot), true
 		case "u":
-			return m.adoAction(ADOOpenURLSlot), true
+			return m.workAction(WorkOpenURLSlot), true
 		}
 	case Workspaces:
 		switch key.Code {
@@ -975,15 +975,15 @@ func (m *Model) handleViewActionKey(key Key) ([]Effect, bool) {
 		case "u":
 			return m.prAction(PROpenURLSlot), true
 		}
-	case Databases:
+	case Data:
 		switch key.Code {
 		case "enter", "s":
-			return m.dbAction(DBSchemaSlot), true
+			return m.dataAction(DataCatalogSlot), true
 		case "d":
-			m.openDBForm("db-describe")
+			m.openDataForm("data-describe")
 			return nil, true
 		case "e":
-			m.openDBForm("db-query")
+			m.openDataForm("data-query")
 			return nil, true
 		}
 	}
@@ -999,9 +999,9 @@ func (m *Model) workspaceAction(id action.ID) []Effect {
 	m.addMessage(m.l10n.Text("tui.message.unavailable"))
 	return nil
 }
-func (m *Model) adoAction(id action.ID) []Effect {
-	if p := m.selectedADOProject; p < len(m.snapshot.ADOProjects) && m.selectedADOItem < len(m.snapshot.ADOProjects[p].Items) {
-		if item, ok := findAction(m.snapshot.ADOProjects[p].Items[m.selectedADOItem].Actions, id); ok {
+func (m *Model) workAction(id action.ID) []Effect {
+	if p := m.selectedWorkProject; p < len(m.snapshot.WorkProjects) && m.selectedWorkItem < len(m.snapshot.WorkProjects[p].Items) {
+		if item, ok := findAction(m.snapshot.WorkProjects[p].Items[m.selectedWorkItem].Actions, id); ok {
 			return m.requestAction(item)
 		}
 	}
@@ -1017,9 +1017,9 @@ func (m *Model) prAction(id action.ID) []Effect {
 	m.addMessage(m.l10n.Text("tui.message.unavailable"))
 	return nil
 }
-func (m *Model) dbAction(id action.ID) []Effect {
-	if m.selectedDB < len(m.snapshot.Databases) {
-		if item, ok := findAction(m.snapshot.Databases[m.selectedDB].Actions, id); ok {
+func (m *Model) dataAction(id action.ID) []Effect {
+	if m.selectedDataSource < len(m.snapshot.DataSources) {
+		if item, ok := findAction(m.snapshot.DataSources[m.selectedDataSource].Actions, id); ok {
 			return m.requestAction(item)
 		}
 	}
@@ -1087,19 +1087,20 @@ func (m *Model) openForm(templateID string) {
 	m.removeModal(helpModal)
 }
 
-func (m *Model) openADOStateForm() {
-	m.openForm("ado-set-state")
-	if m.form == nil || m.selectedADOProject >= len(m.snapshot.ADOProjects) {
+func (m *Model) openWorkStateForm() {
+	m.openForm("work-set-state")
+	if m.form == nil || m.selectedWorkProject >= len(m.snapshot.WorkProjects) {
 		return
 	}
-	project := m.snapshot.ADOProjects[m.selectedADOProject]
-	if m.selectedADOItem >= len(project.Items) {
+	project := m.snapshot.WorkProjects[m.selectedWorkProject]
+	if m.selectedWorkItem >= len(project.Items) {
 		return
 	}
-	item := project.Items[m.selectedADOItem]
+	item := project.Items[m.selectedWorkItem]
 	setField(m.form.Fields, "workItemIds", item.ID)
 	setField(m.form.Fields, "project", project.Key)
-	if actionItem, ok := findAction(item.Actions, ADOSetStateSlot); ok {
+	setField(m.form.Fields, "provider", project.Provider)
+	if actionItem, ok := findAction(item.Actions, WorkSetStateSlot); ok {
 		for _, parameter := range requestParameters(actionItem.Request) {
 			if parameter.Name == "state" {
 				setField(m.form.Fields, "state", parameterString(parameter.Value))
@@ -1109,24 +1110,26 @@ func (m *Model) openADOStateForm() {
 }
 
 func (m *Model) openPRForm() {
-	m.openForm("task-start-pr")
+	m.openForm("workspace-pr-start")
 	if m.form == nil || m.selectedPR >= len(m.snapshot.PullRequests) {
 		return
 	}
 	item := m.snapshot.PullRequests[m.selectedPR]
 	setField(m.form.Fields, "pullRequest", item.ID)
+	setField(m.form.Fields, "provider", item.Provider)
 	setField(m.form.Fields, "project", item.Project)
 	setField(m.form.Fields, "repositories", item.Repository)
 }
 
-func (m *Model) openDBForm(template string) {
+func (m *Model) openDataForm(template string) {
 	m.openForm(template)
-	if m.form == nil || m.selectedDB >= len(m.snapshot.Databases) {
+	if m.form == nil || m.selectedDataSource >= len(m.snapshot.DataSources) {
 		return
 	}
-	item := m.snapshot.Databases[m.selectedDB]
+	item := m.snapshot.DataSources[m.selectedDataSource]
 	setField(m.form.Fields, "project", item.Project)
-	setField(m.form.Fields, "database", item.Key)
+	setField(m.form.Fields, "source", item.Key)
+	setField(m.form.Fields, "provider", item.Provider)
 }
 
 func requestParameters(request action.Request) []Parameter {
@@ -1178,30 +1181,30 @@ func (m *Model) visibleActions() []Action {
 	return result
 }
 
-func (m *Model) adoItemCount() int {
-	if m.selectedADOProject >= len(m.snapshot.ADOProjects) {
+func (m *Model) workItemCount() int {
+	if m.selectedWorkProject >= len(m.snapshot.WorkProjects) {
 		return 0
 	}
-	return len(m.snapshot.ADOProjects[m.selectedADOProject].Items)
+	return len(m.snapshot.WorkProjects[m.selectedWorkProject].Items)
 }
 
-func (m *Model) cycleADOProject(delta int) {
-	count := len(m.snapshot.ADOProjects)
+func (m *Model) cycleWorkProject(delta int) {
+	count := len(m.snapshot.WorkProjects)
 	if count == 0 {
 		return
 	}
-	m.selectedADOProject = (m.selectedADOProject + delta + count) % count
-	m.selectedADOItem = clampIndex(m.selectedADOItem, m.adoItemCount())
+	m.selectedWorkProject = (m.selectedWorkProject + delta + count) % count
+	m.selectedWorkItem = clampIndex(m.selectedWorkItem, m.workItemCount())
 }
 
 func (m *Model) clampSelections() {
 	m.selectedAction = clampIndex(m.selectedAction, len(m.visibleActions()))
 	m.selectedCockpit = clampIndex(m.selectedCockpit, len(m.snapshot.Cockpit))
 	m.selectedWorkspace = clampIndex(m.selectedWorkspace, len(m.snapshot.Workspaces))
-	m.selectedADOProject = clampIndex(m.selectedADOProject, len(m.snapshot.ADOProjects))
-	m.selectedADOItem = clampIndex(m.selectedADOItem, m.adoItemCount())
+	m.selectedWorkProject = clampIndex(m.selectedWorkProject, len(m.snapshot.WorkProjects))
+	m.selectedWorkItem = clampIndex(m.selectedWorkItem, m.workItemCount())
 	m.selectedPR = clampIndex(m.selectedPR, len(m.snapshot.PullRequests))
-	m.selectedDB = clampIndex(m.selectedDB, len(m.snapshot.Databases))
+	m.selectedDataSource = clampIndex(m.selectedDataSource, len(m.snapshot.DataSources))
 }
 
 func clampIndex(value, count int) int {

@@ -2,7 +2,6 @@ package paritytest_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -189,35 +188,8 @@ func TestSnapshotIsStableAndIncludesFileKinds(t *testing.T) {
 	}
 }
 
-func TestOracleMetadataIsPinnedToVersion(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "oracle", "metadata.json")
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var metadata struct {
-		Commit     string `json:"commit"`
-		Describe   string `json:"describe"`
-		Version    string `json:"version"`
-		Dirty      bool   `json:"dirty"`
-		CommitDate string `json:"commitDate"`
-	}
-	if err := json.Unmarshal(contents, &metadata); err != nil {
-		t.Fatal(err)
-	}
-	if len(metadata.Commit) != 40 || metadata.Version == "" || metadata.Describe == "" || metadata.CommitDate == "" {
-		t.Fatalf("incomplete oracle metadata: %#v", metadata)
-	}
-	if metadata.Dirty {
-		t.Fatal("oracle metadata must never pin a dirty worktree")
-	}
-	if strings.TrimPrefix(metadata.Describe, "v") != metadata.Version {
-		t.Fatalf("describe/version mismatch: %q != %q", metadata.Describe, metadata.Version)
-	}
-}
-
-func TestOracleCLIFixturesCoverStableProcessContracts(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "oracle", "cli-cases.json")
+func TestGreenfieldCLIFixturesCoverStableProcessContracts(t *testing.T) {
+	path := filepath.Join("..", "..", "testdata", "contract", "cli-cases.json")
 	fixtures, err := paritytest.LoadFixtures(path)
 	if err != nil {
 		t.Fatal(err)
@@ -228,21 +200,23 @@ func TestOracleCLIFixturesCoverStableProcessContracts(t *testing.T) {
 	}
 	for _, required := range []string{
 		"root-help-long",
-		"deep-help-work-open",
-		"deep-help-db-query",
+		"deep-help-work-item-show",
+		"deep-help-workspace-open",
+		"deep-help-data-query",
+		"deep-help-provider-capabilities",
+		"provider-auth-positional-selection",
 		"informational-version-long",
 		"runtime-version-command",
-		"parser-unknown-root-option",
-		"parser-conflicting-upgrade-options",
 		"completion-bash-root",
 		"completion-fish-root",
 		"completion-zsh-root",
 		"completion-json-root",
-		"completion-json-deep-options",
+		"completion-json-work-options",
+		"completion-json-provider-auth",
 		"completion-install-elvish",
 	} {
 		if _, exists := byName[required]; !exists {
-			t.Errorf("missing oracle CLI fixture %q", required)
+			t.Errorf("missing greenfield CLI fixture %q", required)
 		}
 	}
 }

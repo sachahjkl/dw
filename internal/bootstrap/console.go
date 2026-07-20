@@ -6,29 +6,30 @@ import (
 
 	"github.com/sachahjkl/dw/internal/cli/controller"
 	"github.com/sachahjkl/dw/internal/console"
+	"github.com/sachahjkl/dw/internal/providerapp"
 	"github.com/sachahjkl/dw/internal/workapp"
 )
 
 func registerConsole(results *console.Registry, events *console.EventRegistry) error {
 	registrations := controllerResultRegistrations()
 	for _, actionID := range []console.EventKey{
-		workapp.ActionAuthLogin,
-		workapp.ActionAssigned,
-		workapp.ActionPullRequests,
-		workapp.ActionChangelog,
-		workapp.ActionContext,
-		workapp.ActionAIContext,
-		workapp.ActionItemShow,
-		workapp.ActionStateExecute,
-		workapp.ActionStateSet,
-		workapp.ActionDoingExecute,
-		workapp.ActionStart,
-		workapp.ActionStartPullRequest,
-		workapp.ActionOpen,
-		workapp.ActionSync,
-		workapp.ActionChild,
-		workapp.ActionPrune,
-		workapp.ActionFinish,
+		workapp.ActionProviderAuthLogin,
+		workapp.ActionWorkItemList,
+		workapp.ActionWorkPullRequestList,
+		workapp.ActionWorkChangelog,
+		workapp.ActionWorkContextShow,
+		workapp.ActionWorkContextAI,
+		workapp.ActionWorkItemShow,
+		workapp.ActionWorkItemStateExecute,
+		workapp.ActionWorkItemStateSet,
+		workapp.ActionWorkItemDoingExecute,
+		workapp.ActionWorkspaceStart,
+		workapp.ActionWorkspacePullRequestStart,
+		workapp.ActionWorkspaceOpen,
+		workapp.ActionWorkspaceSync,
+		workapp.ActionWorkItemChildCreate,
+		workapp.ActionWorkspacePrune,
+		workapp.ActionWorkspaceFinish,
 	} {
 		registrations = append(registrations, console.Registration{Action: actionID, Event: workEventRenderer})
 	}
@@ -37,6 +38,31 @@ func registerConsole(results *console.Registry, events *console.EventRegistry) e
 
 func controllerResultRegistrations() []console.Registration {
 	return []console.Registration{
+		{Action: providerapp.ActionList, Result: console.PageRenderer(func(result providerapp.ListReport) console.Page {
+			rows := make([][]string, len(result.Providers))
+			for index, provider := range result.Providers {
+				kinds := make([]string, len(provider.Kinds))
+				for kindIndex := range provider.Kinds {
+					kinds[kindIndex] = string(provider.Kinds[kindIndex])
+				}
+				rows[index] = []string{provider.Name, strings.Join(kinds, ", "), strings.Join(provider.Capabilities, ", ")}
+			}
+			return console.Page{Title: "result.title", Summary: []console.Field{{Label: "result.action", Value: string(providerapp.ActionList)}}, Sections: []console.Section{{Table: &console.Table{Columns: []console.MessageID{"result.provider", "result.kinds", "result.capabilities"}, Rows: rows}}}}
+		})},
+		{Action: providerapp.ActionShow, Result: console.PageRenderer(func(result providerapp.ShowReport) console.Page {
+			kinds := make([]string, len(result.Provider.Kinds))
+			for index := range result.Provider.Kinds {
+				kinds[index] = string(result.Provider.Kinds[index])
+			}
+			return resultPage(providerapp.ActionShow, console.Field{Label: "result.provider", Value: result.Provider.Name}, console.Field{Label: "result.kinds", Value: strings.Join(kinds, ", ")}, console.Field{Label: "result.capabilities", Value: strings.Join(result.Provider.Capabilities, ", ")})
+		})},
+		{Action: providerapp.ActionCapabilities, Result: console.PageRenderer(func(result providerapp.CapabilitiesReport) console.Page {
+			kinds := make([]string, len(result.Kinds))
+			for index := range result.Kinds {
+				kinds[index] = string(result.Kinds[index])
+			}
+			return resultPage(providerapp.ActionCapabilities, console.Field{Label: "result.provider", Value: result.Provider}, console.Field{Label: "result.kinds", Value: strings.Join(kinds, ", ")}, console.Field{Label: "result.capabilities", Value: strings.Join(result.Capabilities, ", ")})
+		})},
 		{Action: actionGuide, Result: func(context console.RenderContext, payload any) (console.Output, error) {
 			result, ok := payload.(guideResult)
 			if !ok {
@@ -47,45 +73,45 @@ func controllerResultRegistrations() []console.Registration {
 		{Action: console.ResultAgentContext, Result: console.PageRenderer(func(result controller.AgentContextResult) console.Page {
 			return resultPage(console.ResultAgentContext, console.Field{Label: "result.root", Value: result.Root, Style: console.ValuePath})
 		})},
-		{Action: console.ResultWorkStatus, Result: console.PageRenderer(func(result controller.WorkspaceStatusResult) console.Page {
-			return resultPage(console.ResultWorkStatus, console.Field{Label: "result.root", Value: result.Root, Style: console.ValuePath}, countField("result.items", len(result.Items)))
+		{Action: console.ResultWorkspaceStatus, Result: console.PageRenderer(func(result controller.WorkspaceStatusResult) console.Page {
+			return resultPage(console.ResultWorkspaceStatus, console.Field{Label: "result.root", Value: result.Root, Style: console.ValuePath}, countField("result.items", len(result.Items)))
 		})},
-		{Action: console.ResultWorkList, Result: console.PageRenderer(func(result controller.WorkspaceListResult) console.Page {
-			return resultPage(console.ResultWorkList, console.Field{Label: "result.root", Value: result.Root, Style: console.ValuePath}, countField("result.items", len(result.Items)))
+		{Action: console.ResultWorkspaceList, Result: console.PageRenderer(func(result controller.WorkspaceListResult) console.Page {
+			return resultPage(console.ResultWorkspaceList, console.Field{Label: "result.root", Value: result.Root, Style: console.ValuePath}, countField("result.items", len(result.Items)))
 		})},
-		{Action: console.ResultWorkCurrent, Result: console.PageRenderer(func(result controller.WorkspaceCurrentResult) console.Page {
-			return resultPage(console.ResultWorkCurrent, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, console.Field{Label: "result.project", Value: result.Project})
+		{Action: console.ResultWorkspaceCurrent, Result: console.PageRenderer(func(result controller.WorkspaceCurrentResult) console.Page {
+			return resultPage(console.ResultWorkspaceCurrent, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, console.Field{Label: "result.project", Value: result.Project})
 		})},
-		{Action: console.ResultWorkItemAdd, Result: console.PageRenderer(workItemUpdatePage(console.ResultWorkItemAdd))},
-		{Action: console.ResultWorkItemRemove, Result: console.PageRenderer(workItemUpdatePage(console.ResultWorkItemRemove))},
-		{Action: console.ResultWorkPreflight, Result: console.PageRenderer(func(result controller.WorkspacePreflightResult) console.Page {
-			return resultPage(console.ResultWorkPreflight, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, console.Field{Label: "result.status", Value: strconv.FormatBool(!result.HasBlockingIssues)})
+		{Action: console.ResultWorkspaceItemAdd, Result: console.PageRenderer(workItemUpdatePage(console.ResultWorkspaceItemAdd))},
+		{Action: console.ResultWorkspaceItemRemove, Result: console.PageRenderer(workItemUpdatePage(console.ResultWorkspaceItemRemove))},
+		{Action: console.ResultWorkspacePreflight, Result: console.PageRenderer(func(result controller.WorkspacePreflightResult) console.Page {
+			return resultPage(console.ResultWorkspacePreflight, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, console.Field{Label: "result.status", Value: strconv.FormatBool(!result.HasBlockingIssues)})
 		})},
-		{Action: console.ResultWorkRename, Result: console.PageRenderer(func(result controller.WorkspaceRenameResult) console.Page {
-			return resultPage(console.ResultWorkRename, console.Field{Label: "result.workspace", Value: result.Plan.NewWorkspace, Style: console.ValuePath}, executedField(result.Execution != nil))
+		{Action: console.ResultWorkspaceRename, Result: console.PageRenderer(func(result controller.WorkspaceRenameResult) console.Page {
+			return resultPage(console.ResultWorkspaceRename, console.Field{Label: "result.workspace", Value: result.Plan.NewWorkspace, Style: console.ValuePath}, executedField(result.Execution != nil))
 		})},
-		{Action: console.ResultWorkAddRepo, Result: console.PageRenderer(func(result controller.WorkspaceRepoAddResult) console.Page {
-			return resultPage(console.ResultWorkAddRepo, console.Field{Label: "result.repository", Value: result.Plan.Repository}, executedField(result.Execution != nil))
+		{Action: console.ResultWorkspaceAddRepo, Result: console.PageRenderer(func(result controller.WorkspaceRepoAddResult) console.Page {
+			return resultPage(console.ResultWorkspaceAddRepo, console.Field{Label: "result.repository", Value: result.Plan.Repository}, executedField(result.Execution != nil))
 		})},
-		{Action: console.ResultWorkRepoLatest, Result: console.PageRenderer(func(result controller.WorkspaceRepoLatestResult) console.Page {
+		{Action: console.ResultWorkspaceRepoLatest, Result: console.PageRenderer(func(result controller.WorkspaceRepoLatestResult) console.Page {
 			count := 0
 			if result.Execution != nil {
 				count = len(result.Execution.Updated)
 			}
-			return resultPage(console.ResultWorkRepoLatest, console.Field{Label: "result.workspace", Value: result.Plan.Workspace, Style: console.ValuePath}, countField("result.repositories", count))
+			return resultPage(console.ResultWorkspaceRepoLatest, console.Field{Label: "result.workspace", Value: result.Plan.Workspace, Style: console.ValuePath}, countField("result.repositories", count))
 		})},
-		{Action: console.ResultWorkCommit, Result: console.PageRenderer(func(result controller.WorkspaceCommitResult) console.Page {
-			return resultPage(console.ResultWorkCommit, console.Field{Label: "result.workspace", Value: result.Plan.Workspace, Style: console.ValuePath}, executedField(result.Execution != nil))
+		{Action: console.ResultWorkspaceCommit, Result: console.PageRenderer(func(result controller.WorkspaceCommitResult) console.Page {
+			return resultPage(console.ResultWorkspaceCommit, console.Field{Label: "result.workspace", Value: result.Plan.Workspace, Style: console.ValuePath}, executedField(result.Execution != nil))
 		})},
-		{Action: console.ResultWorkHandoffValidate, Result: console.PageRenderer(func(result controller.WorkspaceHandoffResult) console.Page {
-			return resultPage(console.ResultWorkHandoffValidate, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, console.Field{Label: "result.status", Value: strconv.FormatBool(result.IsValid)})
+		{Action: console.ResultWorkspaceHandoffValidate, Result: console.PageRenderer(func(result controller.WorkspaceHandoffResult) console.Page {
+			return resultPage(console.ResultWorkspaceHandoffValidate, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, console.Field{Label: "result.status", Value: strconv.FormatBool(result.IsValid)})
 		})},
-		{Action: console.ResultWorkTeardown, Result: console.PageRenderer(func(result controller.WorkspaceTeardownResult) console.Page {
+		{Action: console.ResultWorkspaceTeardown, Result: console.PageRenderer(func(result controller.WorkspaceTeardownResult) console.Page {
 			workspacePath := ""
 			if result.Plan.Workspace != nil {
 				workspacePath = *result.Plan.Workspace
 			}
-			return resultPage(console.ResultWorkTeardown, console.Field{Label: "result.workspace", Value: workspacePath, Style: console.ValuePath}, executedField(result.Execution != nil))
+			return resultPage(console.ResultWorkspaceTeardown, console.Field{Label: "result.workspace", Value: workspacePath, Style: console.ValuePath}, executedField(result.Execution != nil))
 		})},
 	}
 }
@@ -117,7 +143,7 @@ func workEventRenderer(payload any) (console.EventProjection, error) {
 	if !ok {
 		return console.EventProjection{}, console.PayloadTypeError{}
 	}
-	projection := console.EventProjection{ActionID: workEventActionID(event.Kind)}
+	projection := console.EventProjection{ActionID: event.ActionID()}
 	if event.Project != nil {
 		projection.Fields = append(projection.Fields, console.EventField{Key: "project", Value: *event.Project})
 	}
@@ -146,39 +172,4 @@ func workEventRenderer(payload any) (console.EventProjection, error) {
 		projection.Fields = append(projection.Fields, console.EventField{Key: "state", Value: event.State})
 	}
 	return projection, nil
-}
-
-func workEventActionID(kind string) string {
-	switch kind {
-	case "authenticating":
-		return "ado.auth"
-	case "device-login-required":
-		return "ado.auth.device.login"
-	case "loading-assigned-work-items":
-		return "ado.assigned.load"
-	case "grouping-assigned-work-items":
-		return "ado.assigned.group"
-	case "loading-pull-requests":
-		return "ado.pr.load"
-	case "resolving-pull-request-work-items":
-		return "ado.pr.resolve.workitems"
-	case "extracting-git-work-items":
-		return "ado.git.extract.workitems"
-	case "loading-work-item":
-		return "ado.workitem.load"
-	case "loading-work-items":
-		return "ado.workitems.load"
-	case "loading-work-item-context":
-		return "ado.workitem.context.load"
-	case "loading-changelog":
-		return "ado.changelog.load"
-	case "loading-changelog-items":
-		return "ado.changelog.items.load"
-	case "updating-work-item-state":
-		return "ado.workitem.state.update"
-	case "updated-work-item-state":
-		return "ado.workitem.state.updated"
-	default:
-		return ""
-	}
 }

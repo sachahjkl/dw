@@ -502,12 +502,12 @@ func updateHandoffChildTasks(workspace, repository string, tasks []ChildTask) er
 		}
 	}
 	if len(known) == 0 {
-		known = []string{"(aucune)"}
+		known = []string{"(none)"}
 	}
 	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
 	for index, line := range lines {
-		if strings.HasPrefix(line, "- Child tasks connus:") {
-			lines[index] = "- Child tasks connus: " + strings.Join(known, ", ")
+		if strings.HasPrefix(line, "- Known child tasks:") {
+			lines[index] = "- Known child tasks: " + strings.Join(known, ", ")
 		}
 	}
 	return writeFileAtomic(path, []byte(strings.Join(lines, "\n")), 0o644)

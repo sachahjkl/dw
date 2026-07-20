@@ -14,8 +14,9 @@ import (
 	"github.com/sachahjkl/dw/internal/config"
 	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/contract"
-	"github.com/sachahjkl/dw/internal/dbcompat"
+	"github.com/sachahjkl/dw/internal/dataapp"
 	"github.com/sachahjkl/dw/internal/doctor"
+	"github.com/sachahjkl/dw/internal/providerapp"
 	"github.com/sachahjkl/dw/internal/secret"
 	"github.com/sachahjkl/dw/internal/update"
 	"github.com/sachahjkl/dw/internal/workapp"
@@ -53,52 +54,55 @@ func RegisterRoutes(registry *Registry, integration Integration) error {
 		buildRoute("agent.show", buildAgentShow, humanProject),
 		buildRoute("agent.default.set", buildAgentDefaultSet, humanProject),
 		buildRoute("agent.doctor", buildAgentDoctor, humanProject),
-		authLoginRoute(),
-		buildRoute("auth.status", buildAuthStatus, humanProject),
-		buildRoute("auth.logout", buildAuthLogout, humanProject),
 		direct["completion.show"], direct["completion.generate"], direct["completion.install"], direct["completion.complete"],
 		buildRoute("config.show", buildConfigShow, jsonOptionProject),
 		buildRoute("config.doctor", buildConfigDoctor, jsonOptionProject),
 		buildRoute("config.root.set", buildConfigRootSet, humanProject),
 		buildRoute("config.color.set", buildConfigColorSet, humanProject),
-		assignedRoute(),
-		buildRoute("ado.prs", buildADOPRs, pullRequestsProject),
-		buildRoute("ado.changelog", buildADOChangelog, changelogProject),
-		buildRoute("ado.item.show", buildADOItemShow, workItemsProject),
+		workItemListRoute(),
+		buildRoute("work.item.show", buildWorkItemShow, workItemsProject),
+		doingRoute(),
 		stateSetRoute(),
-		buildRoute("ado.context.show", buildADOContext, contextProject),
-		buildRoute("ado.context.ai", buildADOAIContext, aiContextProject),
-		buildRoute("db.list", buildDBList, jsonOptionProject),
-		buildRoute("db.collect", buildDBCollect, jsonOptionProject),
-		buildRoute("db.guard", buildDBGuard, humanProject),
-		buildRoute("db.schema", buildDBSchema, jsonOptionProject),
-		buildRoute("db.describe", buildDBDescribe, jsonOptionProject),
-		buildRoute("db.query", buildDBQuery, jsonOptionProject),
+		buildRoute("work.item.child.create", buildWorkItemChildCreate, jsonOptionProject),
+		buildRoute("work.pr.list", buildWorkPullRequestList, pullRequestsProject),
+		buildRoute("work.context.show", buildWorkContextShow, contextProject),
+		buildRoute("work.context.ai", buildWorkContextAI, aiContextProject),
+		buildRoute("work.changelog", buildWorkChangelog, changelogProject),
+		buildRoute("workspace.status", buildWorkspaceStatus, humanProject),
+		buildRoute("workspace.list", buildWorkspaceList, workListProject),
+		buildRoute("workspace.current", buildWorkspaceCurrent, jsonOptionProject),
+		buildRoute("workspace.open", buildWorkspaceOpen, jsonOptionProject),
+		startRoute(),
+		buildRoute("workspace.pr.start", buildWorkspacePRStart, workspacePhaseProject),
+		buildRoute("workspace.preflight", buildWorkspacePreflight, jsonOptionProject),
+		buildRoute("workspace.sync", buildWorkspaceSync, jsonOptionProject),
+		buildRoute("workspace.rename", buildWorkspaceRename, workspacePhaseProject),
+		buildRoute("workspace.repo.add", buildWorkspaceRepoAdd, workspacePhaseProject),
+		buildRoute("workspace.repo.latest", buildWorkspaceRepoLatest, repoLatestProject),
+		buildRoute("workspace.item.add", buildWorkspaceItemAdd, workspacePhaseProject),
+		buildRoute("workspace.item.remove", buildWorkspaceItemRemove, workspacePhaseProject),
+		buildRoute("workspace.commit", buildWorkspaceCommit, workspacePhaseProject),
+		finishRoute(),
+		buildRoute("workspace.handoff.validate", buildWorkspaceHandoff, jsonOptionProject),
+		teardownRoute(),
+		pruneRoute(),
+		buildRoute("data.source.list", buildDataSourceList, jsonOptionProject),
+		buildRoute("data.source.collect", buildDataSourceCollect, jsonOptionProject),
+		buildRoute("data.guard", buildDataGuard, humanProject),
+		buildRoute("data.catalog", buildDataCatalog, jsonOptionProject),
+		buildRoute("data.describe", buildDataDescribe, jsonOptionProject),
+		buildRoute("data.query", buildDataQuery, jsonOptionProject),
+		buildRoute("provider.list", buildProviderList, jsonOptionProject),
+		buildRoute("provider.show", buildProviderShow, jsonOptionProject),
+		buildRoute("provider.capabilities", buildProviderCapabilities, jsonOptionProject),
+		providerAuthLoginRoute(),
+		buildRoute("provider.auth.status", buildProviderAuthStatus, humanProject),
+		buildRoute("provider.auth.logout", buildProviderAuthLogout, humanProject),
 		buildRoute("secret.list", buildSecretList, jsonOptionProject),
 		buildRoute("secret.set", buildSecretSet, humanProject),
 		buildRoute("secret.get", buildSecretGet, humanProject),
 		buildRoute("secret.delete", buildSecretDelete, humanProject),
 		buildRoute("upgrade", buildUpgrade, upgradeProject),
-		buildRoute("work.status", buildWorkStatus, humanProject),
-		buildRoute("work.list", buildWorkList, workListProject),
-		buildRoute("work.current", buildWorkCurrent, jsonOptionProject),
-		doingRoute(),
-		buildRoute("work.item.add", buildWorkItemAdd, workspacePhaseProject),
-		buildRoute("work.item.remove", buildWorkItemRemove, workspacePhaseProject),
-		buildRoute("work.task.child.create", buildWorkChild, jsonOptionProject),
-		buildRoute("work.open", buildWorkOpen, jsonOptionProject),
-		startRoute(),
-		buildRoute("work.pr.start", buildWorkPRStart, workspacePhaseProject),
-		buildRoute("work.preflight", buildWorkPreflight, jsonOptionProject),
-		buildRoute("work.sync", buildWorkSync, jsonOptionProject),
-		buildRoute("work.rename", buildWorkRename, workspacePhaseProject),
-		buildRoute("work.repo.add", buildWorkRepoAdd, workspacePhaseProject),
-		buildRoute("work.repo.latest", buildWorkRepoLatest, repoLatestProject),
-		buildRoute("work.commit", buildWorkCommit, workspacePhaseProject),
-		finishRoute(),
-		buildRoute("work.handoff.validate", buildWorkHandoff, jsonOptionProject),
-		teardownRoute(),
-		pruneRoute(),
 	} {
 		if err := register(route); err != nil {
 			return err
@@ -112,19 +116,19 @@ func buildRoute(key string, build Builder, project Projector) Route {
 	if routeUsesJSONOption(key) {
 		route.Machine = jsonMachine
 	}
-	if key == "ado.context.ai" {
+	if key == "work.context.ai" {
 		route.Machine = func(parse.Values) bool { return true }
 	}
-	if key == "ado.changelog" {
+	if key == "work.changelog" {
 		route.Machine = func(values parse.Values) bool { return values.Bool("ids_only") || values.String("format") != "" }
 	}
 	switch key {
-	case "work.finish":
-		route.Grant = GrantWorkFinish
-	case "work.teardown":
-		route.Grant = GrantWorkTeardown
-	case "work.prune":
-		route.Grant = GrantWorkPrune
+	case "workspace.finish":
+		route.Grant = GrantWorkspaceFinish
+	case "workspace.teardown":
+		route.Grant = GrantWorkspaceTeardown
+	case "workspace.prune":
+		route.Grant = GrantWorkspacePrune
 	}
 	route.Status = statusForKey(key)
 	return route
@@ -132,7 +136,7 @@ func buildRoute(key string, build Builder, project Projector) Route {
 
 func routeUsesJSONOption(key string) bool {
 	switch key {
-	case "agent.open", "config.show", "config.doctor", "ado.assigned", "ado.prs", "ado.item.show", "ado.state.set", "ado.context.show", "db.list", "db.collect", "db.schema", "db.describe", "db.query", "secret.list", "work.list", "work.current", "work.item.add", "work.item.remove", "work.task.child.create", "work.open", "work.start", "work.pr.start", "work.preflight", "work.sync", "work.rename", "work.repo.add", "work.repo.latest", "work.commit", "work.finish", "work.handoff.validate", "work.teardown", "work.prune":
+	case "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "provider.list", "provider.show", "provider.capabilities":
 		return true
 	default:
 		return false
@@ -157,7 +161,7 @@ func statusForKey(key string) Status {
 			}
 			return console.ExitSuccess
 		}
-	case "auth.status":
+	case "provider.auth.status":
 		return func(result action.ResultEnvelope) console.ExitCode {
 			report, ok := result.Result.(workapp.AuthStatusReport)
 			if ok && !report.Connected {
@@ -173,15 +177,15 @@ func statusForKey(key string) Status {
 			}
 			return console.ExitSuccess
 		}
-	case "db.guard":
+	case "data.guard":
 		return func(result action.ResultEnvelope) console.ExitCode {
-			report, ok := result.Result.(dbcompat.GuardResult)
+			report, ok := result.Result.(dataapp.GuardResult)
 			if ok && !report.IsAllowed {
 				return console.ExitFailure
 			}
 			return console.ExitSuccess
 		}
-	case "work.preflight":
+	case "workspace.preflight":
 		return func(result action.ResultEnvelope) console.ExitCode {
 			report, ok := result.Result.(WorkspacePreflightResult)
 			if ok && report.HasBlockingIssues {
@@ -189,7 +193,7 @@ func statusForKey(key string) Status {
 			}
 			return console.ExitSuccess
 		}
-	case "work.handoff.validate":
+	case "workspace.handoff.validate":
 		return func(result action.ResultEnvelope) console.ExitCode {
 			report, ok := result.Result.(WorkspaceHandoffResult)
 			if ok && !report.IsValid {
@@ -290,7 +294,7 @@ func repoLatestProject(result action.ResultEnvelope, invocation *parse.Result) (
 	}
 	report, ok := result.Result.(WorkspaceRepoLatestResult)
 	if !ok {
-		return 0, nil, fmt.Errorf("cli.invalid-result:work.repo.latest:%T", result.Result)
+		return 0, nil, fmt.Errorf("cli.invalid-result:workspace.repo.latest:%T", result.Result)
 	}
 	return marshalProjection(report.Plan)
 }
@@ -363,14 +367,20 @@ func buildAgentDoctor(inv *parse.Result) (action.Request, error) {
 	}
 	return doctor.AgentRequest{Agent: selected}, nil
 }
-func buildAuthLogin(inv *parse.Result) (action.Request, error) {
-	return workapp.AuthLoginRequest{Root: resolvedRoot(inv.Values), Mode: workapp.AuthLoginBrowser}, nil
+func buildProviderAuthStatus(inv *parse.Result) (action.Request, error) {
+	return workapp.AuthStatusRequest{Provider: strings.TrimSpace(inv.Values.String("provider")), Root: resolvedRoot(inv.Values)}, nil
 }
-func buildAuthStatus(inv *parse.Result) (action.Request, error) {
-	return workapp.AuthStatusRequest{Root: resolvedRoot(inv.Values)}, nil
+func buildProviderAuthLogout(inv *parse.Result) (action.Request, error) {
+	return workapp.AuthLogoutRequest{Provider: strings.TrimSpace(inv.Values.String("provider")), Root: resolvedRoot(inv.Values)}, nil
 }
-func buildAuthLogout(inv *parse.Result) (action.Request, error) {
-	return workapp.AuthLogoutRequest{Root: resolvedRoot(inv.Values)}, nil
+func buildProviderList(_ *parse.Result) (action.Request, error) {
+	return providerapp.ListRequest{}, nil
+}
+func buildProviderShow(inv *parse.Result) (action.Request, error) {
+	return providerapp.ShowRequest{Provider: strings.TrimSpace(inv.Values.String("provider"))}, nil
+}
+func buildProviderCapabilities(inv *parse.Result) (action.Request, error) {
+	return providerapp.CapabilitiesRequest{Provider: strings.TrimSpace(inv.Values.String("provider"))}, nil
 }
 func buildConfigShow(inv *parse.Result) (action.Request, error) {
 	return config.ShowRequest{Root: resolvedRoot(inv.Values)}, nil
@@ -388,44 +398,50 @@ func buildConfigColorSet(inv *parse.Result) (action.Request, error) {
 	}
 	return config.ColorSetRequest{Mode: mode}, nil
 }
-func buildADOAssigned(inv *parse.Result) (action.Request, error) {
+func buildWorkItemList(inv *parse.Result) (action.Request, error) {
 	project := inv.Values.String("project")
 	if inv.Values.Bool("json") && project == "" {
 		return nil, usage(fmt.Errorf("cli.project-required"))
 	}
-	return workapp.AssignedRequest{Root: resolvedRoot(inv.Values), Project: project, Top: int(inv.Values.Int("top")), IncludeFinalStates: inv.Values.Bool("all"), GroupByParent: inv.Values.Bool("group_by_parent")}, nil
+	root := resolvedRoot(inv.Values)
+	return workapp.AssignedRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, Top: int(inv.Values.Int("top")), IncludeFinalStates: inv.Values.Bool("all"), GroupByParent: inv.Values.Bool("group_by_parent")}, nil
 }
-func buildADOPRs(inv *parse.Result) (action.Request, error) {
+func buildWorkPullRequestList(inv *parse.Result) (action.Request, error) {
 	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
 	repositories := split(inv.Values.String("repo"))
 	if len(repositories) == 0 {
 		repositories = configuredRepositories(root, project)
 	}
-	return workapp.PullRequestsRequest{Root: root, Project: project, Repositories: repositories}, nil
+	return workapp.PullRequestsRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, Repositories: repositories}, nil
 }
-func buildADOItemShow(inv *parse.Result) (action.Request, error) {
-	return workapp.ItemShowRequest{Root: resolvedRoot(inv.Values), Project: inv.Values.String("project"), IDs: split(inv.Values.String("id"))}, nil
+func buildWorkItemShow(inv *parse.Result) (action.Request, error) {
+	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
+	return workapp.ItemShowRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id"))}, nil
 }
-func buildADOStateSet(inv *parse.Result) (action.Request, error) {
+func buildWorkItemStateSet(inv *parse.Result) (action.Request, error) {
 	history := inv.Values.String("history")
 	if history == "" {
-		history = "dw ado state set"
+		history = "dw work item state set"
 	}
-	request := workapp.StatePlanRequest{Root: resolvedRoot(inv.Values), Project: inv.Values.String("project"), IDs: split(inv.Values.String("id")), State: inv.Values.String("state"), History: history}
+	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
+	request := workapp.StatePlanRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id")), State: inv.Values.String("state"), History: history}
 	if inv.Values.Bool("yes") {
 		return workapp.StateSetRequest{Request: request}, nil
 	}
 	return request, nil
 }
-func buildADOContext(inv *parse.Result) (action.Request, error) {
-	return workapp.ContextRequest{Root: resolvedRoot(inv.Values), Project: inv.Values.String("project"), IDs: split(inv.Values.String("id")), Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Int("comments") > 0, Mode: workapp.ContextRaw}, nil
+func buildWorkContextShow(inv *parse.Result) (action.Request, error) {
+	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
+	return workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id")), Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Int("comments") > 0, Mode: workapp.ContextRaw}, nil
 }
-func buildADOAIContext(inv *parse.Result) (action.Request, error) {
-	request := workapp.ContextRequest{Root: resolvedRoot(inv.Values), Organization: inv.Values.String("organization"), Project: inv.Values.String("project"), IDs: split(inv.Values.String("id")), Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Bool("include_comments"), Mode: workapp.ContextRich}
+func buildWorkContextAI(inv *parse.Result) (action.Request, error) {
+	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
+	request := workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Organization: inv.Values.String("organization"), Project: project, IDs: split(inv.Values.String("id")), Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Bool("include_comments"), Mode: workapp.ContextRich}
 	return workapp.AIContextRequest{ContextRequest: request}, nil
 }
-func buildADOChangelog(inv *parse.Result) (action.Request, error) {
-	request := workapp.ChangelogRequest{Root: resolvedRoot(inv.Values), Project: inv.Values.String("project"), GroupByParent: inv.Values.Bool("group_by_parent"), Table: inv.Values.Bool("table"), IDsOnly: inv.Values.Bool("ids_only"), Repositories: split(inv.Values.String("repo"))}
+func buildWorkChangelog(inv *parse.Result) (action.Request, error) {
+	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
+	request := workapp.ChangelogRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, GroupByParent: inv.Values.Bool("group_by_parent"), Table: inv.Values.Bool("table"), IDsOnly: inv.Values.Bool("ids_only"), Repositories: split(inv.Values.String("repo"))}
 	switch inv.Values.String("format") {
 	case "markdown":
 		request.Format = workapp.ChangelogMarkdown
@@ -457,42 +473,42 @@ func buildADOChangelog(inv *parse.Result) (action.Request, error) {
 	return request, nil
 }
 
-func dbSelection(values parse.Values) dbcompat.Selection {
-	return dbcompat.Selection{Root: resolvedRoot(values), Project: values.String("project"), Database: values.String("database"), Env: values.String("env")}
+func dataSelection(values parse.Values) dataapp.Selection {
+	return dataapp.Selection{Provider: values.String("provider"), Root: resolvedRoot(values), Project: values.String("project"), Source: values.String("source"), Env: values.String("env")}
 }
-func buildDBList(inv *parse.Result) (action.Request, error) {
-	return dbcompat.ListRequest{Root: resolvedRoot(inv.Values)}, nil
+func buildDataSourceList(inv *parse.Result) (action.Request, error) {
+	return dataapp.DataSourceListRequest{Provider: inv.Values.String("provider"), Root: resolvedRoot(inv.Values)}, nil
 }
-func buildDBCollect(inv *parse.Result) (action.Request, error) {
-	return dbcompat.CollectRequest{Root: resolvedRoot(inv.Values), Save: inv.Values.Bool("save")}, nil
+func buildDataSourceCollect(inv *parse.Result) (action.Request, error) {
+	return dataapp.DataSourceCollectRequest{Provider: inv.Values.String("provider"), Root: resolvedRoot(inv.Values), Save: inv.Values.Bool("save")}, nil
 }
-func buildDBGuard(inv *parse.Result) (action.Request, error) {
-	return dbcompat.GuardRequest{SQL: inv.Values.String("sql")}, nil
+func buildDataGuard(inv *parse.Result) (action.Request, error) {
+	return dataapp.GuardRequest{Provider: inv.Values.String("provider"), Query: inv.Values.String("query")}, nil
 }
-func buildDBSchema(inv *parse.Result) (action.Request, error) {
-	return dbcompat.SchemaRequest{Selection: dbSelection(inv.Values)}, nil
+func buildDataCatalog(inv *parse.Result) (action.Request, error) {
+	return dataapp.CatalogRequest{Selection: dataSelection(inv.Values)}, nil
 }
-func buildDBDescribe(inv *parse.Result) (action.Request, error) {
-	return dbcompat.DescribeRequest{Selection: dbSelection(inv.Values), Table: inv.Values.String("table")}, nil
+func buildDataDescribe(inv *parse.Result) (action.Request, error) {
+	return dataapp.DescribeRequest{Selection: dataSelection(inv.Values), Object: inv.Values.String("object")}, nil
 }
-func buildDBQuery(inv *parse.Result) (action.Request, error) {
-	sql := strings.TrimSpace(inv.Values.String("sql"))
-	parts := inv.Values.Strings("sql_parts")
-	if sql != "" && len(parts) != 0 {
-		return nil, usage(fmt.Errorf("cli.db-query-conflicting-sql"))
+func buildDataQuery(inv *parse.Result) (action.Request, error) {
+	query := strings.TrimSpace(inv.Values.String("query"))
+	parts := inv.Values.Strings("query_parts")
+	if query != "" && len(parts) != 0 {
+		return nil, usage(fmt.Errorf("cli.data-query-conflicting-query"))
 	}
-	if sql == "" {
-		sql = strings.Join(parts, " ")
+	if query == "" {
+		query = strings.Join(parts, " ")
 	}
-	if sql == "" {
-		return nil, usage(fmt.Errorf("cli.db-query-missing-sql"))
+	if query == "" {
+		return nil, usage(fmt.Errorf("cli.data-query-missing-query"))
 	}
 	var maximum *int
 	if inv.Values.Has("max_rows") {
 		value := int(inv.Values.Int("max_rows"))
 		maximum = &value
 	}
-	return dbcompat.QueryRequest{Selection: dbSelection(inv.Values), SQL: sql, MaxRows: maximum}, nil
+	return dataapp.QueryRequest{Selection: dataSelection(inv.Values), Query: query, MaxRows: maximum}, nil
 }
 func buildSecretList(inv *parse.Result) (action.Request, error) {
 	return secret.ListRequest{Root: resolvedRoot(inv.Values)}, nil
@@ -527,14 +543,16 @@ func buildUpgrade(inv *parse.Result) (action.Request, error) {
 	return update.Request{Check: inv.Values.Bool("check"), RID: inv.Values.String("rid"), Config: settings, ExecutablePath: executable}, nil
 }
 
-func buildWorkStatus(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceStatus(inv *parse.Result) (action.Request, error) {
 	return WorkspaceStatusRequest{Root: resolvedRoot(inv.Values)}, nil
 }
-func buildWorkList(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceList(inv *parse.Result) (action.Request, error) {
 	return WorkspaceListRequest{Root: resolvedRoot(inv.Values), Project: optional(inv.Values, "project"), WorkItemIDs: split(inv.Values.String("work_item"))}, nil
 }
-func buildWorkCurrent(_ *parse.Result) (action.Request, error) { return WorkspaceCurrentRequest{}, nil }
-func buildWorkItemAdd(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceCurrent(_ *parse.Result) (action.Request, error) {
+	return WorkspaceCurrentRequest{}, nil
+}
+func buildWorkspaceItemAdd(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
@@ -543,9 +561,9 @@ func buildWorkItemAdd(inv *parse.Result) (action.Request, error) {
 	if inv.Values.Bool("json") && len(ids) == 0 {
 		return nil, usage(fmt.Errorf("cli.work-item-ids-required"))
 	}
-	return WorkspaceItemAddRequest{Selection: selection, IDs: ids, SkipWork: inv.Values.Bool("skip_ado"), Type: inv.Values.String("type"), Title: inv.Values.String("title"), State: inv.Values.String("state"), Execute: inv.Values.Bool("execute")}, nil
+	return WorkspaceItemAddRequest{Selection: selection, Provider: strings.TrimSpace(inv.Values.String("provider")), IDs: ids, SkipWork: inv.Values.Bool("skip_provider"), Type: inv.Values.String("type"), Title: inv.Values.String("title"), State: inv.Values.String("state"), Execute: inv.Values.Bool("execute")}, nil
 }
-func buildWorkItemRemove(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceItemRemove(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
@@ -556,14 +574,14 @@ func buildWorkItemRemove(inv *parse.Result) (action.Request, error) {
 	}
 	return WorkspaceItemRemoveRequest{Selection: selection, IDs: ids, Execute: inv.Values.Bool("execute")}, nil
 }
-func buildWorkChild(inv *parse.Result) (action.Request, error) {
+func buildWorkItemChildCreate(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
 	}
-	return workapp.ChildRequest{Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue, Repository: inv.Values.String("repo"), Title: inv.Values.String("title")}, nil
+	return workapp.ChildRequest{Provider: selectedWorkProvider(inv.Values, selection.Root, selection.Project), Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue, Repository: inv.Values.String("repo"), Title: inv.Values.String("title")}, nil
 }
-func buildWorkOpen(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceOpen(inv *parse.Result) (action.Request, error) {
 	return openRequest(inv, inv.Values.Bool("json"))
 }
 func openRequest(inv *parse.Result, resolveOnly bool) (action.Request, error) {
@@ -579,9 +597,9 @@ func openRequest(inv *parse.Result, resolveOnly bool) (action.Request, error) {
 		}
 		pullRequest = &parsed
 	}
-	return workapp.OpenRequest{Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue, PullRequestID: pullRequest, Repository: inv.Values.String("repo"), Agent: inv.Values.String("agent"), ResolveOnly: resolveOnly}, nil
+	return workapp.OpenRequest{Provider: selectedWorkProvider(inv.Values, selection.Root, selection.Project), Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue, PullRequestID: pullRequest, Repository: inv.Values.String("repo"), Agent: inv.Values.String("agent"), ResolveOnly: resolveOnly}, nil
 }
-func buildWorkStart(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceStart(inv *parse.Result) (action.Request, error) {
 	root := resolvedRoot(inv.Values)
 	ids := split(inv.Values.String("work_item_id"))
 	if inv.Values.Bool("json") && len(ids) == 0 {
@@ -591,9 +609,10 @@ func buildWorkStart(inv *parse.Result) (action.Request, error) {
 	if !updateState {
 		states = nil
 	}
-	return workapp.StartRequest{Root: root, Project: inv.Values.String("project"), WorkItemIDs: ids, TaskID: optional(inv.Values, "task"), Type: inv.Values.String("type"), Repositories: split(inv.Values.String("only")), Slug: inv.Values.String("slug"), SkipWork: inv.Values.Bool("skip_ado"), WithActiveChildren: inv.Values.Bool("with_active_children"), CreateChildTasks: inv.Values.Bool("create_child_tasks") || createChildren, Execute: inv.Values.Bool("execute"), States: states}, nil
+	project := inv.Values.String("project")
+	return workapp.StartRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, WorkItemIDs: ids, TaskID: optional(inv.Values, "task"), Type: inv.Values.String("type"), Repositories: split(inv.Values.String("only")), Slug: inv.Values.String("slug"), SkipWork: inv.Values.Bool("skip_provider"), WithActiveChildren: inv.Values.Bool("with_active_children"), CreateChildTasks: inv.Values.Bool("create_child_tasks") || createChildren, Execute: inv.Values.Bool("execute"), States: states}, nil
 }
-func buildWorkPRStart(inv *parse.Result) (action.Request, error) {
+func buildWorkspacePRStart(inv *parse.Result) (action.Request, error) {
 	id, err := strconv.ParseInt(inv.Values.String("pull_request_id"), 10, 64)
 	if err != nil {
 		return nil, usage(fmt.Errorf("cli.invalid-pull-request:%s", inv.Values.String("pull_request_id")))
@@ -608,54 +627,54 @@ func buildWorkPRStart(inv *parse.Result) (action.Request, error) {
 	if !updateState {
 		states = nil
 	}
-	return workapp.StartPullRequestRequest{Root: root, Project: project, PullRequestID: id, Repositories: local, ProviderRepositories: provider, Type: inv.Values.String("type"), Slug: inv.Values.String("slug"), Execute: inv.Values.Bool("execute"), States: states}, nil
+	return workapp.StartPullRequestRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, PullRequestID: id, Repositories: local, ProviderRepositories: provider, Type: inv.Values.String("type"), Slug: inv.Values.String("slug"), Execute: inv.Values.Bool("execute"), States: states}, nil
 }
-func buildWorkPreflight(inv *parse.Result) (action.Request, error) {
+func buildWorkspacePreflight(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
 	}
 	return WorkspacePreflightRequest{Selection: selection, Files: inv.Values.Strings("ai_context_file")}, nil
 }
-func buildWorkSync(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceSync(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
 	}
-	return workapp.SyncRequest{Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue}, nil
+	return workapp.SyncRequest{Provider: selectedWorkProvider(inv.Values, selection.Root, selection.Project), Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue}, nil
 }
-func buildWorkRename(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceRename(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
 	}
 	return WorkspaceRenameRequest{Selection: selection, Slug: inv.Values.String("slug"), Execute: inv.Values.Bool("execute")}, nil
 }
-func buildWorkRepoAdd(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceRepoAdd(inv *parse.Result) (action.Request, error) {
 	repository := inv.Values.String("repo")
 	if inv.Values.Bool("json") && strings.TrimSpace(repository) == "" {
 		return nil, usage(fmt.Errorf("cli.work-repository-required"))
 	}
 	return WorkspaceRepoAddRequest{Selection: WorkspaceSelection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace")}, Repository: repository, Execute: inv.Values.Bool("execute")}, nil
 }
-func buildWorkRepoLatest(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceRepoLatest(inv *parse.Result) (action.Request, error) {
 	return WorkspaceRepoLatestRequest{Selection: WorkspaceSelection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue")}, Repositories: split(inv.Values.String("only")), Execute: !inv.Values.Bool("json")}, nil
 }
-func buildWorkCommit(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceCommit(inv *parse.Result) (action.Request, error) {
 	return WorkspaceCommitRequest{Selection: WorkspaceSelection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue")}, Message: inv.Values.String("message"), Execute: inv.Values.Bool("execute")}, nil
 }
-func buildWorkFinish(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceFinish(inv *parse.Result) (action.Request, error) {
 	root := resolvedRoot(inv.Values)
-	return workapp.FinishRequest{Root: root, Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue"), Execute: inv.Values.Bool("execute"), CreatePR: inv.Values.Bool("create_pr"), Ready: inv.Values.Bool("ready"), SkipVerify: inv.Values.Bool("skip_verify"), SkipWork: inv.Values.Bool("skip_ado"), ForceWithLease: inv.Values.Bool("force_with_lease"), Message: optional(inv.Values, "message"), FinishStates: taskFinishStates(root)}, nil
+	return workapp.FinishRequest{Provider: strings.TrimSpace(inv.Values.String("provider")), Root: root, Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue"), Execute: inv.Values.Bool("execute"), CreatePR: inv.Values.Bool("create_pr"), Ready: inv.Values.Bool("ready"), SkipVerify: inv.Values.Bool("skip_verify"), SkipWork: inv.Values.Bool("skip_provider"), ForceWithLease: inv.Values.Bool("force_with_lease"), Message: optional(inv.Values, "message"), FinishStates: taskFinishStates(root)}, nil
 }
-func buildWorkHandoff(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceHandoff(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
 	}
 	return WorkspaceHandoffRequest{Selection: selection}, nil
 }
-func buildWorkTeardown(inv *parse.Result) (action.Request, error) {
+func buildWorkspaceTeardown(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
@@ -663,8 +682,14 @@ func buildWorkTeardown(inv *parse.Result) (action.Request, error) {
 	execute := inv.Values.Bool("execute")
 	return WorkspaceTeardownRequest{Selection: selection, Execute: execute, Approved: execute}, nil
 }
-func buildWorkPrune(inv *parse.Result) (action.Request, error) {
-	return workapp.PruneRequest{Root: resolvedRoot(inv.Values), Project: optional(inv.Values, "project"), WorkItemIDs: split(inv.Values.String("work_item")), Execute: inv.Values.Bool("execute"), NoSync: inv.Values.Bool("no_sync")}, nil
+func buildWorkspacePrune(inv *parse.Result) (action.Request, error) {
+	root := resolvedRoot(inv.Values)
+	project := optional(inv.Values, "project")
+	projectName := ""
+	if project != nil {
+		projectName = *project
+	}
+	return workapp.PruneRequest{Provider: selectedWorkProvider(inv.Values, root, projectName), Root: root, Project: project, WorkItemIDs: split(inv.Values.String("work_item")), Execute: inv.Values.Bool("execute"), NoSync: inv.Values.Bool("no_sync")}, nil
 }
 
 func taskStartSettings(root string) (map[string]string, bool, bool) {
@@ -736,8 +761,8 @@ func configuredRepositoryPairs(root, project string) ([]string, []string) {
 		}
 		local = append(local, entry.Key)
 		value := entry.Key
-		if entry.Repository.AzureDevOpsRepository != nil && strings.TrimSpace(*entry.Repository.AzureDevOpsRepository) != "" {
-			value = *entry.Repository.AzureDevOpsRepository
+		if entry.Repository.ProviderRepository != nil && strings.TrimSpace(*entry.Repository.ProviderRepository) != "" {
+			value = *entry.Repository.ProviderRepository
 		}
 		provider = append(provider, value)
 	}
@@ -745,6 +770,16 @@ func configuredRepositoryPairs(root, project string) ([]string, []string) {
 }
 
 func resolvedRoot(values parse.Values) string { return config.ResolveRoot(values.String("root")) }
+
+func selectedWorkProvider(values parse.Values, root, project string) string {
+	if provider := strings.TrimSpace(values.String("provider")); provider != "" {
+		return provider
+	}
+	if strings.TrimSpace(project) == "" {
+		return ""
+	}
+	return config.ResolveWorkProvider(root, project)
+}
 
 func optional(values parse.Values, name string) *string {
 	if !values.Has(name) {

@@ -11,7 +11,62 @@ import (
 	"github.com/sachahjkl/dw/internal/cli/spec"
 )
 
-func TestRootAndDeepHelpAreStableAndSorted(t *testing.T) {
+func TestGreenfieldCommandTreeHasExactNamespaceLeavesAndActionKeys(t *testing.T) {
+	root := spec.Root(nil)
+	expected := map[string][]string{
+		"work": {
+			"changelog", "context ai", "context show", "item child create", "item doing",
+			"item list", "item show", "item state set", "pr list",
+		},
+		"workspace": {
+			"commit", "current", "finish", "handoff validate", "item add", "item remove", "list",
+			"open", "pr start", "preflight", "prune", "rename", "repo add", "repo latest", "start",
+			"status", "sync", "teardown",
+		},
+		"data": {
+			"catalog", "describe", "guard", "query", "source collect", "source list",
+		},
+		"provider": {
+			"auth login", "auth logout", "auth status", "capabilities", "list", "show",
+		},
+	}
+	for namespace, want := range expected {
+		command, ok := spec.Lookup(root, []string{namespace})
+		if !ok {
+			t.Fatalf("missing namespace %q", namespace)
+		}
+		got := leafPaths(command, nil)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s leaf paths = %#v, want %#v", namespace, got, want)
+		}
+		for _, relative := range got {
+			path := append([]string{namespace}, strings.Fields(relative)...)
+			leaf, found := spec.Lookup(root, path)
+			if !found {
+				t.Fatalf("leaf disappeared at %q", path)
+			}
+			if wantKey := strings.Join(path, "."); leaf.Key != wantKey {
+				t.Errorf("%s action key = %q, want %q", strings.Join(path, " "), leaf.Key, wantKey)
+			}
+			if len(leaf.Aliases) != 0 {
+				t.Errorf("%s has compatibility aliases %#v", strings.Join(path, " "), leaf.Aliases)
+			}
+		}
+	}
+}
+
+func leafPaths(command *spec.Command, prefix []string) []string {
+	if len(command.Children) == 0 {
+		return []string{strings.Join(prefix, " ")}
+	}
+	paths := make([]string, 0)
+	for _, child := range command.VisibleChildren() {
+		paths = append(paths, leafPaths(child, append(prefix, child.Name))...)
+	}
+	return paths
+}
+
+func TestRootAndDeepHelpAreStableAndProviderNeutral(t *testing.T) {
 	root := spec.Root(nil)
 	rootHelp, problem := parse.Help(root, nil, "2026.07.17.3+26b737a")
 	if problem != nil {
@@ -25,9 +80,10 @@ func TestRootAndDeepHelpAreStableAndSorted(t *testing.T) {
 		"Dev Workflow 2026.07.17.3+26b737a\n\n",
 		"Usage: dw",
 		"Commands:\n",
-		"  ado",
-		"  completion",
+		"  data",
+		"  provider",
 		"  work",
+		"  workspace",
 		"Options:\n",
 		"-h, --help",
 		"-v, --verbose",
@@ -37,15 +93,19 @@ func TestRootAndDeepHelpAreStableAndSorted(t *testing.T) {
 			t.Errorf("root help lacks %q:\n%s", required, rootHelp)
 		}
 	}
-	assertOrderedText(t, rootHelp, "  ado", "  agent", "  auth", "  completion", "  config", "  db", "  doctor", "  guide", "  init", "  refresh", "  secret", "  tui", "  upgrade", "  version", "  work")
+	for _, removed := range []string{"  ado", "  auth", "  db"} {
+		if strings.Contains(rootHelp, removed) {
+			t.Errorf("root help advertises removed namespace %q:\n%s", removed, rootHelp)
+		}
+	}
+	assertOrderedText(t, rootHelp, "  agent", "  completion", "  config", "  data", "  doctor", "  guide", "  init", "  provider", "  refresh", "  secret", "  tui", "  upgrade", "  version", "  work", "  workspace")
 
-	deepHelp, problem := parse.Help(root, []string{"work", "open"}, "ignored")
+	deepHelp, problem := parse.Help(root, []string{"workspace", "open"}, "ignored")
 	if problem != nil {
 		t.Fatal(problem)
 	}
 	for _, required := range []string{
-		"Open or resume a task workspace with the configured agent.",
-		"Usage: dw work open",
+		"Usage: dw workspace open",
 		"Arguments:\n",
 		"WORK_ITEM",
 		"Options:\n",
@@ -56,7 +116,6 @@ func TestRootAndDeepHelpAreStableAndSorted(t *testing.T) {
 			t.Errorf("deep help lacks %q:\n%s", required, deepHelp)
 		}
 	}
-	assertOrderedText(t, deepHelp, "--agent", "--continue", "--verbose", "--help", "--json", "--pr", "--project", "--repo", "--root", "--version", "--work-item", "--workspace")
 }
 
 func assertOrderedText(t *testing.T, text string, values ...string) {
@@ -71,7 +130,7 @@ func assertOrderedText(t *testing.T, text string, values ...string) {
 	}
 }
 
-func TestParserFailureClassesMatchCLIExitContract(t *testing.T) {
+func TestParserFailureClassesAndCleanCutover(t *testing.T) {
 	root := spec.Root(nil)
 	tests := []struct {
 		name string
@@ -81,9 +140,14 @@ func TestParserFailureClassesMatchCLIExitContract(t *testing.T) {
 		{name: "root command required", kind: parse.MissingCommand},
 		{name: "unknown root option", args: []string{"--definitely-invalid"}, kind: parse.UnknownOption},
 		{name: "deep command required", args: []string{"work"}, kind: parse.MissingCommand},
-		{name: "missing option value", args: []string{"work", "open", "--workspace"}, kind: parse.MissingValue},
+		{name: "missing option value", args: []string{"workspace", "open", "--workspace"}, kind: parse.MissingValue},
 		{name: "conflicting upgrade options", args: []string{"upgrade", "--check", "--rid", "linux-x64"}, kind: parse.Conflict},
 		{name: "version rejects arguments", args: []string{"version", "unexpected"}, kind: parse.UnexpectedArgument},
+		{name: "old ado namespace is unknown", args: []string{"ado"}, kind: parse.UnknownCommand},
+		{name: "old db namespace is unknown", args: []string{"db"}, kind: parse.UnknownCommand},
+		{name: "old top-level auth is unknown", args: []string{"auth"}, kind: parse.UnknownCommand},
+		{name: "local lifecycle under work is unknown", args: []string{"work", "start"}, kind: parse.UnknownCommand},
+		{name: "local nested lifecycle under work is unknown", args: []string{"work", "repo", "add"}, kind: parse.UnknownCommand},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -101,6 +165,89 @@ func TestParserFailureClassesMatchCLIExitContract(t *testing.T) {
 	}
 }
 
+func TestGenericCommandsExposeProviderSelection(t *testing.T) {
+	root := spec.Root(nil)
+	for _, relative := range leafPaths(mustCommand(t, root, "work"), nil) {
+		path := append([]string{"work"}, strings.Fields(relative)...)
+		assertOption(t, mustCommand(t, root, path...), "provider")
+	}
+	for _, path := range [][]string{
+		{"data", "source", "list"},
+		{"data", "source", "collect"},
+		{"data", "guard"},
+		{"data", "catalog"},
+		{"data", "describe"},
+		{"data", "query"},
+	} {
+		assertOption(t, mustCommand(t, root, path...), "provider")
+	}
+	for _, path := range [][]string{{"data", "catalog"}, {"data", "describe"}, {"data", "query"}} {
+		assertOption(t, mustCommand(t, root, path...), "source")
+	}
+	assertOption(t, mustCommand(t, root, "data", "guard"), "query")
+	assertOption(t, mustCommand(t, root, "data", "query"), "query")
+	if positionals := mustCommand(t, root, "data", "describe").Positionals(); len(positionals) != 1 || positionals[0].ValueName != "RESOURCE" {
+		t.Fatalf("data describe positionals = %#v, want optional RESOURCE", positionals)
+	}
+	for _, relative := range leafPaths(mustCommand(t, root, "data"), nil) {
+		path := append([]string{"data"}, strings.Fields(relative)...)
+		for _, option := range mustCommand(t, root, path...).Options(true) {
+			if option.Long == "database" || option.Long == "sql" {
+				t.Errorf("%s exposes removed --%s option", strings.Join(path, " "), option.Long)
+			}
+		}
+	}
+	for _, path := range [][]string{
+		{"workspace", "open"},
+		{"workspace", "start"},
+		{"workspace", "pr", "start"},
+		{"workspace", "sync"},
+		{"workspace", "item", "add"},
+		{"workspace", "finish"},
+		{"workspace", "prune"},
+	} {
+		assertOption(t, mustCommand(t, root, path...), "provider")
+	}
+	for _, path := range [][]string{{"workspace", "start"}, {"workspace", "item", "add"}, {"workspace", "finish"}} {
+		command := mustCommand(t, root, path...)
+		assertOption(t, command, "skip-provider")
+		for _, option := range command.Options(true) {
+			if option.Long == "skip-ado" {
+				t.Errorf("%s exposes removed provider-specific --skip-ado", command.Key)
+			}
+		}
+	}
+
+	for _, operation := range []string{"login", "status", "logout"} {
+		result, problem := parse.Parse(root, []string{"provider", "auth", operation, "azure-devops"})
+		if problem != nil {
+			t.Fatalf("provider auth %s positional selection: %v", operation, problem)
+		}
+		if got := result.Values.String("provider"); got != "azure-devops" {
+			t.Errorf("provider auth %s selected %q, want azure-devops", operation, got)
+		}
+	}
+}
+
+func mustCommand(t *testing.T, root *spec.Command, path ...string) *spec.Command {
+	t.Helper()
+	command, ok := spec.Lookup(root, path)
+	if !ok {
+		t.Fatalf("missing command %q", path)
+	}
+	return command
+}
+
+func assertOption(t *testing.T, command *spec.Command, name string) {
+	t.Helper()
+	for _, option := range command.Options(true) {
+		if option.Long == name {
+			return
+		}
+	}
+	t.Errorf("%s does not expose --%s", command.Key, name)
+}
+
 func TestHelpAndVersionFlagsShortCircuitWithoutRunningActions(t *testing.T) {
 	root := spec.Root(nil)
 	for _, test := range []struct {
@@ -112,7 +259,7 @@ func TestHelpAndVersionFlagsShortCircuitWithoutRunningActions(t *testing.T) {
 		{args: []string{"--version"}, intent: parse.IntentVersion},
 		{args: []string{"-V"}, intent: parse.IntentVersion},
 		{args: []string{"version"}, intent: parse.IntentRun},
-		{args: []string{"work", "open", "--help"}, intent: parse.IntentHelp},
+		{args: []string{"workspace", "open", "--help"}, intent: parse.IntentHelp},
 	} {
 		result, problem := parse.Parse(root, test.args)
 		if problem != nil {
@@ -146,7 +293,7 @@ func TestCompletionRootOrderAndJSONWireFormat(t *testing.T) {
 			t.Errorf("completion %q has no description", items[index].Label)
 		}
 	}
-	wantLabels := []string{"version", "guide", "doctor", "init", "refresh", "tui", "agent", "auth", "completion", "config", "ado", "db", "secret", "upgrade", "work"}
+	wantLabels := []string{"version", "guide", "doctor", "init", "refresh", "tui", "agent", "completion", "config", "work", "workspace", "data", "provider", "secret", "upgrade"}
 	if !reflect.DeepEqual(labels, wantLabels) {
 		t.Fatalf("completion root labels = %#v, want %#v", labels, wantLabels)
 	}
@@ -156,6 +303,37 @@ func TestCompletionRootOrderAndJSONWireFormat(t *testing.T) {
 	}
 	if got, want := string(encoded), `[{"label":"version","description":"Show the CLI version"}]`; got != want {
 		t.Fatalf("completion JSON = %s, want %s", got, want)
+	}
+}
+
+func TestCompletionAdvertisesExactGenericNamespaces(t *testing.T) {
+	root := spec.Root(nil)
+	tests := []struct {
+		namespace string
+		want      []string
+	}{
+		{namespace: "work", want: []string{"changelog", "context", "item", "pr"}},
+		{namespace: "workspace", want: []string{"commit", "current", "finish", "handoff", "item", "list", "open", "pr", "preflight", "prune", "rename", "repo", "start", "status", "sync", "teardown"}},
+		{namespace: "data", want: []string{"catalog", "describe", "guard", "query", "source"}},
+		{namespace: "provider", want: []string{"auth", "capabilities", "list", "show"}},
+	}
+	for _, test := range tests {
+		t.Run(test.namespace, func(t *testing.T) {
+			items, err := complete.Complete(root, []string{test.namespace, ""}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			labels := make([]string, len(items))
+			for index := range items {
+				labels[index] = items[index].Label
+				if strings.TrimSpace(items[index].Description) == "" {
+					t.Errorf("completion %q has no description", items[index].Label)
+				}
+			}
+			if !reflect.DeepEqual(labels, test.want) {
+				t.Fatalf("%s completion labels = %#v, want %#v", test.namespace, labels, test.want)
+			}
+		})
 	}
 }
 

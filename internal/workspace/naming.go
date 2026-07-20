@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/sachahjkl/dw/internal/agent"
 )
 
 func NormalizeSlug(value string) string {
@@ -77,96 +79,29 @@ func PlanMarkdown(manifest Manifest) string {
 		ids = append(ids, "#"+item.ID)
 	}
 	repositories := make([]string, 0)
-	for _, repo := range manifest.Repositories {
-		repositories = append(repositories, "- "+repo+": TODO")
+	for _, repository := range manifest.Repositories {
+		repositories = append(repositories, "- "+repository+": TODO")
 	}
-	return fmt.Sprintf("# Plan - Work items %s\n\nProjet: `%s`\n\n## Résumé fonctionnel\n\nTODO\n\n## Repositories impactés\n\n%s\n\n## Analyse code\n\nTODO\n\n## Plan technique\n\nTODO\n\n## Risques\n\nTODO\n\n## Vérification\n\nTODO\n", strings.Join(ids, ", "), manifest.Project, strings.Join(repositories, "\n"))
+	return fmt.Sprintf("# Plan — Work Items %s\n\nProject: `%s`\n\n## Functional Summary\n\nTODO\n\n## Affected Repositories\n\n%s\n\n## Code Analysis\n\nTODO\n\n## Technical Plan\n\nTODO\n\n## Risks\n\nTODO\n\n## Verification\n\nTODO\n", strings.Join(ids, ", "), manifest.Project, strings.Join(repositories, "\n"))
 }
 func HandoffMarkdown(manifest Manifest, repository string) string {
 	ids := make([]string, 0)
 	for _, item := range manifest.ParentWorkItems() {
 		ids = append(ids, "`#"+item.ID+"`")
 	}
-	return fmt.Sprintf("# Handoff %s\n\n## Contexte\n\n- Projet: `%s`\n- Repository: `%s`\n- Branche: `%s`\n- Work items parents: %s\n- Child tasks connus: (aucune)\n\n## Entrées déterministes à relire\n\n1. `task.json`\n2. `plan.md`\n3. `AGENTS.md`\n4. Contexte IA ADO pour chaque work item parent\n5. Rapport de préflight task\n\n## Objectif du lot\n\nDécrire ici, dans `plan.md`, ce qui relève de `%s` et ce qui doit être traité par ce handoff.\n\n## Contraintes\n\n- Préserver les labels métier exacts\n- Tout texte utilisateur/projet en français\n- Traiter les screenshots, mockups et attachments comme sources factuelles\n- Demander à l'utilisateur au lieu de deviner si le contexte manque\n- Vérifier les impacts API et les contrats front/back quand pertinent\n\n## Travail attendu\n\n- Limiter le travail à `%s`\n- Lister clairement les fichiers/zones impactés\n- Signaler les dépendances vers d'autres domaines\n- Mettre à jour la synthèse structurée ci-dessous\n\n## Synthèse structurée attendue\n\nRemplir ce bloc sans changer les labels.\n\n```yaml\nstatus: todo\nrepository: %s\nsummary:\n  done: []\n  decisions: []\n  risks: []\n  blockers: []\n  follow_up: []\nverification:\n  commands: []\n  manual_checks: []\nartifacts:\n  files: []\n  screenshots: []\n  attachments: []\n```\n", repository, manifest.Project, repository, manifest.BranchName, strings.Join(ids, ", "), repository, repository, repository)
+	return fmt.Sprintf("# Handoff %s\n\n## Context\n\n- Project: `%s`\n- Repository: `%s`\n- Branch: `%s`\n- Parent work items: %s\n- Known child tasks: (none)\n\n## Deterministic Inputs\n\n1. `task.json`\n2. `plan.md`\n3. `AGENTS.md`\n4. Work-provider AI context for every parent work item\n5. Workspace preflight report\n\n## Scope\n\nDescribe in `plan.md` what belongs to `%s` and what this handoff must deliver.\n\n## Constraints\n\n- Preserve exact domain terminology\n- Treat screenshots, mockups, and attachments as factual sources\n- Ask the user instead of guessing when context is missing\n- Verify API impacts and front/back contracts when relevant\n\n## Expected Work\n\n- Limit work to `%s`\n- List affected files and areas clearly\n- Report dependencies on other domains\n- Update the structured summary below\n\n## Required Structured Summary\n\nFill this block without changing its keys.\n\n```yaml\nstatus: todo\nrepository: %s\nsummary:\n  done: []\n  decisions: []\n  risks: []\n  blockers: []\n  follow_up: []\nverification:\n  commands: []\n  manual_checks: []\nartifacts:\n  files: []\n  screenshots: []\n  attachments: []\n```\n", repository, manifest.Project, repository, manifest.BranchName, strings.Join(ids, ", "), repository, repository, repository)
 }
 
-func AgentFiles(manifest Manifest) []GeneratedFile {
-	content := agentsMarkdown(manifest)
-	return []GeneratedFile{{"AGENTS.md", content}, {"CLAUDE.md", content}, {filepath.Join(".claude", "CLAUDE.md"), content}, {filepath.Join(".cursor", "rules", "devworkflow.mdc"), "---\nalwaysApply: true\n---\n\n" + content}, {filepath.Join(".codex", "config.toml"), "# Configuration Codex locale au projet.\n# Les instructions d'exécution principales sont chargées depuis AGENTS.md dans ce workspace.\n"}, {filepath.Join(".github", "copilot-instructions.md"), content}}
-}
-
-type GeneratedFile struct {
-	RelativePath string `json:"relativePath"`
-	Content      string `json:"content"`
-}
-
-func agentsMarkdown(manifest Manifest) string {
-	lines := make([]string, 0)
+func AgentFiles(manifest Manifest) []agent.WorkspaceConfigFile {
+	items := make([]agent.WorkspaceWorkItemRef, 0)
 	for _, item := range manifest.ParentWorkItems() {
-		suffix := ""
-		if item.Type != nil || item.Title != nil {
-			kind := "?"
-			if item.Type != nil {
-				kind = *item.Type
-			}
-			title := ""
-			if item.Title != nil {
-				title = *item.Title
-			}
-			suffix = strings.TrimRight(" ["+kind+"] "+title, " ")
-		}
-		lines = append(lines, "  - `#"+item.ID+"`"+suffix)
+		items = append(items, agent.WorkspaceWorkItemRef{ID: item.ID, Kind: item.Type, Title: item.Title})
 	}
-	return fmt.Sprintf(`# Workspace DevWorkflow
-
-Ce workspace est géré par DevWorkflow.
-
-Contexte:
-
-- Project: %s
-- Work items:
-%s
-
-Actions DevWorkflow:
-
-- ADO: assigned, item show, context ai et state set.
-- Work: current, open, sync et preflight.
-- Contenu: work item doing/add/remove, work repo add/latest et work PR start.
-- Child tasks et handoffs: work task child create et work handoff validate.
-- Cycle de vie: work commit, finish, teardown et prune.
-- Base de données: schema, describe et query.
-
-Règles:
-
-1. Identifier le workspace courant avec l'action work current avant d'agir.
-2. Lire chaque work item avec l'action ADO item show avant de coder.
-3. Lire le contexte IA avec l'action ADO context ai avant d'agir sur le contexte ADO.
-4. Utiliser les actions DB schema, describe et query quand le contexte base de données peut clarifier le changement.
-5. Lire task.json, plan.md et tous les handoffs avant de modifier le code.
-6. Exécuter l'action work preflight avant de coder.
-7. Préserver les contrats machine et les labels métier exacts.
-8. Limiter chaque changement au repository concerné.
-9. Mettre à jour le handoff du repository après chaque lot cohérent.
-10. Renseigner le bloc YAML structuré sans changer ses labels.
-11. Vérifier les changements avec les commandes prévues dans le handoff.
-12. Exécuter l'action work handoff validate avant de terminer.
-13. Utiliser l'action work commit pour les commits intermédiaires.
-14. Utiliser l'action work finish pour vérifier, pousser et ouvrir les pull requests.
-15. Utiliser les actions work teardown ou prune pour le nettoyage.
-`, "`"+manifest.Project+"`", strings.Join(lines, "\n"))
+	return agent.WorkspaceConfigFiles(agent.WorkspaceConfigRequest{WorkItems: items, Project: manifest.Project})
 }
 func WriteGeneratedFiles(workspace string, manifest Manifest) error {
 	for _, file := range AgentFiles(manifest) {
 		if err := writeFileAtomic(filepath.Join(workspace, file.RelativePath), []byte(file.Content), 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func RefreshGeneratedAgentFiles(root string) error {
-	for _, workspace := range Discover(root) {
-		if err := WriteGeneratedFiles(workspace.Path, workspace.Manifest); err != nil {
 			return err
 		}
 	}

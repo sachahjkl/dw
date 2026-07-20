@@ -3,7 +3,7 @@
   "$id": "https://github.com/sachahjkl/dw/schemas/workflow.schema.json",
   "title": "dw workflow configuration",
   "type": "object",
-  "required": ["schema", "branchPrefixes", "azureDevOps", "auth", "updates"],
+  "required": ["schema", "branchPrefixes", "providers", "updates"],
   "properties": {
     "$schema": {
       "type": "string"
@@ -33,22 +33,9 @@
       },
       "additionalProperties": false
     },
-    "azureDevOps": {
+    "providers": {
       "type": "object",
-      "required": ["organizationUrl", "apiVersion"],
-      "properties": {
-        "organizationUrl": {
-          "type": "string"
-        },
-        "project": {
-          "type": "string"
-        },
-        "apiVersion": {
-          "type": "string",
-          "default": "7.1"
-        }
-      },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "taskStart": {
       "type": "object",
@@ -97,25 +84,6 @@
               "type": "string",
               "minLength": 1
             }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "auth": {
-      "type": "object",
-      "required": ["tenantId", "clientId", "scopes"],
-      "properties": {
-        "tenantId": {
-          "type": "string"
-        },
-        "clientId": {
-          "type": "string"
-        },
-        "scopes": {
-          "type": "array",
-          "items": {
-            "type": "string"
           }
         }
       },

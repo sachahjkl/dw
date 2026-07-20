@@ -11,41 +11,41 @@ import (
 )
 
 const (
-	promptADOState       l10n.ID = "cli.confirm.ado-state"
-	promptWorkDoing      l10n.ID = "cli.confirm.work-doing"
-	promptWorkFinish     l10n.ID = "cli.confirm.work-finish"
-	promptWorkRemove     l10n.ID = "cli.confirm.work-remove"
-	promptWorkPrune      l10n.ID = "cli.confirm.work-prune"
-	promptWorkRepository l10n.ID = "cli.prompt.work-repository"
-	promptChoiceValue    l10n.ID = "cli.prompt.choice-value"
-	promptWorkItemIDs    l10n.ID = "cli.prompt.work-item-ids"
-	promptProject        l10n.ID = "cli.prompt.project"
-	promptAuthMode       l10n.ID = "cli.prompt.auth-mode"
-	promptAuthBrowser    l10n.ID = "cli.prompt.auth-browser"
-	promptAuthDevice     l10n.ID = "cli.prompt.auth-device"
-	promptAuthPAT        l10n.ID = "cli.prompt.auth-pat"
+	promptWorkState       l10n.ID = "cli.confirm.work-state"
+	promptWorkDoing       l10n.ID = "cli.confirm.work-doing"
+	promptWorkspaceFinish l10n.ID = "cli.confirm.workspace-finish"
+	promptWorkspaceRemove l10n.ID = "cli.confirm.workspace-remove"
+	promptWorkspacePrune  l10n.ID = "cli.confirm.workspace-prune"
+	promptWorkRepository  l10n.ID = "cli.prompt.work-repository"
+	promptChoiceValue     l10n.ID = "cli.prompt.choice-value"
+	promptWorkItemIDs     l10n.ID = "cli.prompt.work-item-ids"
+	promptProject         l10n.ID = "cli.prompt.project"
+	promptAuthMode        l10n.ID = "cli.prompt.auth-mode"
+	promptAuthBrowser     l10n.ID = "cli.prompt.auth-browser"
+	promptAuthDevice      l10n.ID = "cli.prompt.auth-device"
+	promptAuthPAT         l10n.ID = "cli.prompt.auth-pat"
 )
 
 // SafetyEnglishEntries is composed into the CLI catalog by bootstrap so action
 // prompts remain localized presentation rather than hard-coded terminal text.
 var SafetyEnglishEntries = []l10n.Entry{
-	{ID: promptADOState, Text: "Apply the Azure DevOps state change?"},
+	{ID: promptWorkState, Text: "Apply the provider work item state change?"},
 	{ID: promptWorkDoing, Text: "Move the selected work items to their in-progress state?"},
-	{ID: promptWorkFinish, Text: "Execute finish operations, including commits, pushes, pull requests, and work-item updates?"},
-	{ID: promptWorkRemove, Text: "Remove this workspace and its Git worktrees?"},
-	{ID: promptWorkPrune, Text: "Remove every selected finished workspace and its Git worktrees?"},
+	{ID: promptWorkspaceFinish, Text: "Execute finish operations, including commits, pushes, pull requests, and work-item updates?"},
+	{ID: promptWorkspaceRemove, Text: "Remove this workspace and its Git worktrees?"},
+	{ID: promptWorkspacePrune, Text: "Remove every selected finished workspace and its Git worktrees?"},
 	{ID: promptWorkRepository, Text: "Select the repository to add"},
 	{ID: promptChoiceValue, Text: "{value}"},
 	{ID: promptWorkItemIDs, Text: "Enter work item IDs, separated by commas"},
 	{ID: promptProject, Text: "Select a project"},
-	{ID: promptAuthMode, Text: "Azure DevOps connection mode"},
+	{ID: promptAuthMode, Text: "Provider connection mode"},
 	{ID: promptAuthBrowser, Text: "Browser"},
 	{ID: promptAuthDevice, Text: "Device code"},
-	{ID: promptAuthPAT, Text: "Environment PAT"},
+	{ID: promptAuthPAT, Text: "Environment credential"},
 	{ID: promptFinishMode, Text: "Finish mode"},
-	{ID: promptFinishPush, Text: "Push only, no ADO"},
-	{ID: promptFinishDraft, Text: "Push + PR ADO draft"},
-	{ID: promptFinishReady, Text: "Push + PR ADO ready"},
+	{ID: promptFinishPush, Text: "Push only, no provider updates"},
+	{ID: promptFinishDraft, Text: "Push + draft provider pull request"},
+	{ID: promptFinishReady, Text: "Push + ready provider pull request"},
 	{ID: promptFinishKeep, Text: "Keep current flags"},
 	{ID: promptStartCreate, Text: "Create this workspace now?"},
 	{ID: promptStartOpen, Text: "Open the created workspace now?"},
@@ -55,8 +55,8 @@ var SafetyEnglishEntries = []l10n.Entry{
 // or direct execution. A nil grant means the route is read-only or preview-only.
 type SafetyGrant func(context.Context, Execution, *parse.Result) error
 
-func GrantADOState(ctx context.Context, execution Execution, invocation *parse.Result) error {
-	_, err := confirmExecution(ctx, execution, invocation, true, invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptADOState)
+func GrantWorkState(ctx context.Context, execution Execution, invocation *parse.Result) error {
+	_, err := confirmExecution(ctx, execution, invocation, true, invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkState)
 	return err
 }
 
@@ -65,18 +65,18 @@ func GrantWorkDoing(ctx context.Context, execution Execution, invocation *parse.
 	return err
 }
 
-func GrantWorkFinish(ctx context.Context, execution Execution, invocation *parse.Result) error {
-	_, err := confirmExecution(ctx, execution, invocation, invocation.Values.Bool("execute"), invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkFinish)
+func GrantWorkspaceFinish(ctx context.Context, execution Execution, invocation *parse.Result) error {
+	_, err := confirmExecution(ctx, execution, invocation, invocation.Values.Bool("execute"), invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkspaceFinish)
 	return err
 }
 
-func GrantWorkTeardown(ctx context.Context, execution Execution, invocation *parse.Result) error {
-	_, err := confirmExecution(ctx, execution, invocation, invocation.Values.Bool("execute"), invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkRemove)
+func GrantWorkspaceTeardown(ctx context.Context, execution Execution, invocation *parse.Result) error {
+	_, err := confirmExecution(ctx, execution, invocation, invocation.Values.Bool("execute"), invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkspaceRemove)
 	return err
 }
 
-func GrantWorkPrune(ctx context.Context, execution Execution, invocation *parse.Result) error {
-	_, err := confirmExecution(ctx, execution, invocation, invocation.Values.Bool("execute"), invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkPrune)
+func GrantWorkspacePrune(ctx context.Context, execution Execution, invocation *parse.Result) error {
+	_, err := confirmExecution(ctx, execution, invocation, invocation.Values.Bool("execute"), invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkspacePrune)
 	return err
 }
 

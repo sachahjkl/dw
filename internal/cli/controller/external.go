@@ -11,7 +11,7 @@ import (
 )
 
 func runExternalResult(ctx context.Context, execution Execution, route Route, invocation *parse.Result, result action.ResultEnvelope) error {
-	if route.Key != "agent.open" && route.Key != "work.open" || invocation.Values.Bool("json") {
+	if route.Key != "agent.open" && route.Key != "workspace.open" || invocation.Values.Bool("json") {
 		return nil
 	}
 	report, ok := result.Result.(workapp.OpenReport)

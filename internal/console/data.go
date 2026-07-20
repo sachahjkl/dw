@@ -19,33 +19,33 @@ func RenderQuery(result data.Table, policy Policy, localizer Localizer, theme Th
 		columns[i] = result.Columns[i].Name
 	}
 	if len(columns) == 0 {
-		columns = []string{localize(localizer, "db.column.result")}
+		columns = []string{localize(localizer, "data.column.result")}
 	}
 	rows := make([][]string, len(result.Rows))
 	for rowIndex, row := range result.Rows {
 		rows[rowIndex] = make([]string, len(columns))
 		for columnIndex := range columns {
 			if columnIndex >= len(row) {
-				rows[rowIndex][columnIndex] = localize(localizer, "db.null")
+				rows[rowIndex][columnIndex] = localize(localizer, "data.null")
 			} else {
-				rows[rowIndex][columnIndex] = displayDataValue(row[columnIndex], localize(localizer, "db.null"))
+				rows[rowIndex][columnIndex] = displayDataValue(row[columnIndex], localize(localizer, "data.null"))
 			}
 		}
 	}
 	page := Page{
-		Title:    "db.query.title",
-		Summary:  []Field{{Label: "db.query.result", Value: localize(localizer, "db.query.rows", l10n.A("count", len(result.Rows))), Style: ValueSuccess}},
+		Title:    "data.query.title",
+		Summary:  []Field{{Label: "data.query.result", Value: localize(localizer, "data.query.rows", l10n.A("count", len(result.Rows))), Style: ValueSuccess}},
 		Sections: []Section{{Table: &Table{ColumnNames: columns, Rows: rows}}},
 	}
 	if result.Truncated {
 		page.Status = StatusWarning
-		page.Badge = "db.query.truncated.badge"
-		page.Hint = &Field{Label: "db.query.truncated", Value: "--max-rows", Style: ValueCommand}
+		page.Badge = "data.query.truncated.badge"
+		page.Hint = &Field{Label: "data.query.truncated", Value: "--max-rows", Style: ValueCommand}
 	}
 	return TextOutput(FormatHuman, RenderPage(page, localizer, theme))
 }
 
-// RenderQueryTSV preserves column and row order and the legacy footer exactly.
+// RenderQueryTSV preserves column and row order and the established footer exactly.
 func RenderQueryTSV(result data.Table) string {
 	columns := make([]string, len(result.Columns))
 	for i := range result.Columns {

@@ -12,8 +12,9 @@ import (
 // workspace lifecycle operations. Missing capabilities remain typed
 // work.UnsupportedCapabilityError values returned by work.Require.
 type CapabilityWorkPort struct {
-	Provider   work.Provider
-	ProjectRef func(string) work.ProjectRef
+	Providers       *work.Registry
+	ResolveProvider func(context.Context, string) work.ProviderName
+	ProjectRef      func(string) work.ProjectRef
 }
 
 func (p CapabilityWorkPort) project(key string) work.ProjectRef {
@@ -22,8 +23,23 @@ func (p CapabilityWorkPort) project(key string) work.ProjectRef {
 	}
 	return work.ProjectRef{Key: contract.ProjectKey(key), Project: key}
 }
+
+func (p CapabilityWorkPort) provider(ctx context.Context, project string) (work.Provider, error) {
+	name := work.ProviderName("")
+	if p.ResolveProvider != nil {
+		name = p.ResolveProvider(ctx, project)
+	}
+	if p.Providers == nil {
+		return nil, &work.ProviderNotFoundError{Provider: name}
+	}
+	return p.Providers.Get(name)
+}
 func (p CapabilityWorkPort) GetWorkItems(ctx context.Context, project string, ids []string) ([]WorkItem, error) {
-	reader, err := work.Require[work.ItemReader](p.Provider, work.CapabilityItemReader)
+	provider, err := p.provider(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	reader, err := work.Require[work.ItemReader](provider, work.CapabilityItemReader)
 	if err != nil {
 		return nil, err
 	}
@@ -46,31 +62,43 @@ func (p CapabilityWorkPort) GetWorkItems(ctx context.Context, project string, id
 	return result, nil
 }
 func (p CapabilityWorkPort) UpdateWorkItemState(ctx context.Context, project, id, state string) error {
-	writer, err := work.Require[work.StateWriter](p.Provider, work.CapabilityStateWriter)
+	provider, err := p.provider(ctx, project)
 	if err != nil {
 		return err
 	}
-	_, err = writer.UpdateStates(ctx, p.project(project), []work.StateChange{{ID: work.ItemID(id), State: work.State(state), Comment: "work finish: PR ouverte"}})
+	writer, err := work.Require[work.StateWriter](provider, work.CapabilityStateWriter)
+	if err != nil {
+		return err
+	}
+	_, err = writer.UpdateStates(ctx, p.project(project), []work.StateChange{{ID: work.ItemID(id), State: work.State(state), Comment: "workspace finish: pull request opened"}})
 	return err
 }
 func (p CapabilityWorkPort) CreateChildTask(ctx context.Context, project string, parent WorkItem, repository, title string) (ChildTask, error) {
-	creator, err := work.Require[work.ChildCreator](p.Provider, work.CapabilityChildCreator)
+	provider, err := p.provider(ctx, project)
 	if err != nil {
 		return ChildTask{}, err
 	}
-	created, err := creator.CreateChild(ctx, p.project(project), work.ChildCreate{ParentID: work.ItemID(parent.ID), Type: work.ItemType("Task"), Title: title, History: "work task child create"})
+	creator, err := work.Require[work.ChildCreator](provider, work.CapabilityChildCreator)
+	if err != nil {
+		return ChildTask{}, err
+	}
+	created, err := creator.CreateChild(ctx, p.project(project), work.ChildCreate{ParentID: work.ItemID(parent.ID), Type: work.ItemType("Task"), Title: title, History: "dw work item child create"})
 	if err != nil {
 		return ChildTask{}, err
 	}
 	value := created.Title
 	return ChildTask{Repository: repository, ID: string(created.ID), Title: optionalString(value)}, nil
 }
-func (p CapabilityWorkPort) FindActivePullRequest(ctx context.Context, project, repository, sourceRef string) (*WorkPullRequest, error) {
-	reader, err := work.Require[work.PullRequestReader](p.Provider, work.CapabilityPullRequestReader)
+func (p CapabilityWorkPort) FindActivePullRequest(ctx context.Context, project, providerRepository, sourceRef string) (*WorkPullRequest, error) {
+	provider, err := p.provider(ctx, project)
 	if err != nil {
 		return nil, err
 	}
-	found, err := reader.ActivePullRequest(ctx, p.project(project), work.RepositoryName(repository), sourceRef)
+	reader, err := work.Require[work.PullRequestReader](provider, work.CapabilityPullRequestReader)
+	if err != nil {
+		return nil, err
+	}
+	found, err := reader.ActivePullRequest(ctx, p.project(project), work.RepositoryName(providerRepository), sourceRef)
 	if err != nil || found == nil {
 		return nil, err
 	}
@@ -85,7 +113,11 @@ func (p CapabilityWorkPort) FindActivePullRequest(ctx context.Context, project, 
 	return &WorkPullRequest{ID: id, URL: optionalString(url)}, nil
 }
 func (p CapabilityWorkPort) CreatePullRequest(ctx context.Context, project string, input PullRequestInput) (WorkPullRequest, error) {
-	writer, err := work.Require[work.PullRequestWriter](p.Provider, work.CapabilityPullRequestWriter)
+	provider, err := p.provider(ctx, project)
+	if err != nil {
+		return WorkPullRequest{}, err
+	}
+	writer, err := work.Require[work.PullRequestWriter](provider, work.CapabilityPullRequestWriter)
 	if err != nil {
 		return WorkPullRequest{}, err
 	}
@@ -93,7 +125,7 @@ func (p CapabilityWorkPort) CreatePullRequest(ctx context.Context, project strin
 	for index, id := range input.WorkItemIDs {
 		ids[index] = work.ItemID(id)
 	}
-	created, err := writer.CreatePullRequest(ctx, p.project(project), work.PullRequestCreate{Repository: work.RepositoryName(input.Repository), SourceRef: input.SourceRefName, TargetRef: input.TargetRefName, Title: input.Title, Description: input.Description, Draft: input.IsDraft, WorkItemIDs: ids})
+	created, err := writer.CreatePullRequest(ctx, p.project(project), work.PullRequestCreate{Repository: work.RepositoryName(input.ProviderRepository), SourceRef: input.SourceRefName, TargetRef: input.TargetRefName, Title: input.Title, Description: input.Description, Draft: input.IsDraft, WorkItemIDs: ids})
 	if err != nil {
 		return WorkPullRequest{}, err
 	}
@@ -107,12 +139,16 @@ func (p CapabilityWorkPort) CreatePullRequest(ctx context.Context, project strin
 	}
 	return WorkPullRequest{ID: id, URL: optionalString(url)}, nil
 }
-func (p CapabilityWorkPort) LinkWorkItemToPullRequest(ctx context.Context, project, repository string, pullRequestID int64, itemID string) error {
-	writer, err := work.Require[work.PullRequestWriter](p.Provider, work.CapabilityPullRequestWriter)
+func (p CapabilityWorkPort) LinkWorkItemToPullRequest(ctx context.Context, project, providerRepository string, pullRequestID int64, itemID string) error {
+	provider, err := p.provider(ctx, project)
 	if err != nil {
 		return err
 	}
-	return writer.LinkPullRequestWorkItem(ctx, p.project(project), work.RepositoryName(repository), work.PullRequestID(strconv.FormatInt(pullRequestID, 10)), work.ItemID(itemID))
+	writer, err := work.Require[work.PullRequestWriter](provider, work.CapabilityPullRequestWriter)
+	if err != nil {
+		return err
+	}
+	return writer.LinkPullRequestWorkItem(ctx, p.project(project), work.RepositoryName(providerRepository), work.PullRequestID(strconv.FormatInt(pullRequestID, 10)), work.ItemID(itemID))
 }
 
 func optionalString(value string) *string {

@@ -50,40 +50,15 @@ type AgentOptions struct {
 	Default string `json:"default"`
 }
 
-type AzureDevOpsOptions struct {
-	OrganizationURL string `json:"organization"`
-	Project         string `json:"project"`
-	APIVersion      string `json:"apiVersion"`
+// NamedRawConfiguration retains extension data without assigning provider
+// meaning to it. Raw is the exact JSON value after parsing, not localized text.
+type NamedRawConfiguration struct {
+	Name string          `json:"name"`
+	Raw  json.RawMessage `json:"value"`
 }
 
-func (options *AzureDevOpsOptions) UnmarshalJSON(data []byte) error {
-	var decoded struct {
-		Organization    *string `json:"organization"`
-		OrganizationURL *string `json:"organizationUrl"`
-		Project         string  `json:"project"`
-		APIVersion      string  `json:"apiVersion"`
-	}
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	if decoded.Organization != nil {
-		options.OrganizationURL = *decoded.Organization
-	} else if decoded.OrganizationURL != nil {
-		options.OrganizationURL = *decoded.OrganizationURL
-	}
-	options.Project = decoded.Project
-	options.APIVersion = decoded.APIVersion
-	if options.APIVersion == "" {
-		options.APIVersion = "7.1"
-	}
-	return nil
-}
-
-type AuthOptions struct {
-	TenantID string   `json:"tenantId"`
-	ClientID string   `json:"clientId"`
-	Scopes   []string `json:"scopes"`
-}
+// ProviderConfiguration is one named provider's opaque ordered JSON options.
+type ProviderConfiguration = NamedRawConfiguration
 
 type UpdateOptions struct {
 	Owner             string `json:"owner"`
@@ -115,16 +90,15 @@ type TaskFinishOptions struct {
 }
 
 type WorkflowConfig struct {
-	Schema          int                 `json:"schema,omitempty"`
-	SchemaURL       string              `json:"$schema,omitempty"`
-	AzureDevOps     *AzureDevOpsOptions `json:"azureDevOps,omitempty"`
-	Auth            *AuthOptions        `json:"auth,omitempty"`
-	Updates         *UpdateOptions      `json:"updates,omitempty"`
-	BranchPrefixes  []NamedString       `json:"branchPrefixes"`
-	WorktreeFolders []NamedString       `json:"worktreeFolders"`
-	Agent           *AgentOptions       `json:"agent,omitempty"`
-	TaskStart       *TaskStartOptions   `json:"taskStart,omitempty"`
-	TaskFinish      *TaskFinishOptions  `json:"taskFinish,omitempty"`
+	Schema          int                     `json:"schema,omitempty"`
+	SchemaURL       string                  `json:"$schema,omitempty"`
+	Providers       []ProviderConfiguration `json:"providers"`
+	Updates         *UpdateOptions          `json:"updates,omitempty"`
+	BranchPrefixes  []NamedString           `json:"branchPrefixes"`
+	WorktreeFolders []NamedString           `json:"worktreeFolders"`
+	Agent           *AgentOptions           `json:"agent,omitempty"`
+	TaskStart       *TaskStartOptions       `json:"taskStart,omitempty"`
+	TaskFinish      *TaskFinishOptions      `json:"taskFinish,omitempty"`
 
 	document *wirejson.Value
 }
@@ -169,10 +143,11 @@ func (choice ProjectChoice) String() string { return choice.Label }
 
 type ProjectConfig struct {
 	DisplayName      string                  `json:"displayName"`
+	WorkProvider     string                  `json:"workProvider"`
+	Providers        []ProviderConfiguration `json:"providers"`
 	Repositories     []RepositoryEntry       `json:"repositories"`
 	IncludedProjects []string                `json:"includedProjects,omitempty"`
 	Agent            *AgentOptions           `json:"agent,omitempty"`
-	AzureDevOps      *AzureDevOpsOptions     `json:"azureDevOps,omitempty"`
 	Unknown          []NamedRawConfiguration `json:"-"`
 }
 
@@ -185,7 +160,7 @@ type RepositoryConfig struct {
 	URL                     RepositoryURL           `json:"url"`
 	DefaultBranch           string                  `json:"defaultBranch"`
 	PullRequestTargetBranch *string                 `json:"pullRequestTargetBranch,omitempty"`
-	AzureDevOpsRepository   *string                 `json:"azureDevOpsRepository,omitempty"`
+	ProviderRepository      *string                 `json:"providerRepository,omitempty"`
 	AnchorName              *string                 `json:"anchorName,omitempty"`
 	GitCredentialSecret     *string                 `json:"gitCredentialSecret,omitempty"`
 	Folder                  *string                 `json:"folder,omitempty"`
@@ -239,13 +214,6 @@ type DatabasesConfig struct {
 	Projects  []ProjectDatabases `json:"projects"`
 
 	document *wirejson.Value
-}
-
-// NamedRawConfiguration retains extension data without assigning provider
-// meaning to it. Raw is the exact JSON value after parsing, not localized text.
-type NamedRawConfiguration struct {
-	Name string          `json:"name"`
-	Raw  json.RawMessage `json:"value"`
 }
 
 type ConfigShow struct {

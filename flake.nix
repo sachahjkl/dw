@@ -150,6 +150,11 @@
               'github.com/sachahjkl/dw/internal/(bootstrap|cli|console|tui|provider)|"os/exec"' \
               internal/action/*.go internal/contract/*.go internal/data/*.go internal/l10n/*.go internal/wirejson/*.go internal/work/*.go
 
+            fail_if_matches \
+              "Application and core layers must not import concrete providers" \
+              'github.com/sachahjkl/dw/internal/(data|work)/[^"]+' \
+              internal/dataapp internal/providerapp internal/workapp internal/workspace
+
             echo "Architecture check passed."
           '';
         };

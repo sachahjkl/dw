@@ -6,11 +6,13 @@ import (
 	"github.com/sachahjkl/dw/internal/cli/complete"
 	"github.com/sachahjkl/dw/internal/cli/spec"
 	"github.com/sachahjkl/dw/internal/config"
+	"github.com/sachahjkl/dw/internal/providerapp"
 	"github.com/sachahjkl/dw/internal/workspace"
 )
 
 type completionResolver struct {
 	workspace *workspace.Engine
+	providers *providerapp.Service
 }
 
 func (resolver completionResolver) ResolveCompletion(request complete.Context) ([]complete.Candidate, error) {
@@ -21,17 +23,21 @@ func (resolver completionResolver) ResolveCompletion(request complete.Context) (
 	switch request.Kind {
 	case spec.CompleteProject:
 		values = config.ProjectValues(root)
+	case spec.CompleteProvider:
+		if resolver.providers != nil {
+			values = resolver.providers.ProviderNames()
+		}
 	case spec.CompleteRepository:
 		values, err = resolver.workspace.RepositoryValues(context.Background(), root, request.Project, request.Workspace)
 	case spec.CompleteWorkspace:
 		values = workspace.WorkspaceValues(root, request.Project, request.WorkItem)
 	case spec.CompleteWorkItem:
 		values = workspace.WorkItemValues(root, request.Project)
-	case spec.CompleteADOState:
+	case spec.CompleteWorkState:
 		values, err = completionStates(root)
-	case spec.CompleteDatabase:
+	case spec.CompleteDataSource:
 		values = config.DatabaseValues(root, request.Project)
-	case spec.CompleteEnvironment:
+	case spec.CompleteDataEnvironment:
 		values = config.EnvironmentValues(root, request.Project)
 	case spec.CompleteEnvVariable:
 		return complete.EnvironmentResolver{}.ResolveCompletion(request)

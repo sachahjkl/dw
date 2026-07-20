@@ -9,15 +9,11 @@ import (
 
 func workflowWireValue(config WorkflowConfig) (wirejson.Value, error) {
 	members := schemaMembers(config.SchemaURL, config.Schema)
-	var err error
-	members, err = appendJSONMember(members, "azureDevOps", config.AzureDevOps)
+	providers, err := providerConfigurationsWire(config.Providers)
 	if err != nil {
 		return wirejson.Value{}, err
 	}
-	members, err = appendJSONMember(members, "auth", config.Auth)
-	if err != nil {
-		return wirejson.Value{}, err
-	}
+	members = append(members, wirejson.Member{Name: "providers", Value: providers})
 	members, err = appendJSONMember(members, "updates", config.Updates)
 	if err != nil {
 		return wirejson.Value{}, err
@@ -90,17 +86,24 @@ func projectsWireValue(config ProjectsConfig) (wirejson.Value, error) {
 }
 
 func projectWireValue(project ProjectConfig) (wirejson.Value, error) {
-	members := []wirejson.Member{{Name: "displayName", Value: wirejson.StringValue(project.DisplayName)}}
+	providers, err := providerConfigurationsWire(project.Providers)
+	if err != nil {
+		return wirejson.Value{}, err
+	}
+	members := []wirejson.Member{
+		{Name: "displayName", Value: wirejson.StringValue(project.DisplayName)},
+		{Name: "workProvider", Value: wirejson.StringValue(project.WorkProvider)},
+		{Name: "providers", Value: providers},
+	}
 	repositories := make([]wirejson.Member, 0, len(project.Repositories))
 	for _, entry := range project.Repositories {
-		value, err := repositoryWireValue(entry.Repository)
-		if err != nil {
-			return wirejson.Value{}, err
+		value, encodeErr := repositoryWireValue(entry.Repository)
+		if encodeErr != nil {
+			return wirejson.Value{}, encodeErr
 		}
 		repositories = append(repositories, wirejson.Member{Name: entry.Key, Value: value})
 	}
 	members = append(members, wirejson.Member{Name: "repositories", Value: wirejson.ObjectValue(repositories...)})
-	var err error
 	if project.IncludedProjects != nil {
 		members, err = appendJSONMember(members, "includedProjects", project.IncludedProjects)
 		if err != nil {
@@ -108,10 +111,6 @@ func projectWireValue(project ProjectConfig) (wirejson.Value, error) {
 		}
 	}
 	members, err = appendJSONMember(members, "agent", project.Agent)
-	if err != nil {
-		return wirejson.Value{}, err
-	}
-	members, err = appendJSONMember(members, "azureDevOps", project.AzureDevOps)
 	if err != nil {
 		return wirejson.Value{}, err
 	}
@@ -137,7 +136,7 @@ func repositoryWireValue(repository RepositoryConfig) (wirejson.Value, error) {
 		value *string
 	}{
 		{"pullRequestTargetBranch", repository.PullRequestTargetBranch},
-		{"azureDevOpsRepository", repository.AzureDevOpsRepository},
+		{"providerRepository", repository.ProviderRepository},
 		{"anchorName", repository.AnchorName}, {"gitCredentialSecret", repository.GitCredentialSecret},
 		{"folder", repository.Folder},
 	} {
@@ -149,6 +148,18 @@ func repositoryWireValue(repository RepositoryConfig) (wirejson.Value, error) {
 	members, err = appendUnknown(members, repository.Unknown)
 	if err != nil {
 		return wirejson.Value{}, err
+	}
+	return wirejson.ObjectValue(members...), nil
+}
+
+func providerConfigurationsWire(providers []ProviderConfiguration) (wirejson.Value, error) {
+	members := make([]wirejson.Member, 0, len(providers))
+	for _, provider := range providers {
+		value, err := wirejson.Parse(provider.Raw)
+		if err != nil {
+			return wirejson.Value{}, err
+		}
+		members = append(members, wirejson.Member{Name: provider.Name, Value: value})
 	}
 	return wirejson.ObjectValue(members...), nil
 }
@@ -252,10 +263,6 @@ func isNilJSONValue(value any) bool {
 	case *int:
 		return value == nil
 	case *AgentOptions:
-		return value == nil
-	case *AzureDevOpsOptions:
-		return value == nil
-	case *AuthOptions:
 		return value == nil
 	case *UpdateOptions:
 		return value == nil

@@ -12,7 +12,10 @@ func RegisterUpdateRenderers(results *Registry, events *EventRegistry) error {
 	if err := RegisterPageResult(results, ResultUpgrade, updatePage); err != nil {
 		return err
 	}
-	return RegisterEvent(events, ResultUpgrade, updateEventProjection)
+	if err := RegisterPageResult(results, update.ActionID, updatePage); err != nil {
+		return err
+	}
+	return RegisterEvent(events, update.ActionID, updateEventProjection)
 }
 
 func updatePage(report update.Report) Page {

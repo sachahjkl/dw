@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/sachahjkl/dw/internal/work"
 )
 
 func ExtractWorkItemIDsFromCommitMessages(commitLog string) []string {
@@ -28,6 +30,15 @@ func ExtractWorkItemIDsFromCommitMessages(commitLog string) []string {
 			}
 		}
 		offset = start
+	}
+	return result
+}
+
+func (*Provider) ExtractCommitReferences(commitLog string) []work.ItemID {
+	raw := ExtractWorkItemIDsFromCommitMessages(commitLog)
+	result := make([]work.ItemID, len(raw))
+	for index := range raw {
+		result[index] = work.ItemID(raw[index])
 	}
 	return result
 }

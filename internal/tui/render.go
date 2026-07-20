@@ -89,8 +89,8 @@ func (m *Model) statusSummary() string {
 	if m.snapshotLoad.running {
 		parts = append(parts, m.loadingText(m.l10n.Text("tui.status.snapshot"), m.snapshotLoad))
 	}
-	if m.assignedLoad.running {
-		parts = append(parts, m.loadingText(m.l10n.Text("tui.status.assigned"), m.assignedLoad))
+	if m.workLoad.running {
+		parts = append(parts, m.loadingText(m.l10n.Text("tui.status.work"), m.workLoad))
 	}
 	if m.prLoad.running {
 		parts = append(parts, m.loadingText(m.l10n.Text("tui.status.prs"), m.prLoad))
@@ -121,12 +121,12 @@ func (m *Model) renderFooter(width int) string {
 		legend = m.l10n.Text("tui.keys.dashboard") + "  " + legend
 	case Workspaces:
 		legend = m.l10n.Text("tui.keys.workspaces") + "  " + legend
-	case ADO:
-		legend = m.l10n.Text("tui.keys.ado") + "  " + legend
+	case Work:
+		legend = m.l10n.Text("tui.keys.work") + "  " + legend
 	case PullRequests:
 		legend = m.l10n.Text("tui.keys.prs") + "  " + legend
-	case Databases:
-		legend = m.l10n.Text("tui.keys.db") + "  " + legend
+	case Data:
+		legend = m.l10n.Text("tui.keys.data") + "  " + legend
 	case Composer:
 		legend = m.l10n.Text("tui.keys.composer") + "  " + legend
 	}
@@ -139,12 +139,12 @@ func (m *Model) renderBody(width, height int) string {
 		return m.renderDashboard(width, height)
 	case Workspaces:
 		return m.renderWorkspaces(width, height)
-	case ADO:
-		return m.renderADO(width, height)
+	case Work:
+		return m.renderWork(width, height)
 	case PullRequests:
 		return m.renderPRs(width, height)
-	case Databases:
-		return m.renderDatabases(width, height)
+	case Data:
+		return m.renderData(width, height)
 	case Composer:
 		return m.renderForm(m.composer, width, height, false)
 	}
@@ -156,10 +156,10 @@ func (m *Model) renderDashboard(width, height int) string {
 		{m.l10n.Text("tui.label.projects"), fmt.Sprint(m.snapshot.ProjectCount)},
 		{m.l10n.Text("tui.label.repositories"), fmt.Sprint(m.snapshot.RepositoryCount)},
 		{m.l10n.Text("tui.label.workspaces"), fmt.Sprint(len(m.snapshot.Workspaces))},
-		{m.l10n.Text("tui.label.work-items"), fmt.Sprint(m.assignedCount())},
+		{m.l10n.Text("tui.label.work-items"), fmt.Sprint(m.workCount())},
 		{m.l10n.Text("tui.label.pull-requests"), fmt.Sprint(len(m.snapshot.PullRequests))},
 		{m.l10n.Text("tui.label.cleanup"), fmt.Sprint(m.snapshot.PruneCandidates)},
-		{m.l10n.Text("tui.label.databases"), fmt.Sprint(len(m.snapshot.Databases))},
+		{m.l10n.Text("tui.label.data-sources"), fmt.Sprint(len(m.snapshot.DataSources))},
 		{m.l10n.Text("tui.label.agent"), m.snapshot.DefaultAgent},
 	}
 	left := m.panel(m.l10n.Text("tui.panel.readiness"), m.renderPairs(metrics, max(20, width/3-4)), max(24, width/3), height)
@@ -201,29 +201,33 @@ func (m *Model) workspaceDetail(width, height int) string {
 	return m.panel(m.l10n.Text("tui.panel.selection"), m.renderPairs(lines, width-4), width, height)
 }
 
-func (m *Model) renderADO(width, height int) string {
-	projectTabs := make([]string, 0, len(m.snapshot.ADOProjects))
-	for i, project := range m.snapshot.ADOProjects {
+func (m *Model) renderWork(width, height int) string {
+	projectTabs := make([]string, 0, len(m.snapshot.WorkProjects))
+	for i, project := range m.snapshot.WorkProjects {
 		style := lipgloss.NewStyle().Foreground(colors.muted).Padding(0, 1)
-		if i == m.selectedADOProject {
+		if i == m.selectedWorkProject {
 			style = style.Foreground(colors.surface).Background(colors.accent).Bold(true)
 		}
-		projectTabs = append(projectTabs, style.Render(fmt.Sprintf("%s (%d)", project.Key, len(project.Items))))
+		label := project.Key
+		if project.Provider != "" {
+			label += " · " + project.Provider
+		}
+		projectTabs = append(projectTabs, style.Render(fmt.Sprintf("%s (%d)", label, len(project.Items))))
 	}
 	if len(projectTabs) == 0 {
-		projectTabs = []string{m.l10n.Text("tui.empty.ado")}
+		projectTabs = []string{m.l10n.Text("tui.empty.work")}
 	}
-	tabs := m.panel(m.l10n.Text(msgADO), strings.Join(projectTabs, " "), width, 3)
+	tabs := m.panel(m.l10n.Text(msgWork), strings.Join(projectTabs, " "), width, 3)
 	rows := [][]string{}
-	if m.selectedADOProject < len(m.snapshot.ADOProjects) {
-		for i, item := range m.snapshot.ADOProjects[m.selectedADOProject].Items {
-			rows = append(rows, []string{marker(i == m.selectedADOItem), item.ID, item.Type, item.State, item.Title})
+	if m.selectedWorkProject < len(m.snapshot.WorkProjects) {
+		for i, item := range m.snapshot.WorkProjects[m.selectedWorkProject].Items {
+			rows = append(rows, []string{marker(i == m.selectedWorkItem), item.ID, item.Type, item.State, item.Title})
 		}
 	}
 	if len(rows) == 0 {
-		rows = [][]string{{"", m.l10n.Text("tui.empty.ado")}}
+		rows = [][]string{{"", m.l10n.Text("tui.empty.work")}}
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, tabs, m.panel(m.l10n.Text("tui.status.assigned"), m.renderRows(rows, width-4, height-5), width, height-3))
+	return lipgloss.JoinVertical(lipgloss.Left, tabs, m.panel(m.l10n.Text("tui.status.work"), m.renderRows(rows, width-4, height-5), width, height-3))
 }
 
 func (m *Model) renderPRs(width, height int) string {
@@ -243,24 +247,24 @@ func (m *Model) renderPRs(width, height int) string {
 	return m.panel(m.l10n.Text(msgPRs), m.renderRows(rows, width-4, height-2), width, height)
 }
 
-func (m *Model) renderDatabases(width, height int) string {
-	rows := make([][]string, 0, len(m.snapshot.Databases))
-	for i, item := range m.snapshot.Databases {
+func (m *Model) renderData(width, height int) string {
+	rows := make([][]string, 0, len(m.snapshot.DataSources))
+	for i, item := range m.snapshot.DataSources {
 		scope := item.Project
 		if scope == "" {
 			scope = m.l10n.Text("tui.label.global")
 		}
 		operation := ""
-		if actionItem, ok := findAction(item.Actions, DBSchemaSlot); ok {
+		if actionItem, ok := findAction(item.Actions, DataCatalogSlot); ok {
 			operation = actionItem.Label
 		}
-		rows = append(rows, []string{marker(i == m.selectedDB), scope, item.Key, operation})
+		rows = append(rows, []string{marker(i == m.selectedDataSource), scope, item.Provider, item.Key, operation})
 	}
 	if len(rows) == 0 {
-		rows = [][]string{{"", m.l10n.Text("tui.empty.db")}}
+		rows = [][]string{{"", m.l10n.Text("tui.empty.data")}}
 	}
 	upper := max(6, height*3/5)
-	list := m.panel(m.l10n.Text(msgDB), m.renderRows(rows, width-4, upper-2), width, upper)
+	list := m.panel(m.l10n.Text(msgData), m.renderRows(rows, width-4, upper-2), width, upper)
 	actions := m.renderActionList(width, height-upper)
 	return lipgloss.JoinVertical(lipgloss.Left, list, actions)
 }
@@ -439,7 +443,7 @@ func (m *Model) helpLines() []string {
 
 func (m *Model) stateLines() []string {
 	lines := []string{m.l10n.Text("tui.panel.loads")}
-	lines = append(lines, m.loaderLine(m.l10n.Text("tui.status.snapshot"), m.snapshotLoad), m.loaderLine(m.l10n.Text("tui.status.assigned"), m.assignedLoad), m.loaderLine(m.l10n.Text("tui.status.prs"), m.prLoad))
+	lines = append(lines, m.loaderLine(m.l10n.Text("tui.status.snapshot"), m.snapshotLoad), m.loaderLine(m.l10n.Text("tui.status.work"), m.workLoad), m.loaderLine(m.l10n.Text("tui.status.prs"), m.prLoad))
 	if m.active != nil {
 		lines = append(lines, "", m.l10n.Text("tui.status.action"), m.active.action.Label)
 	}
@@ -587,12 +591,12 @@ func (m *Model) viewLabel(view View) string {
 		return m.l10n.Text(msgDashboard)
 	case Workspaces:
 		return m.l10n.Text(msgWorkspaces)
-	case ADO:
-		return m.l10n.Text(msgADO)
+	case Work:
+		return m.l10n.Text(msgWork)
 	case PullRequests:
 		return m.l10n.Text(msgPRs)
-	case Databases:
-		return m.l10n.Text(msgDB)
+	case Data:
+		return m.l10n.Text(msgData)
 	case Composer:
 		return m.l10n.Text(msgComposer)
 	}
@@ -611,9 +615,9 @@ func (m *Model) riskLabel(risk Risk) string {
 	}
 	return ""
 }
-func (m *Model) assignedCount() int {
+func (m *Model) workCount() int {
 	count := 0
-	for _, project := range m.snapshot.ADOProjects {
+	for _, project := range m.snapshot.WorkProjects {
 		count += len(project.Items)
 	}
 	return count

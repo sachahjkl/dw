@@ -16,9 +16,9 @@ func (s *Service) Changelog(ctx context.Context, request ChangelogRequest, sink 
 		return ChangelogReport{}, problem(msgChangelogIDsTable, "IDs-only output and table output cannot be combined")
 	}
 	if request.Project == "" {
-		return ChangelogReport{}, projectRequired("ado changelog")
+		return ChangelogReport{}, projectRequired("work changelog")
 	}
-	provider, err := s.provider(request.Provider)
+	provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 	if err != nil {
 		return ChangelogReport{}, err
 	}
@@ -32,7 +32,7 @@ func (s *Service) Changelog(ctx context.Context, request ChangelogRequest, sink 
 		report.Sections = []ChangelogSection{newChangelogSection(nil, nil, ids, nil, len(ids) == 0)}
 	case ChangelogPullRequests:
 		if len(request.Repositories) == 0 {
-			return ChangelogReport{}, repositoriesRequired("ado changelog from PR", "requires configured work repositories")
+			return ChangelogReport{}, repositoriesRequired("work changelog --from-pr", "requires configured work repositories")
 		}
 		reader, requireErr := work.Require[work.PullRequestReader](provider, work.CapabilityPullRequestReader)
 		if requireErr != nil {

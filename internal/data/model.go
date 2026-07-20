@@ -170,7 +170,37 @@ type Document struct {
 	Bytes     []byte
 }
 
+type DiscoveryRepository struct {
+	Name string
+	Root string
+}
+
+type DiscoveryWorkspace struct {
+	Path         string
+	Project      contract.Optional[contract.ProjectKey]
+	Repositories []DiscoveryRepository
+}
+
 type DiscoveryRequest struct {
-	Project contract.Optional[contract.ProjectKey]
-	Root    contract.Optional[contract.WorkspacePath]
+	Root       string
+	Workspaces []DiscoveryWorkspace
+}
+
+type DiscoveredSource struct {
+	Source        Source
+	Repository    string
+	Application   string
+	Environment   string
+	Name          string
+	CredentialKey contract.SecretKey
+	Secret        contract.SecretValue
+	Eligible      bool
+	Detail        string
+	SourcePaths   []string
+}
+
+type DiscoveryReport struct {
+	ScannedFiles int
+	Sources      []DiscoveredSource
+	Warnings     []string
 }

@@ -210,8 +210,8 @@ func BuildPreflight(workspace string, files []string) (PreflightReport, error) {
 				detail, _ := json.Marshal(struct {
 					Kind    string   `json:"kind"`
 					Reasons []string `json:"reasons"`
-				}{"workspace-ado-context-stale", reasons})
-				issues = append(issues, PreflightIssue{Code: "workspace.ado-context.stale", Severity: "warning", WorkItemID: contextItem.WorkItem.ID, Detail: detail, RelatedIDs: []string{contextItem.WorkItem.ID}})
+				}{"workspace-provider-context-stale", reasons})
+				issues = append(issues, PreflightIssue{Code: "workspace.provider-context.stale", Severity: "warning", WorkItemID: contextItem.WorkItem.ID, Detail: detail, RelatedIDs: []string{contextItem.WorkItem.ID}})
 			}
 		}
 		if len(contextItem.Attachments.Items) > 0 {
@@ -225,8 +225,8 @@ func BuildPreflight(workspace string, files []string) (PreflightReport, error) {
 				Kind          string   `json:"kind"`
 				DirectoryHint string   `json:"directoryHint"`
 				Names         []string `json:"names"`
-			}{"ado-attachments-present", contextItem.Attachments.DirectoryHint, names})
-			issues = append(issues, PreflightIssue{Code: "ado.attachments.present", Severity: "warning", WorkItemID: contextItem.WorkItem.ID, Detail: detail, RelatedIDs: []string{contextItem.WorkItem.ID}})
+			}{"provider-attachments-present", contextItem.Attachments.DirectoryHint, names})
+			issues = append(issues, PreflightIssue{Code: "provider.attachments.present", Severity: "warning", WorkItemID: contextItem.WorkItem.ID, Detail: detail, RelatedIDs: []string{contextItem.WorkItem.ID}})
 		}
 	}
 	blocking := false

@@ -23,25 +23,25 @@ type Event struct {
 func (e Event) ActionID() string {
 	switch e.Kind {
 	case "authenticating":
-		return "work.auth"
+		return "provider.auth"
 	case "device-login-required":
-		return "work.auth.device.login"
+		return "provider.auth.device.login"
 	case "loading-assigned-work-items":
-		return "work.assigned.load"
+		return "work.item.list.load"
 	case "grouping-assigned-work-items":
-		return "work.assigned.group"
+		return "work.item.list.group"
 	case "loading-pull-requests":
-		return "work.pr.load"
+		return "work.pr.list.load"
 	case "resolving-pull-request-work-items":
-		return "work.pr.resolve.workitems"
+		return "work.pr.resolve-items"
 	case "extracting-git-work-items":
-		return "work.git.extract.workitems"
+		return "work.changelog.extract-items"
 	case "loading-work-item":
-		return "work.item.load"
+		return "work.item.show.load"
 	case "loading-work-items":
-		return "work.items.load"
+		return "work.item.show.load"
 	case "loading-work-item-context":
-		return "work.item.context.load"
+		return "work.context.show.load"
 	case "loading-changelog":
 		return "work.changelog.load"
 	case "loading-changelog-items":

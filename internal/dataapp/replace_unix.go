@@ -1,6 +1,6 @@
 //go:build !windows
 
-package dbcompat
+package dataapp
 
 import "os"
 

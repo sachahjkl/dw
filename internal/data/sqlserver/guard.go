@@ -11,7 +11,7 @@ var forbiddenTokens = [...]string{
 	"create", "grant", "revoke", "into", "openquery", "openrowset", "opendatasource",
 }
 
-// GuardResult is the stable, machine-readable result of the compatibility SQL guard.
+// GuardResult is the stable, machine-readable result of the SQL Server read-only guard.
 type GuardResult struct {
 	IsAllowed bool    `json:"is_allowed"`
 	Reason    *string `json:"reason"`
@@ -21,28 +21,28 @@ type GuardResult struct {
 // parser; connection-level read-only intent remains mandatory as a second line of defence.
 func ValidateReadOnlySQL(statement string) GuardResult {
 	if strings.TrimSpace(statement) == "" {
-		return blocked(l10n.Text("db.guard.empty"))
+		return blocked(l10n.Text("data.guard.empty"))
 	}
 
 	cleaned := strings.TrimSpace(sanitizeSQL(statement))
 	if !startsWithReadOnlyVerb(cleaned) {
-		return blocked(l10n.Text("db.guard.readonly_only"))
+		return blocked(l10n.Text("data.guard.readonly_only"))
 	}
 	if hasMultipleTopLevelStatements(cleaned) {
-		return blocked(l10n.Text("db.guard.multiple_statements"))
+		return blocked(l10n.Text("data.guard.multiple_statements"))
 	}
 	if firstSQLWord(cleaned) == "with" && !withResolvesToSelect(cleaned) {
-		return blocked(l10n.Text("db.guard.readonly_only"))
+		return blocked(l10n.Text("data.guard.readonly_only"))
 	}
 
 	lowered := strings.ToLower(cleaned)
 	for _, token := range forbiddenTokens {
 		if containsWord(lowered, token) {
-			return blocked(l10n.Render(l10n.M("db.guard.forbidden", l10n.A("keyword", strings.ToUpper(token)))))
+			return blocked(l10n.Render(l10n.M("data.guard.forbidden", l10n.A("keyword", strings.ToUpper(token)))))
 		}
 	}
 	if containsWordSequence(lowered, "next", "value", "for") {
-		return blocked(l10n.Render(l10n.M("db.guard.forbidden", l10n.A("keyword", "NEXT VALUE FOR"))))
+		return blocked(l10n.Render(l10n.M("data.guard.forbidden", l10n.A("keyword", "NEXT VALUE FOR"))))
 	}
 	return GuardResult{IsAllowed: true}
 }

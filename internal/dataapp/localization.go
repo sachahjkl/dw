@@ -1,4 +1,4 @@
-package dbcompat
+package dataapp
 
 import (
 	"errors"

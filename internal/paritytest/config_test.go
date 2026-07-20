@@ -28,7 +28,7 @@ func TestConfigInitCreatesExactPlannedFilesystem(t *testing.T) {
 			t.Errorf("planned path does not exist %q: %v", path, err)
 		}
 	}
-	fixture, err := os.ReadFile(filepath.Join("..", "..", "testdata", "oracle", "config-init-paths.json"))
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "testdata", "contract", "config-init-paths.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,11 +81,16 @@ func TestConfigRefreshMigratesLegacyURLWithoutLosingOrderOrExtensions(t *testing
   "extension": {"order":["z","a"],"enabled":true},
   "projects": {
     "acme": {
-      "label": "Acme",
+      "displayName": "Acme",
+      "workProvider": "github",
+      "providers": {
+        "github": {"endpoint":"https://api.github.example","extension":{"order":["z","a"]}}
+      },
       "repositories": {
         "front": {
 		  "url": "https://github.com/torvalds/linux.git",
           "defaultBranch": "main",
+          "providerRepository": "platform/front",
           "extension": "keep"
         }
       }
@@ -136,6 +141,25 @@ func TestConfigRefreshMigratesLegacyURLWithoutLosingOrderOrExtensions(t *testing
 	if !ok {
 		t.Fatal("acme project is missing")
 	}
+	workProvider, ok := acme.Lookup("workProvider")
+	if !ok {
+		t.Fatal("project work provider is missing")
+	}
+	if value, isString := workProvider.AsString(); !isString || value != "github" {
+		t.Fatalf("project work provider = %q, string=%v", value, isString)
+	}
+	providers, ok := acme.Lookup("providers")
+	if !ok {
+		t.Fatal("project provider extensions are missing")
+	}
+	github, ok := providers.Lookup("github")
+	if !ok {
+		t.Fatal("github provider extension is missing")
+	}
+	providerExtension, ok := github.Lookup("extension")
+	if !ok || providerExtension.Kind() != wirejson.Object {
+		t.Fatal("provider extension data was changed")
+	}
 	repositories, ok := acme.Lookup("repositories")
 	if !ok {
 		t.Fatal("repositories object is missing")
@@ -161,6 +185,13 @@ func TestConfigRefreshMigratesLegacyURLWithoutLosingOrderOrExtensions(t *testing
 	}
 	if value, isString := sshURL.AsString(); !isString || value != "git@github.com:torvalds/linux.git" {
 		t.Fatalf("migrated SSH URL = %q, string=%v", value, isString)
+	}
+	providerRepository, ok := front.Lookup("providerRepository")
+	if !ok {
+		t.Fatal("provider repository mapping is missing")
+	}
+	if value, isString := providerRepository.AsString(); !isString || value != "platform/front" {
+		t.Fatalf("provider repository = %q, string=%v", value, isString)
 	}
 	kept, ok := front.Lookup("extension")
 	if !ok {

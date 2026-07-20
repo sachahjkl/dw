@@ -61,7 +61,8 @@
       "required": ["provider"],
       "properties": {
         "provider": {
-          "const": "sqlserver"
+          "type": "string",
+          "minLength": 1
         },
         "connectionString": {
           "type": "string"
@@ -84,7 +85,7 @@
           "minimum": 1
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     }
   }
 }

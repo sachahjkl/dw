@@ -1,4 +1,4 @@
-package dbcompat
+package dataapp
 
 import (
 	"encoding/json"
@@ -9,9 +9,13 @@ import (
 
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/data"
-	"github.com/sachahjkl/dw/internal/data/sqlserver"
 	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/wirejson"
+)
+
+const (
+	defaultMaximumRows    = 500
+	defaultTimeoutSeconds = 600
 )
 
 type catalogWire struct {
@@ -51,7 +55,7 @@ type Catalog struct {
 func LoadCatalog(path string) (Catalog, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return Catalog{}, localized("db.error.config_read", l10n.A("path", path), l10n.A("error", err))
+		return Catalog{}, localized("data.error.config_read", l10n.A("path", path), l10n.A("error", err))
 	}
 	return ParseCatalog(content, path)
 }
@@ -59,10 +63,10 @@ func LoadCatalog(path string) (Catalog, error) {
 func ParseCatalog(content []byte, source string) (Catalog, error) {
 	var wire catalogWire
 	if err := json.Unmarshal(content, &wire); err != nil {
-		return Catalog{}, localized("db.error.config_parse", l10n.A("path", source), l10n.A("error", err))
+		return Catalog{}, localized("data.error.config_parse", l10n.A("path", source), l10n.A("error", err))
 	}
 	catalog := Catalog{
-		defaults: catalogDefaults{ReadOnly: true, MaxRows: sqlserver.DefaultMaxRows, TimeoutSeconds: sqlserver.DefaultTimeoutSeconds},
+		defaults: catalogDefaults{ReadOnly: true, MaxRows: defaultMaximumRows, TimeoutSeconds: defaultTimeoutSeconds},
 		globals:  make(map[string]connectionWire, len(wire.Globals)),
 		projects: make(map[string]map[string]connectionWire, len(wire.Projects)),
 	}
@@ -133,12 +137,12 @@ func parseConnection(raw json.RawMessage) (connectionWire, bool) {
 	return wire, true
 }
 
-// Resolve preserves project-over-global shadowing and projects legacy database configuration into
-// the provider-neutral connection contract. Provider-specific interpretation remains in providers.
+// Resolve preserves project-over-global shadowing and projects persisted data source configuration
+// into the provider-neutral connection contract. Provider-specific interpretation stays local.
 func (catalog Catalog) Resolve(project, database string) (data.Connection, error) {
 	configured, found := catalog.lookup(project, database)
 	if !found {
-		return data.Connection{}, localized("db.error.database_not_found", l10n.A("project", project), l10n.A("database", database))
+		return data.Connection{}, localized("data.error.database_not_found", l10n.A("project", project), l10n.A("database", database))
 	}
 	provider := registryProviderName(configured.Provider)
 	options := []wirejson.Member{
@@ -175,9 +179,6 @@ func (catalog Catalog) Resolve(project, database string) (data.Connection, error
 }
 
 func registryProviderName(configured string) data.ProviderName {
-	if configured == "" || sqlserver.IsProviderName(configured) {
-		return data.ProviderName(sqlserver.ProviderName)
-	}
 	return data.ProviderName(strings.TrimSpace(configured))
 }
 

@@ -8,13 +8,25 @@ import (
 
 	"github.com/sachahjkl/dw/internal/config"
 	"github.com/sachahjkl/dw/internal/gitrepo"
-	"github.com/sachahjkl/dw/internal/work/ado"
+	"github.com/sachahjkl/dw/internal/work"
 	"github.com/sachahjkl/dw/internal/workapp"
 )
 
-type gitChangelogResolver struct{}
+type gitChangelogResolver struct {
+	providers *work.Registry
+}
 
-func (gitChangelogResolver) ResolveGitRange(ctx context.Context, request workapp.ChangelogRequest) ([]workapp.GitChangelogSection, error) {
+func (resolver gitChangelogResolver) ResolveGitRange(ctx context.Context, request workapp.ChangelogRequest) ([]workapp.GitChangelogSection, error) {
+	root := config.ResolveRoot(request.Root)
+	providerName := work.ProviderName(config.ResolveWorkProvider(root, request.Project))
+	provider, err := resolver.providers.Get(providerName)
+	if err != nil {
+		return nil, err
+	}
+	extractor, err := work.Require[work.CommitReferenceExtractor](provider, work.CapabilityCommitReferenceExtractor)
+	if err != nil {
+		return nil, err
+	}
 	targets := changelogTargets(request)
 	from := request.GitFrom
 	if strings.TrimSpace(from) == "" {
@@ -36,7 +48,11 @@ func (gitChangelogResolver) ResolveGitRange(ctx context.Context, request workapp
 			section.SourceEmpty = true
 			section.Warnings = []workapp.ChangelogWarning{{Detail: err.Error()}}
 		} else {
-			section.WorkItemIDs = ado.ExtractWorkItemIDsFromCommitMessages(messages.String())
+			references := extractor.ExtractCommitReferences(messages.String())
+			section.WorkItemIDs = make([]string, len(references))
+			for index := range references {
+				section.WorkItemIDs[index] = string(references[index])
+			}
 			section.SourceEmpty = len(section.WorkItemIDs) == 0
 		}
 		result = append(result, section)

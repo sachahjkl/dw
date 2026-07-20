@@ -16,22 +16,23 @@ func BuildDirectRequest(invocation *parse.Result) (action.Request, error) {
 		return nil, fmt.Errorf("cli.invalid-tui-invocation")
 	}
 	switch invocation.Command.Key {
-	case "ado.assigned":
-		return buildADOAssigned(invocation)
-	case "ado.state.set":
-		return buildADOStateSet(invocation)
+	case "work.item.list":
+		return buildWorkItemList(invocation)
+	case "work.item.state.set":
+		return buildWorkItemStateSet(invocation)
 	case "work.item.doing":
 		root := resolvedRoot(invocation.Values)
 		states, _, _ := taskStartSettings(root)
-		return workapp.DoingRequest{Root: root, Project: invocation.Values.String("project"), IDs: split(invocation.Values.String("id")), States: states}, nil
-	case "work.start":
-		return buildWorkStart(invocation)
-	case "work.finish":
-		return buildWorkFinish(invocation)
-	case "work.teardown":
-		return buildWorkTeardown(invocation)
-	case "work.prune":
-		return buildWorkPrune(invocation)
+		project := invocation.Values.String("project")
+		return workapp.DoingRequest{Provider: selectedWorkProvider(invocation.Values, root, project), Root: root, Project: project, IDs: split(invocation.Values.String("id")), States: states}, nil
+	case "workspace.start":
+		return buildWorkspaceStart(invocation)
+	case "workspace.finish":
+		return buildWorkspaceFinish(invocation)
+	case "workspace.teardown":
+		return buildWorkspaceTeardown(invocation)
+	case "workspace.prune":
+		return buildWorkspacePrune(invocation)
 	default:
 		return nil, fmt.Errorf("cli.tui-direct-route-unavailable:%s", invocation.Command.Key)
 	}

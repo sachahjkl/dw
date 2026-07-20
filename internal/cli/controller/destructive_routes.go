@@ -12,8 +12,8 @@ import (
 )
 
 func teardownRoute() Route {
-	return Route{Key: "work.teardown", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
-		built, err := buildWorkTeardown(invocation)
+	return Route{Key: "workspace.teardown", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
+		built, err := buildWorkspaceTeardown(invocation)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -24,7 +24,7 @@ func teardownRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		previewOutput, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), preview, "work.teardown", console.FormatHuman, nil)
+		previewOutput, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), preview, "workspace.teardown", console.FormatHuman, nil)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -34,7 +34,7 @@ func teardownRoute() Route {
 				if err != nil {
 					return Outcome{}, err
 				}
-				output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), preview, "work.teardown", format, projection)
+				output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), preview, "workspace.teardown", format, projection)
 				return Outcome{Output: output, Code: console.ExitSuccess}, err
 			}
 			return success(previewOutput), nil
@@ -44,7 +44,7 @@ func teardownRoute() Route {
 				return Outcome{}, err
 			}
 		}
-		if _, err := confirmExecution(ctx, execution, invocation, true, invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkRemove); err != nil {
+		if _, err := confirmExecution(ctx, execution, invocation, true, invocation.Values.Bool("yes"), invocation.Values.Bool("json"), promptWorkspaceRemove); err != nil {
 			return Outcome{}, err
 		}
 		request.Execute, request.Approved = true, true
@@ -56,7 +56,7 @@ func teardownRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "work.teardown", format, projection)
+		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "workspace.teardown", format, projection)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -65,8 +65,8 @@ func teardownRoute() Route {
 }
 
 func pruneRoute() Route {
-	return Route{Key: "work.prune", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
-		built, err := buildWorkPrune(invocation)
+	return Route{Key: "workspace.prune", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
+		built, err := buildWorkspacePrune(invocation)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -79,9 +79,9 @@ func pruneRoute() Route {
 		}
 		report, ok := preview.Result.(workapp.PruneReport)
 		if !ok {
-			return Outcome{}, fmt.Errorf("cli.invalid-result:work.prune:%T", preview.Result)
+			return Outcome{}, fmt.Errorf("cli.invalid-result:workspace.prune:%T", preview.Result)
 		}
-		previewOutput, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), preview, "work.prune", console.FormatHuman, nil)
+		previewOutput, err := execution.Console.RenderResultKind(console.NewRenderContext(execution.Policy, execution.Localizer), preview, "workspace.prune", console.FormatHuman, nil)
 		if err != nil {
 			return Outcome{}, err
 		}
@@ -91,16 +91,16 @@ func pruneRoute() Route {
 				if err != nil {
 					return Outcome{}, err
 				}
-				output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), preview, "work.prune", format, projection)
+				output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), preview, "workspace.prune", format, projection)
 				return Outcome{Output: output, Code: console.ExitSuccess}, err
 			}
 			return success(previewOutput), nil
 		}
 		if invocation.Values.Bool("json") && !invocation.Values.Bool("yes") {
-			return Outcome{}, usage(fmt.Errorf("cli.confirmation-required:work.prune"))
+			return Outcome{}, usage(fmt.Errorf("cli.confirmation-required:workspace.prune"))
 		}
 		if !execution.Policy.Interactive() && !invocation.Values.Bool("yes") {
-			return Outcome{}, usage(fmt.Errorf("cli.confirmation-required:work.prune"))
+			return Outcome{}, usage(fmt.Errorf("cli.confirmation-required:workspace.prune"))
 		}
 		if !invocation.Values.Bool("json") {
 			if err := console.WriteOutput(execution.Policy.Streams.Stdout, previewOutput); err != nil {
@@ -118,7 +118,7 @@ func pruneRoute() Route {
 				choices[index] = action.Choice{Value: action.ChoiceValue(candidate.Path), Label: l10n.M(promptChoiceValue, l10n.A("value", candidate.Path))}
 			}
 			if len(choices) != 0 {
-				response, err := NewTerminalInput(execution.Policy.Streams, execution.Localizer).Request(ctx, action.Prompt{ID: "work-prune-candidates", Kind: action.PromptSelectMany, Label: l10n.M(promptWorkPrune), Choices: choices})
+				response, err := NewTerminalInput(execution.Policy.Streams, execution.Localizer).Request(ctx, action.Prompt{ID: "workspace-prune-candidates", Kind: action.PromptSelectMany, Label: l10n.M(promptWorkspacePrune), Choices: choices})
 				if err != nil {
 					return Outcome{}, err
 				}
@@ -139,7 +139,7 @@ func pruneRoute() Route {
 		if err != nil {
 			return Outcome{}, err
 		}
-		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "work.prune", format, projection)
+		output, err := execution.Console.RenderResultKind(console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format), result, "workspace.prune", format, projection)
 		if err != nil {
 			return Outcome{}, err
 		}

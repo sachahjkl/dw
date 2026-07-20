@@ -25,7 +25,7 @@ const (
 
 type Discoverer interface {
 	Provider
-	Discover(context.Context, DiscoveryRequest) ([]Source, error)
+	Discover(context.Context, DiscoveryRequest) (DiscoveryReport, error)
 }
 
 type Cataloger interface {

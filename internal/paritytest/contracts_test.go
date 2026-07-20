@@ -1,13 +1,21 @@
 package paritytest_test
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/sachahjkl/dw/internal/buildinfo"
 	"github.com/sachahjkl/dw/internal/contract"
+	"github.com/sachahjkl/dw/internal/data"
 	"github.com/sachahjkl/dw/internal/data/sqlserver"
-	"github.com/sachahjkl/dw/internal/dbcompat"
+	"github.com/sachahjkl/dw/internal/dataapp"
+	"github.com/sachahjkl/dw/internal/providerapp"
+	"github.com/sachahjkl/dw/internal/workapp"
+	"github.com/sachahjkl/dw/internal/workspace"
 )
 
 func TestVersionFlagAndVersionCommandUseDifferentContracts(t *testing.T) {
@@ -32,6 +40,49 @@ func TestVersionFlagAndVersionCommandUseDifferentContracts(t *testing.T) {
 	buildinfo.Commit = "   "
 	if got := buildinfo.Informational(); got != buildinfo.Version {
 		t.Fatalf("blank commit informational version = %q, want %q", got, buildinfo.Version)
+	}
+}
+
+func TestGreenfieldActionIDsAreExact(t *testing.T) {
+	actions := []struct {
+		got  string
+		want string
+	}{
+		{string(providerapp.ActionList), "provider.list"},
+		{string(providerapp.ActionShow), "provider.show"},
+		{string(providerapp.ActionCapabilities), "provider.capabilities"},
+		{string(workapp.ActionProviderAuthLogin), "provider.auth.login"},
+		{string(workapp.ActionProviderAuthStatus), "provider.auth.status"},
+		{string(workapp.ActionProviderAuthLogout), "provider.auth.logout"},
+		{string(workapp.ActionWorkItemList), "work.item.list"},
+		{string(workapp.ActionWorkItemShow), "work.item.show"},
+		{string(workapp.ActionWorkItemStatePlan), "work.item.state.plan"},
+		{string(workapp.ActionWorkItemStateExecute), "work.item.state.execute"},
+		{string(workapp.ActionWorkItemStateSet), "work.item.state.set"},
+		{string(workapp.ActionWorkItemDoingPlan), "work.item.doing.plan"},
+		{string(workapp.ActionWorkItemDoingExecute), "work.item.doing.execute"},
+		{string(workapp.ActionWorkItemChildCreate), "work.item.child.create"},
+		{string(workapp.ActionWorkPullRequestList), "work.pr.list"},
+		{string(workapp.ActionWorkContextShow), "work.context.show"},
+		{string(workapp.ActionWorkContextAI), "work.context.ai"},
+		{string(workapp.ActionWorkChangelog), "work.changelog"},
+		{string(workapp.ActionWorkspaceStart), "workspace.start"},
+		{string(workapp.ActionWorkspacePullRequestStart), "workspace.pr.start"},
+		{string(workapp.ActionWorkspaceOpen), "workspace.open"},
+		{string(workapp.ActionWorkspaceSync), "workspace.sync"},
+		{string(workapp.ActionWorkspacePrune), "workspace.prune"},
+		{string(workapp.ActionWorkspaceFinish), "workspace.finish"},
+		{string(dataapp.ActionDataSourceList), "data.source.list"},
+		{string(dataapp.ActionDataSourceCollect), "data.source.collect"},
+		{string(dataapp.ActionDataGuard), "data.guard"},
+		{string(dataapp.ActionDataCatalog), "data.catalog"},
+		{string(dataapp.ActionDataDescribe), "data.describe"},
+		{string(dataapp.ActionDataQuery), "data.query"},
+	}
+	for _, contract := range actions {
+		if contract.got != contract.want {
+			t.Errorf("action ID = %q, want %q", contract.got, contract.want)
+		}
 	}
 }
 
@@ -61,7 +112,7 @@ func TestOrderedMapRetainsInsertionOrderAcrossMutation(t *testing.T) {
 	}
 }
 
-func TestSQLGuardMatchesRustCompatibilityCases(t *testing.T) {
+func TestSQLGuardKeepsEstablishedSafetyCases(t *testing.T) {
 	tests := []struct {
 		name      string
 		statement string
@@ -137,17 +188,17 @@ func TestSQLGuardRejectsMultipleTopLevelStatements(t *testing.T) {
 }
 
 func TestDatabaseTSVPreservesNullAndTruncationContract(t *testing.T) {
-	result := dbcompat.QueryResult{
+	result := dataapp.NativeQueryReport{
 		Columns:   []string{"Id", "Name"},
-		Rows:      [][]sqlserver.Cell{{sqlserver.StringCell("1"), sqlserver.NullCell()}},
+		Rows:      [][]dataapp.Cell{{{Valid: true, Value: "1"}, {}}},
 		Truncated: true,
 	}
-	if got, want := dbcompat.QueryTSV(result), "Id\tName\n1\tNULL\n-- 1 rows (truncated)"; got != want {
+	if got, want := dataapp.QueryTSV(result), "Id\tName\n1\tNULL\n-- 1 rows (truncated)"; got != want {
 		t.Fatalf("TSV = %q, want %q", got, want)
 	}
 	result.Rows = nil
 	result.Truncated = false
-	if got, want := dbcompat.QueryTSV(result), "Id\tName\n-- 0 rows"; got != want {
+	if got, want := dataapp.QueryTSV(result), "Id\tName\n-- 0 rows"; got != want {
 		t.Fatalf("empty TSV = %q, want %q", got, want)
 	}
 }
@@ -175,5 +226,63 @@ func TestSQLServerSafetyOptionsOverrideDuplicates(t *testing.T) {
 				t.Fatalf("normalized DSN = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestSQLServerDiscoveryImplementsProviderCapability(t *testing.T) {
+	repository := t.TempDir()
+	path := filepath.Join(repository, "appsettings.Development.json")
+	content := []byte(`{"ConnectionStrings":{"Orders":"Server=localhost;Database=Orders;User Id=test;Password=secret;"}}`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	provider := sqlserver.New(nil)
+	report, err := provider.Discover(context.Background(), data.DiscoveryRequest{Workspaces: []data.DiscoveryWorkspace{{
+		Project: contract.Some(contract.ProjectKey("sample")),
+		Repositories: []data.DiscoveryRepository{{
+			Name: "api",
+			Root: repository,
+		}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ScannedFiles != 1 || len(report.Sources) != 1 || len(report.Warnings) != 0 {
+		t.Fatalf("discovery counts = files:%d sources:%d warnings:%d", report.ScannedFiles, len(report.Sources), len(report.Warnings))
+	}
+	source := report.Sources[0]
+	if source.Source.Provider != provider.Name() || source.Source.Key != "collected-api-root-development-orders" {
+		t.Fatalf("discovered source = %#v", source.Source)
+	}
+	if project, found := source.Source.Project.Get(); !found || project != "sample" {
+		t.Fatalf("discovered project = %q, %v", project, found)
+	}
+	if !source.Eligible || source.CredentialKey != "db.collected.v1.sample.api.root.development.orders" || source.Secret.Reveal() != "Server=localhost;Database=Orders;User Id=test;Password=secret;" {
+		t.Fatal("discovered credential metadata or opaque value is incorrect")
+	}
+}
+
+func TestWorkspaceArtifactsUseCanonicalEnglishCommands(t *testing.T) {
+	manifest := workspace.Manifest{WorkItemID: "42", Project: "sample", Repositories: []string{"api"}, BranchName: "feat/42-sample"}
+	files := workspace.AgentFiles(manifest)
+	if len(files) == 0 || files[0].RelativePath != "AGENTS.md" {
+		t.Fatalf("workspace agent files = %#v", files)
+	}
+	instructions := files[0].Content
+	for _, command := range []string{"dw work item show", "dw workspace current", "dw data source list", "dw provider show|capabilities"} {
+		if !strings.Contains(instructions, command) {
+			t.Errorf("workspace instructions do not contain %q", command)
+		}
+	}
+	for _, retired := range []string{"ADO item", "work current", "work finish", "DB schema"} {
+		if strings.Contains(instructions, retired) {
+			t.Errorf("workspace instructions retain %q", retired)
+		}
+	}
+	if plan := workspace.PlanMarkdown(manifest); !strings.Contains(plan, "## Functional Summary") || strings.Contains(plan, "Résumé") {
+		t.Fatalf("workspace plan template is not canonical English: %q", plan)
+	}
+	if handoff := workspace.HandoffMarkdown(manifest, "api"); !strings.Contains(handoff, "- Known child tasks: (none)") || strings.Contains(handoff, "Contexte") {
+		t.Fatalf("workspace handoff template is not canonical English: %q", handoff)
 	}
 }

@@ -20,23 +20,24 @@ const (
 type CompletionKind string
 
 const (
-	CompleteNone        CompletionKind = ""
-	CompleteProfile     CompletionKind = "profile"
-	CompleteProject     CompletionKind = "project"
-	CompleteRepository  CompletionKind = "repository"
-	CompleteWorkspace   CompletionKind = "workspace"
-	CompleteWorkItem    CompletionKind = "work-item"
-	CompleteAgent       CompletionKind = "agent"
-	CompleteADOState    CompletionKind = "ado-state"
-	CompleteDatabase    CompletionKind = "database"
-	CompleteEnvironment CompletionKind = "database-environment"
-	CompleteEnvVariable CompletionKind = "environment-variable"
-	CompleteSecret      CompletionKind = "secret"
-	CompleteShell       CompletionKind = "shell"
-	CompleteColor       CompletionKind = "color"
-	CompleteFormat      CompletionKind = "format"
-	CompleteWorkType    CompletionKind = "work-type"
-	CompleteRowLimit    CompletionKind = "row-limit"
+	CompleteNone            CompletionKind = ""
+	CompleteProfile         CompletionKind = "profile"
+	CompleteProject         CompletionKind = "project"
+	CompleteRepository      CompletionKind = "repository"
+	CompleteWorkspace       CompletionKind = "workspace"
+	CompleteWorkItem        CompletionKind = "work-item"
+	CompleteAgent           CompletionKind = "agent"
+	CompleteWorkState       CompletionKind = "work-state"
+	CompleteProvider        CompletionKind = "provider"
+	CompleteDataSource      CompletionKind = "data-source"
+	CompleteDataEnvironment CompletionKind = "data-environment"
+	CompleteEnvVariable     CompletionKind = "environment-variable"
+	CompleteSecret          CompletionKind = "secret"
+	CompleteShell           CompletionKind = "shell"
+	CompleteColor           CompletionKind = "color"
+	CompleteFormat          CompletionKind = "format"
+	CompleteWorkType        CompletionKind = "work-type"
+	CompleteRowLimit        CompletionKind = "row-limit"
 )
 
 type Completion struct {
@@ -111,7 +112,6 @@ type Command struct {
 	CompletionAlphabetical bool
 	Arguments              []Argument
 	Children               []*Command
-	RejectedPaths          [][]string
 	parent                 *Command
 	localizer              l10n.Localizer
 	english                map[l10n.ID]string

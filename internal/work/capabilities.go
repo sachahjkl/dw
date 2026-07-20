@@ -12,17 +12,18 @@ type Provider interface{ Name() ProviderName }
 type Capability string
 
 const (
-	CapabilityAuthenticator     Capability = "authenticator"
-	CapabilityItemReader        Capability = "item-reader"
-	CapabilityAssignedQuerier   Capability = "assigned-querier"
-	CapabilityRelationReader    Capability = "relation-reader"
-	CapabilityStateWriter       Capability = "state-writer"
-	CapabilityStateClassifier   Capability = "state-classifier"
-	CapabilityChildCreator      Capability = "child-creator"
-	CapabilityPullRequestReader Capability = "pull-request-reader"
-	CapabilityPullRequestWriter Capability = "pull-request-writer"
-	CapabilityRichContextReader Capability = "rich-context-reader"
-	CapabilityRawItemReader     Capability = "raw-item-reader"
+	CapabilityAuthenticator            Capability = "authenticator"
+	CapabilityItemReader               Capability = "item-reader"
+	CapabilityAssignedQuerier          Capability = "assigned-querier"
+	CapabilityRelationReader           Capability = "relation-reader"
+	CapabilityStateWriter              Capability = "state-writer"
+	CapabilityStateClassifier          Capability = "state-classifier"
+	CapabilityChildCreator             Capability = "child-creator"
+	CapabilityPullRequestReader        Capability = "pull-request-reader"
+	CapabilityPullRequestWriter        Capability = "pull-request-writer"
+	CapabilityRichContextReader        Capability = "rich-context-reader"
+	CapabilityRawItemReader            Capability = "raw-item-reader"
+	CapabilityCommitReferenceExtractor Capability = "commit-reference-extractor"
 )
 
 type Authenticator interface {
@@ -83,4 +84,9 @@ type RichContextReader interface {
 type RawItemReader interface {
 	Provider
 	ReadRawItem(context.Context, ProjectRef, ItemID) (wirejson.Value, error)
+}
+
+type CommitReferenceExtractor interface {
+	Provider
+	ExtractCommitReferences(string) []ItemID
 }

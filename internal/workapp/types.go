@@ -12,7 +12,7 @@ var (
 	ErrProjectRequired      = problem(msgProjectRequired, "a configured project is required")
 	ErrWorkItemsRequired    = problem(msgItemsRequired, "at least one work item is required")
 	ErrRepositoriesRequired = problem(msgRepositoriesRequired, "at least one work repository is required")
-	ErrInvalidHandoff       = problem(msgInvalidHandoff, "work finish blocked: invalid handoff. Fix or complete handoffs before pushing")
+	ErrInvalidHandoff       = problem(msgInvalidHandoff, "workspace finish blocked: invalid handoff. Fix or complete handoffs before pushing")
 )
 
 type EventSink func(context.Context, Event) error
