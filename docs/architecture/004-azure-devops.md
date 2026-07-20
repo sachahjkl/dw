@@ -2,7 +2,7 @@
 
 Azure DevOps is the workflow source of truth.
 
-The target design uses REST APIs with MSAL/browser authentication. The CLI must not require Azure CLI.
+The implementation uses Azure DevOps REST APIs with Microsoft Entra browser or device-code OAuth. The CLI does not require Azure CLI.
 
 Default REST API version: `7.1`, configurable in `workflow.json`.
 
@@ -43,7 +43,7 @@ PR creation:
 POST {organizationUrl}/{project}/_apis/git/repositories/{repositoryIdOrName}/pullrequests?api-version=7.1
 ```
 
-The first implementation keeps these calls behind `AzureDevOpsClient` so auth, retries and payload conventions can evolve without leaking into commands.
+These calls stay behind the statically registered provider in `internal/work/ado`. Command orchestration requests its typed work capabilities, so authentication, retries, and payload conventions do not leak into commands and a future GitHub or Jira provider can implement only the capabilities it supports.
 
 ## Auth Configuration
 

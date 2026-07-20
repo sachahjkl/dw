@@ -3,7 +3,6 @@ result
 bin/
 obj/
 artifacts/
-target/
 
 # Local smoke/test roots
 .smoke*/

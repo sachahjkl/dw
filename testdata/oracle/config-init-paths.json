@@ -1,0 +1,18 @@
+[
+  "config/projects.json",
+  "config/workflow.json",
+  "config/databases.json",
+  "config/opencode/AGENTS.md",
+  "config/opencode/opencode.jsonc",
+  "config/claude/CLAUDE.md",
+  "config/cursor/devworkflow.mdc",
+  "config/codex/AGENTS.md",
+  "config/codex/config.toml",
+  "config/copilot/copilot-instructions.md",
+  "projects",
+  "cache",
+  "schemas/projects.schema.json",
+  "schemas/workflow.schema.json",
+  "schemas/databases.schema.json",
+  "schemas/release.schema.json"
+]

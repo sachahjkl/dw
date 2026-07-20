@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sachahjkl/dw/schemas/projects.schema.json",
+  "title": "dw projects configuration",
+  "type": "object",
+  "required": ["schema", "projects"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "const": 1
+    },
+    "projects": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/project"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "project": {
+      "type": "object",
+      "required": ["displayName", "repositories"],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "azureDevOps": {
+          "type": "object",
+          "required": ["organizationUrl", "project", "apiVersion"],
+          "properties": {
+            "organizationUrl": {
+              "type": "string"
+            },
+            "project": {
+              "type": "string"
+            },
+            "apiVersion": {
+              "type": "string",
+              "default": "7.1"
+            }
+          },
+          "additionalProperties": false
+        },
+        "agent": {
+          "type": "object",
+          "properties": {
+            "default": {
+              "type": "string",
+              "enum": ["opencode", "cursor", "cursor-agent", "agent", "claude", "codex-cli", "codex", "copilot"]
+            }
+          },
+          "additionalProperties": false
+        },
+        "repositories": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/repository"
+          }
+        },
+        "includedProjects": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "repository": {
+      "type": "object",
+      "required": ["url", "defaultBranch"],
+      "properties": {
+        "url": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "required": ["http"],
+              "properties": {
+                "http": {
+                  "type": "string"
+                },
+                "ssh": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "defaultBranch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pullRequestTargetBranch": {
+          "type": "string"
+        },
+        "azureDevOpsRepository": {
+          "type": "string"
+        },
+        "anchorName": {
+          "type": "string"
+        },
+        "gitCredentialSecret": {
+          "type": "string",
+          "minLength": 1
+        },
+        "folder": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

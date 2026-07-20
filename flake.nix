@@ -12,25 +12,30 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, crane, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachSystem [ "x86_64-linux" ] (system:
       let
         pkgs = import nixpkgs { inherit system; };
         lib = pkgs.lib;
-        craneLib = crane.mkLib pkgs;
-        cargoSrc = craneLib.cleanCargoSource ./.;
+        go = pkgs.go_1_26;
+        buildGoModule = pkgs.buildGoModule.override { inherit go; };
         src = lib.fileset.toSource {
           root = ./.;
-          fileset = lib.fileset.unions [
-            (craneLib.fileset.commonCargoSources ./.)
-            ./LICENSE
-            ./VERSION
-            ./schemas
-          ];
+          fileset = lib.fileset.unions (
+            [
+              ./cmd
+              ./internal
+              ./locales
+              ./schemas
+              ./testdata
+              ./go.mod
+              ./LICENSE
+              ./VERSION
+            ] ++ lib.optionals (builtins.pathExists ./go.sum) [ ./go.sum ]
+          );
         };
         versionPrefix = lib.strings.trim (builtins.readFile ./VERSION);
         sourceRevision =
@@ -39,109 +44,92 @@
           else if self ? dirtyShortRev then self.dirtyShortRev
           else "dev";
         packageVersion = "${versionPrefix}+${sourceRevision}";
-
-        nativeBuildInputs = [
-          pkgs.git
-          pkgs.gnumake
-          pkgs.perl
-          pkgs.pkg-config
-        ];
-
-        buildInputs = lib.optionals pkgs.stdenv.isLinux [
-          pkgs.openssl
-        ] ++ lib.optionals pkgs.stdenv.isDarwin [
-          pkgs.darwin.apple_sdk.frameworks.Security
-          pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
+        ldflags = [
+          "-s"
+          "-w"
+          "-X github.com/sachahjkl/dw/internal/buildinfo.Version=${versionPrefix}"
+          "-X github.com/sachahjkl/dw/internal/buildinfo.Commit=${sourceRevision}"
         ];
 
         commonArgs = {
-          pname = "dw-workspace";
-          inherit src;
-          inherit nativeBuildInputs buildInputs;
-          strictDeps = true;
-        };
-
-        cargoArtifacts = craneLib.buildDepsOnly (commonArgs // {
-          src = cargoSrc;
-          cargoExtraArgs = "--locked --workspace";
-        });
-
-        dwPackage = craneLib.buildPackage (commonArgs // {
           pname = "dw";
           version = packageVersion;
-          inherit cargoArtifacts;
+          inherit src ldflags;
+          tags = [ "timetzdata" ];
+          subPackages = [ "cmd/dw" ];
+          vendorHash = "sha256-cqUAn6kER+J8bHtnKOd8oKlRuQiijTF5vFUnWA8mPo8=";
+          env.CGO_ENABLED = "0";
+        };
 
-          cargoExtraArgs = "--locked -p dw-cli";
-          # CI runs the full workspace check app; the package build only produces the release binary.
+        dwPackage = buildGoModule (commonArgs // {
           doCheck = false;
+        });
 
-          DW_COMMIT = sourceRevision;
+        formatCheck = pkgs.runCommand "dw-format-check" {
+          nativeBuildInputs = [ go ];
+        } ''
+          cp -R ${src} source
+          chmod -R u+w source
+          cd source
+          unformatted="$(find . -type f -name '*.go' -exec gofmt -l {} +)"
+          if [ -n "$unformatted" ]; then
+            printf 'Unformatted Go files:\n%s\n' "$unformatted" >&2
+            exit 1
+          fi
+          touch $out
+        '';
 
-          postInstall = ''
-            if [ -x "$out/bin/dw-cli" ]; then
-              mv "$out/bin/dw-cli" "$out/bin/dw"
-            fi
+        testCheck = buildGoModule (commonArgs // {
+          pname = "dw-tests";
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            go test -tags=timetzdata ./...
+            runHook postCheck
           '';
+          installPhase = "touch $out";
         });
 
-        formatCheck = craneLib.cargoFmt {
-          pname = "dw-workspace";
-          version = "0.1.1";
-          inherit src;
-        };
-
-        testCheck = craneLib.cargoTest (commonArgs // {
-          inherit cargoArtifacts;
-          cargoExtraArgs = "--locked --workspace";
+        staticAnalysisCheck = buildGoModule (commonArgs // {
+          pname = "dw-static-analysis";
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            go vet -tags=timetzdata ./...
+            runHook postCheck
+          '';
+          installPhase = "touch $out";
         });
 
-        clippyCheck = craneLib.cargoClippy (commonArgs // {
-          inherit cargoArtifacts;
-          cargoExtraArgs = "--locked --workspace";
-          cargoClippyExtraArgs = "--all-targets -- -D warnings";
-        });
-
-        cargoScript = name: command: pkgs.writeShellApplication {
+        goScript = name: command: pkgs.writeShellApplication {
           inherit name;
-          runtimeInputs = [
-            pkgs.cargo
-            pkgs.cmake
-            pkgs.clippy
-            pkgs.rustc
-            pkgs.rustfmt
-            pkgs.stdenv.cc
-          ] ++ nativeBuildInputs ++ buildInputs;
-          text = command;
-        };
-
-        checkScript = pkgs.writeShellApplication {
-          name = "dw-check";
+          runtimeInputs = [ go ];
           text = ''
-            test -e ${architectureCheck}
-            test -e ${formatCheck}
-            test -e ${testCheck}
-            test -e ${clippyCheck}
-            echo "Crane checks passed."
+            export CGO_ENABLED=0
+            export GOTOOLCHAIN=local
+            export GOFLAGS="-tags=timetzdata"
+            ${command}
           '';
         };
 
-        fmtScript = cargoScript "dw-fmt" ''
-          cargo fmt --all
+        fmtScript = goScript "dw-fmt" ''
+          go fmt ./...
         '';
 
-        testScript = cargoScript "dw-test" ''
-          cargo test --workspace --locked "$@"
+        testScript = goScript "dw-test" ''
+          go test "$@" ./...
         '';
 
-        clippyScript = cargoScript "dw-clippy" ''
-          cargo clippy --workspace --all-targets --locked -- -D warnings "$@"
+        staticAnalysisScript = goScript "dw-static-analysis" ''
+          go vet "$@" ./...
         '';
 
-        architectureCheckScript = pkgs.writeShellApplication {
-          name = "dw-architecture-check";
+        architectureScript = pkgs.writeShellApplication {
+          name = "dw-architecture";
           runtimeInputs = [ pkgs.ripgrep ];
           text = ''
             set -euo pipefail
+
             fail_if_matches() {
               local label="$1"
               local pattern="$2"
@@ -153,36 +141,37 @@
             }
 
             fail_if_matches \
-              "TUI/UI must not embed CLI command hints or shell relaunches" \
-              "dw-cli-adapter|dw_cli_adapter|current_exe|run_current_dw|LegacyShellAction|Action interne non portée|CommandAction|CompletionShow|QuickOptionAction::Completion|Confirmation CLI|AnsiRender|Non-TTY|dw task |dw ado |dw db |dw auth |dw config " \
-              crates/dw-tui/src crates/dw-tui-adapter/src crates/dw-ui/src
+              "TUI must not import CLI parsing" \
+              'github.com/sachahjkl/dw/internal/cli' \
+              internal/tui
 
             fail_if_matches \
-              "Core crates must not carry CLI JSON flags or dw command hints" \
-              "\\bjson: bool\\b|pub json: bool|json: _|dw task |dw ado |dw db |dw auth |dw config " \
-              crates/dw-ado/src crates/dw-ado-commands/src crates/dw-config/src crates/dw-agent/src crates/dw-doctor/src crates/dw-secret/src crates/dw-db/src crates/dw-task/src crates/dw-workspace/src crates/dw-upgrade/src
-
-            fail_if_matches \
-              "Core requests must use ExecutionMode instead of execute bool flags" \
-              "\\bexecute: bool\\b|pub execute: bool" \
-              crates/dw-ado/src crates/dw-ado-commands/src crates/dw-config/src crates/dw-agent/src crates/dw-doctor/src crates/dw-secret/src crates/dw-db/src crates/dw-task/src crates/dw-workspace/src crates/dw-upgrade/src
-
-            fail_if_matches \
-              "TUI tests should use action wording, not legacy command wording" \
-              "fn .*_command\\(" \
-              crates/dw-tui/src/actions.rs crates/dw-tui/src/form.rs crates/dw-tui/src/ui.rs
+              "Core contracts must not depend on presentation or composition" \
+              'github.com/sachahjkl/dw/internal/(bootstrap|cli|console|tui|provider)|"os/exec"' \
+              internal/action/*.go internal/contract/*.go internal/data/*.go internal/l10n/*.go internal/wirejson/*.go internal/work/*.go
 
             echo "Architecture check passed."
           '';
         };
 
-        architectureCheck = pkgs.runCommand "dw-architecture-check-result" {
-          nativeBuildInputs = [ architectureCheckScript ];
+        architectureCheck = pkgs.runCommand "dw-architecture-check" {
+          nativeBuildInputs = [ architectureScript ];
         } ''
           cd ${src}
-          dw-architecture-check
+          dw-architecture
           touch $out
         '';
+
+        checkScript = pkgs.writeShellApplication {
+          name = "dw-check";
+          text = ''
+            test -e ${architectureCheck}
+            test -e ${formatCheck}
+            test -e ${testCheck}
+            test -e ${staticAnalysisCheck}
+            echo "Go checks passed."
+          '';
+        };
       in
       {
         packages.default = dwPackage;
@@ -192,7 +181,7 @@
           default = dwPackage;
           formatting = formatCheck;
           tests = testCheck;
-          clippy = clippyCheck;
+          static-analysis = staticAnalysisCheck;
           architecture = architectureCheck;
         };
 
@@ -217,45 +206,38 @@
             program = "${testScript}/bin/dw-test";
           };
 
-          clippy = {
+          static-analysis = {
             type = "app";
-            program = "${clippyScript}/bin/dw-clippy";
+            program = "${staticAnalysisScript}/bin/dw-static-analysis";
           };
 
-          architecture-check = {
+          architecture = {
             type = "app";
-            program = "${architectureCheckScript}/bin/dw-architecture-check";
+            program = "${architectureScript}/bin/dw-architecture";
           };
 
           default = self.apps.${system}.dw;
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [
-            pkgs.cargo
-            pkgs.clippy
-            pkgs.git
-            pkgs.rust-analyzer
-            pkgs.rustc
-            pkgs.rustfmt
-          ] ++ nativeBuildInputs ++ buildInputs;
+          packages = [ go pkgs.git pkgs.gopls ];
 
           env = {
-            CARGO_TERM_COLOR = "always";
-            RUST_BACKTRACE = "1";
-            DW_COMMIT = sourceRevision;
+            CGO_ENABLED = "0";
+            GOTOOLCHAIN = "local";
+            GOFLAGS = "-tags=timetzdata";
           };
 
           shellHook = ''
-            echo "dw dev shell"
+            echo "dw dev shell (Go ${go.version})"
             echo "Commands:"
             echo "  nix run .#dw -- version"
             echo "  nix run .#check"
             echo "  nix run .#fmt"
             echo "  nix run .#test"
-            echo "  nix run .#clippy"
-            echo "  nix run .#architecture-check"
-            echo "  cargo run -p dw-cli -- version"
+            echo "  nix run .#static-analysis"
+            echo "  nix run .#architecture"
+            echo "  go run ./cmd/dw version"
           '';
         };
       });

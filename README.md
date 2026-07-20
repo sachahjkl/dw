@@ -6,10 +6,14 @@ The CLI is the deterministic rail. AI agents still do the reasoning and editing,
 
 ## Build
 
+Source builds require Go 1.26 and Git on `PATH`:
+
 ```bash
-cargo run -p dw-cli -- version
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
+go run ./cmd/dw version
+go fmt ./...
+go test ./...
+go vet ./...
+go build -o ./dw ./cmd/dw
 ```
 
 With Nix:
@@ -28,6 +32,8 @@ Dev Workflow YYYY.MM.DD.N+COMMIT
 ```
 
 ## Install
+
+Release binaries support Linux x64 and Windows x64. Git is a runtime prerequisite for repository and worktree operations. macOS is not supported.
 
 ### Nix
 
@@ -93,11 +99,11 @@ For release-binary installs, `dw upgrade --check` can inspect the latest release
 
 ### Local Build
 
-Build and run the binary from source:
+Build and run the binary from source with Go 1.26:
 
 ```bash
-cargo build --locked --release -p dw-cli
-./target/release/dw-cli version
+go build -o ./dw ./cmd/dw
+./dw version
 ```
 
 Build local release artifacts:
@@ -154,38 +160,29 @@ artifacts/win-x64/dw-win-x64.zip
 
 Release workflows also produce `release.json`, consumed by `dw upgrade --check` and `dw upgrade`.
 
-## CI
+## CI and Releases
 
-GitHub Actions runs CI on Linux and Windows:
+GitHub Actions uses Go 1.26 and Nix to:
 
-- `cargo fmt --all -- --check`
-- `cargo test --workspace --locked`
-- `cargo clippy --workspace --all-targets --locked -- -D warnings`
-- Nix flake build/check on Linux
-- Linux and Windows artifact publishing smoke paths
+- check formatting, run `go test ./...`, and run `go vet ./...`
+- enforce the package dependency boundaries defined by the Nix architecture check
+- build and smoke-test CGO-disabled Linux x64 and Windows x64 artifacts
+- validate the Nix package on Linux
+- publish `dw-linux-x64.tar.gz`, `dw-win-x64.zip`, and their combined `release.json` manifest when a release is enabled
+
+Each platform archive contains one standalone executable: `dw` on Linux or `dw.exe` on Windows. There is no macOS artifact.
 
 ## Repository Layout
 
 ```text
-crates/
-  dw-cli            top-level CLI and cross-domain orchestration
-  dw-completion     dynamic shell completion engine
-  dw-config         config files, init, refresh and config diagnostics
-  dw-ado            Azure DevOps auth/client/mapping
-  dw-ado-commands   ADO command handlers and rendering
-  dw-db             SQL Server readonly commands
-  dw-doctor         machine/config diagnostics
-  dw-task           task command handlers and UX
-  dw-upgrade        release manifest checks and binary self-upgrade
-  dw-workspace      workspace planning, manifests and contracts
-  dw-agent          agent launch/config support
-  dw-secret         secret storage
-  dw-git            git/worktree helpers
-  dw-ui             terminal styling and prompts
+cmd/dw/             process entry point
+internal/           application, provider, CLI, console, TUI, and platform packages
+locales/            embedded English localization catalog
 schemas/            JSON schemas copied into DevWorkflow roots
-scripts/            release artifact scripts
-docs/               architecture and agent reference material
+scripts/            Linux and Windows x64 release pipelines
 ```
+
+The executable is composed from statically registered, capability-based providers. Azure DevOps is the current work provider and SQL Server is the current data provider. The provider contracts permit future GitHub or Jira work providers and SQLite, Excel, or NoSQL data providers without changing command orchestration. The interactive interface uses Charm v2; CLI, TUI, and console text crosses the English localization bridge in `internal/l10n`.
 
 ## Workflow
 

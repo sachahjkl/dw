@@ -1,0 +1,81 @@
+[
+  {
+    "name": "root-help-long",
+    "args": ["--help"]
+  },
+  {
+    "name": "root-help-short",
+    "args": ["-h"]
+  },
+  {
+    "name": "deep-help-work-open",
+    "args": ["work", "open", "--help"]
+  },
+  {
+    "name": "deep-help-db-query",
+    "args": ["db", "query", "--help"]
+  },
+  {
+    "name": "informational-version-long",
+    "args": ["--version"]
+  },
+  {
+    "name": "informational-version-short",
+    "args": ["-V"]
+  },
+  {
+    "name": "runtime-version-command",
+    "args": ["version"]
+  },
+  {
+    "name": "parser-unknown-root-option",
+    "args": ["--definitely-not-a-dw-option"]
+  },
+  {
+    "name": "parser-missing-root-command",
+    "args": []
+  },
+  {
+    "name": "parser-missing-deep-subcommand",
+    "args": ["work"]
+  },
+  {
+    "name": "parser-conflicting-upgrade-options",
+    "args": ["upgrade", "--check", "--rid", "linux-x64"]
+  },
+  {
+    "name": "completion-bash-root",
+    "args": ["completion", "complete", "--format", "bash"]
+  },
+  {
+    "name": "completion-fish-root",
+    "args": ["completion", "complete", "--format", "fish"]
+  },
+  {
+    "name": "completion-zsh-root",
+    "args": ["completion", "complete", "--format", "zsh"]
+  },
+  {
+    "name": "completion-json-root",
+    "args": ["completion", "complete", "--format", "json"]
+  },
+  {
+    "name": "completion-json-deep-options",
+    "args": ["completion", "complete", "--format", "json", "--", "work", "open", "--"]
+  },
+  {
+    "name": "completion-json-shell-values",
+    "args": ["completion", "complete", "--format", "json", "--", "completion", "install", ""]
+  },
+  {
+    "name": "completion-bash-env-line",
+    "args": ["completion", "complete", "--format", "bash"],
+    "env": {
+      "COMP_LINE": "dw work open --"
+    }
+  },
+  {
+    "name": "completion-install-elvish",
+    "args": ["completion", "install", "elvish"]
+  }
+]

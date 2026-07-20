@@ -23,10 +23,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-
 env:
-  CARGO_TERM_COLOR: always
+  CGO_ENABLED: "0"
+  GOTOOLCHAIN: local
+  GOFLAGS: -tags=timetzdata
   NIX_CONFIG: accept-flake-config = true
+
 jobs:
   preflight:
     name: Resolve CI mode
@@ -93,11 +95,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build outputs
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Go 1.26
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.x
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Build and package release-compatible linux-x64 artifact
         shell: bash
@@ -109,7 +112,6 @@ jobs:
             release_base_url="https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}"
           fi
 
-          CARGO_TARGET_DIR="${RUNNER_TEMP}/dw-portable-target" \
           VERSION="${version}" \
           COMMIT="${{ github.sha }}" \
           RELEASE_BASE_URL="${release_base_url}" \
@@ -118,11 +120,21 @@ jobs:
       - name: Validate linux-x64 binary portability
         shell: bash
         run: |
-          ldd artifacts/linux-x64/dw
-          if grep -aEq '/nix/store/[0-9a-z]{32}-' artifacts/linux-x64/dw; then
-            echo "linux-x64 binary contains concrete /nix/store references" >&2
+          file artifacts/linux-x64/dw
+          if ldd artifacts/linux-x64/dw; then
+            echo "linux-x64 binary is dynamically linked despite CGO_ENABLED=0" >&2
             exit 1
           fi
+          nix_path_pattern='/nix/store/[0-9a-z]{32}-mailcap-[-A-Za-z0-9._+?=]+/etc/mime\.types|/nix/store/[0-9a-z]{32}-tzdata-[-A-Za-z0-9._+?=]+/share/zoneinfo|/nix/store/[0-9a-z]{32}-iana-etc-[-A-Za-z0-9._+?=]+/|/nix/store/[0-9a-z]{32}-[-A-Za-z0-9._+?=]+/'
+          while IFS= read -r -d '' nix_path; do
+            if [[ "$nix_path" =~ ^/nix/store/[0-9a-z]{32}-mailcap-[^/]+/etc/mime\.types$ \
+              || "$nix_path" =~ ^/nix/store/[0-9a-z]{32}-tzdata-[^/]+/share/zoneinfo$ \
+              || "$nix_path" =~ ^/nix/store/[0-9a-z]{32}-iana-etc-[^/]+/$ ]]; then
+              continue
+            fi
+            echo "linux-x64 binary contains concrete Nix store reference: $nix_path" >&2
+            exit 1
+          done < <(grep -aozE "$nix_path_pattern" artifacts/linux-x64/dw || true)
           artifacts/linux-x64/dw version
 
       - name: Upload linux artifact
@@ -151,7 +163,7 @@ jobs:
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-package-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}
+          primary-key: nix-package-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'go.mod', 'go.sum') }}
           restore-prefixes-first-match: nix-package-${{ runner.os }}-
           gc-max-store-size-linux: 2G
           purge: true
@@ -181,7 +193,7 @@ jobs:
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-checks-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock') }}
+          primary-key: nix-checks-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock', 'go.mod', 'go.sum') }}
           restore-prefixes-first-match: nix-checks-${{ runner.os }}-
           gc-max-store-size-linux: 2G
           purge: true
@@ -201,20 +213,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build outputs
-        uses: Swatinem/rust-cache@v2
+      - name: Setup Go 1.26
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.x
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        shell: pwsh
+        run: |
+          $unformatted = @(
+            Get-ChildItem -Path . -Recurse -File -Filter *.go | ForEach-Object {
+              $result = @(gofmt -l $_.FullName)
+              if ($LASTEXITCODE -ne 0) {
+                throw "gofmt failed for $($_.FullName) with exit code $LASTEXITCODE"
+              }
+              $result
+            }
+          )
+          if ($unformatted.Count -ne 0) {
+            $unformatted | Write-Error
+            throw "Go source is not formatted"
+          }
 
       - name: Run tests
-        run: cargo test --workspace --locked
+        run: go test ./...
 
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Run static analysis
+        run: go vet ./...
 
       - name: Publish win-x64 artifact
         shell: pwsh
