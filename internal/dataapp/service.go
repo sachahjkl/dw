@@ -233,6 +233,49 @@ func (service *Service) Query(ctx context.Context, selection Selection, statemen
 	return ProjectTable(table), nil
 }
 
+func (service *Service) Read(ctx context.Context, selection Selection, object, worksheet, cellRange string, columns []string, maximumRows *int) (NativeQueryReport, error) {
+	connection, err := service.Resolve(selection)
+	if err != nil {
+		return NativeQueryReport{}, err
+	}
+	provider, err := service.provider(connection)
+	if err != nil {
+		return NativeQueryReport{}, err
+	}
+	maximum := 0
+	if maximumRows != nil {
+		maximum = *maximumRows
+	}
+	if workbook, ok := provider.(data.WorkbookReader); ok {
+		if strings.TrimSpace(worksheet) == "" {
+			worksheet = object
+		}
+		table, readErr := workbook.ReadWorkbook(ctx, connection, data.WorkbookRead{
+			Worksheet:   worksheet,
+			Range:       cellRange,
+			Columns:     append([]string(nil), columns...),
+			MaximumRows: maximum,
+		})
+		if readErr != nil {
+			return NativeQueryReport{}, readErr
+		}
+		return ProjectTable(table), nil
+	}
+	reader, err := data.Require[data.TabularReader](provider, data.CapabilityTabularReader)
+	if err != nil {
+		return NativeQueryReport{}, err
+	}
+	table, err := reader.ReadTable(ctx, connection, data.TabularRead{
+		Object:      data.ObjectRef{Name: object},
+		Columns:     append([]string(nil), columns...),
+		MaximumRows: maximum,
+	})
+	if err != nil {
+		return NativeQueryReport{}, err
+	}
+	return ProjectTable(table), nil
+}
+
 type MissingTableError struct{}
 
 func (*MissingTableError) Error() string { return l10n.Text("data.error.missing_table") }

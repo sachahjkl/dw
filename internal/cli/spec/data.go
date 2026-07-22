@@ -21,6 +21,16 @@ func dataGrammar(b *builder) *Command {
 		positive(completion(b.option("data.query", "max-rows", Int, "Maximum number of rows to show."), CompleteRowLimit, "50", "100", "500", "1000")),
 		repeat(trailing(b.positional("data.query", "query_parts", "QUERY", Strings, false, "Read-only query to execute."))),
 	)
+	read := connection("data.read", false)
+	read = append([]Argument{
+		b.positional("data.read", "object", "RESOURCE", String, false, "Table or worksheet to read."),
+	}, read...)
+	read = append(read,
+		b.option("data.read", "worksheet", String, "Workbook worksheet to read."),
+		b.option("data.read", "range", String, "Workbook cell range such as A1:D50."),
+		b.option("data.read", "columns", String, "Comma-separated columns to project."),
+		positive(completion(b.option("data.read", "max-rows", Int, "Maximum number of rows to show."), CompleteRowLimit, "50", "100", "500", "1000")),
+	)
 	source := b.command("source", "data.source", "Inspect and collect configured data sources.", nil,
 		b.command("list", "data.source.list", "List configured data sources without resolving connection secrets.", []Argument{
 			b.option("data.source.list", "root", String, "DevWorkflow root to inspect."),
@@ -43,5 +53,6 @@ func dataGrammar(b *builder) *Command {
 		b.command("catalog", "data.catalog", "List accessible resources in a configured data source.", connection("data.catalog", false)),
 		b.command("describe", "data.describe", "Describe the fields of a data resource.", connection("data.describe", true)),
 		b.command("query", "data.query", "Execute a read-only query with guards and a row limit.", query),
+		b.command("read", "data.read", "Read rows from a table, CSV file, or workbook.", read),
 	)
 }

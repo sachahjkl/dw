@@ -90,6 +90,11 @@ func RegisterCoreRenderers(results *Registry) error {
 			})
 		},
 		func() error {
+			return RegisterResult(results, dataapp.ActionDataRead, func(c RenderContext, r dataapp.DataReadResult) (Output, error) {
+				return renderDataQuery(r.NativeQueryReport, c), nil
+			})
+		},
+		func() error {
 			return RegisterResult(results, dataapp.ActionDataDescribe, func(c RenderContext, r dataapp.DescribeResult) (Output, error) {
 				if r.Result == nil {
 					return Output{}, nil

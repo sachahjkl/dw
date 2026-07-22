@@ -58,7 +58,7 @@
           inherit src ldflags;
           tags = [ "timetzdata" ];
           subPackages = [ "cmd/dw" ];
-          vendorHash = "sha256-cqUAn6kER+J8bHtnKOd8oKlRuQiijTF5vFUnWA8mPo8=";
+          vendorHash = "sha256-/ms4tQysN66o2qeVvLC5gXHVmfZeBgRO5oQ2aTndqeY=";
           env.CGO_ENABLED = "0";
         };
 

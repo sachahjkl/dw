@@ -92,6 +92,7 @@ func RegisterRoutes(registry *Registry, integration Integration) error {
 		buildRoute("data.catalog", buildDataCatalog, jsonOptionProject),
 		buildRoute("data.describe", buildDataDescribe, jsonOptionProject),
 		buildRoute("data.query", buildDataQuery, jsonOptionProject),
+		buildRoute("data.read", buildDataRead, jsonOptionProject),
 		buildRoute("provider.list", buildProviderList, jsonOptionProject),
 		buildRoute("provider.show", buildProviderShow, jsonOptionProject),
 		buildRoute("provider.capabilities", buildProviderCapabilities, jsonOptionProject),
@@ -509,6 +510,21 @@ func buildDataQuery(inv *parse.Result) (action.Request, error) {
 		maximum = &value
 	}
 	return dataapp.QueryRequest{Selection: dataSelection(inv.Values), Query: query, MaxRows: maximum}, nil
+}
+func buildDataRead(inv *parse.Result) (action.Request, error) {
+	var maximum *int
+	if inv.Values.Has("max_rows") {
+		value := int(inv.Values.Int("max_rows"))
+		maximum = &value
+	}
+	return dataapp.ReadRequest{
+		Selection: dataSelection(inv.Values),
+		Object:    inv.Values.String("object"),
+		Worksheet: inv.Values.String("worksheet"),
+		Range:     inv.Values.String("range"),
+		Columns:   split(inv.Values.String("columns")),
+		MaxRows:   maximum,
+	}, nil
 }
 func buildSecretList(inv *parse.Result) (action.Request, error) {
 	return secret.ListRequest{Root: resolvedRoot(inv.Values)}, nil

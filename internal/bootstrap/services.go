@@ -14,6 +14,9 @@ import (
 	"github.com/sachahjkl/dw/internal/config"
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/data"
+	"github.com/sachahjkl/dw/internal/data/csv"
+	"github.com/sachahjkl/dw/internal/data/excel"
+	"github.com/sachahjkl/dw/internal/data/sqlite"
 	"github.com/sachahjkl/dw/internal/data/sqlserver"
 	"github.com/sachahjkl/dw/internal/dataapp"
 	"github.com/sachahjkl/dw/internal/doctor"
@@ -21,6 +24,8 @@ import (
 	"github.com/sachahjkl/dw/internal/secret"
 	"github.com/sachahjkl/dw/internal/update"
 	"github.com/sachahjkl/dw/internal/work"
+	"github.com/sachahjkl/dw/internal/work/atlassian"
+	"github.com/sachahjkl/dw/internal/work/github"
 	"github.com/sachahjkl/dw/internal/workapp"
 	"github.com/sachahjkl/dw/internal/workspace"
 )
@@ -46,9 +51,24 @@ func newServices() (*services, error) {
 	if err := workRegistry.Register(adoProvider); err != nil {
 		return nil, err
 	}
+	if err := workRegistry.Register(github.New(github.Options{}, store)); err != nil {
+		return nil, err
+	}
+	if err := workRegistry.Register(atlassian.New(atlassian.Options{}, store)); err != nil {
+		return nil, err
+	}
 
 	dataRegistry := data.NewRegistry()
 	if err := dataRegistry.Register(sqlserver.New(store)); err != nil {
+		return nil, err
+	}
+	if err := dataRegistry.Register(sqlite.New()); err != nil {
+		return nil, err
+	}
+	if err := dataRegistry.Register(csv.New()); err != nil {
+		return nil, err
+	}
+	if err := dataRegistry.Register(excel.New()); err != nil {
 		return nil, err
 	}
 	providerService := providerapp.New(workRegistry, dataRegistry)

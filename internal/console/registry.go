@@ -50,6 +50,7 @@ const (
 	ResultDataCatalog              ResultKind = "data.catalog"
 	ResultDataDescribe             ResultKind = "data.describe"
 	ResultDataQuery                ResultKind = "data.query"
+	ResultDataRead                 ResultKind = "data.read"
 	ResultSecretList               ResultKind = "secret.list"
 	ResultSecretSet                ResultKind = "secret.set"
 	ResultSecretGet                ResultKind = "secret.get"
@@ -86,7 +87,7 @@ var RequiredResultKinds = []ResultKind{
 	"workspace.status", "workspace.list", "workspace.current", "workspace.open", "workspace.start", "workspace.pr.start",
 	"workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest",
 	"workspace.item.add", "workspace.item.remove", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune",
-	"data.source.list", "data.source.collect", "data.guard", "data.catalog", "data.describe", "data.query",
+	"data.source.list", "data.source.collect", "data.guard", "data.catalog", "data.describe", "data.query", "data.read",
 	"provider.list", "provider.show", "provider.capabilities", "provider.auth.login", "provider.auth.status", "provider.auth.logout",
 }
 

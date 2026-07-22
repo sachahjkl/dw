@@ -155,9 +155,11 @@ type TabularRead struct {
 }
 
 type WorkbookRead struct {
-	Path      string
-	Worksheet string
-	Range     string
+	Path        string
+	Worksheet   string
+	Range       string
+	Columns     []string
+	MaximumRows int
 }
 
 type DocumentRead struct {

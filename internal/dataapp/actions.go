@@ -15,6 +15,7 @@ const (
 	ActionDataCatalog       action.ID = "data.catalog"
 	ActionDataDescribe      action.ID = "data.describe"
 	ActionDataQuery         action.ID = "data.query"
+	ActionDataRead          action.ID = "data.read"
 )
 
 type DataSourceListRequest struct {
@@ -42,6 +43,14 @@ type QueryRequest struct {
 	Query     string    `json:"query"`
 	MaxRows   *int      `json:"maxRows,omitempty"`
 }
+type ReadRequest struct {
+	Selection Selection `json:"selection"`
+	Object    string    `json:"object,omitempty"`
+	Worksheet string    `json:"worksheet,omitempty"`
+	Range     string    `json:"range,omitempty"`
+	Columns   []string  `json:"columns,omitempty"`
+	MaxRows   *int      `json:"maxRows,omitempty"`
+}
 
 func (DataSourceListRequest) ActionID() action.ID    { return ActionDataSourceList }
 func (DataSourceCollectRequest) ActionID() action.ID { return ActionDataSourceCollect }
@@ -49,6 +58,7 @@ func (GuardRequest) ActionID() action.ID             { return ActionDataGuard }
 func (CatalogRequest) ActionID() action.ID           { return ActionDataCatalog }
 func (DescribeRequest) ActionID() action.ID          { return ActionDataDescribe }
 func (QueryRequest) ActionID() action.ID             { return ActionDataQuery }
+func (ReadRequest) ActionID() action.ID              { return ActionDataRead }
 
 type DataSourceListResult struct{ DataSourceListReport }
 type DataSourceCollectResult struct{ DataSourceCollectReport }
@@ -56,6 +66,7 @@ type GuardResult struct{ GuardReport }
 type CatalogResult struct{ NativeQueryReport }
 type DataQueryResult struct{ NativeQueryReport }
 type DescribeResult struct{ Result *NativeQueryReport }
+type DataReadResult struct{ NativeQueryReport }
 
 func (DataSourceListResult) ActionID() action.ID    { return ActionDataSourceList }
 func (DataSourceCollectResult) ActionID() action.ID { return ActionDataSourceCollect }
@@ -63,6 +74,7 @@ func (GuardResult) ActionID() action.ID             { return ActionDataGuard }
 func (CatalogResult) ActionID() action.ID           { return ActionDataCatalog }
 func (DescribeResult) ActionID() action.ID          { return ActionDataDescribe }
 func (DataQueryResult) ActionID() action.ID         { return ActionDataQuery }
+func (DataReadResult) ActionID() action.ID          { return ActionDataRead }
 
 func (result DescribeResult) MarshalJSON() ([]byte, error) {
 	if result.Result == nil {
@@ -81,6 +93,7 @@ func Handlers(service *Service) []action.Handler {
 		Handler{id: ActionDataSourceList, service: service}, Handler{id: ActionDataSourceCollect, service: service},
 		Handler{id: ActionDataGuard, service: service}, Handler{id: ActionDataCatalog, service: service},
 		Handler{id: ActionDataDescribe, service: service}, Handler{id: ActionDataQuery, service: service},
+		Handler{id: ActionDataRead, service: service},
 	}
 }
 
@@ -133,6 +146,13 @@ func (handler Handler) Execute(ctx context.Context, request action.Request, _ ac
 		}
 		report, err := handler.service.Query(ctx, value.Selection, value.Query, value.MaxRows)
 		return DataQueryResult{report}, err
+	case ActionDataRead:
+		value, ok := asReadRequest(request)
+		if !ok {
+			return nil, requestTypeError(handler.id)
+		}
+		report, err := handler.service.Read(ctx, value.Selection, value.Object, value.Worksheet, value.Range, value.Columns, value.MaxRows)
+		return DataReadResult{report}, err
 	default:
 		return nil, fmt.Errorf("data.unknown-action:%s", handler.id)
 	}
@@ -215,5 +235,19 @@ func asQueryRequest(request action.Request) (QueryRequest, bool) {
 		return *value, true
 	default:
 		return QueryRequest{}, false
+	}
+}
+
+func asReadRequest(request action.Request) (ReadRequest, bool) {
+	switch value := request.(type) {
+	case ReadRequest:
+		return value, true
+	case *ReadRequest:
+		if value == nil {
+			return ReadRequest{}, false
+		}
+		return *value, true
+	default:
+		return ReadRequest{}, false
 	}
 }

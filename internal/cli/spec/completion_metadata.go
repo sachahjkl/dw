@@ -31,7 +31,7 @@ var commandCompletionText = map[string]string{
 	"data":            "Provider-neutral data access", "data.source": "Configured data sources",
 	"data.source.list": "List configured data sources safely", "data.source.collect": "Discover workspace data connections",
 	"data.guard": "Check a query without running it", "data.catalog": "List available data resources",
-	"data.describe": "Describe a data resource", "data.query": "Run a read-only query",
+	"data.describe": "Describe a data resource", "data.query": "Run a read-only query", "data.read": "Read tabular data",
 	"provider": "Provider registry and authentication", "provider.list": "List registered providers",
 	"provider.show": "Show provider details", "provider.capabilities": "List provider capabilities",
 	"provider.auth": "Provider authentication", "provider.auth.login": "Connect a provider account",
