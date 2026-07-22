@@ -98,7 +98,11 @@ mkdir -p "$install_dir"
 if [ "$version" = "latest" ]; then
   asset_url="https://github.com/$repository/releases/latest/download/dw-linux-x64.tar.gz"
 else
-  asset_url="https://github.com/$repository/releases/download/$version/dw-linux-x64.tar.gz"
+  case "$version" in
+    v*) release_tag="$version" ;;
+    *) release_tag="v$version" ;;
+  esac
+  asset_url="https://github.com/$repository/releases/download/$release_tag/dw-linux-x64.tar.gz"
 fi
 
 tmp="${TMPDIR:-/tmp}/dw-install-$$"

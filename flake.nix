@@ -30,6 +30,7 @@
               ./internal
               ./locales
               ./schemas
+              ./scripts
               ./testdata
               ./go.mod
               ./LICENSE

@@ -511,7 +511,11 @@ func (m *Model) handleInputKey(key Key) []Effect {
 			return m.answerInput(false)
 		}
 	case "enter":
-		return m.answerInput(true)
+		accepted := true
+		if prompt.prompt.Kind == action.PromptConfirm && prompt.prompt.Default != nil {
+			accepted = strings.EqualFold(string(*prompt.prompt.Default), "true")
+		}
+		return m.answerInput(accepted)
 	default:
 		if (prompt.prompt.Kind == action.PromptText || prompt.prompt.Kind == action.PromptSecret) && key.Text != "" {
 			prompt.value += key.Text
@@ -773,9 +777,14 @@ func (m *Model) handleMenuSectionKey(key Key) []Effect {
 		return m.runSelectedMenuItem(items)
 	default:
 		for _, item := range items {
-			if item.action != nil && item.action.Hotkey == key.Code {
+			if item.key != key.Code {
+				continue
+			}
+			if item.action != nil {
 				return m.requestAction(*item.action)
 			}
+			m.pushModal(item.open)
+			return nil
 		}
 	}
 	return nil

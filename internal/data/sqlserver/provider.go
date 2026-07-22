@@ -141,7 +141,7 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 		return NativeQueryReport{}, sqlProblem(err, plainConnectionString)
 	}
 
-	result := NativeQueryReport{Rows: make([][]Cell, 0)}
+	result := newNativeQueryReport(columnNames)
 	for rows.Next() {
 		values := make([]any, len(columnNames))
 		destinations := make([]any, len(values))
@@ -150,10 +150,6 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 		}
 		if err := rows.Scan(destinations...); err != nil {
 			return NativeQueryReport{}, sqlProblem(err, plainConnectionString)
-		}
-		if result.Columns == nil {
-			// A zero-row first result set reports no columns.
-			result.Columns = append([]string(nil), columnNames...)
 		}
 		if maxRows > 0 && len(result.Rows) >= maxRows {
 			result.Truncated = true
@@ -171,10 +167,14 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 	if err := rows.Err(); err != nil {
 		return NativeQueryReport{}, queryProblem(queryContext, timeoutSeconds, err, plainConnectionString)
 	}
-	if result.Columns == nil {
-		result.Columns = []string{}
-	}
 	return result, nil
+}
+
+func newNativeQueryReport(columnNames []string) NativeQueryReport {
+	return NativeQueryReport{
+		Columns: append([]string(nil), columnNames...),
+		Rows:    make([][]Cell, 0),
+	}
 }
 
 func cellFromDriverValue(value any, nativeType string) (Cell, error) {

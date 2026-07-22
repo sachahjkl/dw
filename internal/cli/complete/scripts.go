@@ -30,7 +30,14 @@ func ParseShell(value string) (Shell, error) {
 func Install(shell Shell) (string, error) {
 	switch shell {
 	case Bash:
-		return `_dw_complete() { COMPREPLY=( $(COMP_LINE="$COMP_LINE" dw completion complete --format bash) ); }
+		return `_dw_complete() {
+  local -a words
+  words=("${COMP_WORDS[@]:1:COMP_CWORD}")
+  COMPREPLY=()
+  while IFS= read -r line; do
+    COMPREPLY+=("$line")
+  done < <(dw completion complete --format bash -- "${words[@]}")
+}
 complete -F _dw_complete dw
 `, nil
 	case Zsh:

@@ -35,7 +35,13 @@ $assetUrl = if ($Version -eq "latest") {
     "https://github.com/$Repository/releases/latest/download/dw-win-x64.zip"
 }
 else {
-    "https://github.com/$Repository/releases/download/$Version/dw-win-x64.zip"
+    $releaseTag = if ($Version.StartsWith("v", [System.StringComparison]::OrdinalIgnoreCase)) {
+        "v" + $Version.Substring(1)
+    }
+    else {
+        "v$Version"
+    }
+    "https://github.com/$Repository/releases/download/$releaseTag/dw-win-x64.zip"
 }
 
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("dw-install-" + [Guid]::NewGuid().ToString("N"))

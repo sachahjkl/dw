@@ -619,10 +619,7 @@ func buildWorkspacePRStart(inv *parse.Result) (action.Request, error) {
 	}
 	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
 	local, provider := configuredRepositoryPairs(root, project)
-	requested := split(inv.Values.String("repo"))
-	if len(requested) != 0 {
-		local, provider = requested, requested
-	}
+	local, provider = selectRepositoryPairs(local, provider, split(inv.Values.String("repo")))
 	states, _, updateState := taskStartSettings(root)
 	if !updateState {
 		states = nil
@@ -765,6 +762,23 @@ func configuredRepositoryPairs(root, project string) ([]string, []string) {
 			value = *entry.Repository.ProviderRepository
 		}
 		provider = append(provider, value)
+	}
+	return local, provider
+}
+
+func selectRepositoryPairs(configuredLocal, configuredProvider, requested []string) ([]string, []string) {
+	if len(requested) == 0 {
+		return configuredLocal, configuredProvider
+	}
+	local := append([]string(nil), requested...)
+	provider := append([]string(nil), requested...)
+	for requestedIndex, name := range requested {
+		for configuredIndex, configuredName := range configuredLocal {
+			if configuredName == name && configuredIndex < len(configuredProvider) {
+				provider[requestedIndex] = configuredProvider[configuredIndex]
+				break
+			}
+		}
 	}
 	return local, provider
 }
