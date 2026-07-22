@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -146,7 +147,11 @@ func openReadOnly(connection data.Connection) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sqlite.path: %w", err)
 	}
-	dsn := (&url.URL{Scheme: "file", Path: absolute, RawQuery: "mode=ro"}).String()
+	uriPath := filepath.ToSlash(absolute)
+	if runtime.GOOS == "windows" {
+		uriPath = "/" + uriPath
+	}
+	dsn := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "mode=ro"}).String()
 	database, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite.open: %w", err)

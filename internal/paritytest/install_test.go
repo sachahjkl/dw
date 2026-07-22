@@ -10,6 +10,9 @@ import (
 )
 
 func TestUnixInstallerNormalizesReleaseTag(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix installer test requires Unix path semantics")
+	}
 	root := repositoryRoot(t)
 	installer := filepath.Join(root, "scripts", "install.sh")
 	for _, test := range []struct {
