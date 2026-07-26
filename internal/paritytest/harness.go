@@ -86,6 +86,7 @@ func (s Sandbox) Env(overrides map[string]string) []string {
 		"CLICOLOR_FORCE":      "0",
 		"TERM":                "dumb",
 		"DW_PARITY_ROOT":      s.Root,
+		"GIT_CONFIG_GLOBAL":   filepath.Join(s.Home, ".gitconfig"),
 		"GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_TERMINAL_PROMPT": "0",
 		"GCM_INTERACTIVE":     "never",

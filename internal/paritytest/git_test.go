@@ -23,6 +23,8 @@ func TestLocalGitWorktreeCommitPushLifecycle(t *testing.T) {
 	}
 	environment := []dwprocess.EnvironmentVariable{
 		{Name: "HOME", Value: home},
+		{Name: "XDG_CONFIG_HOME", Value: filepath.Join(home, ".config")},
+		{Name: "GIT_CONFIG_GLOBAL", Value: filepath.Join(home, ".gitconfig")},
 		{Name: "GIT_CONFIG_NOSYSTEM", Value: "1"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 		{Name: "GIT_AUTHOR_NAME", Value: "dw parity"},
