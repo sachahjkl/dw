@@ -2,11 +2,11 @@ package controller
 
 import (
 	"bufio"
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/action"
@@ -50,10 +50,10 @@ func (input *TerminalInput) Request(ctx context.Context, prompt action.Prompt) (
 		value, err := input.secret(label)
 		return action.Response{Kind: prompt.Kind, Secret: contract.NewSecretValue(value)}, err
 	case action.PromptSelectOne:
-		value, err := input.selectOne(prompt, label)
+		value, err := input.selectOne(ctx, prompt, label)
 		return action.Response{Kind: prompt.Kind, Value: value}, err
 	case action.PromptSelectMany:
-		values, err := input.selectMany(prompt, label)
+		values, err := input.selectMany(ctx, prompt, label)
 		return action.Response{Kind: prompt.Kind, Values: values}, err
 	default:
 		return action.Response{}, fmt.Errorf("cli.unknown-prompt-kind:%s", prompt.Kind)
@@ -118,65 +118,170 @@ func (input *TerminalInput) secret(label string) (string, error) {
 	return string(value), nil
 }
 
-func (input *TerminalInput) selectOne(prompt action.Prompt, label string) (action.ChoiceValue, error) {
-	if err := input.writeChoices(prompt, label); err != nil {
-		return "", err
-	}
-	value, err := input.readLine("> ")
+func (input *TerminalInput) selectOne(ctx context.Context, prompt action.Prompt, label string) (action.ChoiceValue, error) {
+	model, err := input.runSelection(ctx, prompt, label, false)
 	if err != nil {
 		return "", err
 	}
-	index, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || index < 1 || index > len(prompt.Choices) {
-		return "", fmt.Errorf("cli.invalid-selection:%s", prompt.ID)
-	}
-	return prompt.Choices[index-1].Value, nil
+	return prompt.Choices[model.cursor].Value, nil
 }
 
-func (input *TerminalInput) selectMany(prompt action.Prompt, label string) ([]action.ChoiceValue, error) {
-	if err := input.writeChoices(prompt, label); err != nil {
-		return nil, err
-	}
-	value, err := input.readLine("> ")
+func (input *TerminalInput) selectMany(ctx context.Context, prompt action.Prompt, label string) ([]action.ChoiceValue, error) {
+	model, err := input.runSelection(ctx, prompt, label, true)
 	if err != nil {
 		return nil, err
 	}
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return []action.ChoiceValue{}, nil
-	}
-	parts := strings.Split(value, ",")
-	values := make([]action.ChoiceValue, 0, len(parts))
-	seen := make(map[int]struct{}, len(parts))
-	for _, part := range parts {
-		index, conversionErr := strconv.Atoi(strings.TrimSpace(part))
-		if conversionErr != nil || index < 1 || index > len(prompt.Choices) {
-			return nil, fmt.Errorf("cli.invalid-selection:%s", prompt.ID)
+	values := make([]action.ChoiceValue, 0, len(model.selected))
+	for index, choice := range prompt.Choices {
+		if model.selected[index] {
+			values = append(values, choice.Value)
 		}
-		if _, exists := seen[index]; exists {
-			continue
-		}
-		seen[index] = struct{}{}
-		values = append(values, prompt.Choices[index-1].Value)
 	}
 	return values, nil
 }
 
-func (input *TerminalInput) writeChoices(prompt action.Prompt, label string) error {
-	if _, err := fmt.Fprintln(input.streams.Stderr, label); err != nil {
-		return err
+func (input *TerminalInput) runSelection(ctx context.Context, prompt action.Prompt, label string, multi bool) (*selectionModel, error) {
+	choices := make([]terminalChoice, len(prompt.Choices))
+	model := &selectionModel{
+		label:    label,
+		multi:    multi,
+		selected: make(map[int]bool),
+		choices:  choices,
 	}
 	if prompt.Help != nil {
-		if _, err := fmt.Fprintln(input.streams.Stderr, input.localizer.Render(*prompt.Help)); err != nil {
-			return err
-		}
+		model.help = input.localizer.Render(*prompt.Help)
 	}
 	for index, choice := range prompt.Choices {
-		if _, err := fmt.Fprintf(input.streams.Stderr, "  %d) %s\n", index+1, input.localizer.Render(choice.Label)); err != nil {
-			return err
+		model.choices[index] = terminalChoice{label: input.localizer.Render(choice.Label)}
+		if choice.Description != nil {
+			model.choices[index].description = input.localizer.Render(*choice.Description)
+		}
+		if prompt.Default != nil && choice.Value == *prompt.Default {
+			model.cursor = index
+			if multi {
+				model.selected[index] = true
+			}
 		}
 	}
+	_, err := tea.NewProgram(
+		model,
+		tea.WithContext(ctx),
+		tea.WithInput(input.streams.Stdin),
+		tea.WithOutput(input.streams.Stderr),
+	).Run()
+	if err != nil {
+		return nil, err
+	}
+	if model.canceled {
+		return nil, fmt.Errorf("selection canceled")
+	}
+	return model, nil
+}
+
+type terminalChoice struct {
+	label       string
+	description string
+}
+
+type selectionModel struct {
+	label    string
+	help     string
+	choices  []terminalChoice
+	cursor   int
+	multi    bool
+	selected map[int]bool
+	canceled bool
+	done     bool
+}
+
+func (*selectionModel) Init() tea.Cmd { return nil }
+
+func (model *selectionModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := message.(tea.KeyPressMsg)
+	if !ok {
+		return model, nil
+	}
+	return model, model.handleKey(key.String())
+}
+
+func (model *selectionModel) handleKey(key string) tea.Cmd {
+	switch key {
+	case "ctrl+c", "esc":
+		model.canceled = true
+		model.done = true
+		return tea.Quit
+	case "up", "k":
+		model.cursor = (model.cursor - 1 + len(model.choices)) % len(model.choices)
+	case "down", "j":
+		model.cursor = (model.cursor + 1) % len(model.choices)
+	case "home", "g":
+		model.cursor = 0
+	case "end", "G":
+		model.cursor = len(model.choices) - 1
+	case " ", "space":
+		if model.multi {
+			model.selected[model.cursor] = !model.selected[model.cursor]
+		}
+	case "enter":
+		model.done = true
+		return tea.Quit
+	}
 	return nil
+}
+
+func (model *selectionModel) View() tea.View {
+	if model.done {
+		if model.canceled {
+			return tea.NewView("")
+		}
+		values := make([]string, 0, len(model.selected))
+		if model.multi {
+			for index, choice := range model.choices {
+				if model.selected[index] {
+					values = append(values, choice.label)
+				}
+			}
+		} else {
+			values = append(values, model.choices[model.cursor].label)
+		}
+		return tea.NewView(model.label + ": " + strings.Join(values, ", ") + "\n")
+	}
+	var out strings.Builder
+	out.WriteString(model.label)
+	out.WriteByte('\n')
+	if model.help != "" {
+		out.WriteString(model.help)
+		out.WriteByte('\n')
+	}
+	for index, choice := range model.choices {
+		cursor := "  "
+		if index == model.cursor {
+			cursor = "› "
+		}
+		out.WriteString(cursor)
+		if model.multi {
+			marker := "[ ] "
+			if model.selected[index] {
+				marker = "[x] "
+			}
+			out.WriteString(marker)
+		}
+		out.WriteString(choice.label)
+		out.WriteByte('\n')
+		if choice.description != "" {
+			out.WriteString("    ")
+			out.WriteString(choice.description)
+			out.WriteByte('\n')
+		}
+	}
+	out.WriteString("\n↑/↓ move")
+	if model.multi {
+		out.WriteString(" • space toggle • enter confirm")
+	} else {
+		out.WriteString(" • enter select")
+	}
+	out.WriteString(" • esc cancel\n")
+	return tea.NewView(out.String())
 }
 
 func (input *TerminalInput) readLine(prompt string) (string, error) {

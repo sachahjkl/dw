@@ -2,6 +2,7 @@ package console
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
@@ -123,18 +124,43 @@ type Section struct {
 
 // Page is the provider-neutral human projection accepted by all ordinary result renderers.
 type Page struct {
-	Title    MessageID
-	Badge    MessageID
-	Status   Status
-	Summary  []Field
-	Sections []Section
-	Hint     *Field
+	TitleText string
+	Title     MessageID
+	Badge     MessageID
+	Status    Status
+	Summary   []Field
+	Sections  []Section
+	Hint      *Field
+}
+
+func ActionPage(action string, fields ...Field) Page {
+	return Page{TitleText: HumanizeIdentifier(action), Summary: fields}
+}
+
+func HumanizeIdentifier(value string) string {
+	words := strings.Fields(strings.NewReplacer(".", " ", "-", " ", "_", " ").Replace(value))
+	special := map[string]string{"ai": "AI", "api": "API", "id": "ID", "pr": "PR", "sql": "SQL", "tui": "TUI", "url": "URL"}
+	for index, word := range words {
+		if replacement, ok := special[strings.ToLower(word)]; ok {
+			words[index] = replacement
+			continue
+		}
+		runes := []rune(strings.ToLower(word))
+		if len(runes) != 0 {
+			runes[0] = unicode.ToUpper(runes[0])
+		}
+		words[index] = string(runes)
+	}
+	return strings.Join(words, " ")
 }
 
 func RenderPage(page Page, localizer Localizer, theme Theme) string {
 	localizer = WithConsoleMessages(localizer)
 	var blocks []string
-	title := localizer.Text(page.Title)
+	title := page.TitleText
+	if title == "" {
+		title = localizer.Text(page.Title)
+	}
 	if page.Badge != "" {
 		title += "  " + theme.Badge(page.Status, localizer.Text(page.Badge))
 	}

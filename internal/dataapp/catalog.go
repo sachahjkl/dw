@@ -55,7 +55,7 @@ type Catalog struct {
 func LoadCatalog(path string) (Catalog, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return Catalog{}, localized("data.error.config_read", l10n.A("path", path), l10n.A("error", err))
+		return Catalog{}, configReadError(path, err)
 	}
 	return ParseCatalog(content, path)
 }

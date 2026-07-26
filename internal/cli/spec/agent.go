@@ -24,6 +24,7 @@ func agentGrammar(b *builder) *Command {
 		),
 		b.command("doctor", "agent.doctor", "Diagnose installed agent availability.", []Argument{
 			completion(b.option("agent.doctor", "agent", String, "Limit diagnostics to one agent."), CompleteAgent, agents...),
+			b.option("agent.doctor", "json", Bool, "Emit the deterministic JSON report."),
 		}),
 	)
 }

@@ -183,7 +183,7 @@ func Inventory(root string) (DataSourceListReport, error) {
 	path := databasesPath(root)
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return DataSourceListReport{}, localized("data.error.config_read", l10n.A("path", path), l10n.A("error", err))
+		return DataSourceListReport{}, configReadError(path, err)
 	}
 	var wire catalogWire
 	if err := json.Unmarshal(content, &wire); err != nil {

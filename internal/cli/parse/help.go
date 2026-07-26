@@ -71,8 +71,14 @@ func Help(root *spec.Command, path []string, version string) (string, *Error) {
 	return strings.TrimRight(out.String(), "\n") + "\n", nil
 }
 
-// Diagnostic renders a parse failure without appending the full command help.
-func Diagnostic(root *spec.Command, problem *Error) string {
+type Suggestion struct {
+	Value       string
+	Description string
+}
+
+// Diagnostic renders a parse failure with contextual suggestions and the
+// relevant command help so users can recover without a second invocation.
+func Diagnostic(root *spec.Command, problem *Error, suggestions ...Suggestion) string {
 	if problem == nil {
 		return ""
 	}
@@ -80,7 +86,44 @@ func Diagnostic(root *spec.Command, problem *Error) string {
 	if problem.Kind == UnknownCommand {
 		message = fmt.Sprintf(command.Text(spec.MsgErrSubcommand), problem.Token)
 	}
-	return message + "\n\n" + command.Text(spec.MsgUsage) + ": " + usage(root, command, path) + "\n\n" + command.Text(spec.MsgHelpHint) + "\n"
+	var out strings.Builder
+	out.WriteString(message)
+	if len(suggestions) != 0 {
+		out.WriteString("\n\n")
+		out.WriteString(command.Text(spec.MsgSuggestions))
+		out.WriteString(":\n")
+		rows := make([]helpRow, 0, len(suggestions))
+		for _, suggestion := range suggestions {
+			rows = append(rows, helpRow{suggestion.Value, suggestion.Description})
+		}
+		writeRows(&out, rows)
+	}
+	guidance := spec.MsgNextUsage
+	switch problem.Kind {
+	case MissingCommand:
+		guidance = spec.MsgNextCommand
+	case UnknownCommand:
+		guidance = spec.MsgNextCommand
+		if len(suggestions) != 0 {
+			guidance = spec.MsgNextCorrection
+		}
+	case MissingArgument, MissingValue, InvalidValue:
+		guidance = spec.MsgNextValue
+	}
+	if len(suggestions) == 0 {
+		out.WriteString("\n\n")
+	} else {
+		out.WriteByte('\n')
+	}
+	out.WriteString(command.Text(spec.MsgNext))
+	out.WriteString(": ")
+	out.WriteString(command.Text(guidance))
+	help, err := Help(root, path, "")
+	if err == nil && help != "" {
+		out.WriteString("\n\n")
+		out.WriteString(strings.TrimRight(help, "\n"))
+	}
+	return strings.TrimRight(out.String(), "\n") + "\n"
 }
 
 func Version(name, version string) string {

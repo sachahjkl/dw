@@ -114,7 +114,7 @@ func saveCandidates(ctx context.Context, root string, candidates []candidate, st
 	path := databasesPath(root)
 	original, err := os.ReadFile(path)
 	if err != nil {
-		return localized("data.error.config_read", l10n.A("path", path), l10n.A("error", err))
+		return configReadError(path, err)
 	}
 	var config map[string]any
 	if err := json.Unmarshal(original, &config); err != nil {

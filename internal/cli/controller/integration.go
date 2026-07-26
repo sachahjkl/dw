@@ -44,7 +44,7 @@ func RegisterRoutes(registry *Registry, integration Integration) error {
 	direct := directRoutes(integration)
 	for _, route := range []Route{
 		direct["version"], direct["guide"],
-		buildRoute("doctor", buildDoctor, humanProject),
+		buildRoute("doctor", buildDoctor, jsonOptionProject),
 		buildRoute("init", buildInit, humanProject),
 		buildRoute("refresh", buildRefresh, humanProject),
 		direct["tui"],
@@ -53,7 +53,7 @@ func RegisterRoutes(registry *Registry, integration Integration) error {
 		buildRoute("agent.config", buildAgentConfig, humanProject),
 		buildRoute("agent.show", buildAgentShow, humanProject),
 		buildRoute("agent.default.set", buildAgentDefaultSet, humanProject),
-		buildRoute("agent.doctor", buildAgentDoctor, humanProject),
+		buildRoute("agent.doctor", buildAgentDoctor, jsonOptionProject),
 		direct["completion.show"], direct["completion.generate"], direct["completion.install"], direct["completion.complete"],
 		buildRoute("config.show", buildConfigShow, jsonOptionProject),
 		buildRoute("config.doctor", buildConfigDoctor, jsonOptionProject),
@@ -137,7 +137,7 @@ func buildRoute(key string, build Builder, project Projector) Route {
 
 func routeUsesJSONOption(key string) bool {
 	switch key {
-	case "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "provider.list", "provider.show", "provider.capabilities":
+	case "doctor", "agent.doctor", "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "provider.list", "provider.show", "provider.capabilities":
 		return true
 	default:
 		return false

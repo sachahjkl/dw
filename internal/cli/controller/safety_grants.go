@@ -24,6 +24,8 @@ const (
 	promptAuthBrowser     l10n.ID = "cli.prompt.auth-browser"
 	promptAuthDevice      l10n.ID = "cli.prompt.auth-device"
 	promptAuthPAT         l10n.ID = "cli.prompt.auth-pat"
+	errorProjectRequired  l10n.ID = "cli.error.work-item-project-required"
+	errorNoProjects       l10n.ID = "cli.error.work-item-no-projects"
 )
 
 // SafetyEnglishEntries is composed into the CLI catalog by bootstrap so action
@@ -42,6 +44,8 @@ var SafetyEnglishEntries = []l10n.Entry{
 	{ID: promptAuthBrowser, Text: "Browser"},
 	{ID: promptAuthDevice, Text: "Device code"},
 	{ID: promptAuthPAT, Text: "Environment credential"},
+	{ID: errorProjectRequired, Text: "Project selection is required in non-interactive mode.\nAvailable projects: {projects}\nNext: dw work item list --project <project>"},
+	{ID: errorNoProjects, Text: "No projects are configured.\nNext: add a project to config/projects.json, then rerun dw work item list."},
 	{ID: promptFinishMode, Text: "Finish mode"},
 	{ID: promptFinishPush, Text: "Push only, no provider updates"},
 	{ID: promptFinishDraft, Text: "Push + draft provider pull request"},

@@ -53,6 +53,7 @@
 "data.collect.credential_read" = "reading credential '{key}': secret store unavailable"
 "data.collect.credential_store" = "storing credential '{key}': secret store unavailable"
 "data.error.config_read" = "reading data source configuration '{path}': {error}"
+"data.error.config_missing" = "Data source configuration was not found at '{path}'.\nNext: run dw init, or create config/databases.json."
 "data.error.config_parse" = "parsing data source configuration '{path}': {error}"
 "data.error.config_reread" = "re-reading data source configuration '{path}': {error}"
 "data.error.config_project_object" = "databases.json project '{project}' must be an object"

@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/cli/complete"
 	"github.com/sachahjkl/dw/internal/cli/parse"
 	"github.com/sachahjkl/dw/internal/cli/spec"
 	"github.com/sachahjkl/dw/internal/console"
@@ -24,18 +25,19 @@ type Controller struct {
 	root                 *spec.Command
 	routes               *Registry
 	execution            Execution
+	completion           complete.Resolver
 	packageVersion       string
 	informationalVersion string
 }
 
-func New(root *spec.Command, routes *Registry, execution Execution, packageVersion, informationalVersion string) (*Controller, error) {
-	if root == nil || routes == nil || execution.Dispatcher == nil || execution.Console.Results == nil || execution.Localizer == nil {
+func New(root *spec.Command, routes *Registry, execution Execution, completion complete.Resolver, packageVersion, informationalVersion string) (*Controller, error) {
+	if root == nil || routes == nil || execution.Dispatcher == nil || execution.Console.Results == nil || execution.Localizer == nil || completion == nil {
 		return nil, fmt.Errorf("cli.invalid-controller-dependencies")
 	}
 	if err := routes.ValidateComplete(root); err != nil {
 		return nil, err
 	}
-	return &Controller{root: root, routes: routes, execution: execution, packageVersion: packageVersion, informationalVersion: informationalVersion}, nil
+	return &Controller{root: root, routes: routes, execution: execution, completion: completion, packageVersion: packageVersion, informationalVersion: informationalVersion}, nil
 }
 
 // Run parses, dispatches and presents one CLI invocation. It never terminates
@@ -43,7 +45,7 @@ func New(root *spec.Command, routes *Registry, execution Execution, packageVersi
 func (controller *Controller) Run(ctx context.Context, args []string) console.ExitCode {
 	invocation, parseErr := parse.Parse(controller.root, args)
 	if parseErr != nil {
-		if err := writeRaw(controller.execution.Policy.Streams.Stderr, parse.Diagnostic(controller.root, parseErr)); err != nil {
+		if err := writeRaw(controller.execution.Policy.Streams.Stderr, parse.Diagnostic(controller.root, parseErr, controller.diagnosticSuggestions(args, parseErr)...)); err != nil {
 			return ExitCode(err)
 		}
 		return console.ExitUsage
@@ -97,6 +99,25 @@ func (controller *Controller) Run(ctx context.Context, args []string) console.Ex
 		return ExitCode(err)
 	}
 	return outcome.Code
+}
+func (controller *Controller) diagnosticSuggestions(args []string, problem *parse.Error) []parse.Suggestion {
+	words := append([]string(nil), args...)
+	switch problem.Kind {
+	case parse.MissingArgument, parse.MissingValue:
+		words = append(words, "")
+	case parse.UnknownCommand, parse.InvalidValue:
+	default:
+		return nil
+	}
+	items, err := complete.Complete(controller.root, words, controller.completion)
+	if err != nil {
+		return nil
+	}
+	suggestions := make([]parse.Suggestion, len(items))
+	for index, item := range items {
+		suggestions[index] = parse.Suggestion{Value: item.Label, Description: item.Description}
+	}
+	return suggestions
 }
 
 func (controller *Controller) dispatch(ctx context.Context, execution Execution, route Route, invocation *parse.Result) (Outcome, error) {

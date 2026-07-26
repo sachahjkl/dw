@@ -1,7 +1,9 @@
 package console
 
 import (
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/sachahjkl/dw/internal/config"
 	"github.com/sachahjkl/dw/internal/data"
@@ -14,9 +16,7 @@ import (
 func RegisterCoreRenderers(results *Registry) error {
 	registrations := []func() error{
 		func() error {
-			return RegisterPageResult(results, config.ActionInit, func(r config.InitReport) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Root, Style: ValuePath}, Field{Label: "result.profile", Value: r.Profile}, countField("result.paths", len(r.PlannedPaths)))
-			})
+			return RegisterPageResult(results, config.ActionInit, initPage)
 		},
 		func() error {
 			return RegisterPageResult(results, config.ActionRefresh, func(r config.RefreshReport) Page {
@@ -69,9 +69,7 @@ func RegisterCoreRenderers(results *Registry) error {
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, dataapp.ActionDataSourceList, func(r dataapp.DataSourceListResult) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Root, Style: ValuePath}, countField("result.items", len(r.Entries)), countField("result.warnings", len(r.Warnings)))
-			})
+			return RegisterPageResult(results, dataapp.ActionDataSourceList, dataSourceListPage)
 		},
 		func() error {
 			return RegisterPageResult(results, dataapp.ActionDataSourceCollect, func(r dataapp.DataSourceCollectResult) Page {
@@ -81,17 +79,17 @@ func RegisterCoreRenderers(results *Registry) error {
 		func() error { return RegisterPageResult(results, dataapp.ActionDataGuard, guardPage) },
 		func() error {
 			return RegisterResult(results, dataapp.ActionDataCatalog, func(c RenderContext, r dataapp.CatalogResult) (Output, error) {
-				return renderDataQuery(r.NativeQueryReport, c), nil
+				return renderDataQuery(r.NativeQueryReport, c, "data.catalog.title"), nil
 			})
 		},
 		func() error {
 			return RegisterResult(results, dataapp.ActionDataQuery, func(c RenderContext, r dataapp.DataQueryResult) (Output, error) {
-				return renderDataQuery(r.NativeQueryReport, c), nil
+				return renderDataQuery(r.NativeQueryReport, c, "data.query.title"), nil
 			})
 		},
 		func() error {
 			return RegisterResult(results, dataapp.ActionDataRead, func(c RenderContext, r dataapp.DataReadResult) (Output, error) {
-				return renderDataQuery(r.NativeQueryReport, c), nil
+				return renderDataQuery(r.NativeQueryReport, c, "data.read.title"), nil
 			})
 		},
 		func() error {
@@ -99,7 +97,7 @@ func RegisterCoreRenderers(results *Registry) error {
 				if r.Result == nil {
 					return Output{}, nil
 				}
-				return renderDataQuery(*r.Result, c), nil
+				return renderDataQuery(*r.Result, c, "data.describe.title"), nil
 			})
 		},
 		func() error { return RegisterPageResult(results, workapp.ActionProviderAuthLogin, authLoginPage) },
@@ -110,22 +108,16 @@ func RegisterCoreRenderers(results *Registry) error {
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionWorkItemList, func(r workapp.AssignedReport) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)), countField("result.groups", len(r.Groups)))
-			})
+			return RegisterPageResult(results, workapp.ActionWorkItemList, assignedItemsPage)
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionWorkPullRequestList, func(r workapp.PullRequestsReport) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.repositories", len(r.Repositories)), countField("result.items", len(r.Items)))
-			})
+			return RegisterPageResult(results, workapp.ActionWorkPullRequestList, pullRequestsPage)
 		},
 		func() error {
 			return RegisterChangelogRenderer(results, workapp.ActionWorkChangelog, projectChangelogComplete)
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionWorkContextShow, func(r workapp.ContextReport) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)), countField("result.expanded", len(r.Expanded)))
-			})
+			return RegisterPageResult(results, workapp.ActionWorkContextShow, contextPage)
 		},
 		func() error {
 			return RegisterPageResult(results, workapp.ActionWorkContextAI, func(r workapp.AIContextResult) Page {
@@ -133,9 +125,7 @@ func RegisterCoreRenderers(results *Registry) error {
 			})
 		},
 		func() error {
-			return RegisterPageResult(results, workapp.ActionWorkItemShow, func(r workapp.ItemShowReport) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)))
-			})
+			return RegisterPageResult(results, workapp.ActionWorkItemShow, itemShowPage)
 		},
 		func() error {
 			return RegisterPageResult(results, workapp.ActionWorkItemStatePlan, func(r workapp.StatePlanReport) Page {
@@ -221,62 +211,221 @@ func RegisterCoreRenderers(results *Registry) error {
 }
 
 func actionPage(id ResultKind, fields ...Field) Page {
-	return Page{Title: "result.title", Summary: append([]Field{{Label: "result.action", Value: string(id)}}, fields...)}
+	return ActionPage(string(id), fields...)
 }
+
 func countField(label MessageID, count int) Field {
 	return Field{Label: label, Value: strconv.Itoa(count)}
 }
+
 func boolStatus(label MessageID, value bool) Field {
 	style := ValueWarning
+	text := "No"
 	if value {
 		style = ValueSuccess
+		text = "Yes"
 	}
-	return Field{Label: label, Value: strconv.FormatBool(value), Style: style}
+	return Field{Label: label, Value: text, Style: style}
+}
+
+func statusField(label MessageID, passed bool, success, failure string) Field {
+	if passed {
+		return Field{Label: label, Value: success, Style: ValueSuccess}
+	}
+	return Field{Label: label, Value: failure, Style: ValueFailure}
+}
+
+func initPage(r config.InitReport) Page {
+	status := "Initialized"
+	pathLabel := MessageID("result.files-created")
+	if r.DryRun {
+		status = "Preview"
+		pathLabel = "result.files-planned"
+	}
+	p := actionPage(r.ActionID(),
+		Field{Label: "result.root", Value: r.Root, Style: ValuePath},
+		Field{Label: "result.profile", Value: r.Profile},
+		Field{Label: "result.status", Value: status, Style: ValueSuccess},
+		countField(pathLabel, len(r.PlannedPaths)),
+		boolStatus("result.saved-root", !r.DryRun && !r.NoSave),
+	)
+	next := "dw doctor"
+	if r.DryRun {
+		next = "dw init --root " + strconv.Quote(r.Root)
+	}
+	p.Hint = &Field{Label: "result.next", Value: next, Style: ValueCommand}
+	return p
 }
 
 func configShowPage(r config.ConfigShow) Page {
-	return actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Root, Style: ValuePath}, Field{Label: "result.mode", Value: string(r.Color)}, Field{Label: "result.settings", Value: r.SettingsPath, Style: ValuePath}, Field{Label: "result.workflow", Value: r.WorkflowPath, Style: ValuePath}, Field{Label: "result.projects", Value: r.ProjectsPath, Style: ValuePath}, Field{Label: "result.databases", Value: r.DatabasesPath, Style: ValuePath})
+	ready := r.WorkflowExists && r.ProjectsExists && r.DatabasesExists
+	p := actionPage(r.ActionID(),
+		Field{Label: "result.root", Value: r.Root, Style: ValuePath},
+		statusField("result.status", ready, "Ready", "Not initialized"),
+		Field{Label: "result.mode", Value: string(r.Color)},
+		Field{Label: "result.settings", Value: r.SettingsPath, Style: ValuePath},
+		Field{Label: "result.workflow", Value: r.WorkflowPath, Style: ValuePath},
+		Field{Label: "result.projects", Value: r.ProjectsPath, Style: ValuePath},
+		Field{Label: "result.databases", Value: r.DatabasesPath, Style: ValuePath},
+	)
+	if !ready {
+		p.Hint = &Field{Label: "result.next", Value: "dw init --root " + strconv.Quote(r.Root), Style: ValueCommand}
+	}
+	return p
 }
+
 func configDoctorPage(r config.ConfigDoctorReport) Page {
 	rows := make([][]string, len(r.Checks))
-	for i, c := range r.Checks {
+	for i, check := range r.Checks {
 		detail := ""
-		if c.Message != nil {
-			detail = *c.Message
+		if check.Message != nil {
+			detail = *check.Message
 		}
-		rows[i] = []string{c.Path, strconv.FormatBool(c.Passed), detail}
+		rows[i] = []string{relativeToRoot(r.Root, check.Path), passFail(check.Passed), detail}
 	}
-	p := actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Root, Style: ValuePath}, boolStatus("result.passed", r.Passed))
+	p := actionPage(r.ActionID(),
+		Field{Label: "result.root", Value: r.Root, Style: ValuePath},
+		statusField("result.status", r.Passed, "Passed", "Failed"),
+	)
 	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.path", "result.status", "result.detail"}, Rows: rows}}}
+	if !r.Passed {
+		p.Hint = &Field{Label: "result.next", Value: "dw init --root " + strconv.Quote(r.Root), Style: ValueCommand}
+	}
 	return p
 }
+
+func relativeToRoot(root, path string) string {
+	relative, err := filepath.Rel(root, path)
+	if err == nil && relative != "." && !strings.HasPrefix(relative, "..") {
+		return relative
+	}
+	return path
+}
+
 func doctorPage(r doctor.Report) Page {
 	rows := make([][]string, len(r.Checks))
-	for i, c := range r.Checks {
-		rows[i] = []string{string(c.Kind), strconv.FormatBool(c.Passed), string(c.Remediation.Kind)}
+	for i, check := range r.Checks {
+		rows[i] = []string{HumanizeIdentifier(string(check.Kind)), passFail(check.Passed), doctorRemediation(check)}
 	}
-	p := actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Root, Style: ValuePath}, countField("result.passed", r.PassedCount()), countField("result.failed", r.FailedCount()))
+	p := actionPage(r.ActionID(),
+		Field{Label: "result.root", Value: r.Root, Style: ValuePath},
+		statusField("result.status", r.Passed(), "Passed", "Failed"),
+		countField("result.passed", r.PassedCount()),
+		countField("result.failed", r.FailedCount()),
+	)
 	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.check", "result.status", "result.remediation"}, Rows: rows}}}
+	if !r.Passed() {
+		p.Hint = &Field{Label: "result.next", Value: "dw doctor --fix", Style: ValueCommand}
+	}
 	return p
 }
+
+func doctorRemediation(check doctor.Check) string {
+	if check.Passed {
+		return "—"
+	}
+	switch check.Remediation.Kind {
+	case doctor.RemediationInitRoot:
+		return "dw init --root " + strconv.Quote(check.Remediation.Root)
+	case doctor.RemediationRunInit:
+		return "dw init"
+	case doctor.RemediationConfigureDefaultAgent:
+		return "dw agent default set " + string(check.Remediation.Agent)
+	case doctor.RemediationInstallGit:
+		return "Install Git"
+	case doctor.RemediationInstallNodePackageManager:
+		return "Install pnpm or npm"
+	case doctor.RemediationInstallOpenCode:
+		return "Install OpenCode"
+	default:
+		return "—"
+	}
+}
+
+func passFail(passed bool) string {
+	if passed {
+		return "Passed"
+	}
+	return "Failed"
+}
+
 func agentDoctorPage(r doctor.AgentReport) Page {
 	rows := make([][]string, len(r.Checks))
-	for i, c := range r.Checks {
-		rows[i] = []string{string(c.Agent), c.Command, strconv.FormatBool(c.Available)}
+	for i, check := range r.Checks {
+		status := "Missing"
+		if check.Available {
+			status = "Available"
+		}
+		rows[i] = []string{string(check.Agent), check.Command, status}
 	}
-	p := actionPage(r.ActionID())
+	p := actionPage(r.ActionID(), statusField("result.status", r.Passed(), "Passed", "Failed"))
 	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.agent", "result.command", "result.status"}, Rows: rows}}}
 	return p
 }
+
 func secretListPage(r secret.ListReport) Page {
 	rows := make([][]string, len(r.Items))
-	for i, x := range r.Items {
-		rows[i] = []string{string(x.Key), strconv.FormatBool(x.Exists), strconv.Itoa(len(x.References))}
+	for i, item := range r.Items {
+		status := "Missing"
+		if item.Exists {
+			status = "Stored"
+		}
+		rows[i] = []string{string(item.Key), status, strconv.Itoa(len(item.References))}
 	}
 	p := actionPage(r.ActionID(), Field{Label: "result.root", Value: r.Root, Style: ValuePath}, countField("result.warnings", len(r.Warnings)))
-	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.key", "result.exists", "result.references"}, Rows: rows}}}
+	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.key", "result.status", "result.references"}, Rows: rows}}}
 	return p
 }
+
+func dataSourceListPage(r dataapp.DataSourceListResult) Page {
+	rows := make([][]string, len(r.Entries))
+	warnings := append([]string(nil), r.Warnings...)
+	for i, entry := range r.Entries {
+		scope := "Global"
+		if entry.Project != nil {
+			scope = *entry.Project
+		}
+		limit := strconv.Itoa(entry.MaxRows)
+		if entry.MaxRows == 0 {
+			limit = "Unlimited"
+		}
+		rows[i] = []string{scope, entry.Database, entry.Provider, connectionSource(entry.Source), limit}
+		for _, warning := range entry.Warnings {
+			warnings = append(warnings, entry.Database+": "+warning)
+		}
+	}
+	p := actionPage(r.ActionID(),
+		Field{Label: "result.root", Value: r.Root, Style: ValuePath},
+		countField("result.items", len(r.Entries)),
+		countField("result.warnings", len(warnings)),
+	)
+	if len(rows) == 0 {
+		p.Summary = append(p.Summary, Field{Label: "result.status", Value: "No data sources configured", Style: ValueWarning})
+		p.Hint = &Field{Label: "result.next", Value: "dw init", Style: ValueCommand}
+	} else {
+		p.Sections = append(p.Sections, Section{Table: &Table{Columns: []MessageID{"result.scope", "result.source", "result.provider", "result.connection", "result.limit"}, Rows: rows}})
+	}
+	if len(warnings) != 0 {
+		p.Sections = append(p.Sections, Section{Title: "result.warnings", Items: warnings})
+	}
+	return p
+}
+
+func connectionSource(source dataapp.ConnectionSource) string {
+	switch source.Kind {
+	case dataapp.SourceCredential:
+		return "Keyring: " + source.Key
+	case dataapp.SourceEnvironment:
+		return "Environment: " + source.Variable
+	case dataapp.SourceInline:
+		return "Inline (masked)"
+	case dataapp.SourceMultiple:
+		return "Multiple"
+	default:
+		return "Missing"
+	}
+}
+
 func guardPage(r dataapp.GuardResult) Page {
 	p := actionPage(r.ActionID(), boolStatus("result.allowed", r.IsAllowed))
 	if r.Reason != nil {
@@ -284,10 +433,11 @@ func guardPage(r dataapp.GuardResult) Page {
 	}
 	return p
 }
-func renderDataQuery(r dataapp.NativeQueryReport, c RenderContext) Output {
+
+func renderDataQuery(r dataapp.NativeQueryReport, c RenderContext, title MessageID) Output {
 	t := data.Table{Columns: make([]data.Column, len(r.Columns)), Rows: make([][]data.Value, len(r.Rows)), Truncated: r.Truncated}
-	for i, n := range r.Columns {
-		t.Columns[i] = data.Column{Name: n}
+	for i, name := range r.Columns {
+		t.Columns[i] = data.Column{Name: name}
 	}
 	for i, row := range r.Rows {
 		t.Rows[i] = make([]data.Value, len(row))
@@ -299,8 +449,108 @@ func renderDataQuery(r dataapp.NativeQueryReport, c RenderContext) Output {
 			}
 		}
 	}
-	return RenderQuery(t, c.Policy, c.Localizer, c.Theme)
+	return RenderDataTable(t, c.Policy, c.Localizer, c.Theme, title)
 }
+
+func assignedItemsPage(r workapp.AssignedReport) Page {
+	p := actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project})
+	var rows [][]string
+	columns := []MessageID{"result.id", "result.type", "result.state", "result.item-title"}
+	if r.GroupByParent {
+		columns = append([]MessageID{"result.parent"}, columns...)
+		for _, group := range r.Groups {
+			for _, item := range group.Items {
+				rows = append(rows, append([]string{group.Parent.ID}, itemRow(item)...))
+			}
+		}
+	} else {
+		for _, item := range r.Items {
+			rows = append(rows, itemRow(item))
+		}
+	}
+	p.Summary = append(p.Summary, countField("result.items", len(rows)))
+	if len(rows) == 0 {
+		p.Summary = append(p.Summary, Field{Label: "result.status", Value: "No assigned work items found", Style: ValueWarning})
+		p.Hint = &Field{Label: "result.next", Value: "dw work item list --all", Style: ValueCommand}
+		return p
+	}
+	p.Sections = []Section{{Table: &Table{Columns: columns, Rows: rows}}}
+	return p
+}
+
+func itemShowPage(r workapp.ItemShowReport) Page {
+	p := actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)))
+	if len(r.Items) == 0 {
+		p.Summary = append(p.Summary, Field{Label: "result.status", Value: "No work items found", Style: ValueWarning})
+		return p
+	}
+	rows := make([][]string, len(r.Items))
+	for i, item := range r.Items {
+		rows[i] = itemRow(item)
+	}
+	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.id", "result.type", "result.state", "result.item-title"}, Rows: rows}}}
+	return p
+}
+
+func itemRow(item workapp.ItemSnapshot) []string {
+	return []string{item.ID, stringValue(item.Type), stringValue(item.State), stringValue(item.Title)}
+}
+
+func pullRequestsPage(r workapp.PullRequestsReport) Page {
+	p := actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)))
+	if len(r.Items) == 0 {
+		p.Summary = append(p.Summary, Field{Label: "result.status", Value: "No pull requests found", Style: ValueWarning})
+		return p
+	}
+	rows := make([][]string, len(r.Items))
+	for i, item := range r.Items {
+		status := stringValue(item.Status)
+		if item.IsDraft {
+			status = strings.TrimSpace(status + " (Draft)")
+		}
+		branch := stringValue(item.SourceRefName)
+		if target := stringValue(item.TargetRefName); target != "" {
+			branch += " → " + target
+		}
+		rows[i] = []string{item.Repository, strconv.FormatInt(item.PullRequestID, 10), status, stringValue(item.Title), branch}
+	}
+	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.repository", "result.pull-request", "result.status", "result.item-title", "result.branch"}, Rows: rows}}}
+	return p
+}
+
+func contextPage(r workapp.ContextReport) Page {
+	p := actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)+len(r.Expanded)))
+	for _, item := range r.Items {
+		section := Section{Fields: []Field{
+			{Label: "result.id", Value: item.WorkItem.ID},
+			{Label: "result.type", Value: stringValue(item.WorkItem.Type)},
+			{Label: "result.state", Value: stringValue(item.WorkItem.State)},
+			{Label: "result.item-title", Value: stringValue(item.WorkItem.Title)},
+		}}
+		if item.Content.Description != nil && strings.TrimSpace(*item.Content.Description) != "" {
+			section.Panels = append(section.Panels, Panel{Title: "result.description-content", Body: *item.Content.Description})
+		}
+		if item.Content.AcceptanceCriteria != nil && strings.TrimSpace(*item.Content.AcceptanceCriteria) != "" {
+			section.Panels = append(section.Panels, Panel{Title: "result.acceptance-criteria", Body: *item.Content.AcceptanceCriteria})
+		}
+		p.Sections = append(p.Sections, section)
+	}
+	for _, expanded := range r.Expanded {
+		p.Sections = append(p.Sections, Section{Panels: []Panel{{Body: string(expanded)}}})
+	}
+	if len(p.Sections) == 0 {
+		p.Summary = append(p.Summary, Field{Label: "result.status", Value: "No context found", Style: ValueWarning})
+	}
+	return p
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 func authLoginPage(r workapp.AuthLoginReport) Page {
 	p := actionPage(r.ActionID(), Field{Label: "result.mode", Value: string(r.Mode)}, boolStatus("result.environment-pat", r.UsesEnvironmentPAT))
 	if r.Source != nil {
@@ -311,6 +561,7 @@ func authLoginPage(r workapp.AuthLoginReport) Page {
 	}
 	return p
 }
+
 func authStatusPage(r workapp.AuthStatusReport) Page {
 	p := actionPage(r.ActionID(), boolStatus("result.connected", r.Connected))
 	if r.Source != nil {

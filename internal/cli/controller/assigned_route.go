@@ -2,7 +2,7 @@ package controller
 
 import (
 	"context"
-	"fmt"
+	"strings"
 
 	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/cli/parse"
@@ -16,15 +16,13 @@ func workItemListRoute() Route {
 	return Route{Key: "work.item.list", Machine: jsonMachine, Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
 		project := invocation.Values.String("project")
 		if project == "" {
-			if invocation.Values.Bool("json") {
-				return Outcome{}, usage(fmt.Errorf("cli.work-item-list-project-required"))
+			root := resolvedRoot(invocation.Values)
+			projects := config.ProjectValues(root)
+			if invocation.Values.Bool("json") || !execution.Policy.Interactive() {
+				return Outcome{}, usage(&projectSelectionError{Projects: projects})
 			}
-			if !execution.Policy.Interactive() {
-				return Outcome{}, usage(fmt.Errorf("cli.work-item-list-project-required"))
-			}
-			projects := config.ProjectValues(resolvedRoot(invocation.Values))
 			if len(projects) == 0 {
-				return Outcome{}, fmt.Errorf("cli.work-item-list-no-projects")
+				return Outcome{}, usage(&projectSelectionError{})
 			}
 			if len(projects) == 1 {
 				project = projects[0]
@@ -58,4 +56,16 @@ func workItemListRoute() Route {
 		}
 		return success(output), nil
 	}}
+}
+
+type projectSelectionError struct {
+	Projects []string
+}
+
+func (*projectSelectionError) Error() string { return "cli.work-item-list-project-required" }
+func (problem *projectSelectionError) Localized() l10n.Message {
+	if len(problem.Projects) == 0 {
+		return l10n.M(errorNoProjects)
+	}
+	return l10n.M(errorProjectRequired, l10n.A("projects", strings.Join(problem.Projects, ", ")))
 }

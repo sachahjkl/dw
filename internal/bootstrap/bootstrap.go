@@ -64,7 +64,7 @@ func newController(localizer l10n.Localizer, policy console.Policy) (*controller
 		Console:    engine,
 		Localizer:  localizer,
 		Policy:     policy,
-	}, buildinfo.Version, buildinfo.Informational())
+	}, services.completion, buildinfo.Version, buildinfo.Informational())
 }
 
 func englishCatalog() (*l10n.Catalog, error) {

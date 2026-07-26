@@ -28,7 +28,12 @@ const (
 	MsgCompletionTitle  l10n.ID = "cli.completion.title"
 	MsgCompletionIntro  l10n.ID = "cli.completion.intro"
 	MsgErrSubcommand    l10n.ID = "cli.error.unrecognized-subcommand"
-	MsgHelpHint         l10n.ID = "cli.error.help-hint"
+	MsgSuggestions      l10n.ID = "cli.heading.suggestions"
+	MsgNext             l10n.ID = "cli.heading.next"
+	MsgNextCommand      l10n.ID = "cli.guidance.choose-command"
+	MsgNextValue        l10n.ID = "cli.guidance.choose-value"
+	MsgNextCorrection   l10n.ID = "cli.guidance.use-suggestion"
+	MsgNextUsage        l10n.ID = "cli.guidance.check-usage"
 )
 
 type builder struct {
@@ -48,7 +53,12 @@ func newBuilder(localizer l10n.Localizer) *builder {
 	b.english[MsgCompletionIntro] = "Install the integration for your shell:"
 	b.english[MsgErrUnknownCmd] = "unrecognized command %q"
 	b.english[MsgErrSubcommand] = "error: unrecognized subcommand '%s'"
-	b.english[MsgHelpHint] = "For more information, try '--help'."
+	b.english[MsgSuggestions] = "Suggestions"
+	b.english[MsgNext] = "Next"
+	b.english[MsgNextCommand] = "Choose one of the commands below."
+	b.english[MsgNextValue] = "Choose a suggested value or use the Usage below, then rerun the command."
+	b.english[MsgNextCorrection] = "Use the matching command shown above."
+	b.english[MsgNextUsage] = "Correct the command using the usage and options below."
 	b.english[MsgErrMissingCmd] = "a command is required"
 	b.english[MsgErrUnknownOpt] = "unexpected option %q"
 	b.english[MsgErrMissingValue] = "option %q requires a value"

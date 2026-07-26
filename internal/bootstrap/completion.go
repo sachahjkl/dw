@@ -25,7 +25,7 @@ func (resolver completionResolver) ResolveCompletion(request complete.Context) (
 		values = config.ProjectValues(root)
 	case spec.CompleteProvider:
 		if resolver.providers != nil {
-			values = resolver.providers.ProviderNames()
+			values = providerCompletionValues(resolver.providers.List().Providers, request.Path)
 		}
 	case spec.CompleteRepository:
 		values, err = resolver.workspace.RepositoryValues(context.Background(), root, request.Project, request.Workspace)
@@ -54,6 +54,49 @@ func (resolver completionResolver) ResolveCompletion(request complete.Context) (
 		result[index] = complete.Candidate{Label: value}
 	}
 	return result, nil
+}
+func providerCompletionValues(providers []providerapp.Summary, path []string) []string {
+	values := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		if !providerMatchesCommand(provider, path) {
+			continue
+		}
+		values = append(values, provider.Name)
+	}
+	return values
+}
+
+func providerMatchesCommand(provider providerapp.Summary, path []string) bool {
+	if len(path) == 0 {
+		return true
+	}
+	requiredKind := providerapp.Kind("")
+	switch path[0] {
+	case "data":
+		requiredKind = providerapp.KindData
+	case "work", "workspace":
+		requiredKind = providerapp.KindWork
+	case "provider":
+		if len(path) > 1 && path[1] == "auth" {
+			return contains(provider.Capabilities, "authenticator")
+		}
+		return true
+	}
+	for _, kind := range provider.Kinds {
+		if kind == requiredKind {
+			return true
+		}
+	}
+	return requiredKind == ""
+}
+
+func contains(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func completionStates(root string) ([]string, error) {

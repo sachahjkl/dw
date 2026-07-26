@@ -39,6 +39,7 @@ func Root(localizer l10n.Localizer) *Command {
 		b.command("guide", "guide", "Explain the getting-started flow.", nil),
 		b.command("doctor", "doctor", "Diagnose machine prerequisites and local configuration.", []Argument{
 			b.option("doctor", "fix", Bool, "Apply automatic fixes."),
+			b.option("doctor", "json", Bool, "Emit the deterministic JSON report."),
 		}),
 		b.command("init", "init", "Initialize a local DevWorkflow root.", []Argument{
 			defaultString(completion(b.option("init", "profile", String, "Template profile to use."), CompleteProfile, "default"), "default"),

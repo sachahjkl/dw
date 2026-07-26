@@ -10,6 +10,10 @@ import (
 )
 
 func RenderQuery(result data.Table, policy Policy, localizer Localizer, theme Theme) Output {
+	return RenderDataTable(result, policy, localizer, theme, "data.query.title")
+}
+
+func RenderDataTable(result data.Table, policy Policy, localizer Localizer, theme Theme, title MessageID) Output {
 	localizer = WithConsoleMessages(localizer)
 	if !policy.Streams.StdoutTTY {
 		return TextOutput(FormatTSV, RenderQueryTSV(result))
@@ -17,9 +21,6 @@ func RenderQuery(result data.Table, policy Policy, localizer Localizer, theme Th
 	columns := make([]string, len(result.Columns))
 	for i := range result.Columns {
 		columns[i] = result.Columns[i].Name
-	}
-	if len(columns) == 0 {
-		columns = []string{localize(localizer, "data.column.result")}
 	}
 	rows := make([][]string, len(result.Rows))
 	for rowIndex, row := range result.Rows {
@@ -32,10 +33,18 @@ func RenderQuery(result data.Table, policy Policy, localizer Localizer, theme Th
 			}
 		}
 	}
+	resultText := localize(localizer, "data.query.rows", l10n.A("count", len(result.Rows)))
+	resultStyle := ValueSuccess
+	if len(result.Rows) == 0 {
+		resultText = localize(localizer, "data.query.empty")
+		resultStyle = ValueWarning
+	}
 	page := Page{
-		Title:    "data.query.title",
-		Summary:  []Field{{Label: "data.query.result", Value: localize(localizer, "data.query.rows", l10n.A("count", len(result.Rows))), Style: ValueSuccess}},
-		Sections: []Section{{Table: &Table{ColumnNames: columns, Rows: rows}}},
+		Title:   title,
+		Summary: []Field{{Label: "data.query.result", Value: resultText, Style: resultStyle}},
+	}
+	if len(columns) != 0 {
+		page.Sections = []Section{{Table: &Table{ColumnNames: columns, Rows: rows}}}
 	}
 	if result.Truncated {
 		page.Status = StatusWarning

@@ -137,21 +137,34 @@ func (service *Service) Catalog(ctx context.Context, selection Selection) (Nativ
 		return NativeQueryReport{}, err
 	}
 	table := data.Table{Rows: make([][]data.Value, 0, len(entries))}
+	withNamespace := false
+	for _, entry := range entries {
+		if entry.Catalog != "" || entry.Schema != "" {
+			withNamespace = true
+			break
+		}
+	}
 	if len(entries) > 0 {
-		table.Columns = []data.Column{{Name: "TABLE_SCHEMA", Ordinal: 1}, {Name: "TABLE_NAME", Ordinal: 2}, {Name: "TABLE_TYPE", Ordinal: 3}}
+		table.Columns = []data.Column{{Name: "Resource", Ordinal: 1}, {Name: "Kind", Ordinal: 2}}
+		if withNamespace {
+			table.Columns = []data.Column{{Name: "Namespace", Ordinal: 1}, {Name: "Resource", Ordinal: 2}, {Name: "Kind", Ordinal: 3}}
+		}
 	}
 	for _, entry := range entries {
-		typeName := "BASE TABLE"
-		if entry.Kind == data.CatalogView {
-			typeName = "VIEW"
+		row := []data.Value{data.StringValue(entry.Name), data.StringValue(string(entry.Kind))}
+		if withNamespace {
+			namespace := entry.Schema
+			if entry.Catalog != "" {
+				namespace = entry.Catalog
+				if entry.Schema != "" {
+					namespace += "." + entry.Schema
+				}
+			}
+			row = append([]data.Value{data.StringValue(namespace)}, row...)
 		}
-		table.Rows = append(table.Rows, []data.Value{data.StringValue(entry.Schema), data.StringValue(entry.Name), data.StringValue(typeName)})
+		table.Rows = append(table.Rows, row)
 	}
 	return ProjectTable(table), nil
-}
-
-type tableDescriber interface {
-	DescribeTable(context.Context, data.Connection, data.ObjectRef) (data.Table, error)
 }
 
 func (service *Service) Describe(ctx context.Context, selection Selection, tableName string) (*NativeQueryReport, error) {
@@ -175,28 +188,20 @@ func (service *Service) Describe(ctx context.Context, selection Selection, table
 		schema, name = before, after
 	}
 	object := data.ObjectRef{Schema: schema, Name: name}
-	if detailed, ok := provider.(tableDescriber); ok {
-		table, detailErr := detailed.DescribeTable(ctx, connection, object)
-		if detailErr != nil {
-			return nil, detailErr
-		}
-		result := ProjectTable(table)
-		return &result, nil
-	}
 	description, err := describer.Describe(ctx, connection, object)
 	if err != nil {
 		return nil, err
 	}
 	table := data.Table{Rows: make([][]data.Value, 0, len(description.Columns))}
 	if len(description.Columns) > 0 {
-		table.Columns = []data.Column{{Name: "COLUMN_NAME", Ordinal: 1}, {Name: "DATA_TYPE", Ordinal: 2}, {Name: "IS_NULLABLE", Ordinal: 3}, {Name: "CHARACTER_MAXIMUM_LENGTH", Ordinal: 4}}
+		table.Columns = []data.Column{{Name: "Field", Ordinal: 1}, {Name: "Type", Ordinal: 2}, {Name: "Nullable", Ordinal: 3}}
 	}
 	for _, column := range description.Columns {
-		nullable := "NO"
+		nullable := "No"
 		if column.Nullable {
-			nullable = "YES"
+			nullable = "Yes"
 		}
-		table.Rows = append(table.Rows, []data.Value{data.StringValue(column.Name), data.StringValue(column.NativeType), data.StringValue(nullable), data.NullValue()})
+		table.Rows = append(table.Rows, []data.Value{data.StringValue(column.Name), data.StringValue(column.NativeType), data.StringValue(nullable)})
 	}
 	result := ProjectTable(table)
 	return &result, nil
