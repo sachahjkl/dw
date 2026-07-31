@@ -23,6 +23,7 @@ type FormField struct {
 	Value       string
 	Required    bool
 	Suggestions []string
+	Cursor      int
 }
 
 func (f FormField) enabled() bool { return f.Value == "true" }
@@ -50,7 +51,7 @@ type FormState struct {
 }
 
 func textField(id string, label l10n.ID, value string, required bool, suggestions []string) FormField {
-	return FormField{ID: id, Label: label, Help: "tui.field.help.suggest", Kind: TextField, Value: value, Required: required, Suggestions: stableStrings(suggestions)}
+	return FormField{ID: id, Label: label, Help: "tui.field.help.suggest", Kind: TextField, Value: value, Required: required, Suggestions: stableStrings(suggestions), Cursor: len([]rune(value))}
 }
 
 func toggleField(id string, label l10n.ID, value bool) FormField {
@@ -307,20 +308,71 @@ func (f *FormState) move(delta int) {
 }
 
 func (f *FormState) input(text string) {
-	if f.Mode != EditFields || f.SelectedField >= len(f.Fields) || f.Fields[f.SelectedField].Kind != TextField {
+	field, ok := f.selectedTextField()
+	if !ok {
 		return
 	}
-	f.Fields[f.SelectedField].Value += text
+	value := []rune(field.Value)
+	cursor := min(max(0, field.Cursor), len(value))
+	inserted := []rune(text)
+	value = append(value[:cursor], append(inserted, value[cursor:]...)...)
+	field.Value = string(value)
+	field.Cursor = cursor + len(inserted)
 }
 
 func (f *FormState) backspace() {
-	if f.Mode != EditFields || f.SelectedField >= len(f.Fields) || f.Fields[f.SelectedField].Kind != TextField {
+	field, ok := f.selectedTextField()
+	if !ok {
 		return
 	}
-	value := []rune(f.Fields[f.SelectedField].Value)
-	if len(value) != 0 {
-		f.Fields[f.SelectedField].Value = string(value[:len(value)-1])
+	value := []rune(field.Value)
+	cursor := min(max(0, field.Cursor), len(value))
+	if cursor == 0 {
+		return
 	}
+	field.Value = string(append(value[:cursor-1], value[cursor:]...))
+	field.Cursor = cursor - 1
+}
+
+func (f *FormState) delete() {
+	field, ok := f.selectedTextField()
+	if !ok {
+		return
+	}
+	value := []rune(field.Value)
+	cursor := min(max(0, field.Cursor), len(value))
+	if cursor >= len(value) {
+		return
+	}
+	field.Value = string(append(value[:cursor], value[cursor+1:]...))
+}
+
+func (f *FormState) moveCursor(delta int) {
+	field, ok := f.selectedTextField()
+	if !ok {
+		return
+	}
+	field.Cursor = min(max(0, field.Cursor+delta), len([]rune(field.Value)))
+}
+
+func (f *FormState) cursorHome() {
+	if field, ok := f.selectedTextField(); ok {
+		field.Cursor = 0
+	}
+}
+
+func (f *FormState) cursorEnd() {
+	if field, ok := f.selectedTextField(); ok {
+		field.Cursor = len([]rune(field.Value))
+	}
+}
+
+func (f *FormState) selectedTextField() (*FormField, bool) {
+	if f.Mode != EditFields || f.SelectedField < 0 || f.SelectedField >= len(f.Fields) {
+		return nil, false
+	}
+	field := &f.Fields[f.SelectedField]
+	return field, field.Kind == TextField
 }
 
 func (f *FormState) toggle() {
@@ -346,6 +398,7 @@ func (f *FormState) suggest() (string, bool) {
 		}
 	}
 	field.Value = field.Suggestions[next]
+	field.Cursor = len([]rune(field.Value))
 	return field.Value, true
 }
 
@@ -404,8 +457,8 @@ func (f FormState) action(localizer l10n.Localizer) (Action, bool) {
 		Label: localizer.Text(template.Label), Description: localizer.Text(template.Description), Risk: risk,
 		Active:              true,
 		Request:             FormRequest{Action: action.ID(actionID), Parameters: parameters},
-		RefreshAfterSuccess: risk == Destructive, OpenResult: risk != External,
-		BlocksUntilDone: (template.ID == "workspace-start" || template.ID == "workspace-pr-start") && fieldBool(f.Fields, "execute"),
+		RefreshAfterSuccess: risk == Destructive,
+		BlocksUntilDone:     (template.ID == "workspace-start" || template.ID == "workspace-pr-start") && fieldBool(f.Fields, "execute"),
 	}, true
 }
 

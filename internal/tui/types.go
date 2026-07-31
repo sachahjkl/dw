@@ -62,7 +62,6 @@ type Action struct {
 	Active              bool
 	Request             action.Request
 	RefreshAfterSuccess bool
-	OpenResult          bool
 	BlocksUntilDone     bool
 }
 

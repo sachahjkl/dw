@@ -140,8 +140,8 @@ func (runner tuiRunner) Run(ctx context.Context, request action.Request, runtime
 		if err != nil {
 			return nil, err
 		}
-		request = scopeTUIDataRoot(request, runner.root)
 	}
+	request = scopeTUIRoot(request, runner.root)
 	envelope, err := runner.dispatcher.Dispatch(withRoot(ctx, runner.root), request, runtime)
 	if err != nil {
 		return nil, err
@@ -149,8 +149,11 @@ func (runner tuiRunner) Run(ctx context.Context, request action.Request, runtime
 	return envelope.Result, nil
 }
 
-func scopeTUIDataRoot(request action.Request, root string) action.Request {
+func scopeTUIRoot(request action.Request, root string) action.Request {
 	switch value := request.(type) {
+	case doctor.Request:
+		value.Root = root
+		return value
 	case dataapp.CatalogRequest:
 		value.Selection.Root = root
 		return value
@@ -254,11 +257,11 @@ func snapshotLoader(services *services, localizer l10n.Localizer) tui.SnapshotLo
 				}
 			}
 		}
-		doctorReport, err := services.doctor.Run(ctx, false)
+		doctorReport, err := services.doctor.RunAtRoot(ctx, root, false)
 		if err == nil {
 			snapshot.DoctorOK = doctorReport.Passed()
 		}
-		doctorAction := tui.Action{ID: "tui.doctor", Label: tuiLabel(localizer, "bootstrap.tui.doctor"), Active: true, Request: doctor.Request{}}
+		doctorAction := tui.Action{ID: "tui.doctor", Label: tuiLabel(localizer, "bootstrap.tui.doctor"), Active: true, Request: doctor.Request{Root: root}}
 		snapshot.Actions = []tui.Action{doctorAction}
 		snapshot.Cockpit = []tui.CockpitItem{{Section: "system", Title: doctorAction.Label, Status: strconv.FormatBool(snapshot.DoctorOK), Primary: doctorAction}}
 		configurationActions := []tui.Action{
@@ -305,7 +308,7 @@ func workspaceActions(localizer l10n.Localizer, root, provider string, item tui.
 	selection := controller.WorkspaceSelection{Root: root, Workspace: stringPointer(item.Path)}
 	finishStates := tuiFinishStates(root)
 	return []tui.Action{
-		{ID: tui.WorkspaceOpenSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: tui.External, Request: workapp.OpenRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}, OpenResult: true},
+		{ID: tui.WorkspaceOpenSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: tui.External, Request: workapp.OpenRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
 		{ID: tui.WorkspacePreflightSlot, Label: tuiLabel(localizer, "bootstrap.tui.preflight"), Active: true, Request: controller.WorkspacePreflightRequest{Selection: selection}},
 		{ID: tui.WorkspaceSyncSlot, Label: tuiLabel(localizer, "bootstrap.tui.sync"), Active: true, Request: workapp.SyncRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
 		{ID: tui.WorkspaceLatestSlot, Label: tuiLabel(localizer, "bootstrap.tui.latest"), Active: true, Request: controller.WorkspaceRepoLatestRequest{Selection: selection, Execute: true}},
@@ -348,10 +351,10 @@ func workLoader(services *services, localizer l10n.Localizer) tui.WorkLoader {
 				}
 				matches := workspace.WorkspaceValues(snapshot.Root, project, source.ID)
 				if len(matches) != 0 {
-					projected.Actions = append(projected.Actions, tui.Action{ID: tui.WorkOpenAgentSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: tui.External, Request: workapp.OpenRequest{Provider: provider, Root: snapshot.Root, Project: project, Workspace: stringPointer(matches[0])}, OpenResult: true})
+					projected.Actions = append(projected.Actions, tui.Action{ID: tui.WorkOpenAgentSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: tui.External, Request: workapp.OpenRequest{Provider: provider, Root: snapshot.Root, Project: project, Workspace: stringPointer(matches[0])}})
 				}
 				if projected.URL != "" {
-					projected.Actions = append(projected.Actions, tui.Action{ID: tui.WorkOpenURLSlot, Label: tuiLabel(localizer, "bootstrap.tui.open-url"), Active: true, Risk: tui.External, Request: openURLRequest{URL: projected.URL}, OpenResult: true})
+					projected.Actions = append(projected.Actions, tui.Action{ID: tui.WorkOpenURLSlot, Label: tuiLabel(localizer, "bootstrap.tui.open-url"), Active: true, Risk: tui.External, Request: openURLRequest{URL: projected.URL}})
 				}
 				item.Items = append(item.Items, projected)
 			}
@@ -413,7 +416,7 @@ func pullRequestLoader(services *services, localizer l10n.Localizer) tui.PullReq
 					workspaceValue := stringPointer(item.Workspace)
 					selection := controller.WorkspaceSelection{Root: snapshot.Root, Workspace: workspaceValue}
 					item.Actions = append(item.Actions,
-						tui.Action{ID: tui.PROpenAgentSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: tui.External, Request: workapp.OpenRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, Repository: localRepository}, OpenResult: true},
+						tui.Action{ID: tui.PROpenAgentSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: tui.External, Request: workapp.OpenRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, Repository: localRepository}},
 						tui.Action{ID: tui.PRFinishPlanSlot, Label: tuiLabel(localizer, "bootstrap.tui.finish-preview"), Active: true, Risk: tui.Preview, Request: workapp.FinishRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, CreatePR: true, FinishStates: finishStates}},
 						tui.Action{ID: tui.PRFinishSlot, Label: tuiLabel(localizer, "bootstrap.tui.finish"), Active: true, Risk: tui.Destructive, Request: workapp.FinishRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, Execute: true, CreatePR: true, FinishStates: finishStates}},
 						tui.Action{ID: tui.PRDiffSlot, Label: tuiLabel(localizer, "bootstrap.tui.diff"), Active: true, Risk: tui.Preview, Request: controller.WorkspaceCommitRequest{Selection: selection}},
@@ -421,7 +424,7 @@ func pullRequestLoader(services *services, localizer l10n.Localizer) tui.PullReq
 				}
 				item.Actions = append(item.Actions, tui.Action{ID: tui.PRChangelogSlot, Label: tuiLabel(localizer, "bootstrap.tui.changelog"), Active: true, Request: workapp.ChangelogRequest{Provider: provider, Root: snapshot.Root, Project: project, Source: workapp.ChangelogPullRequests, PullRequestIDs: []int64{source.PullRequestID}, Repositories: []string{source.Repository}}})
 				if item.URL != "" {
-					item.Actions = append(item.Actions, tui.Action{ID: tui.PROpenURLSlot, Label: tuiLabel(localizer, "bootstrap.tui.open-url"), Active: true, Risk: tui.External, Request: openURLRequest{URL: item.URL}, OpenResult: true})
+					item.Actions = append(item.Actions, tui.Action{ID: tui.PROpenURLSlot, Label: tuiLabel(localizer, "bootstrap.tui.open-url"), Active: true, Risk: tui.External, Request: openURLRequest{URL: item.URL}})
 				}
 				result = append(result, item)
 			}

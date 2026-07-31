@@ -50,3 +50,47 @@ func TestInformationalMenuHotkeysOpenTheirModals(t *testing.T) {
 		})
 	}
 }
+
+func TestEscapeUnwindsOneLayerWithoutQuitting(t *testing.T) {
+	model := NewModel(Dependencies{})
+	model.HandleKey(Key{Code: "m"})
+	model.HandleKey(Key{Code: "enter"})
+	model.HandleKey(Key{Code: "h"})
+
+	for _, want := range [][]string{
+		{"menu", "menu-section"},
+		{"menu"},
+		{},
+	} {
+		effects := model.HandleKey(Key{Code: "esc"})
+		if len(effects) != 0 {
+			t.Fatalf("escape effects = %#v, want none", effects)
+		}
+		if got := model.ModalStack(); !reflect.DeepEqual(got, want) {
+			t.Fatalf("modal stack = %#v, want %#v", got, want)
+		}
+		if model.ShouldQuit() {
+			t.Fatal("escape quit while unwinding layers")
+		}
+	}
+
+	if effects := model.HandleKey(Key{Code: "esc"}); len(effects) != 0 || model.ShouldQuit() {
+		t.Fatalf("root escape effects/quit = %#v/%v, want no-op", effects, model.ShouldQuit())
+	}
+}
+
+func TestEscapeReturnsComposerToPreviousView(t *testing.T) {
+	model := NewModel(Dependencies{})
+	model.setView(Work)
+	model.setView(Composer)
+	model.composer.begin(model.snapshot)
+
+	model.HandleKey(Key{Code: "esc"})
+	if model.CurrentView() != Composer || model.composer.Mode != ChooseTemplate {
+		t.Fatalf("first escape view/mode = %v/%v, want composer chooser", model.CurrentView(), model.composer.Mode)
+	}
+	model.HandleKey(Key{Code: "esc"})
+	if model.CurrentView() != Work {
+		t.Fatalf("second escape view = %v, want Work", model.CurrentView())
+	}
+}

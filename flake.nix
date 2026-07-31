@@ -160,6 +160,60 @@
           '';
         };
 
+        bumpCommitPushScript = pkgs.writeShellApplication {
+          name = "dw-bump-commit-push";
+          runtimeInputs = [ pkgs.coreutils pkgs.findutils pkgs.git ];
+          text = ''
+            set -euo pipefail
+
+            if (( $# > 1 )); then
+              echo 'Usage: nix run .#bump-commit-push -- ["commit message"]' >&2
+              exit 2
+            fi
+
+            repo="$(git rev-parse --show-toplevel)"
+            cd "$repo"
+            branch="$(git symbolic-ref --quiet --short HEAD)" || {
+              echo "Cannot bump from a detached HEAD." >&2
+              exit 1
+            }
+            git remote get-url origin >/dev/null
+
+            version_file="$repo/VERSION"
+            if [[ ! -f "$version_file" ]]; then
+              mapfile -t version_files < <(find "$repo" -path "$repo/.git" -prune -o -type f -name VERSION -print)
+              if (( ''${#version_files[@]} != 1 )); then
+                echo "Expected exactly one VERSION file; found ''${#version_files[@]}." >&2
+                printf '  %s\n' "''${version_files[@]}" >&2
+                exit 1
+              fi
+              version_file="''${version_files[0]}"
+            fi
+
+            current="$(tr -d '\r\n' < "$version_file")"
+            if [[ ! "$current" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$ ]]; then
+              echo "Invalid version '$current' in $version_file; expected YYYY.MM.DD.N." >&2
+              exit 1
+            fi
+
+            today="$(date +%Y.%m.%d)"
+            current_date="''${current%.*}"
+            current_build="''${current##*.}"
+            if [[ "$current_date" == "$today" ]]; then
+              next="$today.$((10#$current_build + 1))"
+            else
+              next="$today.1"
+            fi
+
+            printf '%s\n' "$next" > "$version_file"
+            git add -A
+            message="''${1:-chore: release $next}"
+            git commit -m "$message"
+            git push origin "HEAD:$branch"
+            printf 'Released %s on %s.\n' "$next" "$branch"
+          '';
+        };
+
         architectureCheck = pkgs.runCommand "dw-architecture-check" {
           nativeBuildInputs = [ architectureScript ];
         } ''
@@ -222,6 +276,11 @@
             program = "${architectureScript}/bin/dw-architecture";
           };
 
+          bump-commit-push = {
+            type = "app";
+            program = "${bumpCommitPushScript}/bin/dw-bump-commit-push";
+          };
+
           default = self.apps.${system}.dw;
         };
 
@@ -243,6 +302,7 @@
             echo "  nix run .#test"
             echo "  nix run .#static-analysis"
             echo "  nix run .#architecture"
+            echo "  nix run .#bump-commit-push -- \"commit message\""
             echo "  go run ./cmd/dw version"
           '';
         };

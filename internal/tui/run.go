@@ -106,14 +106,6 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.PasteMsg:
 		return m, m.applyEffects(m.HandleKey(Key{Code: "text", Text: msg.Content, Kind: KeyPress}))
-	case tea.MouseWheelMsg:
-		if msg.Button == tea.MouseWheelUp {
-			m.HandleWheel(-1)
-		}
-		if msg.Button == tea.MouseWheelDown {
-			m.HandleWheel(1)
-		}
-		return m, nil
 	case snapshotLoadedMsg:
 		return m, m.acceptSnapshot(msg)
 	case workLoadedMsg:
@@ -437,10 +429,16 @@ func (m *Model) finishActionSuccess(runID uint64, result action.Result, lines []
 	if m.deps.ProjectState != nil {
 		m.applyStateEffect(m.deps.ProjectState(result))
 	}
-	if item.OpenResult && len(lines) != 0 {
-		m.detail = &detailState{title: item.Label, lines: append([]string(nil), lines...)}
-		m.pushModal(detailModal)
+	resultLines := append([]string(nil), lines...)
+	if len(resultLines) == 0 {
+		if external != nil {
+			resultLines = []string{m.l10n.Text("tui.result.external-complete")}
+		} else {
+			resultLines = []string{m.l10n.Text("tui.result.complete")}
+		}
 	}
+	m.detail = &detailState{title: item.Label, lines: resultLines}
+	m.pushModal(detailModal)
 	if item.RefreshAfterSuccess {
 		m.reloadAfterQueue = true
 	}

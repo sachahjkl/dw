@@ -143,10 +143,20 @@ func New(config Config, process Process) *Service {
 	return &Service{config: config, process: process}
 }
 
-// Run performs every compatibility check. Failed checks are report data; only inability to apply
-// an explicitly requested fix is returned as an error.
+// Run performs every compatibility check against the configured root. Failed
+// checks are report data; only inability to apply an explicitly requested fix
+// is returned as an error.
 func (service *Service) Run(ctx context.Context, fix bool) (Report, error) {
-	root := service.config.ResolveRoot()
+	return service.RunAtRoot(ctx, "", fix)
+}
+
+// RunAtRoot performs every compatibility check against explicitRoot. An empty
+// explicit root preserves the configured-root behavior used by the CLI.
+func (service *Service) RunAtRoot(ctx context.Context, explicitRoot string, fix bool) (Report, error) {
+	root := explicitRoot
+	if root == "" {
+		root = service.config.ResolveRoot()
+	}
 	rootPassed := isDirectory(root)
 	checks := []Check{
 		{

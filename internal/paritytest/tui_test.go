@@ -24,7 +24,8 @@ func TestTUIHotkeyViewAndModalTransitions(t *testing.T) {
 		{key: "tab", view: tui.Dashboard},
 		{key: "shift+tab", view: tui.Composer},
 		{key: "left", view: tui.Data},
-		{key: "right", view: tui.Composer},
+		{key: "right", view: tui.Data},
+		{key: "tab", view: tui.Composer},
 	} {
 		model.HandleKey(tui.Key{Code: transition.key})
 		if model.CurrentView() != transition.view {

@@ -14,7 +14,8 @@ const (
 )
 
 type Request struct {
-	Fix bool
+	Root string
+	Fix  bool
 }
 
 type AgentRequest struct {
@@ -50,7 +51,7 @@ func (handler Handler) Execute(ctx context.Context, request action.Request, _ ac
 		if err != nil {
 			return nil, err
 		}
-		return handler.service.Run(ctx, typed.Fix)
+		return handler.service.RunAtRoot(ctx, typed.Root, typed.Fix)
 	case ActionAgentDoctor:
 		typed, err := agentRequest(request)
 		if err != nil {

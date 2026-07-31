@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/sachahjkl/dw/internal/console"
+	"github.com/sachahjkl/dw/internal/doctor"
 	"github.com/sachahjkl/dw/internal/providerapp"
 )
 
@@ -30,5 +31,16 @@ func TestWorkspaceListPageExplainsEmptyState(t *testing.T) {
 	rendered := console.RenderPage(page, console.NewEnglishLocalizer(), console.NewTheme(false))
 	if !strings.Contains(rendered, "No workspaces found") || !strings.Contains(rendered, "dw workspace start <work-item-id>") {
 		t.Fatalf("workspace empty output = %s", rendered)
+	}
+}
+
+func TestScopeTUIRootSetsDoctorRoot(t *testing.T) {
+	const root = "/explicit/tui/root"
+	request, ok := scopeTUIRoot(doctor.Request{}, root).(doctor.Request)
+	if !ok {
+		t.Fatalf("scoped request type = %T, want doctor.Request", request)
+	}
+	if request.Root != root {
+		t.Fatalf("scoped Doctor root = %q, want %q", request.Root, root)
 	}
 }

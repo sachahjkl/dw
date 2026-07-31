@@ -118,6 +118,7 @@ type inputPrompt struct {
 	value        string
 	selected     int
 	selectedMany []bool
+	cursor       int
 	response     chan action.Response
 }
 
@@ -133,10 +134,11 @@ type Model struct {
 	ctx  context.Context
 	l10n l10n.Localizer
 
-	snapshot Snapshot
-	view     View
-	width    int
-	height   int
+	snapshot     Snapshot
+	view         View
+	previousView View
+	width        int
+	height       int
 
 	selectedAction      int
 	selectedCockpit     int
@@ -145,6 +147,7 @@ type Model struct {
 	selectedWorkItem    int
 	selectedPR          int
 	selectedDataSource  int
+	dataFocus           int
 	selectedMenuSection int
 	selectedMenuItem    int
 
@@ -333,8 +336,12 @@ func (m *Model) topModal() (modalKind, bool) {
 }
 
 func (m *Model) setView(view View) {
+	if view == Composer && m.view != Composer {
+		m.previousView = m.view
+	}
 	m.view = view
 	m.selectedAction = 0
+	m.dataFocus = 0
 	m.confirmation = nil
 	m.form = nil
 	m.filterActive = false
@@ -364,6 +371,9 @@ func (m *Model) HandleKey(key Key) []Effect {
 		m.quit = true
 		return []Effect{{Kind: QuitEffect}}
 	}
+	if key.Code == "esc" {
+		return m.handleBack()
+	}
 	if m.snapshot.NeedsInit {
 		return m.handleInitKey(key)
 	}
@@ -373,7 +383,14 @@ func (m *Model) HandleKey(key Key) []Effect {
 	if m.form != nil {
 		return m.handleFormKey(key)
 	}
+	if m.confirmation != nil {
+		return m.handleConfirmationKey(key)
+	}
 	if modal, ok := m.topModal(); ok {
+		if key.Code == "q" {
+			m.closeTopModal()
+			return nil
+		}
 		switch modal {
 		case menuModal:
 			return m.handleMenuKey(key)
@@ -397,9 +414,6 @@ func (m *Model) HandleKey(key Key) []Effect {
 	if m.filterActive {
 		return m.handleFilterKey(key)
 	}
-	if m.confirmation != nil {
-		return m.handleConfirmationKey(key)
-	}
 	if m.view == Composer {
 		if effects, handled := m.handleComposerKey(key); handled {
 			return effects
@@ -410,7 +424,7 @@ func (m *Model) HandleKey(key Key) []Effect {
 	}
 
 	switch key.Code {
-	case "q", "esc":
+	case "q":
 		m.quit = true
 		return []Effect{{Kind: QuitEffect}}
 	case "tab", "right":
@@ -461,6 +475,61 @@ func (m *Model) HandleKey(key Key) []Effect {
 	return nil
 }
 
+func (m *Model) handleBack() []Effect {
+	if m.snapshot.NeedsInit {
+		return nil
+	}
+	if m.prompt != nil {
+		close(m.prompt.response)
+		m.prompt = nil
+		m.addMessage(m.l10n.Text("tui.message.input-canceled"))
+		return nil
+	}
+	if m.form != nil {
+		if m.form.Mode == EditFields {
+			m.form.Mode = ChooseTemplate
+			m.form.Fields = nil
+		} else {
+			m.form = nil
+		}
+		return nil
+	}
+	if m.confirmation != nil {
+		m.confirmation = nil
+		m.addMessage(m.l10n.Text("tui.message.canceled"))
+		return nil
+	}
+	if modal, ok := m.topModal(); ok {
+		if modal != progressModal {
+			m.closeTopModal()
+		}
+		return nil
+	}
+	if m.detail != nil {
+		m.detail = nil
+		return nil
+	}
+	if m.filterActive {
+		m.filterActive = false
+		m.filter = ""
+		m.selectedAction = 0
+		return nil
+	}
+	if m.view == Composer {
+		if m.composer.Mode == EditFields {
+			m.composer.Mode = ChooseTemplate
+			m.composer.Fields = nil
+		} else {
+			target := m.previousView
+			if target == Composer {
+				target = Dashboard
+			}
+			m.setView(target)
+		}
+	}
+	return nil
+}
+
 func (m *Model) handleInitKey(key Key) []Effect {
 	switch key.Code {
 	case "q":
@@ -478,11 +547,6 @@ func (m *Model) handleInitKey(key Key) []Effect {
 func (m *Model) handleInputKey(key Key) []Effect {
 	prompt := m.prompt
 	switch key.Code {
-	case "esc":
-		close(prompt.response)
-		m.prompt = nil
-		m.addMessage(m.l10n.Text("tui.message.input-canceled"))
-		return nil
 	case "up", "k":
 		if prompt.selected > 0 {
 			prompt.selected--
@@ -495,13 +559,20 @@ func (m *Model) handleInputKey(key Key) []Effect {
 		if prompt.prompt.Kind == action.PromptSelectMany && prompt.selected < len(prompt.selectedMany) {
 			prompt.selectedMany[prompt.selected] = !prompt.selectedMany[prompt.selected]
 		} else if prompt.prompt.Kind == action.PromptText || prompt.prompt.Kind == action.PromptSecret {
-			prompt.value += " "
+			prompt.insert(" ")
 		}
 	case "backspace":
-		value := []rune(prompt.value)
-		if len(value) != 0 {
-			prompt.value = string(value[:len(value)-1])
-		}
+		prompt.backspace()
+	case "delete":
+		prompt.delete()
+	case "left":
+		prompt.moveCursor(-1)
+	case "right":
+		prompt.moveCursor(1)
+	case "home":
+		prompt.cursor = 0
+	case "end":
+		prompt.cursor = len([]rune(prompt.value))
 	case "y", "Y":
 		if prompt.prompt.Kind == action.PromptConfirm {
 			return m.answerInput(true)
@@ -518,10 +589,42 @@ func (m *Model) handleInputKey(key Key) []Effect {
 		return m.answerInput(accepted)
 	default:
 		if (prompt.prompt.Kind == action.PromptText || prompt.prompt.Kind == action.PromptSecret) && key.Text != "" {
-			prompt.value += key.Text
+			prompt.insert(key.Text)
 		}
 	}
 	return nil
+}
+
+func (p *inputPrompt) insert(text string) {
+	value := []rune(p.value)
+	p.cursor = min(max(0, p.cursor), len(value))
+	inserted := []rune(text)
+	value = append(value[:p.cursor], append(inserted, value[p.cursor:]...)...)
+	p.value = string(value)
+	p.cursor += len(inserted)
+}
+
+func (p *inputPrompt) backspace() {
+	value := []rune(p.value)
+	p.cursor = min(max(0, p.cursor), len(value))
+	if p.cursor == 0 {
+		return
+	}
+	p.value = string(append(value[:p.cursor-1], value[p.cursor:]...))
+	p.cursor--
+}
+
+func (p *inputPrompt) delete() {
+	value := []rune(p.value)
+	p.cursor = min(max(0, p.cursor), len(value))
+	if p.cursor >= len(value) {
+		return
+	}
+	p.value = string(append(value[:p.cursor], value[p.cursor+1:]...))
+}
+
+func (p *inputPrompt) moveCursor(delta int) {
+	p.cursor = min(max(0, p.cursor+delta), len([]rune(p.value)))
 }
 
 func (m *Model) answerInput(accepted bool) []Effect {
@@ -553,9 +656,6 @@ func (m *Model) handleFormKey(key Key) []Effect {
 	if form.Mode == ChooseTemplate {
 		switch key.Code {
 		case "q":
-			m.quit = true
-			return []Effect{{Kind: QuitEffect}}
-		case "esc":
 			m.form = nil
 		case "up", "k":
 			form.move(-1)
@@ -567,18 +667,30 @@ func (m *Model) handleFormKey(key Key) []Effect {
 		return nil
 	}
 	switch key.Code {
-	case "esc":
-		m.form = nil
 	case "up", "shift+tab", "backtab":
 		form.move(-1)
 	case "down", "tab":
 		form.move(1)
 	case "backspace":
 		form.backspace()
+	case "delete":
+		form.delete()
+	case "left":
+		form.moveCursor(-1)
+	case "right":
+		form.moveCursor(1)
+	case "home":
+		form.cursorHome()
+	case "end":
+		form.cursorEnd()
 	case "ctrl+space":
 		m.applySuggestion(form)
 	case "space":
-		form.toggle()
+		if _, ok := form.selectedTextField(); ok {
+			form.input(" ")
+		} else {
+			form.toggle()
+		}
 	case "enter":
 		generated, ok := form.action(m.l10n)
 		if !ok {
@@ -633,7 +745,7 @@ func (m *Model) handleConfirmationKey(key Key) []Effect {
 }
 
 func (m *Model) handleHelpKey(key Key) []Effect {
-	if key.Code == "esc" || key.Code == "?" || key.Code == "q" || key.Code == "enter" {
+	if key.Code == "?" || key.Code == "q" || key.Code == "enter" {
 		m.closeTopModal()
 	}
 	return nil
@@ -641,18 +753,16 @@ func (m *Model) handleHelpKey(key Key) []Effect {
 
 func (m *Model) handleStateKey(key Key) []Effect {
 	switch key.Code {
-	case "esc", "i", "q":
+	case "i", "q":
 		m.closeTopModal()
 	case "up", "k":
-		if m.stateScroll > 0 {
-			m.stateScroll--
-		}
+		m.stateScroll = max(0, m.stateScroll-1)
 	case "down", "j":
-		m.stateScroll++
+		m.stateScroll = min(m.maxStateScroll(), m.stateScroll+1)
 	case "home":
 		m.stateScroll = 0
 	case "end":
-		m.stateScroll = int(^uint(0) >> 1)
+		m.stateScroll = m.maxStateScroll()
 	}
 	return nil
 }
@@ -662,35 +772,28 @@ func (m *Model) handleDetailKey(key Key) []Effect {
 		return nil
 	}
 	switch key.Code {
-	case "esc", "q", "enter":
+	case "q", "enter":
 		m.closeTopModal()
 	case "up", "k":
-		if m.detail.scroll > 0 {
-			m.detail.scroll--
-		}
+		m.detail.scroll = max(0, m.detail.scroll-1)
 	case "down", "j":
-		m.detail.scroll++
+		m.detail.scroll = min(m.maxDetailScroll(), m.detail.scroll+1)
 	case "home":
 		m.detail.scroll = 0
 	case "end":
-		m.detail.scroll = len(m.detail.lines)
+		m.detail.scroll = m.maxDetailScroll()
 	}
 	return nil
 }
 
 func (m *Model) handleJournalKey(key Key) []Effect {
 	switch key.Code {
-	case "esc", "h":
+	case "h", "q":
 		m.closeTopModal()
-	case "q":
-		m.quit = true
-		return []Effect{{Kind: QuitEffect}}
 	case "up", "k":
-		if m.history.Scroll > 0 {
-			m.history.Scroll--
-		}
+		m.history.Scroll = max(0, m.history.Scroll-1)
 	case "down", "j":
-		m.history.Scroll++
+		m.history.Scroll = min(m.maxJournalScroll(), m.history.Scroll+1)
 	case "left", "[":
 		m.history.selectRun(-1)
 	case "right", "]":
@@ -698,7 +801,7 @@ func (m *Model) handleJournalKey(key Key) []Effect {
 	case "home":
 		m.history.Scroll = 0
 	case "end":
-		m.history.Scroll = int(^uint(0) >> 1)
+		m.history.Scroll = m.maxJournalScroll()
 	case "f":
 		m.history.Fullscreen = !m.history.Fullscreen
 		m.history.Scroll = 0
@@ -729,10 +832,7 @@ func (m *Model) openMenu() {
 
 func (m *Model) handleMenuKey(key Key) []Effect {
 	switch key.Code {
-	case "q":
-		m.quit = true
-		return []Effect{{Kind: QuitEffect}}
-	case "esc", "m":
+	case "m", "q":
 		m.closeTopModal()
 	case "up", "k":
 		if m.selectedMenuSection > 0 {
@@ -756,9 +856,6 @@ func (m *Model) handleMenuSectionKey(key Key) []Effect {
 	items := m.menuItems()
 	switch key.Code {
 	case "q":
-		m.quit = true
-		return []Effect{{Kind: QuitEffect}}
-	case "esc":
 		m.closeTopModal()
 	case "m":
 		m.removeModal(menuSectionModal)
@@ -837,17 +934,39 @@ func (m *Model) handleComposerKey(key Key) ([]Effect, bool) {
 		return nil, false
 	}
 	switch key.Code {
-	case "esc":
-		m.composer = FormState{}
+	case "up", "shift+tab", "backtab":
+		m.composer.move(-1)
+		return nil, true
+	case "down", "tab":
+		m.composer.move(1)
 		return nil, true
 	case "backspace":
 		m.composer.backspace()
+		return nil, true
+	case "delete":
+		m.composer.delete()
+		return nil, true
+	case "left":
+		m.composer.moveCursor(-1)
+		return nil, true
+	case "right":
+		m.composer.moveCursor(1)
+		return nil, true
+	case "home":
+		m.composer.cursorHome()
+		return nil, true
+	case "end":
+		m.composer.cursorEnd()
 		return nil, true
 	case "ctrl+space":
 		m.applySuggestion(&m.composer)
 		return nil, true
 	case "space":
-		m.composer.toggle()
+		if _, ok := m.composer.selectedTextField(); ok {
+			m.composer.input(" ")
+		} else {
+			m.composer.toggle()
+		}
 		return nil, true
 	case "enter":
 		generated, ok := m.composer.action(m.l10n)
@@ -874,6 +993,17 @@ func (m *Model) applySuggestion(form *FormState) {
 }
 
 func (m *Model) handleNavigationKey(key Key) bool {
+	if m.view == Data {
+		switch key.Code {
+		case "left":
+			m.dataFocus = 0
+			return true
+		case "right":
+			m.dataFocus = 1
+			m.selectedAction = clampIndex(m.selectedAction, len(m.visibleActions()))
+			return true
+		}
+	}
 	delta := 0
 	switch key.Code {
 	case "up", "k":
@@ -892,7 +1022,12 @@ func (m *Model) handleNavigationKey(key Key) bool {
 		case PullRequests:
 			m.selectedPR = clampIndex(m.selectedPR+delta, len(m.snapshot.PullRequests))
 		case Data:
-			m.selectedDataSource = clampIndex(m.selectedDataSource+delta, len(m.snapshot.DataSources))
+			if m.dataFocus == 0 {
+				m.selectedDataSource = clampIndex(m.selectedDataSource+delta, len(m.snapshot.DataSources))
+				m.selectedAction = 0
+			} else {
+				m.selectedAction = clampIndex(m.selectedAction+delta, len(m.visibleActions()))
+			}
 		case Composer:
 			m.composer.move(delta)
 		}
@@ -986,7 +1121,16 @@ func (m *Model) handleViewActionKey(key Key) ([]Effect, bool) {
 		}
 	case Data:
 		switch key.Code {
-		case "enter", "s":
+		case "enter":
+			if m.dataFocus == 1 {
+				if item, ok := m.selectedVisibleAction(); ok {
+					return m.requestAction(item), true
+				}
+				m.addMessage(m.l10n.Text("tui.message.no-selection"))
+				return nil, true
+			}
+			return m.dataAction(DataCatalogSlot), true
+		case "s":
 			return m.dataAction(DataCatalogSlot), true
 		case "d":
 			m.openDataForm("data-describe")
@@ -1091,9 +1235,6 @@ func (m *Model) openForm(templateID string) {
 	m.form = &form
 	m.filterActive = false
 	m.confirmation = nil
-	m.removeModal(menuModal)
-	m.removeModal(menuSectionModal)
-	m.removeModal(helpModal)
 }
 
 func (m *Model) openWorkStateForm() {
@@ -1163,6 +1304,7 @@ func setField(fields []FormField, id, value string) {
 	for i := range fields {
 		if fields[i].ID == id {
 			fields[i].Value = value
+			fields[i].Cursor = len([]rune(value))
 			return
 		}
 	}
@@ -1178,8 +1320,12 @@ func (m *Model) selectedVisibleAction() (Action, bool) {
 
 func (m *Model) visibleActions() []Action {
 	filter := strings.ToLower(strings.TrimSpace(m.filter))
+	items := m.snapshot.Actions
+	if m.view == Data && m.selectedDataSource < len(m.snapshot.DataSources) {
+		items = m.snapshot.DataSources[m.selectedDataSource].Actions
+	}
 	var result []Action
-	for _, item := range m.snapshot.Actions {
+	for _, item := range items {
 		if item.MenuSection != "" || !item.Active {
 			continue
 		}
@@ -1225,46 +1371,6 @@ func clampIndex(value, count int) int {
 	}
 	if value >= count {
 		return count - 1
-	}
-	return value
-}
-
-// HandleWheel is the only mouse transition; click, release, drag, and motion
-// messages are intentionally ignored by the Bubble Tea adapter.
-func (m *Model) HandleWheel(delta int) {
-	if delta == 0 {
-		return
-	}
-	if modal, ok := m.topModal(); ok {
-		switch modal {
-		case journalModal:
-			m.history.Scroll = max(0, m.history.Scroll+delta)
-		case stateModal:
-			m.stateScroll = max(0, m.stateScroll+delta)
-		case detailModal:
-			if m.detail != nil {
-				m.detail.scroll = max(0, m.detail.scroll+delta)
-			}
-		case menuModal:
-			m.selectedMenuSection = clampIndex(m.selectedMenuSection+delta, 4)
-			m.selectedMenuItem = 0
-		case menuSectionModal:
-			m.selectedMenuItem = clampIndex(m.selectedMenuItem+delta, len(m.menuItems()))
-		}
-		return
-	}
-	key := Key{Kind: KeyRepeat, Code: "down"}
-	if delta < 0 {
-		key.Code = "up"
-	}
-	for range max(1, abs(delta)) {
-		m.handleNavigationKey(key)
-	}
-}
-
-func abs(value int) int {
-	if value < 0 {
-		return -value
 	}
 	return value
 }
