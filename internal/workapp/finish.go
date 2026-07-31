@@ -34,6 +34,23 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 	if !plan.Handoff.IsValid {
 		return FinishReport{}, ErrInvalidHandoff
 	}
+	var provider work.Provider
+	var prReader work.PullRequestReader
+	var prWriter work.PullRequestWriter
+	if request.CreatePR {
+		provider, err = s.provider(s.providerName(request.Provider, request.Root, plan.Manifest.Project))
+		if err != nil {
+			return FinishReport{}, err
+		}
+		prReader, err = work.Require[work.PullRequestReader](provider, work.CapabilityPullRequestReader)
+		if err != nil {
+			return FinishReport{}, err
+		}
+		prWriter, err = work.Require[work.PullRequestWriter](provider, work.CapabilityPullRequestWriter)
+		if err != nil {
+			return FinishReport{}, err
+		}
+	}
 	local, err := s.Finisher.ExecuteLocalFinish(ctx, plan, workspace.FinishExecuteOptions{SkipVerification: request.SkipVerify, ForceWithLease: request.ForceWithLease}, nil)
 	if err != nil {
 		return FinishReport{}, err
@@ -42,18 +59,6 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 		local.Events = append(local.Events, workspace.ActionEvent{Type: "skippingPullRequestCreation"})
 		report.Execution = &local
 		return report, nil
-	}
-	provider, err := s.provider(s.providerName(request.Provider, request.Root, plan.Manifest.Project))
-	if err != nil {
-		return FinishReport{}, err
-	}
-	prReader, requireErr := work.Require[work.PullRequestReader](provider, work.CapabilityPullRequestReader)
-	if requireErr != nil {
-		return FinishReport{}, requireErr
-	}
-	prWriter, requireErr := work.Require[work.PullRequestWriter](provider, work.CapabilityPullRequestWriter)
-	if requireErr != nil {
-		return FinishReport{}, requireErr
 	}
 	local.Events = append(local.Events, workspace.ActionEvent{Type: "authenticatingWorkProviderForPullRequests", RepositoryCount: len(plan.PullRequestCandidates)})
 	reference := projectRef(request.Root, plan.Manifest.Project)

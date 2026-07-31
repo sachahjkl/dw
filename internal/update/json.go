@@ -22,3 +22,25 @@ func decodeJSON(reader io.Reader, destination any) error {
 	}
 	return nil
 }
+
+func limitedReader(reader io.Reader, size int64) io.Reader {
+	return io.LimitReader(reader, size+1)
+}
+
+func validateContentLength(contentLength, maximum int64, kind string) error {
+	if contentLength > maximum {
+		return fmt.Errorf("update: %s-too-large: content-length=%d maximum=%d", kind, contentLength, maximum)
+	}
+	return nil
+}
+
+func readLimited(reader io.Reader, maximum int64, kind string) ([]byte, error) {
+	contents, err := io.ReadAll(limitedReader(reader, maximum))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(contents)) > maximum {
+		return nil, fmt.Errorf("update: %s-too-large: maximum=%d", kind, maximum)
+	}
+	return contents, nil
+}

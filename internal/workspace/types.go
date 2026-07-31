@@ -544,6 +544,7 @@ type WorkItemStateUpdate struct {
 	Outcome      string  `json:"outcome"`
 }
 type TeardownPlanReport struct {
+	Root      string         `json:"root"`
 	Workspace *string        `json:"workspace"`
 	Steps     []TeardownStep `json:"steps"`
 }

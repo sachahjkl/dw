@@ -17,6 +17,9 @@ func (e *Engine) PlanStart(ctx context.Context, request StartRequest) (StartPlan
 	if project == "" {
 		project = "default"
 	}
+	if err := validatePathComponent("project", project); err != nil {
+		return StartPlan{}, err
+	}
 	ids := distinctCSV(request.WorkItemIDs)
 	if len(ids) == 0 {
 		return StartPlan{}, localized("workspace.error.work-item-required")
@@ -28,9 +31,22 @@ func (e *Engine) PlanStart(ctx context.Context, request StartRequest) (StartPlan
 			}
 		}
 	}
+	for _, id := range ids {
+		if err := validatePathComponent("work item ID", id); err != nil {
+			return StartPlan{}, err
+		}
+	}
 	kind := strings.ToLower(strings.TrimSpace(request.Type))
 	if kind == "" {
 		kind = "feat"
+	}
+	if err := validatePathComponent("work type", kind); err != nil {
+		return StartPlan{}, err
+	}
+	if request.TaskID != nil {
+		if err := validatePathComponent("task ID", *request.TaskID); err != nil {
+			return StartPlan{}, err
+		}
 	}
 	slug := SlugOrFallback(request.Slug, "work item "+ids[0])
 	branchIDs := append([]string(nil), ids...)
@@ -57,12 +73,24 @@ func (e *Engine) PlanStart(ctx context.Context, request StartRequest) (StartPlan
 	folders := make([]RepositoryFolder, 0, len(repositories))
 	worktrees := make([]StartRepositoryPlan, 0, len(repositories))
 	for _, name := range repositories {
+		if err := validatePathComponent("repository", name); err != nil {
+			return StartPlan{}, err
+		}
 		repository, ok := config.Repository(name)
 		if !ok {
 			repository = RepositoryConfig{Name: name, DefaultBranch: "main", Folder: name}
 		}
 		normalizeRepositoryConfig(&repository, name)
+		if err := validateRelativePath("repository folder", repository.Folder); err != nil {
+			return StartPlan{}, err
+		}
+		if err := validatePathComponent("repository anchor", repository.AnchorName); err != nil {
+			return StartPlan{}, err
+		}
 		path := filepath.Join(workspace, repository.Folder)
+		if err := ensurePathWithin(workspace, path); err != nil {
+			return StartPlan{}, err
+		}
 		folders = append(folders, RepositoryFolder{Repository: name, Path: repository.Folder})
 		worktrees = append(worktrees, StartRepositoryPlan{Repository: name, ProjectRoot: projectRoot, WorktreePath: path, HTTPURL: repository.HTTPURL, SSHURL: repository.SSHURL, DefaultBranch: repository.DefaultBranch, AnchorName: repository.AnchorName, GitCredentialSecret: repository.GitCredentialSecret, BranchName: branch})
 	}
@@ -184,6 +212,10 @@ func (e *Engine) Start(ctx context.Context, request StartRequest, preview bool) 
 			return plan, nil, err
 		}
 	}
+	report, err := e.ExecuteStart(ctx, plan, items, nil, nil)
+	if err != nil {
+		return plan, &report, err
+	}
 	if e.Work != nil {
 		if workflow.TaskStart.CreateChildTasks && len(items) > 0 {
 			parent := items[0]
@@ -194,12 +226,17 @@ func (e *Engine) Start(ctx context.Context, request StartRequest, preview bool) 
 				}
 				child, createErr := e.Work.CreateChildTask(ctx, plan.Project, parent, repository, ChildTaskTitle(repository, title))
 				if createErr != nil {
-					return plan, nil, createErr
+					return plan, &report, createErr
 				}
 				child.Repository = repository
+				manifest, persistErr := AddChild(plan.Workspace, child)
+				if persistErr != nil {
+					return plan, &report, persistErr
+				}
 				children = append(children, child)
+				report.Manifest = manifest
 			}
-			plan = StartPlanWithChildTasks(plan, children)
+			report.ChildTasks = append([]ChildTask(nil), children...)
 		}
 		if workflow.TaskStart.UpdateWorkItemState {
 			for _, item := range items {
@@ -210,16 +247,15 @@ func (e *Engine) Start(ctx context.Context, request StartRequest, preview bool) 
 				changed := item.State == nil || !equalFold(*item.State, *state)
 				if changed {
 					if err = e.Work.UpdateWorkItemState(ctx, plan.Project, item.ID, *state); err != nil {
-						return plan, nil, err
+						return plan, &report, err
 					}
 				}
 				stateUpdates = append(stateUpdates, StartStateUpdate{ID: item.ID, Label: workItemLabel(item), TargetState: *state, Changed: changed})
 			}
 		}
 	}
-	report, err := e.ExecuteStart(ctx, plan, items, children, nil)
 	report.StateUpdates = stateUpdates
-	return plan, &report, err
+	return plan, &report, nil
 }
 
 func StartPlanWithChildTasks(plan StartPlan, tasks []ChildTask) StartPlan {

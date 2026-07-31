@@ -10,6 +10,10 @@ import (
 // ParseManifest intentionally ignores schema, channel, and unknown fields. This
 // matches serde's permissive release reader while retaining required fields.
 func ParseManifest(reader io.Reader) (Manifest, error) {
+	contents, err := readLimited(reader, maxManifestSize, "manifest")
+	if err != nil {
+		return Manifest{}, err
+	}
 	var wire struct {
 		Version *string `json:"version"`
 		Commit  *string `json:"commit"`
@@ -20,7 +24,7 @@ func ParseManifest(reader io.Reader) (Manifest, error) {
 			URL      json.RawMessage `json:"url"`
 		} `json:"assets"`
 	}
-	if err := decodeJSON(reader, &wire); err != nil {
+	if err := decodeJSON(bytes.NewReader(contents), &wire); err != nil {
 		return Manifest{}, fmt.Errorf("update: decode-manifest: %w", err)
 	}
 	if wire.Version == nil || wire.Commit == nil || wire.Assets == nil {

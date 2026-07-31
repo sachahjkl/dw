@@ -9,10 +9,15 @@ import (
 )
 
 const (
-	DefaultOwner         = "sachahjkl"
-	DefaultRepository    = "dw"
-	DefaultManifestAsset = "release.json"
-	DefaultGitHubAPI     = "https://api.github.com"
+	DefaultOwner          = "sachahjkl"
+	DefaultRepository     = "dw"
+	DefaultManifestAsset  = "release.json"
+	DefaultGitHubAPI      = "https://api.github.com"
+	maxGitHubResponseSize = int64(2 << 20)
+	maxManifestSize       = int64(1 << 20)
+	maxAssetSize          = int64(256 << 20)
+	maxArchiveSize        = int64(128 << 20)
+	maxArchiveEntries     = 1024
 )
 
 type Config = config.UpdateOptions

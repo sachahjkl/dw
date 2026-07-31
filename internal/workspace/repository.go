@@ -10,6 +10,9 @@ import (
 
 func (e *Engine) PlanAddRepository(ctx context.Context, root, workspace, name string) (Manifest, AddRepositoryPlan, error) {
 	name = strings.TrimSpace(name)
+	if err := validatePathComponent("repository", name); err != nil {
+		return Manifest{}, AddRepositoryPlan{}, err
+	}
 	manifest, err := ReadManifest(filepath.Join(workspace, ManifestFile))
 	if err != nil {
 		return Manifest{}, AddRepositoryPlan{}, err
@@ -31,6 +34,15 @@ func (e *Engine) PlanAddRepository(ctx context.Context, root, workspace, name st
 		return Manifest{}, AddRepositoryPlan{}, localizedCause("workspace.error.missing-repository", ErrMissingRepository, l10n.A("repository", name))
 	}
 	normalizeRepositoryConfig(&repository, name)
+	if err := validateRelativePath("repository folder", repository.Folder); err != nil {
+		return Manifest{}, AddRepositoryPlan{}, err
+	}
+	if err := validatePathComponent("repository anchor", repository.AnchorName); err != nil {
+		return Manifest{}, AddRepositoryPlan{}, err
+	}
+	if err := ensurePathWithin(workspace, filepath.Join(workspace, repository.Folder)); err != nil {
+		return Manifest{}, AddRepositoryPlan{}, err
+	}
 	repositories := appendDistinct(append([]string(nil), manifest.Repositories...), name)
 	return manifest, AddRepositoryPlan{Workspace: workspace, Repository: name, ProjectRoot: filepath.Join(root, "projects", manifest.Project), WorktreePath: filepath.Join(workspace, repository.Folder), HTTPURL: repository.HTTPURL, SSHURL: repository.SSHURL, DefaultBranch: repository.DefaultBranch, AnchorName: repository.AnchorName, GitCredentialSecret: repository.GitCredentialSecret, BranchName: manifest.BranchName, Repositories: repositories}, nil
 }
@@ -235,14 +247,30 @@ func (e *Engine) PlanTeardown(ctx context.Context, root, workspace string) (Mani
 	if err != nil {
 		return Manifest{}, TeardownPlanReport{}, localizedOperation("load project configuration", err)
 	}
+	if err := validatePathComponent("project", manifest.Project); err != nil {
+		return Manifest{}, TeardownPlanReport{}, err
+	}
+	workspacesRoot := filepath.Join(root, "projects", manifest.Project, "workspaces")
+	if err := ensurePathWithin(workspacesRoot, workspace); err != nil {
+		return Manifest{}, TeardownPlanReport{}, err
+	}
 	steps := make([]TeardownStep, 0)
 	projectRoot := filepath.Join(root, "projects", manifest.Project)
 	for _, name := range manifest.Repositories {
+		if err := validatePathComponent("repository", name); err != nil {
+			return Manifest{}, TeardownPlanReport{}, err
+		}
 		repository, ok := project.Repository(name)
 		if !ok {
 			repository = RepositoryConfig{Name: name}
 		}
 		normalizeRepositoryConfig(&repository, name)
+		if err := validateRelativePath("repository folder", repository.Folder); err != nil {
+			return Manifest{}, TeardownPlanReport{}, err
+		}
+		if err := validatePathComponent("repository anchor", repository.AnchorName); err != nil {
+			return Manifest{}, TeardownPlanReport{}, err
+		}
 		gitDir := filepath.Join(projectRoot, "repositories", repository.AnchorName)
 		subject := TeardownSubject{Type: "repository", Repository: name}
 		steps = append(steps, TeardownStep{Subject: subject, Action: TeardownAction{Type: "worktreeRemove", WorktreePath: filepath.Join(workspace, repository.Folder), GitDir: gitDir}})
@@ -252,7 +280,7 @@ func (e *Engine) PlanTeardown(ctx context.Context, root, workspace string) (Mani
 	}
 	steps = append(steps, TeardownStep{Subject: TeardownSubject{Type: "workspace"}, Action: TeardownAction{Type: "deleteWorkspace", Workspace: workspace}})
 	workspaceCopy := workspace
-	return manifest, TeardownPlanReport{Workspace: &workspaceCopy, Steps: steps}, nil
+	return manifest, TeardownPlanReport{Root: root, Workspace: &workspaceCopy, Steps: steps}, nil
 }
 func (e *Engine) ExecuteTeardown(ctx context.Context, plan TeardownPlanReport, approved bool) (TeardownExecutionReport, error) {
 	if !approved {
@@ -262,6 +290,12 @@ func (e *Engine) ExecuteTeardown(ctx context.Context, plan TeardownPlanReport, a
 		return TeardownExecutionReport{}, ErrNoWorkspace
 	}
 	workspace := filepath.Clean(*plan.Workspace)
+	if strings.TrimSpace(plan.Root) == "" {
+		return TeardownExecutionReport{}, ErrNoWorkspace
+	}
+	if err := ensurePathWithin(filepath.Join(plan.Root, "projects"), workspace); err != nil {
+		return TeardownExecutionReport{}, err
+	}
 	if _, err := ReadManifest(filepath.Join(workspace, ManifestFile)); err != nil {
 		return TeardownExecutionReport{}, err
 	}

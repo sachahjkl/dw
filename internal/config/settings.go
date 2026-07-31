@@ -74,7 +74,10 @@ func SetUserRoot(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	settings := LoadUserSettings()
+	settings, err := LoadUserSettingsChecked()
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
 	settings.Root = &normalized
 	if err = SaveUserSettings(settings); err != nil {
 		return "", err
@@ -111,7 +114,10 @@ func SetColorMode(mode ColorMode) (ColorMode, error) {
 	if err != nil {
 		return "", err
 	}
-	settings := LoadUserSettings()
+	settings, err := LoadUserSettingsChecked()
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
 	settings.Color = &normalized
 	if err = SaveUserSettings(settings); err != nil {
 		return "", err

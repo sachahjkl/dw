@@ -80,6 +80,16 @@ func extractWindowsExecutable(archivePath, tempDir string) (replacement string, 
 		return "", fmt.Errorf("update: open-zip: %w", err)
 	}
 	defer archive.Close()
+	if len(archive.File) > maxArchiveEntries {
+		return "", fmt.Errorf("update: archive-too-many-entries: maximum=%d", maxArchiveEntries)
+	}
+	var total uint64
+	for _, entry := range archive.File {
+		if entry.UncompressedSize64 > uint64(maxArchiveSize)-total {
+			return "", fmt.Errorf("update: archive-too-large: maximum=%d", maxArchiveSize)
+		}
+		total += entry.UncompressedSize64
+	}
 	for _, entry := range archive.File {
 		if !strings.EqualFold(path.Base(entry.Name), "dw.exe") || entry.FileInfo().IsDir() {
 			continue
@@ -94,7 +104,8 @@ func extractWindowsExecutable(archivePath, tempDir string) (replacement string, 
 			return "", fmt.Errorf("update: create-extracted-executable: %w", err)
 		}
 		replacement = output.Name()
-		if _, err = io.Copy(output, input); err == nil {
+		_, err = io.Copy(output, io.LimitReader(input, maxArchiveSize+1))
+		if err == nil {
 			err = output.Sync()
 		}
 		closeOutputErr := output.Close()
@@ -120,6 +131,11 @@ func extractWindowsExecutable(archivePath, tempDir string) (replacement string, 
 
 func extractUnixExecutable(archivePath, rid, tempDir string) (replacement string, resultErr error) {
 	defer os.Remove(archivePath)
+	defer func() {
+		if resultErr != nil && replacement != "" {
+			_ = os.Remove(replacement)
+		}
+	}()
 	file, err := os.Open(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("update: open-tar-gz: %w", err)
@@ -131,6 +147,8 @@ func extractUnixExecutable(archivePath, rid, tempDir string) (replacement string
 	}
 	defer decoder.Close()
 	archive := tar.NewReader(decoder)
+	entries := 0
+	var total int64
 	for {
 		header, err := archive.Next()
 		if err == io.EOF {
@@ -139,15 +157,26 @@ func extractUnixExecutable(archivePath, rid, tempDir string) (replacement string
 		if err != nil {
 			return "", fmt.Errorf("update: read-tar-entry: %w", err)
 		}
+		entries++
+		if entries > maxArchiveEntries {
+			return "", fmt.Errorf("update: archive-too-many-entries: maximum=%d", maxArchiveEntries)
+		}
+		if header.Size < 0 || header.Size > maxArchiveSize-total {
+			return "", fmt.Errorf("update: archive-too-large: maximum=%d", maxArchiveSize)
+		}
+		total += header.Size
 		if path.Base(header.Name) != "dw" || !header.FileInfo().Mode().IsRegular() {
 			continue
+		}
+		if replacement != "" {
+			return "", fmt.Errorf("update: invalid-archive-multiple-dw-entries")
 		}
 		output, err := os.CreateTemp(tempDir, "dw-upgrade-*")
 		if err != nil {
 			return "", fmt.Errorf("update: create-extracted-executable: %w", err)
 		}
 		replacement = output.Name()
-		if _, err = io.Copy(output, archive); err == nil {
+		if _, err = io.Copy(output, io.LimitReader(archive, header.Size)); err == nil {
 			err = output.Sync()
 		}
 		closeErr := output.Close()
@@ -162,6 +191,8 @@ func extractUnixExecutable(archivePath, rid, tempDir string) (replacement string
 			_ = os.Remove(replacement)
 			return "", err
 		}
+	}
+	if replacement != "" {
 		return replacement, nil
 	}
 	return "", fmt.Errorf("update: invalid-archive-dw-not-found")

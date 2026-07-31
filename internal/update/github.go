@@ -3,7 +3,6 @@ package update
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -29,13 +28,23 @@ func (service *Service) DiscoverRelease(ctx context.Context, config Config) (Git
 		return GitHubRelease{}, err
 	}
 	defer response.Body.Close()
+	if err := validateContentLength(response.ContentLength, maxGitHubResponseSize, "github-response"); err != nil {
+		return GitHubRelease{}, err
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(response.Body)
+		body, readErr := readLimited(response.Body, maxGitHubResponseSize, "github-response")
+		if readErr != nil {
+			return GitHubRelease{}, readErr
+		}
 		return GitHubRelease{}, fmt.Errorf("update: github-releases-http-%d: %s", response.StatusCode, body)
+	}
+	contents, err := readLimited(response.Body, maxGitHubResponseSize, "github-response")
+	if err != nil {
+		return GitHubRelease{}, err
 	}
 	if config.IncludePrerelease {
 		var releases []githubReleaseWire
-		if err := decodeJSON(response.Body, &releases); err != nil {
+		if err := decodeJSON(strings.NewReader(string(contents)), &releases); err != nil {
 			return GitHubRelease{}, fmt.Errorf("update: decode-github-releases: %w", err)
 		}
 		if len(releases) == 0 {
@@ -44,7 +53,7 @@ func (service *Service) DiscoverRelease(ctx context.Context, config Config) (Git
 		return releases[0].release()
 	}
 	var release githubReleaseWire
-	if err := decodeJSON(response.Body, &release); err != nil {
+	if err := decodeJSON(strings.NewReader(string(contents)), &release); err != nil {
 		return GitHubRelease{}, fmt.Errorf("update: decode-github-release: %w", err)
 	}
 	return release.release()
@@ -88,8 +97,14 @@ func (service *Service) FetchManifest(ctx context.Context, release GitHubRelease
 		return Manifest{}, err
 	}
 	defer response.Body.Close()
+	if err := validateContentLength(response.ContentLength, maxManifestSize, "manifest"); err != nil {
+		return Manifest{}, err
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, _ := io.ReadAll(response.Body)
+		body, readErr := readLimited(response.Body, maxManifestSize, "manifest")
+		if readErr != nil {
+			return Manifest{}, readErr
+		}
 		return Manifest{}, fmt.Errorf("update: manifest-http-%d: %s", response.StatusCode, body)
 	}
 	return ParseManifest(response.Body)

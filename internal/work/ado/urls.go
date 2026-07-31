@@ -1,7 +1,8 @@
 package ado
 
 import (
-	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -12,73 +13,111 @@ func apiVersion(options Options) string {
 	return options.APIVersion
 }
 
-func organizationRoot(options Options) string { return strings.TrimRight(options.Organization, "/") }
+func adoURL(options Options, segments []string, query adoQuery) string {
+	value, err := url.Parse(strings.TrimRight(options.Organization, "/"))
+	if err != nil {
+		value = &url.URL{Path: strings.TrimRight(options.Organization, "/")}
+	}
+	path := strings.TrimRight(value.Path, "/")
+	escapedPath := strings.TrimRight(value.EscapedPath(), "/")
+	for _, segment := range segments {
+		path += "/" + segment
+		escapedPath += "/" + url.PathEscape(segment)
+	}
+	value.Path = path
+	value.RawPath = escapedPath
+	value.RawQuery = query.encode()
+	value.Fragment = ""
+	return value.String()
+}
 
-func encodeComponent(value string) string {
-	value = strings.ReplaceAll(value, " ", "%20")
-	return strings.ReplaceAll(value, "/", "%2F")
+type adoQuery []string
+
+func (values adoQuery) encode() string {
+	var result strings.Builder
+	for index := 0; index < len(values); index += 2 {
+		if index != 0 {
+			result.WriteByte('&')
+		}
+		result.WriteString(strings.ReplaceAll(url.QueryEscape(values[index]), "%24", "$"))
+		result.WriteByte('=')
+		result.WriteString(url.QueryEscape(values[index+1]))
+	}
+	return result.String()
+}
+
+func query(values ...string) adoQuery {
+	return values
 }
 
 func ExpandedWorkItemURL(options Options, id string) string {
-	return fmt.Sprintf("%s/%s/_apis/wit/workitems/%s?$expand=all&api-version=%s", organizationRoot(options), options.Project, id, apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "wit", "workitems", id}, query("$expand", "all", "api-version", apiVersion(options)))
 }
 
 func WorkItemCommentsURL(options Options, id string, top uint32) string {
-	return fmt.Sprintf("%s/%s/_apis/wit/workItems/%s/comments?$top=%d&api-version=%s", organizationRoot(options), options.Project, id, top, apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "wit", "workItems", id, "comments"}, query("$top", strconv.FormatUint(uint64(top), 10), "api-version", apiVersion(options)))
 }
 
 func WorkItemURL(options Options, id string) string {
-	return fmt.Sprintf("%s/%s/_apis/wit/workitems/%s?api-version=%s", organizationRoot(options), options.Project, id, apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "wit", "workitems", id}, query("api-version", apiVersion(options)))
 }
 
 func WorkItemsBatchURL(options Options) string {
-	return fmt.Sprintf("%s/%s/_apis/wit/workitemsbatch?api-version=%s", organizationRoot(options), options.Project, apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "wit", "workitemsbatch"}, query("api-version", apiVersion(options)))
 }
 
 func WIQLURL(options Options, top int) string {
-	return fmt.Sprintf("%s/%s/_apis/wit/wiql?$top=%d&api-version=%s", organizationRoot(options), options.Project, top, apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "wit", "wiql"}, query("$top", strconv.Itoa(top), "api-version", apiVersion(options)))
 }
 
 func WorkItemAPIURL(options Options, id string) string {
-	return fmt.Sprintf("%s/%s/_apis/wit/workItems/%s", organizationRoot(options), options.Project, id)
+	return adoURL(options, []string{options.Project, "_apis", "wit", "workItems", id}, nil)
 }
 
 func WorkItemWebURL(options Options, id string) string {
-	return fmt.Sprintf("%s/%s/_workitems/edit/%s", organizationRoot(options), encodeComponent(options.Project), id)
+	return adoURL(options, []string{options.Project, "_workitems", "edit", id}, nil)
 }
 
 func CreateWorkItemURL(options Options, workItemType string) string {
-	return fmt.Sprintf("%s/%s/_apis/wit/workitems/$%s?api-version=%s", organizationRoot(options), options.Project, encodeComponent(workItemType), apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "wit", "workitems", "$" + workItemType}, query("api-version", apiVersion(options)))
 }
 
 func PullRequestsURL(options Options, repository string) string {
-	return fmt.Sprintf("%s/%s/_apis/git/repositories/%s/pullrequests?api-version=%s", organizationRoot(options), options.Project, encodeComponent(repository), apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "git", "repositories", repository, "pullrequests"}, query("api-version", apiVersion(options)))
 }
 
 func PullRequestWebURL(options Options, repository string, id int64) string {
-	return fmt.Sprintf("%s/%s/_git/%s/pullrequest/%d", organizationRoot(options), encodeComponent(options.Project), encodeComponent(repository), id)
+	return adoURL(options, []string{options.Project, "_git", repository, "pullrequest", strconv.FormatInt(id, 10)}, nil)
 }
 
 func ActivePullRequestsURL(options Options, repository, sourceRef string) string {
-	return fmt.Sprintf("%s/%s/_apis/git/repositories/%s/pullrequests?searchCriteria.status=active&searchCriteria.sourceRefName=%s&api-version=%s", organizationRoot(options), options.Project, encodeComponent(repository), encodeComponent(sourceRef), apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "git", "repositories", repository, "pullrequests"}, query("searchCriteria.status", "active", "searchCriteria.sourceRefName", sourceRef, "api-version", apiVersion(options)))
 }
 
 func ActivePullRequestsForRepositoryURL(options Options, repository string) string {
-	return fmt.Sprintf("%s/%s/_apis/git/repositories/%s/pullrequests?searchCriteria.status=active&api-version=%s", organizationRoot(options), options.Project, encodeComponent(repository), apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "git", "repositories", repository, "pullrequests"}, query("searchCriteria.status", "active", "api-version", apiVersion(options)))
 }
 
 func PullRequestWorkItemsURL(options Options, repository string, id int64) string {
-	return fmt.Sprintf("%s/%s/_apis/git/repositories/%s/pullRequests/%d/workitems?api-version=%s", organizationRoot(options), options.Project, encodeComponent(repository), id, apiVersion(options))
+	return adoURL(options, []string{options.Project, "_apis", "git", "repositories", repository, "pullRequests", strconv.FormatInt(id, 10), "workitems"}, query("api-version", apiVersion(options)))
 }
 
 func ConnectionDataURL(options Options) string {
-	return fmt.Sprintf("%s/_apis/connectionData?connectOptions=1&lastChangeId=-1&lastChangeId64=-1", organizationRoot(options))
+	return adoURL(options, []string{"_apis", "connectionData"}, query("connectOptions", "1", "lastChangeId", "-1", "lastChangeId64", "-1"))
 }
 
 func OrganizationName(value string) string {
 	trimmed := strings.TrimRight(strings.TrimSpace(value), "/")
-	if index := strings.LastIndexByte(trimmed, '/'); index >= 0 && strings.TrimSpace(trimmed[index+1:]) != "" {
-		return trimmed[index+1:]
+	parsed, err := url.Parse(trimmed)
+	if err == nil {
+		path := strings.Trim(parsed.Path, "/")
+		if path != "" {
+			parts := strings.Split(path, "/")
+			return parts[len(parts)-1]
+		}
+		if parsed.Host != "" {
+			return parsed.Host
+		}
 	}
 	return trimmed
 }

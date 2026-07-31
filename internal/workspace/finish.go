@@ -42,10 +42,7 @@ func (e *Engine) PlanFinish(ctx context.Context, root, workspace, message string
 			unpushed = append(unpushed, target.Repository)
 		}
 	}
-	actionable := unpushed
-	if len(changed) > 0 {
-		actionable = changed
-	}
+	actionable := actionableRepositories(statuses)
 	summaries := make([]HandoffSummary, 0)
 	for _, target := range targets {
 		data, readErr := os.ReadFile(filepath.Join(workspace, HandoffPrefix+target.Repository+".md"))
@@ -148,7 +145,9 @@ func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, optio
 			gitActions = append(gitActions, GitAction{Repository: target.Target.Repository, Operation: "commitAndPush", Path: target.Target.Path})
 		}
 		pushEvent(&events, emit, ActionEvent{Type: "gitOperationCompleted", Operation: "commitAndPush"})
-	} else if len(unpushed) > 0 {
+	}
+	unpushed = targetsNotIn(unpushed, changed)
+	if len(unpushed) > 0 {
 		pushEvent(&events, emit, ActionEvent{Type: "runningGitOperation", Operation: "push", RepositoryCount: len(unpushed)})
 		for _, target := range unpushed {
 			pushEvent(&events, emit, ActionEvent{Type: "runningRepositoryGitOperation", Repository: target.Target.Repository, Operation: "push"})
@@ -339,6 +338,31 @@ func unpushedTargets(targets []TargetStatus) []TargetStatus {
 	result := make([]TargetStatus, 0)
 	for _, target := range targets {
 		if target.Status.IsGitRepository && target.Status.HasUnpushed {
+			result = append(result, target)
+		}
+	}
+	return result
+}
+func actionableRepositories(targets []TargetStatus) []string {
+	result := make([]string, 0)
+	for _, target := range targets {
+		if target.Status.IsGitRepository && (target.Status.HasChanges || target.Status.HasUnpushed) {
+			result = append(result, target.Target.Repository)
+		}
+	}
+	return result
+}
+func targetsNotIn(targets, excluded []TargetStatus) []TargetStatus {
+	result := make([]TargetStatus, 0, len(targets))
+	for _, target := range targets {
+		found := false
+		for _, item := range excluded {
+			if equalFold(item.Target.Repository, target.Target.Repository) {
+				found = true
+				break
+			}
+		}
+		if !found {
 			result = append(result, target)
 		}
 	}

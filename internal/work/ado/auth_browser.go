@@ -12,18 +12,25 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 func (a *Authenticator) LoginBrowser(ctx context.Context) (Token, error) {
+	return a.loginBrowser(ctx, 180*time.Second)
+}
+
+func (a *Authenticator) loginBrowser(ctx context.Context, timeout time.Duration) (Token, error) {
 	tenant, clientID, err := a.tenantAndClient()
 	if err != nil {
 		return Token{}, err
 	}
-	port, err := reserveLoopbackPort()
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return Token{}, browserError(err)
 	}
+	defer listener.Close()
+	port := strconvItoa(listener.Addr().(*net.TCPAddr).Port)
 	redirectURI := "http://localhost:" + port
 	state, err := randomURLToken(32)
 	if err != nil {
@@ -48,15 +55,30 @@ func (a *Authenticator) LoginBrowser(ctx context.Context) (Token, error) {
 	}
 	authorizationURL += "?" + query.Encode()
 	callback := make(chan callbackResult, 1)
-	go serveBrowserCallback(port, state, callback)
-	if a.OpenURL == nil {
-		a.OpenURL = openURL
+	server := newBrowserCallbackServer(state, callback)
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			select {
+			case callback <- callbackResult{Err: browserError(err)}:
+			default:
+			}
+		}
+	}()
+	defer func() {
+		_ = server.Close()
+		<-serveDone
+	}()
+	opener := a.OpenURL
+	if opener == nil {
+		opener = openURL
 	}
-	if err := a.OpenURL(authorizationURL); err != nil {
+	if err := opener(authorizationURL); err != nil {
 		return Token{}, browserError(err)
 	}
 	var result callbackResult
-	timer := time.NewTimer(180 * time.Second)
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -94,26 +116,10 @@ type callbackResult struct {
 	Err  error
 }
 
-func reserveLoopbackPort() (string, error) {
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		return "", err
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		return "", err
-	}
-	return strconvItoa(port), nil
-}
-
-func serveBrowserCallback(port, expectedState string, result chan<- callbackResult) {
-	listener, err := net.Listen("tcp4", "127.0.0.1:"+port)
-	if err != nil {
-		result <- callbackResult{Err: browserError(err)}
-		return
-	}
+func newBrowserCallbackServer(expectedState string, result chan<- callbackResult) *http.Server {
 	server := new(http.Server)
 	server.ReadHeaderTimeout = 180 * time.Second
+	var closeOnce sync.Once
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		callback := parseCallback(request.URL.Query(), expectedState)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -122,18 +128,18 @@ func serveBrowserCallback(port, expectedState string, result chan<- callbackResu
 		} else {
 			_, _ = io.WriteString(w, errorPage(callback.Err.Error()))
 		}
-		select {
-		case result <- callback:
-		default:
-		}
-		go server.Close()
+		closeOnce.Do(func() {
+			go func() {
+				shutdownContext, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				if err := server.Shutdown(shutdownContext); err != nil {
+					_ = server.Close()
+				}
+				result <- callback
+			}()
+		})
 	})
-	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-		select {
-		case result <- callbackResult{Err: browserError(err)}:
-		default:
-		}
-	}
+	return server
 }
 
 func parseCallback(query url.Values, expectedState string) callbackResult {
@@ -177,7 +183,7 @@ func (a *Authenticator) postBrowserTokenForm(ctx context.Context, endpoint strin
 		return browserError(err)
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
+	body, err := readOAuthBody(response.Body)
 	if err != nil {
 		return browserError(err)
 	}

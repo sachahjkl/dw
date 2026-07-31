@@ -119,7 +119,7 @@ func UpdateRepository(repositoryPath RepositoryPath, defaultBranch BranchName, c
 	return defaultClient.UpdateRepository(context.Background(), repositoryPath, defaultBranch, credential, sshURL)
 }
 
-func (client Client) UpdateRepository(ctx context.Context, repositoryPath RepositoryPath, defaultBranch BranchName, credential *Credential, sshURL *RemoteURL) error {
+func (client Client) UpdateRepository(ctx context.Context, repositoryPath RepositoryPath, defaultBranch BranchName, credential *Credential, sshURL *RemoteURL) (err error) {
 	if err := client.ensureRepository(ctx, repositoryPath); err != nil {
 		return err
 	}
@@ -130,13 +130,15 @@ func (client Client) UpdateRepository(ctx context.Context, repositoryPath Reposi
 	if err != nil {
 		return err
 	}
-	stashed := false
 	if changed {
 		_, err = client.run(ctx, OperationCommit, repositoryPath, nil, nil, "stash", "push", "--include-untracked", "--message", l10n.Text("git.autostash-message"))
 		if err != nil {
 			return err
 		}
-		stashed = true
+		defer func() {
+			_, restoreErr := client.run(context.WithoutCancel(ctx), OperationRebase, repositoryPath, nil, nil, "stash", "pop")
+			err = errors.Join(err, restoreErr)
+		}()
 	}
 	if err = client.fetchWithFallback(ctx, repositoryPath, credential, sshURL); err != nil {
 		return err
@@ -150,11 +152,6 @@ func (client Client) UpdateRepository(ctx context.Context, repositoryPath Reposi
 			l10n.A("source", source),
 			l10n.A("cause", err),
 		)), err)
-	}
-	if stashed {
-		if _, err = client.run(ctx, OperationRebase, repositoryPath, nil, nil, "stash", "pop"); err != nil {
-			return err
-		}
 	}
 	return nil
 }

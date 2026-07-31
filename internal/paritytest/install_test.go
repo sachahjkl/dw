@@ -1,6 +1,10 @@
 package paritytest_test
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,41 +28,41 @@ func TestUnixInstallerNormalizesReleaseTag(t *testing.T) {
 	} {
 		t.Run(test.version, func(t *testing.T) {
 			temp := t.TempDir()
+			archive := filepath.Join(temp, "dw-linux-x64.tar.gz")
+			writeInstallerArchive(t, archive, map[string]string{"dw": "#!/bin/sh\nprintf 'dw test\\n'\n"})
+			digest := sha256.Sum256(mustReadFile(t, archive))
+			manifest := filepath.Join(temp, "release.json")
+			if err := os.WriteFile(manifest, []byte(fmt.Sprintf(`{"assets":[{"rid":"linux-x64","fileName":"dw-linux-x64.tar.gz","sha256":"%x"}]}`, digest)), 0o644); err != nil {
+				t.Fatal(err)
+			}
 			bin := filepath.Join(temp, "bin")
 			if err := os.Mkdir(bin, 0o755); err != nil {
 				t.Fatal(err)
 			}
 			writeExecutable(t, filepath.Join(bin, "curl"), `#!/bin/sh
+url=""
+output=""
 for argument do
   case "$argument" in
-    https://*) printf '%s' "$argument" > "$DW_INSTALL_CAPTURE" ;;
+    https://*) url="$argument" ;;
   esac
 done
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-o" ]; then
-    : > "$2"
+    output="$2"
     break
   fi
   shift
 done
-`)
-			writeExecutable(t, filepath.Join(bin, "tar"), `#!/bin/sh
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-C" ]; then
-    install_dir="$2"
-    break
-  fi
-  shift
-done
-cat > "$install_dir/dw" <<'EOF'
-#!/bin/sh
-printf 'dw test\n'
-EOF
+case "$url" in
+  */release.json) cp "$DW_INSTALL_MANIFEST" "$output" ;;
+  *) cp "$DW_INSTALL_ARCHIVE" "$output"; printf '%s' "$url" > "$DW_INSTALL_CAPTURE" ;;
+esac
 `)
 			capture := filepath.Join(temp, "url")
 			installDir := filepath.Join(temp, "install")
 			command := exec.Command("sh", installer, "--version", test.version, "--install-dir", installDir, "--no-path-update")
-			command.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "DW_INSTALL_CAPTURE="+capture)
+			command.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "DW_INSTALL_CAPTURE="+capture, "DW_INSTALL_MANIFEST="+manifest, "DW_INSTALL_ARCHIVE="+archive)
 			if output, err := command.CombinedOutput(); err != nil {
 				t.Fatalf("installer failed: %v\n%s", err, output)
 			}
@@ -71,6 +75,48 @@ EOF
 				t.Fatalf("asset URL = %q, want %q", url, want)
 			}
 		})
+	}
+}
+
+func TestUnixInstallerRejectsUnsafeArchiveWithoutReplacingBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix installer test requires Unix path semantics")
+	}
+	temp := t.TempDir()
+	archive := filepath.Join(temp, "dw-linux-x64.tar.gz")
+	writeInstallerArchive(t, archive, map[string]string{
+		"dw":      "#!/bin/sh\nexit 0\n",
+		"../evil": "unexpected",
+	})
+	digest := sha256.Sum256(mustReadFile(t, archive))
+	manifest := filepath.Join(temp, "release.json")
+	if err := os.WriteFile(manifest, []byte(fmt.Sprintf(`{"assets":[{"rid":"linux-x64","fileName":"dw-linux-x64.tar.gz","sha256":"%x"}]}`, digest)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	installDir := filepath.Join(temp, "install")
+	if err := os.Mkdir(installDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := filepath.Join(installDir, "dw")
+	if err := os.WriteFile(existing, []byte("existing"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(temp, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeExecutable(t, filepath.Join(bin, "curl"), `#!/bin/sh
+for argument do case "$argument" in */release.json) source="$DW_INSTALL_MANIFEST";; https://*) source="$DW_INSTALL_ARCHIVE";; esac; done
+while [ "$#" -gt 0 ]; do if [ "$1" = "-o" ]; then cp "$source" "$2"; exit; fi; shift; done
+`)
+	installer := filepath.Join(repositoryRoot(t), "scripts", "install.sh")
+	command := exec.Command("sh", installer, "--install-dir", installDir, "--no-path-update")
+	command.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "DW_INSTALL_MANIFEST="+manifest, "DW_INSTALL_ARCHIVE="+archive)
+	if output, err := command.CombinedOutput(); err == nil {
+		t.Fatalf("installer accepted unsafe archive:\n%s", output)
+	}
+	if contents := string(mustReadFile(t, existing)); contents != "existing" {
+		t.Fatalf("existing binary was changed to %q", contents)
 	}
 }
 
@@ -138,4 +184,40 @@ func writeExecutable(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeInstallerArchive(t *testing.T, path string, entries map[string]string) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gz := gzip.NewWriter(file)
+	archive := tar.NewWriter(gz)
+	for name, contents := range entries {
+		if err := archive.WriteHeader(&tar.Header{Name: name, Mode: 0o755, Size: int64(len(contents))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := archive.Write([]byte(contents)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contents
 }

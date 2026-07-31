@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	DefaultTenantID       = "organizations"
-	DefaultPublicClientID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
-	ADOResourceID         = "499b84ac-1321-427f-aa17-267ca6975798"
-	DefaultADOScope       = ADOResourceID + "/.default"
+	DefaultTenantID        = "organizations"
+	DefaultPublicClientID  = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+	ADOResourceID          = "499b84ac-1321-427f-aa17-267ca6975798"
+	DefaultADOScope        = ADOResourceID + "/.default"
+	oauthResponseBodyLimit = 1 << 20
 )
 
 type Authenticator struct {
@@ -186,7 +187,7 @@ func (a *Authenticator) LoginDeviceCode(ctx context.Context, onInstructions func
 	}
 	flowURL := "https://login.microsoftonline.com/" + tenant + "/oauth2/v2.0/devicecode"
 	var flow deviceAuthorizationResponse
-	if err := a.postOAuthForm(ctx, flowURL, url.Values{"client_id": {clientID}, "scope": {strings.Join(a.scopes(false), " ")}}, &flow); err != nil {
+	if err := a.postOAuthForm(ctx, flowURL, url.Values{"client_id": {clientID}, "scope": {strings.Join(a.scopes(true), " ")}}, &flow); err != nil {
 		return Token{}, err
 	}
 	if a.OpenURL != nil {
@@ -273,7 +274,7 @@ func (a *Authenticator) postOAuthForm(ctx context.Context, endpoint string, form
 		return &Error{Kind: ErrorOAuth, Detail: err.Error(), Cause: err}
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
+	body, err := readOAuthBody(response.Body)
 	if err != nil {
 		return &Error{Kind: ErrorOAuth, Detail: err.Error(), Cause: err}
 	}
@@ -284,6 +285,17 @@ func (a *Authenticator) postOAuthForm(ctx context.Context, endpoint string, form
 		return &Error{Kind: ErrorOAuth, Detail: "Invalid OAuth response: " + err.Error(), Cause: err}
 	}
 	return nil
+}
+
+func readOAuthBody(reader io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(reader, oauthResponseBodyLimit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > oauthResponseBodyLimit {
+		return nil, errors.New("OAuth response body exceeds the 1 MiB limit")
+	}
+	return body, nil
 }
 
 func oauthErrorMessage(body []byte) string {

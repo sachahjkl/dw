@@ -178,6 +178,9 @@ func (service *Service) downloadAsset(ctx context.Context, asset Asset, emit Emi
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", fmt.Errorf("update: asset-http-%d", response.StatusCode)
 	}
+	if err := validateContentLength(response.ContentLength, maxAssetSize, "asset"); err != nil {
+		return "", err
+	}
 	tempDir := service.TempDir
 	if tempDir == "" {
 		tempDir = os.TempDir()
@@ -199,10 +202,14 @@ func (service *Service) downloadAsset(ctx context.Context, asset Asset, emit Emi
 		total = &value
 	}
 	buffer := make([]byte, 64*1024)
+	body := io.LimitReader(response.Body, maxAssetSize+1)
 	var received int64
 	for {
-		count, readErr := response.Body.Read(buffer)
+		count, readErr := body.Read(buffer)
 		if count > 0 {
+			if received+int64(count) > maxAssetSize {
+				return "", fmt.Errorf("update: asset-too-large: maximum=%d", maxAssetSize)
+			}
 			written, writeErr := output.Write(buffer[:count])
 			if writeErr != nil {
 				return "", fmt.Errorf("update: write-download: %w", writeErr)

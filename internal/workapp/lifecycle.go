@@ -79,30 +79,51 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 		}
 	}
 	children := make([]workspace.ChildTask, 0)
+	var creator work.ChildCreator
 	if !request.SkipWork && request.CreateChildTasks {
-		creator, requireErr := work.Require[work.ChildCreator](provider, work.CapabilityChildCreator)
+		var requireErr error
+		creator, requireErr = work.Require[work.ChildCreator](provider, work.CapabilityChildCreator)
 		if requireErr != nil {
 			return StartPlanReport{}, nil, requireErr
 		}
-		if len(items) > 0 {
-			for _, repository := range plan.Repositories {
-				title := workspace.ChildTaskTitle(repository, firstNonEmpty(items[0].Title, string(items[0].ID)))
-				created, createErr := creator.CreateChild(ctx, projectRef(request.Root, project), work.ChildCreate{ParentID: items[0].ID, Type: work.ItemType("Task"), Title: title, History: "workspace start"})
-				if createErr != nil {
-					return StartPlanReport{}, nil, createErr
-				}
-				childTitle := created.Title
-				children = append(children, workspace.ChildTask{Repository: repository, ID: string(created.ID), Title: optionalString(childTitle)})
-			}
-			plan = workspace.StartPlanWithChildTasks(plan, children)
+		if s.Children == nil {
+			return StartPlanReport{}, nil, capabilityUnavailable("workspace child persistence")
 		}
 	}
-	stateUpdates := make([]StartStateUpdate, 0)
+	var writer work.StateWriter
 	if !request.SkipWork && len(request.States) > 0 {
-		writer, requireErr := work.Require[work.StateWriter](provider, work.CapabilityStateWriter)
+		var requireErr error
+		writer, requireErr = work.Require[work.StateWriter](provider, work.CapabilityStateWriter)
 		if requireErr != nil {
 			return StartPlanReport{}, nil, requireErr
 		}
+	}
+	local, err := s.Starter.ExecuteStart(ctx, plan, workItemsToWorkspace(items), nil, nil)
+	if err != nil {
+		return StartPlanReport{}, nil, err
+	}
+	if creator != nil && len(items) > 0 {
+		for _, repository := range plan.Repositories {
+			title := workspace.ChildTaskTitle(repository, firstNonEmpty(items[0].Title, string(items[0].ID)))
+			created, createErr := creator.CreateChild(ctx, projectRef(request.Root, project), work.ChildCreate{ParentID: items[0].ID, Type: work.ItemType("Task"), Title: title, History: "workspace start"})
+			if createErr != nil {
+				execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: children, Events: events}
+				return report, &execution, createErr
+			}
+			childTitle := created.Title
+			child := workspace.ChildTask{Repository: repository, ID: string(created.ID), Title: optionalString(childTitle)}
+			manifest, persistErr := s.Children.AddChild(ctx, plan.Workspace, child)
+			if persistErr != nil {
+				execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: children, Events: events}
+				return report, &execution, persistErr
+			}
+			children = append(children, child)
+			local.Manifest = manifest
+		}
+		local.ChildTasks = append([]workspace.ChildTask(nil), children...)
+	}
+	stateUpdates := make([]StartStateUpdate, 0)
+	if writer != nil {
 		for _, item := range items {
 			target, ok := stateForType(request.States, string(item.Type))
 			if !ok {
@@ -112,15 +133,12 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 			if changed {
 				_, updateErr := writer.UpdateStates(ctx, projectRef(request.Root, project), []work.StateChange{{ID: item.ID, State: work.State(target), Comment: "workspace start"}})
 				if updateErr != nil {
-					return StartPlanReport{}, nil, updateErr
+					execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: local.ChildTasks, StateUpdates: stateUpdates, Events: events}
+					return report, &execution, updateErr
 				}
 			}
 			stateUpdates = append(stateUpdates, StartStateUpdate{ID: string(item.ID), Label: workItemLabel(item), TargetState: target, Changed: changed})
 		}
-	}
-	local, err := s.Starter.ExecuteStart(ctx, plan, workItemsToWorkspace(items), children, nil)
-	if err != nil {
-		return StartPlanReport{}, nil, err
 	}
 	execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: local.ChildTasks, StateUpdates: stateUpdates, Events: events}
 	return report, &execution, nil

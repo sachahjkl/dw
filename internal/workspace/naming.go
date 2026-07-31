@@ -9,6 +9,43 @@ import (
 	"github.com/sachahjkl/dw/internal/agent"
 )
 
+func validatePathComponent(field, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "." || value == ".." || filepath.IsAbs(value) || filepath.VolumeName(value) != "" || strings.ContainsAny(value, `/\`) {
+		return fmt.Errorf("workspace: invalid %s %q", field, value)
+	}
+	return nil
+}
+
+func validateRelativePath(field, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" || filepath.IsAbs(value) || filepath.VolumeName(value) != "" || strings.Contains(value, `\`) {
+		return fmt.Errorf("workspace: invalid %s %q", field, value)
+	}
+	for _, component := range strings.Split(value, "/") {
+		if err := validatePathComponent(field, component); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensurePathWithin(root, path string) error {
+	root, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return err
+	}
+	path, err = filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return fmt.Errorf("workspace: path %q escapes root %q", path, root)
+	}
+	return nil
+}
+
 func NormalizeSlug(value string) string {
 	var output strings.Builder
 	previousDash := false
