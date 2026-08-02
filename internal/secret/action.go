@@ -17,16 +17,20 @@ const (
 	ActionDelete action.ID = "secret.delete"
 )
 
-type ListRequest struct{ Root string }
-type SetRequest struct {
-	Key         contract.SecretKey
-	Value       *contract.SecretValue
-	Environment *contract.EnvironmentVariable
+type ListRequest struct {
+	Root string `json:"root,omitempty"`
 }
-type GetRequest struct{ Key contract.SecretKey }
+type SetRequest struct {
+	Key         contract.SecretKey            `json:"key"`
+	Value       *contract.SecretValue         `json:"-"`
+	Environment *contract.EnvironmentVariable `json:"environment,omitempty"`
+}
+type GetRequest struct {
+	Key contract.SecretKey `json:"key"`
+}
 type DeleteRequest struct {
-	Key       contract.SecretKey
-	Confirmed bool
+	Key       contract.SecretKey `json:"key"`
+	Confirmed bool               `json:"confirmed"`
 }
 
 func (ListRequest) ActionID() action.ID   { return ActionList }
@@ -114,32 +118,33 @@ func resolveSetValue(ctx context.Context, request SetRequest, runtime action.Run
 	if request.Environment != nil {
 		return FromEnvironment(*request.Environment)
 	}
-	response, err := runtime.Ask(ctx, action.Prompt{
-		ID:       action.PromptID("secret-set:" + string(request.Key)),
-		Kind:     action.PromptSecret,
-		Label:    l10n.M("secret.prompt-value", l10n.A("key", request.Key)),
-		Help:     messagePointer(l10n.M("secret.prompt-value-help")),
+	response, err := runtime.Ask(ctx, action.SecretPrompt{
+		Meta: action.PromptMeta{
+			ID:    action.PromptID("secret-set:" + string(request.Key)),
+			Label: l10n.M("secret.prompt-value", l10n.A("key", request.Key)),
+			Help:  messagePointer(l10n.M("secret.prompt-value-help")),
+		},
 		Required: true,
 	})
 	if err != nil {
 		return contract.SecretValue{}, err
 	}
-	return response.Secret, nil
+	return response.(action.SecretResponse).Value, nil
 }
 
 func confirmDelete(ctx context.Context, key contract.SecretKey, runtime action.Runtime) error {
-	defaultValue := action.ChoiceValue("false")
-	response, err := runtime.Ask(ctx, action.Prompt{
-		ID:      action.PromptID("secret-delete:" + string(key)),
-		Kind:    action.PromptConfirm,
-		Label:   l10n.M("secret.prompt-delete", l10n.A("key", key)),
-		Help:    messagePointer(l10n.M("secret.prompt-delete-help")),
-		Default: &defaultValue,
+	response, err := runtime.Ask(ctx, action.ConfirmPrompt{
+		Meta: action.PromptMeta{
+			ID:    action.PromptID("secret-delete:" + string(key)),
+			Label: l10n.M("secret.prompt-delete", l10n.A("key", key)),
+			Help:  messagePointer(l10n.M("secret.prompt-delete-help")),
+		},
+		Default: false,
 	})
 	if err != nil {
 		return err
 	}
-	if !response.Accepted {
+	if !response.(action.ConfirmResponse).Accepted {
 		return newLocalizedError("secret.delete-canceled", l10n.M("secret.delete-canceled"), nil)
 	}
 	return nil
@@ -148,46 +153,30 @@ func confirmDelete(ctx context.Context, key contract.SecretKey, runtime action.R
 func messagePointer(message l10n.Message) *l10n.Message { return &message }
 
 func listRequest(request action.Request) (ListRequest, error) {
-	switch value := request.(type) {
-	case ListRequest:
-		return value, nil
-	case *ListRequest:
-		if value != nil {
-			return *value, nil
-		}
+	value, ok := request.(ListRequest)
+	if !ok {
+		return ListRequest{}, fmt.Errorf("secret.invalid-list-request:%T", request)
 	}
-	return ListRequest{}, fmt.Errorf("secret.invalid-list-request:%T", request)
+	return value, nil
 }
 func setRequest(request action.Request) (SetRequest, error) {
-	switch value := request.(type) {
-	case SetRequest:
-		return value, nil
-	case *SetRequest:
-		if value != nil {
-			return *value, nil
-		}
+	value, ok := request.(SetRequest)
+	if !ok {
+		return SetRequest{}, fmt.Errorf("secret.invalid-set-request:%T", request)
 	}
-	return SetRequest{}, fmt.Errorf("secret.invalid-set-request:%T", request)
+	return value, nil
 }
 func getRequest(request action.Request) (GetRequest, error) {
-	switch value := request.(type) {
-	case GetRequest:
-		return value, nil
-	case *GetRequest:
-		if value != nil {
-			return *value, nil
-		}
+	value, ok := request.(GetRequest)
+	if !ok {
+		return GetRequest{}, fmt.Errorf("secret.invalid-get-request:%T", request)
 	}
-	return GetRequest{}, fmt.Errorf("secret.invalid-get-request:%T", request)
+	return value, nil
 }
 func deleteRequest(request action.Request) (DeleteRequest, error) {
-	switch value := request.(type) {
-	case DeleteRequest:
-		return value, nil
-	case *DeleteRequest:
-		if value != nil {
-			return *value, nil
-		}
+	value, ok := request.(DeleteRequest)
+	if !ok {
+		return DeleteRequest{}, fmt.Errorf("secret.invalid-delete-request:%T", request)
 	}
-	return DeleteRequest{}, fmt.Errorf("secret.invalid-delete-request:%T", request)
+	return value, nil
 }

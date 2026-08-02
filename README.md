@@ -136,6 +136,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-win-x64.ps1 -Version 
 
 Work commands accept optional `--provider`; otherwise the configured project work provider is used. Data-source configuration names its provider; generic data commands select it with `--source`, accept `RESOURCE` where needed, and take query text through `--query` or trailing `QUERY` values. Applicable data commands also accept `--provider`. Authentication always selects the provider positionally. `dw provider capabilities <provider>` shows which optional interfaces the provider implements before an operation is attempted.
 
+## Runtime Configuration
+
+DevWorkflow creates `runtime.json` in its user configuration directory. Edit this JSON file to change execution, HTTP, session, polling, and web-service limits.
+
+Linux uses `$XDG_CONFIG_HOME/DevWorkflow/runtime.json`, with `~/.config` as the default base. Windows uses `%LOCALAPPDATA%\DevWorkflow\runtime.json`.
+
+The file uses schema `1`. DevWorkflow rejects unknown fields and invalid values instead of applying partial settings.
+
 ## Release Artifacts
 
 Build local release artifacts:

@@ -74,6 +74,11 @@ type AuthStatus struct {
 	ExpiresOn *string `json:"expires_on,omitempty"`
 }
 
+type BrowserLoginInstructions struct {
+	AuthorizationURL string `json:"authorization_url"`
+	CallbackURI      string `json:"callback_uri"`
+}
+
 type DeviceLoginInstructions struct {
 	VerificationURI     string `json:"verification_uri"`
 	UserCode            string `json:"user_code"`

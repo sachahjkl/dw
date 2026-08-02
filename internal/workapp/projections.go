@@ -1,5 +1,7 @@
 package workapp
 
+import "github.com/sachahjkl/dw/internal/action"
+
 const (
 	RichContextSchemaVersion  = "dw.work.rich-context.v1"
 	AttachmentDirectoryPrefix = "attachments/work/"
@@ -9,6 +11,8 @@ type Event struct {
 	Kind                string   `json:"kind"`
 	Project             *string  `json:"project,omitempty"`
 	VerificationURI     string   `json:"verification_uri,omitempty"`
+	AuthorizationURL    string   `json:"authorization_url,omitempty"`
+	CallbackURI         string   `json:"callback_uri,omitempty"`
 	UserCode            string   `json:"user_code,omitempty"`
 	ExpiresInSeconds    uint32   `json:"expires_in_seconds,omitempty"`
 	PollIntervalSeconds uint32   `json:"poll_interval_seconds,omitempty"`
@@ -17,8 +21,16 @@ type Event struct {
 	GitTo               string   `json:"git_to,omitempty"`
 	ID                  string   `json:"id,omitempty"`
 	IDs                 []string `json:"ids,omitempty"`
+	Repository          string   `json:"repository,omitempty"`
+	Operation           string   `json:"operation,omitempty"`
+	RepositoryCount     int      `json:"repository_count,omitempty"`
+	WorkItemID          string   `json:"work_item_id,omitempty"`
+	Error               string   `json:"error,omitempty"`
 	State               string   `json:"state,omitempty"`
 }
+
+func (Event) EventDataType() action.EventDataType { return "work.event" }
+func (Event) EventDataSchema() uint16             { return 1 }
 
 func (e Event) ActionID() string {
 	switch e.Kind {
@@ -26,6 +38,8 @@ func (e Event) ActionID() string {
 		return "provider.auth"
 	case "device-login-required":
 		return "provider.auth.device.login"
+	case "browser-login-required":
+		return "provider.auth.browser.login"
 	case "loading-assigned-work-items":
 		return "work.item.list.load"
 	case "grouping-assigned-work-items":

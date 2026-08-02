@@ -1,8 +1,12 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
 	"time"
 
 	"github.com/sachahjkl/dw/internal/contract"
@@ -655,6 +659,47 @@ func (p StartPlan) MarshalJSON() ([]byte, error) {
 		RepositoryFolders   map[string]string     `json:"repositoryFolders"`
 		RepositoryWorktrees []StartRepositoryPlan `json:"repositoryWorktrees"`
 	}{p.WorkItemIDs, p.PrimaryWorkItemID, p.Project, p.TaskID, p.Type, p.Slug, p.BranchName, p.SubjectName, p.Workspace, p.Repositories, folders, p.RepositoryWorktrees})
+}
+
+func (p *StartPlan) UnmarshalJSON(data []byte) error {
+	var value struct {
+		WorkItemIDs         []string              `json:"workItemIds"`
+		PrimaryWorkItemID   string                `json:"primaryWorkItemId"`
+		Project             string                `json:"project"`
+		TaskID              *string               `json:"taskId"`
+		Type                string                `json:"type"`
+		Slug                string                `json:"slug"`
+		BranchName          string                `json:"branchName"`
+		SubjectName         string                `json:"subjectName"`
+		Workspace           string                `json:"workspace"`
+		Repositories        []string              `json:"repositories"`
+		RepositoryFolders   map[string]string     `json:"repositoryFolders"`
+		RepositoryWorktrees []StartRepositoryPlan `json:"repositoryWorktrees"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("workspace.invalid-start-plan-json")
+	}
+	names := make([]string, 0, len(value.RepositoryFolders))
+	for name := range value.RepositoryFolders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	folders := make([]RepositoryFolder, len(names))
+	for index, name := range names {
+		folders[index] = RepositoryFolder{Repository: name, Path: value.RepositoryFolders[name]}
+	}
+	*p = StartPlan{
+		WorkItemIDs: value.WorkItemIDs, PrimaryWorkItemID: value.PrimaryWorkItemID, Project: value.Project,
+		TaskID: value.TaskID, Type: value.Type, Slug: value.Slug, BranchName: value.BranchName,
+		SubjectName: value.SubjectName, Workspace: value.Workspace, Repositories: value.Repositories,
+		RepositoryFolders: folders, RepositoryWorktrees: value.RepositoryWorktrees,
+	}
+	return nil
 }
 
 type StatusReport struct {

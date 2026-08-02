@@ -213,7 +213,7 @@ func (provider *recordingAuthenticator) AuthStatus(context.Context, work.Project
 	provider.statusCalls++
 	return work.AuthStatus{}, nil
 }
-func (*recordingAuthenticator) Login(context.Context, work.ProjectRef, work.AuthMode, func(work.DeviceLogin) error) (work.AuthStatus, error) {
+func (*recordingAuthenticator) Login(context.Context, work.ProjectRef, work.AuthMode, func(work.LoginInstructions) error) (work.AuthStatus, error) {
 	return work.AuthStatus{}, nil
 }
 func (*recordingAuthenticator) Logout(context.Context, work.ProjectRef) (bool, error) {

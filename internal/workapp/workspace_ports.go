@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sachahjkl/dw/internal/agent"
 	"github.com/sachahjkl/dw/internal/workspace"
 )
 
@@ -12,7 +13,7 @@ import (
 // consumer-owned ports. Provider operations remain outside this adapter.
 type WorkspacePorts struct {
 	Engine   *workspace.Engine
-	OpenFunc func(context.Context, string, string, string, bool) (any, error)
+	OpenFunc func(context.Context, string, string, string, bool) (agent.Launch, error)
 }
 
 func NewWorkspacePorts(engine *workspace.Engine) *WorkspacePorts {
@@ -44,11 +45,11 @@ func (*WorkspacePorts) ApplySnapshots(_ context.Context, path string, items []wo
 func (*WorkspacePorts) AddChild(_ context.Context, path string, child workspace.ChildTask) (workspace.Manifest, error) {
 	return workspace.AddChild(path, child)
 }
-func (p *WorkspacePorts) Open(ctx context.Context, path, repository, agent string, useLatest bool) (any, error) {
+func (p *WorkspacePorts) Open(ctx context.Context, path, repository, selected string, useLatest bool) (agent.Launch, error) {
 	if p.OpenFunc == nil {
-		return nil, capabilityUnavailable("workspace open launch")
+		return agent.Launch{}, capabilityUnavailable("workspace open launch")
 	}
-	return p.OpenFunc(ctx, path, repository, agent, useLatest)
+	return p.OpenFunc(ctx, path, repository, selected, useLatest)
 }
 func (*WorkspacePorts) Find(_ context.Context, root string, project *string, ids []string) ([]workspace.Summary, error) {
 	key := ""

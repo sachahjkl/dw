@@ -3,56 +3,64 @@ package tui
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/cockpit"
+	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 type snapshotLoadedMsg struct {
 	generation uint64
-	snapshot   Snapshot
+	snapshot   cockpit.Snapshot
 	err        error
 }
 type workLoadedMsg struct {
 	generation uint64
-	items      []WorkProject
+	items      []cockpit.WorkProject
 	err        error
 }
 type prsLoadedMsg struct {
 	generation uint64
-	items      []PullRequest
+	items      []cockpit.PullRequest
 	err        error
+}
+
+type persistedHistory struct {
+	record execution.Record
+	events []execution.Event
+}
+
+type historyLoadedMsg struct {
+	items []persistedHistory
+	err   error
 }
 
 type actionUpdate struct {
-	runID      uint64
+	runID      execution.ExecutionID
 	generation uint64
-	event      *action.EventEnvelope
-	prompt     *actionPromptUpdate
+	event      *execution.Event
+	prompt     action.Prompt
 	result     action.Result
+	status     execution.Status
 	err        error
+	submitted  bool
 	done       bool
-}
-
-type actionPromptUpdate struct {
-	prompt   action.Prompt
-	response chan action.Response
 }
 
 type actionUpdateMsg struct{ update actionUpdate }
 type externalRun struct {
-	runID      uint64
+	runID      execution.ExecutionID
 	generation uint64
 	item       Action
 	result     action.Result
 	process    ExternalProcess
 }
 type externalFinishedMsg struct {
-	runID      uint64
+	runID      execution.ExecutionID
 	generation uint64
 	err        error
 }
@@ -60,11 +68,11 @@ type externalFinishedMsg struct {
 // Run starts the Bubble Tea v2 program. Bubble Tea owns raw mode, alternate
 // screen, mouse reporting, panic cleanup, and restoration on all return paths.
 func Run(ctx context.Context, deps Dependencies) error {
-	if deps.Runner == nil {
-		return errors.New("tui.runner-required")
+	if deps.Executor == nil || deps.Actor.Principal == "" {
+		return errors.New("tui.executor-required")
 	}
-	if deps.Snapshot == nil {
-		return errors.New("tui.snapshot-loader-required")
+	if deps.Cockpit == nil {
+		return errors.New("tui.cockpit-service-required")
 	}
 	if deps.ProjectResult == nil {
 		return errors.New("tui.result-projector-required")
@@ -85,7 +93,7 @@ func Run(ctx context.Context, deps Dependencies) error {
 }
 
 func (m *Model) Init() tea.Cmd {
-	commands := []tea.Cmd{func() tea.Msg { return m.spinner.Tick() }}
+	commands := []tea.Cmd{func() tea.Msg { return m.spinner.Tick() }, m.loadHistory()}
 	if command := m.startSnapshotLoad(); command != nil {
 		commands = append(commands, command)
 	}
@@ -114,6 +122,8 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case prsLoadedMsg:
 		m.acceptPullRequests(msg)
 		return m, nil
+	case historyLoadedMsg:
+		return m, m.acceptHistory(msg)
 	case actionUpdateMsg:
 		return m, m.acceptActionUpdate(msg.update)
 	case externalFinishedMsg:
@@ -164,19 +174,112 @@ func (m *Model) applyEffects(effects []Effect) tea.Cmd {
 				commands = append(commands, command)
 			}
 		case AnswerInputEffect:
-			if effect.input != nil {
-				select {
-				case effect.input <- effect.Response:
-				default:
-				}
+			current := m.active
+			if current != nil {
+				executor, actor, ctx := m.deps.Executor, m.deps.Actor, m.ctx
+				generation := current.generation
+				commands = append(commands, func() tea.Msg {
+					err := executor.Respond(ctx, actor, effect.ExecutionID, effect.PromptID, effect.Response)
+					if err == nil {
+						return nil
+					}
+					return actionUpdateMsg{update: actionUpdate{runID: effect.ExecutionID, generation: generation, err: err, status: execution.StatusFailed, done: true}}
+				})
 			}
+		case CancelExecutionEffect:
+			executor, actor := m.deps.Executor, m.deps.Actor
+			commands = append(commands, func() tea.Msg {
+				_ = executor.Cancel(context.Background(), actor, effect.ExecutionID)
+				return nil
+			})
 		}
 	}
 	return tea.Batch(commands...)
 }
 
+func (m *Model) loadHistory() tea.Cmd {
+	executor, actor, root, ctx := m.deps.Executor, m.deps.Actor, m.deps.Root, m.ctx
+	return func() tea.Msg {
+		records, err := executor.List(ctx, actor, execution.ListFilter{Root: root, Limit: 500})
+		if err != nil {
+			return historyLoadedMsg{err: err}
+		}
+		items := make([]persistedHistory, 0, len(records))
+		for _, listed := range records {
+			record, getErr := executor.Get(ctx, actor, listed.ExecutionID)
+			if getErr != nil {
+				return historyLoadedMsg{err: getErr}
+			}
+			item := persistedHistory{record: record}
+			if record.Status.Terminal() {
+				subscription, subscribeErr := executor.Subscribe(ctx, actor, record.ExecutionID, 0)
+				if subscribeErr != nil {
+					return historyLoadedMsg{err: subscribeErr}
+				}
+				for event := range subscription.Events {
+					item.events = append(item.events, event)
+				}
+				for streamErr := range subscription.Errors {
+					if streamErr != nil {
+						return historyLoadedMsg{err: streamErr}
+					}
+				}
+			}
+			items = append(items, item)
+		}
+		return historyLoadedMsg{items: items}
+	}
+}
+
+func (m *Model) acceptHistory(msg historyLoadedMsg) tea.Cmd {
+	if msg.err != nil {
+		m.addMessage(msg.err.Error())
+		return nil
+	}
+	var resume *execution.Record
+	for index := len(msg.items) - 1; index >= 0; index-- {
+		item := msg.items[index]
+		run := RunRecord{ID: item.record.ExecutionID, Label: string(item.record.ActionID), Status: item.record.Status}
+		if item.record.TypedResult != nil {
+			run.Lines = m.deps.ProjectResult(item.record.TypedResult)
+		}
+		if item.record.Failure != nil {
+			run.Error = execution.NewFailureError(*item.record.Failure).Error()
+		}
+		m.history.load(run)
+		for eventIndex := range item.events {
+			if recorded, err := m.projectExecutionEvent(item.events[eventIndex]); err == nil {
+				m.history.appendEvent(item.record.ExecutionID, recorded)
+			}
+		}
+		if !item.record.Status.Terminal() && (resume == nil || resumePriority(item.record.Status) > resumePriority(resume.Status)) {
+			record := item.record
+			resume = &record
+		}
+	}
+	if resume == nil {
+		return nil
+	}
+	return m.resumeActionRun(*resume)
+}
+
+func resumePriority(status execution.Status) int {
+	switch status {
+	case execution.StatusWaitingInput:
+		return 4
+	case execution.StatusRunning:
+		return 3
+	case execution.StatusCanceling:
+		return 2
+	case execution.StatusQueued:
+		return 1
+	default:
+		return 0
+	}
+}
+
 func (m *Model) startSnapshotLoad() tea.Cmd {
-	if m.deps.Snapshot == nil || m.snapshotLoad.running {
+	if m.deps.Cockpit == nil || m.snapshotLoad.running {
 		return nil
 	}
 	m.snapshotLoad.generation++
@@ -185,41 +288,41 @@ func (m *Model) startSnapshotLoad() tea.Cmd {
 	m.workLoad.generation++
 	m.prLoad.generation++
 	m.workLoad.running, m.prLoad.running = false, false
-	root, loader, ctx := m.snapshot.Root, m.deps.Snapshot, m.ctx
+	root, service, ctx := m.snapshot.Root, m.deps.Cockpit, m.ctx
 	if root == "" {
 		root = m.deps.Root
 	}
 	m.addMessage(m.l10n.Text("tui.message.reload"))
 	return func() tea.Msg {
-		snapshot, err := loader(ctx, root)
+		snapshot, err := service.Snapshot(ctx, root)
 		return snapshotLoadedMsg{generation: generation, snapshot: snapshot, err: err}
 	}
 }
 
 func (m *Model) startWorkLoad() tea.Cmd {
-	if m.deps.WorkItems == nil || m.workLoad.running || m.snapshot.NeedsInit {
+	if m.deps.Cockpit == nil || m.workLoad.running || m.snapshot.NeedsInit {
 		return nil
 	}
 	m.workLoad.generation++
 	generation := m.workLoad.generation
 	m.workLoad.running, m.workLoad.started, m.workLoad.errorText = true, time.Now(), ""
-	loader, snapshot, ctx := m.deps.WorkItems, m.snapshot, m.ctx
+	service, snapshot, ctx := m.deps.Cockpit, m.snapshot, m.ctx
 	return func() tea.Msg {
-		items, err := loader(ctx, snapshot)
+		items, err := service.Work(ctx, snapshot)
 		return workLoadedMsg{generation: generation, items: items, err: err}
 	}
 }
 
 func (m *Model) startPRLoad() tea.Cmd {
-	if m.deps.PullRequests == nil || m.prLoad.running || m.snapshot.NeedsInit {
+	if m.deps.Cockpit == nil || m.prLoad.running || m.snapshot.NeedsInit {
 		return nil
 	}
 	m.prLoad.generation++
 	generation := m.prLoad.generation
 	m.prLoad.running, m.prLoad.started, m.prLoad.errorText = true, time.Now(), ""
-	loader, snapshot, ctx := m.deps.PullRequests, m.snapshot, m.ctx
+	service, snapshot, ctx := m.deps.Cockpit, m.snapshot, m.ctx
 	return func() tea.Msg {
-		items, err := loader(ctx, snapshot)
+		items, err := service.PullRequests(ctx, snapshot)
 		return prsLoadedMsg{generation: generation, items: items, err: err}
 	}
 }
@@ -281,56 +384,135 @@ func (m *Model) acceptPullRequests(msg prsLoadedMsg) {
 }
 
 func (m *Model) startActionRun() tea.Cmd {
-	if m.active == nil || m.deps.Runner == nil {
+	if m.active == nil || m.deps.Executor == nil {
 		return nil
 	}
 	active := *m.active
 	updates := make(chan actionUpdate, 16)
 	m.actionUpdates = updates
-	runner, ctx := m.deps.Runner, m.ctx
-	project := m.deps.ProjectEvent
-	localizer := m.l10n
+	executor, actor, ctx := m.deps.Executor, m.deps.Actor, m.ctx
+	builder := m.deps.RequestBuilder
+	root := m.snapshot.Root
+	if root == "" {
+		root = m.deps.Root
+	}
 	return func() tea.Msg {
 		go func() {
-			runtime := action.Runtime{
-				Events: action.EventSinkFunc(func(eventCtx context.Context, event action.EventEnvelope) error {
-					select {
-					case updates <- actionUpdate{runID: active.id, generation: active.generation, event: &event}:
-						return nil
-					case <-eventCtx.Done():
-						return eventCtx.Err()
-					}
-				}),
-				Input: action.InputPortFunc(func(inputCtx context.Context, prompt action.Prompt) (action.Response, error) {
-					responses := make(chan action.Response, 1)
-					select {
-					case updates <- actionUpdate{runID: active.id, generation: active.generation, prompt: &actionPromptUpdate{prompt: prompt, response: responses}}:
-					case <-inputCtx.Done():
-						return action.Response{}, inputCtx.Err()
-					}
-					select {
-					case response, ok := <-responses:
-						if !ok {
-							return action.Response{}, fmt.Errorf("tui.input-canceled:%s", prompt.ID)
-						}
-						return response, nil
-					case <-inputCtx.Done():
-						return action.Response{}, inputCtx.Err()
-					}
-				}),
+			defer close(updates)
+			request := active.action.Request
+			var err error
+			if builder != nil {
+				request, err = builder(ctx, request)
+				if err != nil {
+					updates <- actionUpdate{generation: active.generation, err: err, status: execution.StatusFailed, done: true}
+					return
+				}
 			}
-			result, err := runner.Run(ctx, active.action.Request, runtime)
-			updates <- actionUpdate{runID: active.id, generation: active.generation, result: result, err: err, done: true}
-			close(updates)
+			key, err := execution.NewIdempotencyKey()
+			if err != nil {
+				updates <- actionUpdate{generation: active.generation, err: err, status: execution.StatusFailed, done: true}
+				return
+			}
+			id, err := executor.Submit(ctx, execution.Submission{Request: request, Root: root, Actor: actor, IdempotencyKey: key})
+			if err != nil {
+				updates <- actionUpdate{generation: active.generation, err: err, status: execution.StatusFailed, done: true}
+				return
+			}
+			send := actionUpdateSender(ctx, updates)
+			if !send(actionUpdate{runID: id, generation: active.generation, status: execution.StatusQueued, submitted: true}) {
+				return
+			}
+			streamActionUpdates(ctx, executor, actor, id, active.generation, send)
 		}()
-		_ = project
-		_ = localizer
 		update, ok := <-updates
 		if !ok {
-			return actionUpdateMsg{update: actionUpdate{runID: active.id, generation: active.generation, err: errors.New("tui.action-stream-closed"), done: true}}
+			return actionUpdateMsg{update: actionUpdate{generation: active.generation, err: errors.New("tui.action-stream-closed"), status: execution.StatusFailed, done: true}}
 		}
 		return actionUpdateMsg{update: update}
 	}
+}
+
+func (m *Model) resumeActionRun(record execution.Record) tea.Cmd {
+	m.actionGeneration++
+	generation := m.actionGeneration
+	m.active = &activeAction{
+		id: record.ExecutionID, action: Action{ID: record.ActionID, Label: string(record.ActionID)},
+		generation: generation, started: record.CreatedAt,
+	}
+	updates := make(chan actionUpdate, 16)
+	m.actionUpdates = updates
+	executor, actor, ctx := m.deps.Executor, m.deps.Actor, m.ctx
+	return func() tea.Msg {
+		go func() {
+			defer close(updates)
+			streamActionUpdates(ctx, executor, actor, record.ExecutionID, generation, actionUpdateSender(ctx, updates))
+		}()
+		update, ok := <-updates
+		if !ok {
+			return actionUpdateMsg{update: actionUpdate{runID: record.ExecutionID, generation: generation, err: errors.New("tui.action-stream-closed"), status: execution.StatusFailed, done: true}}
+		}
+		return actionUpdateMsg{update: update}
+	}
+}
+
+func actionUpdateSender(ctx context.Context, updates chan<- actionUpdate) func(actionUpdate) bool {
+	return func(update actionUpdate) bool {
+		select {
+		case updates <- update:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+}
+
+func streamActionUpdates(ctx context.Context, executor execution.Executor, actor execution.Actor, id execution.ExecutionID, generation uint64, send func(actionUpdate) bool) {
+	subscription, err := executor.Subscribe(ctx, actor, id, 0)
+	if err != nil {
+		send(actionUpdate{runID: id, generation: generation, err: err, status: execution.StatusFailed, done: true})
+		return
+	}
+	for event := range subscription.Events {
+		eventCopy := event
+		if !send(actionUpdate{runID: id, generation: generation, event: &eventCopy}) {
+			return
+		}
+		if event.Kind != execution.EventInputRequired {
+			continue
+		}
+		record, getErr := executor.Get(ctx, actor, id)
+		if getErr != nil {
+			send(actionUpdate{runID: id, generation: generation, err: getErr, status: execution.StatusFailed, done: true})
+			return
+		}
+		if record.PendingPrompt == nil {
+			continue
+		}
+		prompt, decodeErr := execution.DecodePrompt(*record.PendingPrompt)
+		if decodeErr != nil {
+			send(actionUpdate{runID: id, generation: generation, err: decodeErr, status: execution.StatusFailed, done: true})
+			return
+		}
+		if !send(actionUpdate{runID: id, generation: generation, prompt: prompt}) {
+			return
+		}
+	}
+	select {
+	case streamErr, open := <-subscription.Errors:
+		if open && streamErr != nil {
+			send(actionUpdate{runID: id, generation: generation, err: streamErr, status: execution.StatusFailed, done: true})
+			return
+		}
+	default:
+	}
+	record, waitErr := executor.Wait(ctx, actor, id)
+	if waitErr == nil && record.Failure != nil {
+		waitErr = execution.NewFailureError(*record.Failure)
+	}
+	if waitErr == nil && record.Status == execution.StatusCanceled {
+		waitErr = context.Canceled
+	}
+	send(actionUpdate{runID: id, generation: generation, result: record.TypedResult, status: record.Status, err: waitErr, done: true})
 }
 
 func waitForAction(updates <-chan actionUpdate) tea.Cmd {
@@ -346,16 +528,46 @@ func waitForAction(updates <-chan actionUpdate) tea.Cmd {
 	}
 }
 
+func (m *Model) projectExecutionEvent(event execution.Event) (RecordedEvent, error) {
+	message, err := execution.DecodeMessage(event.Message)
+	if err != nil {
+		return RecordedEvent{}, err
+	}
+	kind := action.EventProgress
+	if event.Kind == execution.EventWarning {
+		kind = action.EventWarning
+	} else if event.Kind == execution.EventLog {
+		kind = action.EventLog
+	}
+	raw := action.EventEnvelope{Action: event.ActionID, Kind: kind, Message: message, Data: event.TypedData}
+	level, scope, text := InfoLevel, string(raw.Action), m.l10n.Render(raw.Message)
+	if m.deps.ProjectEvent != nil && (event.Kind == execution.EventProgress || event.Kind == execution.EventWarning || event.Kind == execution.EventLog) {
+		level, scope, text = m.deps.ProjectEvent(raw)
+	}
+	return RecordedEvent{At: event.At, Raw: raw, Level: level, Scope: scope, Text: text}, nil
+}
+
 func (m *Model) acceptActionUpdate(update actionUpdate) tea.Cmd {
-	if m.active == nil || update.runID != m.active.id || update.generation != m.active.generation {
+	if m.active == nil || update.generation != m.active.generation {
+		return nil
+	}
+	if update.submitted {
+		m.active.id = update.runID
+		m.history.start(update.runID, m.active.action.Label, update.status)
+		if m.active.action.BlocksUntilDone {
+			m.progressRun = update.runID
+		}
+		return waitForAction(m.actionUpdates)
+	}
+	if update.runID != m.active.id {
 		return nil
 	}
 	if update.event != nil {
-		level, scope, text := InfoLevel, string(update.event.Action), m.l10n.Render(update.event.Message)
-		if m.deps.ProjectEvent != nil {
-			level, scope, text = m.deps.ProjectEvent(*update.event)
+		recorded, err := m.projectExecutionEvent(*update.event)
+		if err != nil {
+			return m.finishActionFailure(update.runID, update.result, nil, execution.StatusFailed, err)
 		}
-		m.history.appendEvent(update.runID, RecordedEvent{At: time.Now().UTC(), Raw: *update.event, Level: level, Scope: scope, Text: text})
+		m.history.appendEvent(update.runID, recorded)
 		return waitForAction(m.actionUpdates)
 	}
 	if update.prompt != nil {
@@ -366,7 +578,11 @@ func (m *Model) acceptActionUpdate(update actionUpdate) tea.Cmd {
 		return waitForAction(m.actionUpdates)
 	}
 	if update.err != nil {
-		return m.finishActionFailure(update.runID, update.err)
+		var lines []string
+		if update.result != nil {
+			lines = m.deps.ProjectResult(update.result)
+		}
+		return m.finishActionFailure(update.runID, update.result, lines, update.status, update.err)
 	}
 	lines := m.deps.ProjectResult(update.result)
 	var external *ExternalProcess
@@ -385,46 +601,75 @@ func (m *Model) acceptActionUpdate(update actionUpdate) tea.Cmd {
 	return m.finishActionSuccess(update.runID, update.result, lines, nil)
 }
 
-func (m *Model) openInputPrompt(runID uint64, update *actionPromptUpdate) {
-	prompt := update.prompt
-	choices := make([]string, 0, len(prompt.Choices))
-	for _, choice := range prompt.Choices {
-		choices = append(choices, m.l10n.Render(choice.Label))
+func (m *Model) openInputPrompt(runID execution.ExecutionID, prompt action.Prompt) {
+	meta, choices, defaultOne, defaults := promptPresentation(prompt)
+	labels := make([]string, 0, len(choices))
+	for _, choice := range choices {
+		labels = append(labels, m.l10n.Render(choice.Label))
 	}
-	label := m.l10n.Render(prompt.Label)
+	label := m.l10n.Render(meta.Label)
 	help := ""
-	if prompt.Help != nil {
-		help = m.l10n.Render(*prompt.Help)
+	if meta.Help != nil {
+		help = m.l10n.Render(*meta.Help)
 	}
 	selected := 0
-	if prompt.Default != nil {
-		for i := range prompt.Choices {
-			if prompt.Choices[i].Value == *prompt.Default {
-				selected = i
+	selectedMany := make([]bool, len(choices))
+	for index, choice := range choices {
+		if defaultOne != nil && choice.Value == *defaultOne {
+			selected = index
+		}
+		for _, value := range defaults {
+			if choice.Value == value {
+				selectedMany[index] = true
 				break
 			}
 		}
 	}
-	m.prompt = &inputPrompt{runID: runID, prompt: prompt, label: label, help: help, choices: choices, selected: selected, selectedMany: make([]bool, len(choices)), response: update.response}
+	m.prompt = &inputPrompt{executionID: runID, prompt: prompt, label: label, help: help, choices: labels, selected: selected, selectedMany: selectedMany}
 	m.addMessage(m.message("tui.message.input", l10n.A("label", label)))
 }
 
-func (m *Model) finishActionFailure(runID uint64, err error) tea.Cmd {
+func promptPresentation(prompt action.Prompt) (action.PromptMeta, []action.Choice, *action.ChoiceValue, []action.ChoiceValue) {
+	switch typed := prompt.(type) {
+	case action.TextPrompt:
+		return typed.Meta, nil, nil, nil
+	case action.SecretPrompt:
+		return typed.Meta, nil, nil, nil
+	case action.ConfirmPrompt:
+		return typed.Meta, nil, nil, nil
+	case action.SelectOnePrompt:
+		return typed.Meta, typed.Choices, typed.Default, nil
+	case action.SelectManyPrompt:
+		return typed.Meta, typed.Choices, nil, typed.Defaults
+	default:
+		return action.PromptMeta{}, nil, nil, nil
+	}
+}
+
+func (m *Model) finishActionFailure(runID execution.ExecutionID, result action.Result, lines []string, status execution.Status, err error) tea.Cmd {
 	label := m.active.action.Label
-	m.history.finish(runID, RunFailed, nil, err.Error(), nil)
+	if !status.Terminal() {
+		status = execution.StatusFailed
+	}
+	m.history.finish(runID, status, lines, err.Error(), nil)
 	m.addMessage(m.message("tui.message.failed", l10n.A("label", label), l10n.A("error", err)))
-	m.progressRun = 0
+	m.progressRun = execution.ExecutionID{}
 	m.removeModal(progressModal)
+	if result != nil && m.deps.ProjectState != nil {
+		m.applyStateEffect(m.deps.ProjectState(result))
+	}
+	detailLines := append(append([]string(nil), lines...), err.Error())
+	m.detail = &detailState{title: label, lines: detailLines}
 	m.active, m.actionUpdates = nil, nil
-	m.pushModal(journalModal)
+	m.pushModal(detailModal)
 	return m.continueQueue()
 }
 
-func (m *Model) finishActionSuccess(runID uint64, result action.Result, lines []string, external *ExternalProcess) tea.Cmd {
+func (m *Model) finishActionSuccess(runID execution.ExecutionID, result action.Result, lines []string, external *ExternalProcess) tea.Cmd {
 	item := m.active.action
-	m.history.finish(runID, RunSucceeded, lines, "", external)
+	m.history.finish(runID, execution.StatusSucceeded, lines, "", external)
 	m.addMessage(m.message("tui.message.done", l10n.A("label", item.Label), l10n.A("status", m.l10n.Text("tui.status.ok"))))
-	m.progressRun = 0
+	m.progressRun = execution.ExecutionID{}
 	m.removeModal(progressModal)
 	if m.deps.ProjectState != nil {
 		m.applyStateEffect(m.deps.ProjectState(result))
@@ -454,17 +699,13 @@ func (m *Model) acceptExternalFinished(msg externalFinishedMsg) tea.Cmd {
 	m.pendingExternal = nil
 	if msg.err != nil {
 		m.addMessage(m.message("tui.message.external-failed", l10n.A("label", pending.item.Label), l10n.A("error", msg.err)))
-		return m.finishActionFailure(msg.runID, msg.err)
+		return m.finishActionFailure(msg.runID, pending.result, nil, execution.StatusFailed, msg.err)
 	}
 	m.addMessage(m.message("tui.message.external-finished", l10n.A("label", pending.item.Label)))
 	return m.finishActionSuccess(msg.runID, pending.result, nil, &pending.process)
 }
 
 func (m *Model) continueQueue() tea.Cmd {
-	effects := m.startNextQueued()
-	if len(effects) != 0 {
-		return m.applyEffects(effects)
-	}
 	if m.reloadAfterQueue {
 		m.reloadAfterQueue = false
 		return m.startSnapshotLoad()

@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/sachahjkl/dw/internal/action"
@@ -16,7 +15,6 @@ type EventSink struct {
 	context   console.RenderContext
 	verbosity uint8
 	mu        sync.Mutex
-	last      uint64
 }
 
 func NewEventSink(engine console.Engine, policy console.Policy, localizer l10n.Localizer, verbosity uint8) *EventSink {
@@ -35,11 +33,5 @@ func (sink *EventSink) Emit(ctx context.Context, event action.EventEnvelope) err
 	}
 	sink.mu.Lock()
 	defer sink.mu.Unlock()
-	if event.Sequence != 0 && event.Sequence <= sink.last {
-		return fmt.Errorf("cli.event-out-of-order:%s:%d", event.Action, event.Sequence)
-	}
-	if event.Sequence != 0 {
-		sink.last = event.Sequence
-	}
 	return sink.engine.WriteEvent(sink.context, event)
 }

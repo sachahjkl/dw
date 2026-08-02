@@ -4,11 +4,7 @@ import (
 	"time"
 
 	"github.com/sachahjkl/dw/internal/action"
-)
-
-const (
-	maxHistoryRuns   = 20
-	maxHistoryEvents = 160
+	"github.com/sachahjkl/dw/internal/execution"
 )
 
 type LogLevel uint8
@@ -23,14 +19,6 @@ const (
 
 var allLogLevels = [...]LogLevel{ErrorLevel, WarningLevel, InfoLevel, DebugLevel, OtherLevel}
 
-type RunStatus uint8
-
-const (
-	RunRunning RunStatus = iota
-	RunSucceeded
-	RunFailed
-)
-
 type RecordedEvent struct {
 	At    time.Time
 	Raw   action.EventEnvelope
@@ -40,9 +28,9 @@ type RecordedEvent struct {
 }
 
 type RunRecord struct {
-	ID       uint64
+	ID       execution.ExecutionID
 	Label    string
-	Status   RunStatus
+	Status   execution.Status
 	Events   []RecordedEvent
 	Lines    []string
 	Error    string
@@ -61,45 +49,48 @@ func newHistory() History {
 	return History{Levels: [5]bool{true, true, true, true, true}}
 }
 
-func (h *History) start(id uint64, label string) {
-	h.Runs = append(h.Runs, RunRecord{ID: id, Label: label, Status: RunRunning})
-	if len(h.Runs) > maxHistoryRuns {
-		copy(h.Runs, h.Runs[len(h.Runs)-maxHistoryRuns:])
-		h.Runs = h.Runs[:maxHistoryRuns]
-	}
+func (h *History) start(id execution.ExecutionID, label string, status execution.Status) {
+	h.Runs = append(h.Runs, RunRecord{ID: id, Label: label, Status: status})
+	h.Selected = len(h.Runs) - 1
+	h.Scroll = 0
+}
+func (h *History) load(run RunRecord) {
+	h.Runs = append(h.Runs, run)
 	h.Selected = len(h.Runs) - 1
 	h.Scroll = 0
 }
 
-func (h *History) appendEvent(id uint64, event RecordedEvent) {
-	run := h.running(id)
+func (h *History) appendEvent(id execution.ExecutionID, event RecordedEvent) {
+	run := h.find(id)
 	if run == nil {
 		return
 	}
 	run.Events = append(run.Events, event)
-	if len(run.Events) > maxHistoryEvents {
-		copy(run.Events, run.Events[len(run.Events)-maxHistoryEvents:])
-		run.Events = run.Events[:maxHistoryEvents]
-	}
 }
 
-func (h *History) finish(id uint64, status RunStatus, lines []string, errText string, external *ExternalProcess) {
+func (h *History) finish(id execution.ExecutionID, status execution.Status, lines []string, errText string, external *ExternalProcess) {
 	run := h.running(id)
 	if run == nil {
 		return
 	}
 	run.Status = status
 	run.Lines = append([]string(nil), lines...)
-	if len(run.Lines) > maxHistoryEvents {
-		run.Lines = append([]string(nil), run.Lines[len(run.Lines)-maxHistoryEvents:]...)
-	}
 	run.Error = errText
 	run.External = external
 }
 
-func (h *History) running(id uint64) *RunRecord {
+func (h *History) find(id execution.ExecutionID) *RunRecord {
 	for i := len(h.Runs) - 1; i >= 0; i-- {
-		if h.Runs[i].ID == id && h.Runs[i].Status == RunRunning {
+		if h.Runs[i].ID == id {
+			return &h.Runs[i]
+		}
+	}
+	return nil
+}
+
+func (h *History) running(id execution.ExecutionID) *RunRecord {
+	for i := len(h.Runs) - 1; i >= 0; i-- {
+		if h.Runs[i].ID == id && !h.Runs[i].Status.Terminal() {
 			return &h.Runs[i]
 		}
 	}
@@ -108,7 +99,7 @@ func (h *History) running(id uint64) *RunRecord {
 
 func (h *History) active() *RunRecord {
 	for i := len(h.Runs) - 1; i >= 0; i-- {
-		if h.Runs[i].Status == RunRunning {
+		if !h.Runs[i].Status.Terminal() {
 			return &h.Runs[i]
 		}
 	}

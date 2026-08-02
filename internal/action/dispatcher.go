@@ -98,16 +98,16 @@ func (d *Dispatcher) Dispatch(ctx context.Context, request Request, runtime Runt
 		return ResultEnvelope{}, &MissingHandlerError{Action: id}
 	}
 	result, err := handler.Execute(ctx, request, runtime)
-	if err != nil {
-		return ResultEnvelope{}, err
-	}
 	if result == nil {
+		if err != nil {
+			return ResultEnvelope{}, err
+		}
 		return ResultEnvelope{}, fmt.Errorf("action.nil-result:%s", id)
 	}
 	if result.ActionID() != id {
 		return ResultEnvelope{}, &ResultMismatchError{Requested: id, Reported: result.ActionID()}
 	}
-	return ResultEnvelope{Action: id, Result: result}, nil
+	return ResultEnvelope{Action: id, Result: result}, err
 }
 
 // IDs returns handler IDs in registration order.

@@ -90,16 +90,28 @@ func (s *Service) AuthLogin(ctx context.Context, request AuthLoginRequest, sink 
 		return AuthLoginReport{}, err
 	}
 	report := AuthLoginReport{Mode: request.Mode}
-	mode := work.AuthBrowser
+	mode := work.AuthBrowserManual
 	switch request.Mode {
+	case AuthLoginBrowser:
+		if request.OpenBrowser {
+			mode = work.AuthBrowser
+		}
 	case AuthLoginDeviceCode:
 		mode = work.AuthDevice
 	case AuthLoginEnvironmentPAT:
 		mode = work.AuthEnvironment
 		report.UsesEnvironmentPAT = true
 	}
-	status, err := auth.Login(ctx, projectRef(request.Root, ""), mode, func(device work.DeviceLogin) error {
-		event := Event{Kind: "device-login-required", VerificationURI: device.VerificationURI, UserCode: device.UserCode, ExpiresInSeconds: device.ExpiresInSeconds, PollIntervalSeconds: device.PollIntervalSeconds}
+	status, err := auth.Login(ctx, projectRef(request.Root, ""), mode, func(instructions work.LoginInstructions) error {
+		var event Event
+		switch {
+		case instructions.Browser != nil:
+			event = Event{Kind: "browser-login-required", AuthorizationURL: instructions.Browser.AuthorizationURL, CallbackURI: instructions.Browser.CallbackURI}
+		case instructions.Device != nil:
+			event = Event{Kind: "device-login-required", VerificationURI: instructions.Device.VerificationURI, UserCode: instructions.Device.UserCode, ExpiresInSeconds: instructions.Device.ExpiresInSeconds, PollIntervalSeconds: instructions.Device.PollIntervalSeconds}
+		default:
+			return nil
+		}
 		return collectEvent(ctx, &report.Events, sink, event)
 	})
 	if err != nil {

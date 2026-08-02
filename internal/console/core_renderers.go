@@ -121,7 +121,7 @@ func RegisterCoreRenderers(results *Registry) error {
 		},
 		func() error {
 			return RegisterPageResult(results, workapp.ActionWorkContextAI, func(r workapp.AIContextResult) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Project}, countField("result.items", len(r.Items)))
+				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Report.Project}, countField("result.items", len(r.Report.Items)))
 			})
 		},
 		func() error {
@@ -139,7 +139,7 @@ func RegisterCoreRenderers(results *Registry) error {
 		},
 		func() error {
 			return RegisterPageResult(results, workapp.ActionWorkItemStateSet, func(r workapp.StateSetResult) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Plan.Project}, Field{Label: "result.state", Value: r.Plan.State}, countField("result.updated", len(r.Updated)))
+				return actionPage(r.ActionID(), Field{Label: "result.project", Value: r.Plan.Project}, Field{Label: "result.state", Value: r.Plan.State}, countField("result.updated", len(r.Execution.Updated)))
 			})
 		},
 		func() error {
@@ -156,6 +156,8 @@ func RegisterCoreRenderers(results *Registry) error {
 			return results.Register(ResultWorkItemDoing, func(context RenderContext, payload any) (Output, error) {
 				var page Page
 				switch result := payload.(type) {
+				case workapp.DoingActionResult:
+					page = actionPage(ResultWorkItemDoing, Field{Label: "result.project", Value: result.Plan.Project}, countField("result.updated", doingUpdatedCount(result)))
 				case workapp.DoingPlanReport:
 					page = actionPage(ResultWorkItemDoing, Field{Label: "result.project", Value: result.Project}, countField("result.updates", len(result.Updates)))
 				case workapp.DoingExecutionReport:
@@ -624,4 +626,11 @@ func changelogItem(id string, kind, state, title, url *string) ChangelogItem {
 		item.URL = *url
 	}
 	return item
+}
+
+func doingUpdatedCount(result workapp.DoingActionResult) int {
+	if result.Execution == nil {
+		return 0
+	}
+	return len(result.Execution.Updated)
 }

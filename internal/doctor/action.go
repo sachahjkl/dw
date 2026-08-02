@@ -14,12 +14,12 @@ const (
 )
 
 type Request struct {
-	Root string
-	Fix  bool
+	Root string `json:"root,omitempty"`
+	Fix  bool   `json:"fix"`
 }
 
 type AgentRequest struct {
-	Agent *contract.Agent
+	Agent *contract.Agent `json:"agent,omitempty"`
 }
 
 func (Request) ActionID() action.ID      { return ActionDoctor }
@@ -64,27 +64,19 @@ func (handler Handler) Execute(ctx context.Context, request action.Request, _ ac
 }
 
 func doctorRequest(request action.Request) (Request, error) {
-	switch value := request.(type) {
-	case Request:
-		return value, nil
-	case *Request:
-		if value != nil {
-			return *value, nil
-		}
+	value, ok := request.(Request)
+	if !ok {
+		return Request{}, fmt.Errorf("doctor.invalid-request:%T", request)
 	}
-	return Request{}, fmt.Errorf("doctor.invalid-request:%T", request)
+	return value, nil
 }
 
 func agentRequest(request action.Request) (AgentRequest, error) {
-	switch value := request.(type) {
-	case AgentRequest:
-		return value, nil
-	case *AgentRequest:
-		if value != nil {
-			return *value, nil
-		}
+	value, ok := request.(AgentRequest)
+	if !ok {
+		return AgentRequest{}, fmt.Errorf("doctor.invalid-agent-request:%T", request)
 	}
-	return AgentRequest{}, fmt.Errorf("doctor.invalid-agent-request:%T", request)
+	return value, nil
 }
 
 func errorsForNilService(id action.ID) error {

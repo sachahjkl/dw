@@ -39,87 +39,197 @@ const (
 )
 
 type Choice struct {
-	Value       ChoiceValue
-	Label       l10n.Message
-	Description *l10n.Message
+	Value       ChoiceValue   `json:"value"`
+	Label       l10n.Message  `json:"label"`
+	Description *l10n.Message `json:"description,omitempty"`
 }
 
-// Prompt is a stable dialogue contract. Default and Choices are interpreted
-// according to Kind; secret defaults are prohibited.
-type Prompt struct {
-	ID       PromptID
-	Kind     PromptKind
-	Label    l10n.Message
-	Help     *l10n.Message
-	Required bool
-	Choices  []Choice
-	Default  *ChoiceValue
+type PromptMeta struct {
+	ID    PromptID      `json:"id"`
+	Label l10n.Message  `json:"label"`
+	Help  *l10n.Message `json:"help,omitempty"`
 }
 
-// Validate checks structural invariants without generating presentation text.
-func (p Prompt) Validate() error {
-	if p.ID == "" || p.Label.ID == "" {
+func (m PromptMeta) validate() error {
+	if m.ID == "" || m.Label.ID == "" {
 		return fmt.Errorf("action.invalid-prompt")
-	}
-	switch p.Kind {
-	case PromptText, PromptConfirm:
-		if len(p.Choices) != 0 {
-			return fmt.Errorf("action.prompt-unexpected-choices")
-		}
-	case PromptSecret:
-		if len(p.Choices) != 0 || p.Default != nil {
-			return fmt.Errorf("action.secret-prompt-default")
-		}
-	case PromptSelectOne, PromptSelectMany:
-		if len(p.Choices) == 0 {
-			return fmt.Errorf("action.prompt-missing-choices")
-		}
-		seen := make(map[ChoiceValue]struct{}, len(p.Choices))
-		for _, choice := range p.Choices {
-			if choice.Value == "" || choice.Label.ID == "" {
-				return fmt.Errorf("action.invalid-choice")
-			}
-			if _, exists := seen[choice.Value]; exists {
-				return fmt.Errorf("action.duplicate-choice:%s", choice.Value)
-			}
-			seen[choice.Value] = struct{}{}
-		}
-	default:
-		return fmt.Errorf("action.unknown-prompt-kind:%s", p.Kind)
 	}
 	return nil
 }
 
-// Response carries exactly one response shape selected by Kind.
-type Response struct {
-	Kind     PromptKind
-	Accepted bool
-	Value    ChoiceValue
-	Values   []ChoiceValue
-	Text     string
-	Secret   contract.SecretValue
+// Prompt is the closed sum of dialogue contracts accepted by Runtime.
+type Prompt interface {
+	PromptID() PromptID
+	PromptKind() PromptKind
+	Validate() error
+	isPrompt()
 }
 
-// EventKind is a stable machine discriminator; Message is localized by the
-// presentation layer and Data is an optional typed machine DTO.
+type TextPrompt struct {
+	Meta     PromptMeta `json:"meta"`
+	Required bool       `json:"required"`
+}
+
+func (p TextPrompt) PromptID() PromptID   { return p.Meta.ID }
+func (TextPrompt) PromptKind() PromptKind { return PromptText }
+func (p TextPrompt) Validate() error      { return p.Meta.validate() }
+func (TextPrompt) isPrompt()              {}
+
+type SecretPrompt struct {
+	Meta     PromptMeta `json:"meta"`
+	Required bool       `json:"required"`
+}
+
+func (p SecretPrompt) PromptID() PromptID   { return p.Meta.ID }
+func (SecretPrompt) PromptKind() PromptKind { return PromptSecret }
+func (p SecretPrompt) Validate() error      { return p.Meta.validate() }
+func (SecretPrompt) isPrompt()              {}
+
+type ConfirmPrompt struct {
+	Meta    PromptMeta `json:"meta"`
+	Default bool       `json:"default"`
+}
+
+func (p ConfirmPrompt) PromptID() PromptID   { return p.Meta.ID }
+func (ConfirmPrompt) PromptKind() PromptKind { return PromptConfirm }
+func (p ConfirmPrompt) Validate() error      { return p.Meta.validate() }
+func (ConfirmPrompt) isPrompt()              {}
+
+type SelectOnePrompt struct {
+	Meta     PromptMeta   `json:"meta"`
+	Required bool         `json:"required"`
+	Choices  []Choice     `json:"choices"`
+	Default  *ChoiceValue `json:"default,omitempty"`
+}
+
+func (p SelectOnePrompt) PromptID() PromptID   { return p.Meta.ID }
+func (SelectOnePrompt) PromptKind() PromptKind { return PromptSelectOne }
+func (p SelectOnePrompt) Validate() error {
+	allowed, err := validateChoices(p.Meta, p.Choices)
+	if err != nil {
+		return err
+	}
+	if p.Default != nil {
+		if _, ok := allowed[*p.Default]; !ok {
+			return fmt.Errorf("action.input-invalid-choice:%s", *p.Default)
+		}
+	}
+	return nil
+}
+func (SelectOnePrompt) isPrompt() {}
+
+type SelectManyPrompt struct {
+	Meta     PromptMeta    `json:"meta"`
+	Required bool          `json:"required"`
+	Choices  []Choice      `json:"choices"`
+	Defaults []ChoiceValue `json:"defaults,omitempty"`
+}
+
+func (p SelectManyPrompt) PromptID() PromptID   { return p.Meta.ID }
+func (SelectManyPrompt) PromptKind() PromptKind { return PromptSelectMany }
+func (p SelectManyPrompt) Validate() error {
+	allowed, err := validateChoices(p.Meta, p.Choices)
+	if err != nil {
+		return err
+	}
+	seen := make(map[ChoiceValue]struct{}, len(p.Defaults))
+	for _, value := range p.Defaults {
+		if _, duplicate := seen[value]; duplicate {
+			return fmt.Errorf("action.input-duplicate-choice:%s", value)
+		}
+		if _, ok := allowed[value]; !ok {
+			return fmt.Errorf("action.input-invalid-choice:%s", value)
+		}
+		seen[value] = struct{}{}
+	}
+	return nil
+}
+func (SelectManyPrompt) isPrompt() {}
+
+func validateChoices(meta PromptMeta, choices []Choice) (map[ChoiceValue]struct{}, error) {
+	if err := meta.validate(); err != nil {
+		return nil, err
+	}
+	if len(choices) == 0 {
+		return nil, fmt.Errorf("action.prompt-missing-choices")
+	}
+	allowed := make(map[ChoiceValue]struct{}, len(choices))
+	for _, choice := range choices {
+		if choice.Value == "" || choice.Label.ID == "" {
+			return nil, fmt.Errorf("action.invalid-choice")
+		}
+		if _, duplicate := allowed[choice.Value]; duplicate {
+			return nil, fmt.Errorf("action.input-duplicate-choice:%s", choice.Value)
+		}
+		allowed[choice.Value] = struct{}{}
+	}
+	return allowed, nil
+}
+
+// Response is the closed sum of prompt responses accepted by Runtime.
+type Response interface {
+	PromptKind() PromptKind
+	isResponse()
+}
+
+type TextResponse struct {
+	Value string `json:"value"`
+}
+
+func (TextResponse) PromptKind() PromptKind { return PromptText }
+func (TextResponse) isResponse()            {}
+
+type SecretResponse struct {
+	Value contract.SecretValue `json:"-"`
+}
+
+func (SecretResponse) PromptKind() PromptKind { return PromptSecret }
+func (SecretResponse) isResponse()            {}
+
+type ConfirmResponse struct {
+	Accepted bool `json:"accepted"`
+}
+
+func (ConfirmResponse) PromptKind() PromptKind { return PromptConfirm }
+func (ConfirmResponse) isResponse()            {}
+
+type SelectOneResponse struct {
+	Value ChoiceValue `json:"value"`
+}
+
+func (SelectOneResponse) PromptKind() PromptKind { return PromptSelectOne }
+func (SelectOneResponse) isResponse()            {}
+
+type SelectManyResponse struct {
+	Values []ChoiceValue `json:"values"`
+}
+
+func (SelectManyResponse) PromptKind() PromptKind { return PromptSelectMany }
+func (SelectManyResponse) isResponse()            {}
+
+// EventKind is a stable machine discriminator for handler-owned events.
 type EventKind string
 
 const (
-	EventStarted   EventKind = "started"
-	EventProgress  EventKind = "progress"
-	EventInput     EventKind = "input-required"
-	EventCompleted EventKind = "completed"
-	EventWarning   EventKind = "warning"
-	EventLog       EventKind = "log"
+	EventProgress EventKind = "progress"
+	EventWarning  EventKind = "warning"
+	EventLog      EventKind = "log"
 )
 
-// EventEnvelope is the event DTO consumed identically by CLI and TUI.
+type EventDataType string
+
+// EventData is a registered, versioned machine payload.
+type EventData interface {
+	EventDataType() EventDataType
+	EventDataSchema() uint16
+}
+
+// EventEnvelope is the handler event consumed by execution adapters.
 type EventEnvelope struct {
-	Action   ID
-	Kind     EventKind
-	Sequence uint64
-	Message  l10n.Message
-	Data     any
+	Action  ID
+	Kind    EventKind
+	Message l10n.Message
+	Data    EventData
 }
 
 type Event = EventEnvelope

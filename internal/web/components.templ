@@ -1,0 +1,332 @@
+package web
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/sachahjkl/dw/internal/cli/spec"
+)
+
+templ page(view pageView) {
+	<!doctype html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>DevWorkflow</title>
+			<link rel="stylesheet" href="/assets/app.css"/>
+			<script type="module" src="/assets/datastar.js"></script>
+		</head>
+		<body>
+			<a class="skip-link" href="#main">Skip to content</a>
+			<header>
+				<h1>DevWorkflow</h1>
+				<p><code>{ view.Snapshot.Root }</code></p>
+			</header>
+			<nav aria-label="Main navigation">
+				<a href="#dashboard">Dashboard</a>
+				<a href="#workspaces">Workspaces</a>
+				<a href="#work">Work</a>
+				<a href="#pull-requests">Pull requests</a>
+				<a href="#data">Data</a>
+				<a href="#providers">Providers</a>
+				<a href="#configuration">Configuration</a>
+				<a href="#commands">Commands</a>
+				<a href="#executions">Executions</a>
+			</nav>
+			<main id="main" data-init="@get('/events')">
+				@liveSections(view)
+				@commandsSection(view.Commands)
+			</main>
+			<footer>Datastar v1.0.2 · <a href="/assets/datastar-LICENSE.md">MIT license</a></footer>
+		</body>
+	</html>
+}
+
+templ liveSections(view pageView) {
+	<div id="live-sections" aria-live="polite">
+		if view.Error != "" {
+			<p class="error" role="alert"><strong>Refresh failed:</strong> { view.Error }</p>
+		}
+		@dashboardSection(view)
+		@workspacesSection(view)
+		@workSection(view)
+		@pullRequestsSection(view)
+		@dataSection(view)
+		@providersSection(view)
+		@configurationSection(view)
+		@executionsSection(view.Executions)
+	</div>
+}
+
+templ dashboardSection(view pageView) {
+	<section id="dashboard">
+		<h2>Dashboard</h2>
+		<dl class="metrics">
+			<div><dt>Projects</dt><dd>{ fmt.Sprint(view.Snapshot.ProjectCount) }</dd></div>
+			<div><dt>Repositories</dt><dd>{ fmt.Sprint(view.Snapshot.RepositoryCount) }</dd></div>
+			<div><dt>Workspaces</dt><dd>{ fmt.Sprint(len(view.Snapshot.Workspaces)) }</dd></div>
+			<div><dt>Prune candidates</dt><dd>{ fmt.Sprint(view.Snapshot.PruneCandidates) }</dd></div>
+			<div><dt>Doctor</dt><dd>{ fmt.Sprint(view.Snapshot.DoctorOK) }</dd></div>
+		</dl>
+		if view.Snapshot.NeedsInit {
+			<p class="notice">This root needs initialization. Run <code>dw init</code>.</p>
+		}
+	</section>
+}
+
+templ workspacesSection(view pageView) {
+	<section id="workspaces">
+		<h2>Workspaces</h2>
+		if len(view.Snapshot.Workspaces) == 0 {
+			<p class="empty">No workspaces.</p>
+		}
+		if len(view.Snapshot.Workspaces) != 0 {
+			<table>
+				<thead><tr><th>Project</th><th>Workspace</th><th>Branch</th><th>Work</th></tr></thead>
+				<tbody>
+					for _, workspace := range view.Snapshot.Workspaces {
+						<tr><td>{ workspace.Project }</td><td><code>{ workspace.Path }</code></td><td><code>{ workspace.Branch }</code></td><td>{ strings.Join(workspace.WorkItems, ", ") }</td></tr>
+					}
+				</tbody>
+			</table>
+		}
+	</section>
+}
+
+templ workSection(view pageView) {
+	<section id="work">
+		<h2>Work</h2>
+		if len(view.Work) == 0 {
+			<p class="empty">No work items.</p>
+		}
+		for _, project := range view.Work {
+			<h3>{ project.Label } <small>{ project.Provider }</small></h3>
+			if project.Error != "" {
+				<p class="error" role="alert">{ project.Error }</p>
+			}
+			<ul>
+				for _, item := range project.Items {
+					<li><strong>{ item.ID }</strong> · { item.Title } · <span>{ item.State }</span></li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+templ pullRequestsSection(view pageView) {
+	<section id="pull-requests">
+		<h2>Pull requests</h2>
+		if len(view.PullRequests) == 0 {
+			<p class="empty">No pull requests.</p>
+		}
+		if len(view.PullRequests) != 0 {
+			<table>
+				<thead><tr><th>Project</th><th>Title</th><th>Repository</th><th>Branches</th></tr></thead>
+				<tbody>
+					for _, item := range view.PullRequests {
+						<tr><td>{ item.Project }</td><td>{ item.Title }</td><td>{ item.Repository }</td><td><code>{ item.Branch }</code> → <code>{ item.TargetBranch }</code></td></tr>
+					}
+				</tbody>
+			</table>
+		}
+	</section>
+}
+
+templ dataSection(view pageView) {
+	<section id="data">
+		<h2>Data</h2>
+		if len(view.Snapshot.DataSources) == 0 {
+			<p class="empty">No data sources.</p>
+		}
+		<ul>
+			for _, source := range view.Snapshot.DataSources {
+				<li><strong>{ source.Key }</strong> · { source.Project } · { source.Provider }</li>
+			}
+		</ul>
+	</section>
+}
+
+templ providersSection(view pageView) {
+	<section id="providers">
+		<h2>Providers</h2>
+		<div class="columns">
+			<div><h3>Work</h3><ul>
+				for _, provider := range view.Snapshot.WorkProviders {
+					<li>{ provider }</li>
+				}
+			</ul></div>
+			<div><h3>Data</h3><ul>
+				for _, provider := range view.Snapshot.DataProviders {
+					<li>{ provider }</li>
+				}
+			</ul></div>
+		</div>
+	</section>
+}
+
+templ configurationSection(view pageView) {
+	<section id="configuration">
+		<h2>Configuration</h2>
+		<dl>
+			<div><dt>Root</dt><dd><code>{ view.Snapshot.Root }</code></dd></div>
+			<div><dt>Default agent</dt><dd>{ view.Snapshot.DefaultAgent }</dd></div>
+			<div><dt>Color mode</dt><dd>{ view.Snapshot.ColorMode }</dd></div>
+			<div><dt>States</dt><dd>{ strings.Join(view.Snapshot.States, ", ") }</dd></div>
+			<div><dt>Secrets</dt><dd>{ fmt.Sprint(len(view.Snapshot.SecretKeys)) } configured</dd></div>
+		</dl>
+	</section>
+}
+
+templ commandsSection(commands []commandView) {
+	<section id="commands">
+		<h2>Commands</h2>
+		<p>The server rebuilds each command through the CLI grammar.</p>
+		for _, command := range commands {
+			<details>
+				<summary><strong>{ command.Name }</strong> — { command.Summary } <code>{ command.Key }</code></summary>
+				<p>CLI: <code>{ command.CLI }</code></p>
+				if command.Disabled {
+					<p class="notice" role="status">{ command.DisabledReason } Use <code>{ command.CLI }</code>.</p>
+				}
+				<form data-on:submit={ command.Submit }>
+					<fieldset disabled?={ command.Disabled }>
+						<legend>{ command.Name }</legend>
+						for _, field := range command.Fields {
+							@commandField(field)
+						}
+						<button type="submit">Run command</button>
+					</fieldset>
+				</form>
+			</details>
+		}
+	</section>
+}
+
+templ commandField(field fieldView) {
+	<div class="field">
+		<label>
+			<span>{ field.Label }</span>
+			if field.Required {
+				<strong> required</strong>
+			}
+			if len(field.Allowed) != 0 {
+				<select data-bind={ field.Signal } required?={ field.Required } aria-label={ field.Label }>
+					<option value="">Select a value</option>
+					for _, value := range field.Allowed {
+						<option value={ value } selected?={ value == field.Default }>{ value }</option>
+					}
+				</select>
+			}
+			if len(field.Allowed) == 0 && field.Kind == spec.Bool {
+				<input type="checkbox" data-bind={ field.Signal } aria-label={ field.Label }/>
+			}
+			if len(field.Allowed) == 0 && field.Kind != spec.Bool && field.Repeatable {
+				<textarea data-bind={ field.Signal } required?={ field.Required } placeholder="One value per line" aria-label={ field.Label }>{ field.Default }</textarea>
+			}
+			if len(field.Allowed) == 0 && field.Kind != spec.Bool && !field.Repeatable {
+				<input id={ field.Signal } type={ field.InputType } value={ field.Default } data-bind={ field.Signal } required?={ field.Required } aria-label={ field.Label }/>
+			}
+		</label>
+		if field.Help != "" {
+			<small>{ field.Help }</small>
+		}
+		<ul class="constraints">
+			if field.Default != "" {
+				<li>Default: <code>{ field.Default }</code></li>
+			}
+			if len(field.Allowed) != 0 {
+				<li>Allowed: { strings.Join(field.Allowed, ", ") }</li>
+			}
+			if len(field.Conflicts) != 0 {
+				<li>Conflicts: { strings.Join(field.Conflicts, ", ") }</li>
+			}
+			if len(field.Requires) != 0 {
+				<li>Requires: { strings.Join(field.Requires, ", ") }</li>
+			}
+			if field.Positional {
+				<li>Positional</li>
+			}
+		</ul>
+	</div>
+}
+
+templ executionsSection(executions []executionView) {
+	<section id="executions">
+		<h2>Executions</h2>
+		if len(executions) == 0 {
+			<p class="empty">No executions.</p>
+		}
+		for _, item := range executions {
+			<article class="execution" data-status={ string(item.Status) }>
+				<header><h3>{ item.ActionID }</h3><strong class={ "status " + string(item.Status) }>{ string(item.Status) }</strong></header>
+				<dl><div><dt>Execution</dt><dd><code>{ item.ID }</code></dd></div><div><dt>Attempt</dt><dd><code>{ item.AttemptID }</code></dd></div><div><dt>Created</dt><dd>{ item.CreatedAt }</dd></div></dl>
+				if len(item.Events) != 0 {
+					<h4>Event sequences</h4>
+					<ol class="events">
+						for _, event := range item.Events {
+							<li value={ fmt.Sprint(event.Sequence) }>
+								<code>#{ fmt.Sprint(event.Sequence) }</code> { string(event.Kind) } · { event.Message }
+								if event.AuthorizationURL != "" {
+									<div class="auth-panel" role="status">
+										<p class="auth-kicker">Microsoft OAuth callback ready</p>
+										<h5>Continue sign-in in a secure Microsoft tab.</h5>
+										<p>This page will update after Microsoft returns to the local callback.</p>
+										<a class="auth-action" href={ templ.SafeURL(event.AuthorizationURL) } target="_blank" rel="noopener noreferrer">Continue with Microsoft</a>
+										if event.CallbackURI != "" {
+											<small>Callback listener: <code>{ event.CallbackURI }</code></small>
+										}
+									</div>
+								}
+							</li>
+						}
+					</ol>
+				}
+				if item.Failure != "" {
+					<p class="error" role="alert">{ item.Failure }</p>
+				}
+				if item.Prompt != nil {
+					@promptForm(item.ID, *item.Prompt)
+				}
+				if item.Status == "queued" || item.Status == "running" || item.Status == "waiting-input" || item.Status == "canceling" {
+					<button type="button" data-on:click={ item.Cancel } aria-label={ "Cancel execution " + item.ID }>Cancel</button>
+				}
+			</article>
+		}
+	</section>
+}
+
+templ promptForm(executionID string, prompt promptView) {
+	<form class="prompt" data-on:submit={ prompt.Submit } aria-label={ "Prompt for execution " + executionID }>
+		<h4>{ prompt.Label }</h4>
+		if prompt.Help != "" {
+			<p>{ prompt.Help }</p>
+		}
+		if prompt.Kind == "secret" {
+			<input type="hidden" name="schema" value="1"/>
+			<label>Secret <input type="password" name="value" required?={ prompt.Required } autocomplete="off" aria-label="Secret response"/></label>
+		}
+		if prompt.Kind == "confirm" {
+			<label><input type="checkbox" data-bind={ prompt.Signal }/> Confirm</label>
+		}
+		if prompt.Kind == "select-one" {
+			<label>Response <select data-bind={ prompt.Signal } required?={ prompt.Required }>
+				for _, choice := range prompt.Choices {
+					<option value={ choice.Value }>{ choice.Label }</option>
+				}
+			</select></label>
+		}
+		if prompt.Kind == "select-many" {
+			<fieldset>
+				<legend>Responses</legend>
+				for _, choice := range prompt.Choices {
+					<label><input type="checkbox" data-bind={ choice.Signal }/> { choice.Label }</label>
+				}
+			</fieldset>
+		}
+		if prompt.Kind == "text" {
+			<label>Response <input type="text" data-bind={ prompt.Signal } required?={ prompt.Required }/></label>
+		}
+		<button type="submit">Respond</button>
+	</form>
+}

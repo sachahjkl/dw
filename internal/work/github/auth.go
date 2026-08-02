@@ -30,7 +30,7 @@ func (provider *Provider) AuthStatus(ctx context.Context, reference work.Project
 	return work.AuthStatus{Authenticated: true, Source: source, Principal: user.Login}, nil
 }
 
-func (provider *Provider) Login(ctx context.Context, reference work.ProjectRef, mode work.AuthMode, _ func(work.DeviceLogin) error) (work.AuthStatus, error) {
+func (provider *Provider) Login(ctx context.Context, reference work.ProjectRef, mode work.AuthMode, _ func(work.LoginInstructions) error) (work.AuthStatus, error) {
 	if mode != work.AuthEnvironment {
 		return work.AuthStatus{}, fmt.Errorf("github.auth-mode-unsupported:%s:configure GITHUB_TOKEN or a credentialKey", mode)
 	}

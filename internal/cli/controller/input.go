@@ -30,38 +30,39 @@ func NewTerminalInput(streams console.Streams, localizer l10n.Localizer) *Termin
 
 func (input *TerminalInput) Request(ctx context.Context, prompt action.Prompt) (action.Response, error) {
 	if err := ctx.Err(); err != nil {
-		return action.Response{}, err
+		return nil, err
+	}
+	if prompt == nil {
+		return nil, fmt.Errorf("action.invalid-prompt")
 	}
 	if !input.streams.StdinTTY {
-		return action.Response{}, fmt.Errorf("cli.input-requires-terminal:%s", prompt.ID)
+		return nil, fmt.Errorf("cli.input-requires-terminal:%s", prompt.PromptID())
 	}
 	if err := prompt.Validate(); err != nil {
-		return action.Response{}, err
+		return nil, err
 	}
-	label := input.localizer.Render(prompt.Label)
-	switch prompt.Kind {
-	case action.PromptConfirm:
-		accepted, err := input.confirm(label, prompt.Default)
-		return action.Response{Kind: prompt.Kind, Accepted: accepted}, err
-	case action.PromptText:
-		value, err := input.text(label, prompt.Default)
-		return action.Response{Kind: prompt.Kind, Text: value}, err
-	case action.PromptSecret:
-		value, err := input.secret(label)
-		return action.Response{Kind: prompt.Kind, Secret: contract.NewSecretValue(value)}, err
-	case action.PromptSelectOne:
-		value, err := input.selectOne(ctx, prompt, label)
-		return action.Response{Kind: prompt.Kind, Value: value}, err
-	case action.PromptSelectMany:
-		values, err := input.selectMany(ctx, prompt, label)
-		return action.Response{Kind: prompt.Kind, Values: values}, err
+	switch typed := prompt.(type) {
+	case action.ConfirmPrompt:
+		accepted, err := input.confirm(input.localizer.Render(typed.Meta.Label), typed.Default)
+		return action.ConfirmResponse{Accepted: accepted}, err
+	case action.TextPrompt:
+		value, err := input.text(input.localizer.Render(typed.Meta.Label))
+		return action.TextResponse{Value: value}, err
+	case action.SecretPrompt:
+		value, err := input.secret(input.localizer.Render(typed.Meta.Label))
+		return action.SecretResponse{Value: contract.NewSecretValue(value)}, err
+	case action.SelectOnePrompt:
+		value, err := input.selectOne(ctx, typed, input.localizer.Render(typed.Meta.Label))
+		return action.SelectOneResponse{Value: value}, err
+	case action.SelectManyPrompt:
+		values, err := input.selectMany(ctx, typed, input.localizer.Render(typed.Meta.Label))
+		return action.SelectManyResponse{Values: values}, err
 	default:
-		return action.Response{}, fmt.Errorf("cli.unknown-prompt-kind:%s", prompt.Kind)
+		return nil, fmt.Errorf("cli.unknown-prompt-kind:%s", prompt.PromptKind())
 	}
 }
 
-func (input *TerminalInput) confirm(label string, defaultValue *action.ChoiceValue) (bool, error) {
-	defaultAccepted := defaultValue != nil && strings.EqualFold(string(*defaultValue), "true")
+func (input *TerminalInput) confirm(label string, defaultAccepted bool) (bool, error) {
 	suffix := " [y/N]: "
 	if defaultAccepted {
 		suffix = " [Y/n]: "
@@ -84,20 +85,12 @@ func (input *TerminalInput) confirm(label string, defaultValue *action.ChoiceVal
 	}
 }
 
-func (input *TerminalInput) text(label string, defaultValue *action.ChoiceValue) (string, error) {
-	suffix := ": "
-	if defaultValue != nil {
-		suffix = " [" + string(*defaultValue) + "]: "
-	}
-	value, err := input.readLine(label + suffix)
+func (input *TerminalInput) text(label string) (string, error) {
+	value, err := input.readLine(label + ": ")
 	if err != nil {
 		return "", err
 	}
-	value = strings.TrimSpace(value)
-	if value == "" && defaultValue != nil {
-		value = string(*defaultValue)
-	}
-	return value, nil
+	return strings.TrimSpace(value), nil
 }
 
 func (input *TerminalInput) secret(label string) (string, error) {
@@ -118,16 +111,16 @@ func (input *TerminalInput) secret(label string) (string, error) {
 	return string(value), nil
 }
 
-func (input *TerminalInput) selectOne(ctx context.Context, prompt action.Prompt, label string) (action.ChoiceValue, error) {
-	model, err := input.runSelection(ctx, prompt, label, false)
+func (input *TerminalInput) selectOne(ctx context.Context, prompt action.SelectOnePrompt, label string) (action.ChoiceValue, error) {
+	model, err := input.runSelection(ctx, prompt.Meta, prompt.Choices, prompt.Default, nil, label, false)
 	if err != nil {
 		return "", err
 	}
 	return prompt.Choices[model.cursor].Value, nil
 }
 
-func (input *TerminalInput) selectMany(ctx context.Context, prompt action.Prompt, label string) ([]action.ChoiceValue, error) {
-	model, err := input.runSelection(ctx, prompt, label, true)
+func (input *TerminalInput) selectMany(ctx context.Context, prompt action.SelectManyPrompt, label string) ([]action.ChoiceValue, error) {
+	model, err := input.runSelection(ctx, prompt.Meta, prompt.Choices, nil, prompt.Defaults, label, true)
 	if err != nil {
 		return nil, err
 	}
@@ -140,26 +133,29 @@ func (input *TerminalInput) selectMany(ctx context.Context, prompt action.Prompt
 	return values, nil
 }
 
-func (input *TerminalInput) runSelection(ctx context.Context, prompt action.Prompt, label string, multi bool) (*selectionModel, error) {
-	choices := make([]terminalChoice, len(prompt.Choices))
+func (input *TerminalInput) runSelection(ctx context.Context, meta action.PromptMeta, promptChoices []action.Choice, defaultOne *action.ChoiceValue, defaultMany []action.ChoiceValue, label string, multi bool) (*selectionModel, error) {
+	choices := make([]terminalChoice, len(promptChoices))
 	model := &selectionModel{
 		label:    label,
 		multi:    multi,
 		selected: make(map[int]bool),
 		choices:  choices,
 	}
-	if prompt.Help != nil {
-		model.help = input.localizer.Render(*prompt.Help)
+	if meta.Help != nil {
+		model.help = input.localizer.Render(*meta.Help)
 	}
-	for index, choice := range prompt.Choices {
+	for index, choice := range promptChoices {
 		model.choices[index] = terminalChoice{label: input.localizer.Render(choice.Label)}
 		if choice.Description != nil {
 			model.choices[index].description = input.localizer.Render(*choice.Description)
 		}
-		if prompt.Default != nil && choice.Value == *prompt.Default {
+		if defaultOne != nil && choice.Value == *defaultOne {
 			model.cursor = index
-			if multi {
+		}
+		for _, defaultValue := range defaultMany {
+			if choice.Value == defaultValue {
 				model.selected[index] = true
+				break
 			}
 		}
 	}

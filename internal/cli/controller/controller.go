@@ -10,15 +10,16 @@ import (
 	"github.com/sachahjkl/dw/internal/cli/parse"
 	"github.com/sachahjkl/dw/internal/cli/spec"
 	"github.com/sachahjkl/dw/internal/console"
+	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 type Execution struct {
-	Dispatcher    *action.Dispatcher
-	Console       console.Engine
-	Localizer     l10n.Localizer
-	Policy        console.Policy
-	SafetyGranted bool
+	Executor  execution.Executor
+	Actor     execution.Actor
+	Console   console.Engine
+	Localizer l10n.Localizer
+	Policy    console.Policy
 }
 
 type Controller struct {
@@ -31,7 +32,7 @@ type Controller struct {
 }
 
 func New(root *spec.Command, routes *Registry, execution Execution, completion complete.Resolver, packageVersion, informationalVersion string) (*Controller, error) {
-	if root == nil || routes == nil || execution.Dispatcher == nil || execution.Console.Results == nil || execution.Localizer == nil || completion == nil {
+	if root == nil || routes == nil || execution.Executor == nil || execution.Actor.Principal == "" || execution.Console.Results == nil || execution.Localizer == nil || completion == nil {
 		return nil, fmt.Errorf("cli.invalid-controller-dependencies")
 	}
 	if err := routes.ValidateComplete(root); err != nil {
@@ -78,12 +79,6 @@ func (controller *Controller) Run(ctx context.Context, args []string) console.Ex
 	}
 	execution := controller.execution
 	execution.Policy = policy
-	if route.Grant != nil {
-		if err := route.Grant(ctx, execution, invocation); err != nil {
-			return controller.fail(err)
-		}
-		execution.SafetyGranted = true
-	}
 
 	var outcome Outcome
 	var err error
@@ -92,11 +87,13 @@ func (controller *Controller) Run(ctx context.Context, args []string) console.Ex
 	} else {
 		outcome, err = controller.dispatch(ctx, execution, route, invocation)
 	}
+	if !outcome.Output.Empty() {
+		if writeErr := console.WriteOutput(policy.Streams.Stdout, outcome.Output); writeErr != nil {
+			return ExitCode(writeErr)
+		}
+	}
 	if err != nil {
 		return controller.fail(err)
-	}
-	if err := console.WriteOutput(policy.Streams.Stdout, outcome.Output); err != nil {
-		return ExitCode(err)
 	}
 	return outcome.Code
 }
@@ -125,13 +122,10 @@ func (controller *Controller) dispatch(ctx context.Context, execution Execution,
 	if err != nil {
 		return Outcome{}, err
 	}
-	runtime := action.Runtime{
-		Events: NewEventSink(execution.Console, execution.Policy, execution.Localizer, invocation.Verbosity),
-		Input:  NewTerminalInput(execution.Policy.Streams, execution.Localizer),
-	}
-	result, err := execution.Dispatcher.Dispatch(ctx, request, runtime)
-	if err != nil {
-		return Outcome{}, err
+	request = applyCLIDefaults(route.Key, request, execution.Policy)
+	result, dispatchErr := executeRequest(ctx, execution, invocation, request)
+	if result.Result == nil {
+		return Outcome{}, dispatchErr
 	}
 	format, projection, err := route.Project(result, invocation)
 	if err != nil {
@@ -147,14 +141,21 @@ func (controller *Controller) dispatch(ctx context.Context, execution Execution,
 	if err != nil {
 		return Outcome{}, err
 	}
+	outcome := Outcome{Output: output, Code: console.ExitSuccess}
+	if dispatchErr != nil {
+		return outcome, dispatchErr
+	}
 	if err := runExternalResult(ctx, execution, route, invocation, result); err != nil {
-		return Outcome{}, err
+		return outcome, err
 	}
-	code := console.ExitSuccess
 	if route.Status != nil {
-		code = route.Status(result)
+		outcome.Code = route.Status(result)
 	}
-	return Outcome{Output: output, Code: code}, nil
+	return outcome, nil
+}
+
+func (controller *Controller) Close(ctx context.Context) error {
+	return controller.execution.Executor.Close(ctx)
 }
 
 func (controller *Controller) fail(err error) console.ExitCode {

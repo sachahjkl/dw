@@ -1,10 +1,13 @@
 package update
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
+	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/config"
 )
 
@@ -66,9 +69,9 @@ type InstallReport struct {
 }
 
 type Report struct {
-	Kind      string
-	Check     *CheckReport
-	Installed *InstallReport
+	Kind      string         `json:"kind"`
+	Check     *CheckReport   `json:"check,omitempty"`
+	Installed *InstallReport `json:"installed,omitempty"`
 }
 
 func (report Report) MarshalJSON() ([]byte, error) {
@@ -100,6 +103,35 @@ func (report Report) MarshalJSON() ([]byte, error) {
 	}
 }
 
+func (report *Report) UnmarshalJSON(data []byte) error {
+	var value struct {
+		Kind                       string         `json:"kind"`
+		ReleaseTag                 string         `json:"release_tag"`
+		Version                    string         `json:"version"`
+		Commit                     string         `json:"commit"`
+		Assets                     []AssetSummary `json:"assets"`
+		ExecutablePath             string         `json:"executable_path"`
+		DeferredWindowsReplacement bool           `json:"deferred_windows_replacement"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("update: trailing-report-json")
+	}
+	switch value.Kind {
+	case "check":
+		*report = Report{Kind: value.Kind, Check: &CheckReport{ReleaseTag: value.ReleaseTag, Version: value.Version, Commit: value.Commit, Assets: value.Assets}}
+	case "installed":
+		*report = Report{Kind: value.Kind, Installed: &InstallReport{Version: value.Version, Commit: value.Commit, ExecutablePath: value.ExecutablePath, DeferredWindowsReplacement: value.DeferredWindowsReplacement}}
+	default:
+		return fmt.Errorf("update: invalid-report-kind %q", value.Kind)
+	}
+	return nil
+}
+
 type Event struct {
 	Kind           string `json:"kind"`
 	Owner          string `json:"owner,omitempty"`
@@ -113,6 +145,9 @@ type Event struct {
 	ExecutablePath string `json:"executable_path,omitempty"`
 	Version        string `json:"version,omitempty"`
 }
+
+func (Event) EventDataType() action.EventDataType { return "update.event" }
+func (Event) EventDataSchema() uint16             { return 1 }
 
 func (event Event) MarshalJSON() ([]byte, error) {
 	switch event.Kind {
@@ -205,10 +240,10 @@ func (event Event) ActionID() string {
 }
 
 type Request struct {
-	Check          bool
-	RID            string
-	Config         Config
-	ExecutablePath string
+	Check          bool   `json:"check"`
+	RID            string `json:"rid,omitempty"`
+	Config         Config `json:"config"`
+	ExecutablePath string `json:"executable_path,omitempty"`
 }
 
 type EmitFunc func(Event)

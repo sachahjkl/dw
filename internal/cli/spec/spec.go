@@ -59,6 +59,7 @@ type Validation uint8
 const (
 	ValidateNone Validation = iota
 	ValidatePositive
+	ValidatePort
 )
 
 type SpecialAction uint8

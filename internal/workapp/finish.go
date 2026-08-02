@@ -51,9 +51,33 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 			return FinishReport{}, err
 		}
 	}
-	local, err := s.Finisher.ExecuteLocalFinish(ctx, plan, workspace.FinishExecuteOptions{SkipVerification: request.SkipVerify, ForceWithLease: request.ForceWithLease}, nil)
+	var sinkErr error
+	var emit func(workspace.ActionEvent)
+	if sink != nil {
+		emit = func(event workspace.ActionEvent) {
+			if request.CreatePR && event.Type == "skippingPullRequestCreation" {
+				return
+			}
+			if sinkErr != nil {
+				return
+			}
+			sinkErr = sink(ctx, Event{
+				Kind:            event.Type,
+				Repository:      event.Repository,
+				Operation:       event.Operation,
+				RepositoryCount: event.RepositoryCount,
+				WorkItemID:      event.WorkItemID,
+				Error:           event.Error,
+			})
+		}
+	}
+	local, err := s.Finisher.ExecuteLocalFinish(ctx, plan, workspace.FinishExecuteOptions{SkipVerification: request.SkipVerify, ForceWithLease: request.ForceWithLease}, emit)
+	report.Execution = &local
+	if err == nil {
+		err = sinkErr
+	}
 	if err != nil {
-		return FinishReport{}, err
+		return report, err
 	}
 	if !request.CreatePR {
 		local.Events = append(local.Events, workspace.ActionEvent{Type: "skippingPullRequestCreation"})
@@ -71,12 +95,12 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 		local.Events = append(local.Events, workspace.ActionEvent{Type: "checkingActivePullRequest", Repository: candidate.Repository})
 		existing, findErr := prReader.ActivePullRequest(ctx, reference, work.RepositoryName(candidate.ProviderRepository), sourceRef)
 		if findErr != nil {
-			return FinishReport{}, findErr
+			return report, findErr
 		}
 		if existing != nil {
 			projected, projectionErr := finishPullRequestResult(candidate.Repository, "existing", existing.ID, existing.URL, existing.WebURL)
 			if projectionErr != nil {
-				return FinishReport{}, projectionErr
+				return report, projectionErr
 			}
 			local.PullRequests = append(local.PullRequests, projected)
 			continue
@@ -85,11 +109,11 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 		handoff := handoffFor(plan.HandoffSummaries, candidate.Repository)
 		created, createErr := prWriter.CreatePullRequest(ctx, reference, work.PullRequestCreate{Repository: work.RepositoryName(candidate.ProviderRepository), SourceRef: sourceRef, TargetRef: "refs/heads/" + candidate.TargetBranch, Title: finishPullRequestTitle(plan.Manifest), Description: workspace.PullRequestDescription(plan.Manifest, candidate, "", local.VerificationResults, handoff), Draft: !plan.Ready, WorkItemIDs: itemIDs(plan.Manifest.AllKnownWorkItemIDs())})
 		if createErr != nil {
-			return FinishReport{}, createErr
+			return report, createErr
 		}
 		projected, projectionErr := finishPullRequestResult(candidate.Repository, "created", created.ID, created.URL, created.WebURL)
 		if projectionErr != nil {
-			return FinishReport{}, projectionErr
+			return report, projectionErr
 		}
 		local.PullRequests = append(local.PullRequests, projected)
 		for _, id := range plan.Manifest.AllKnownWorkItemIDs() {
@@ -101,21 +125,21 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 	if !request.SkipWork && len(request.FinishStates) > 0 {
 		reader, requireErr := work.Require[work.ItemReader](provider, work.CapabilityItemReader)
 		if requireErr != nil {
-			return FinishReport{}, requireErr
+			return report, requireErr
 		}
 		writer, requireErr := work.Require[work.StateWriter](provider, work.CapabilityStateWriter)
 		if requireErr != nil {
-			return FinishReport{}, requireErr
+			return report, requireErr
 		}
 		ids := plan.Manifest.AllKnownWorkItemIDs()
 		local.Events = append(local.Events, workspace.ActionEvent{Type: "updatingFinishWorkItemStates"})
 		for _, id := range ids {
 			loaded, readErr := reader.ReadItems(ctx, projectRef(request.Root, plan.Manifest.Project), []work.ItemID{work.ItemID(id)}, work.ReadOptions{})
 			if readErr != nil {
-				return FinishReport{}, readErr
+				return report, readErr
 			}
 			if len(loaded) == 0 {
-				return FinishReport{}, itemNotFound(id)
+				return report, itemNotFound(id)
 			}
 			item := loaded[0]
 			target, ok := finishStateForType(request.FinishStates, string(item.Type))
@@ -135,14 +159,13 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 			}
 			_, writeErr := writer.UpdateStates(ctx, projectRef(request.Root, plan.Manifest.Project), []work.StateChange{{ID: item.ID, State: work.State(target), Comment: "dw workspace finish: pull request opened"}})
 			if writeErr != nil {
-				return FinishReport{}, writeErr
+				return report, writeErr
 			}
 			update.Changed = true
 			update.Outcome = "updated"
 			local.WorkItemUpdates = append(local.WorkItemUpdates, update)
 		}
 	}
-	report.Execution = &local
 	return report, nil
 }
 

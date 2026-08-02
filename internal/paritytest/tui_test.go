@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/sachahjkl/dw/internal/cockpit"
 	"github.com/sachahjkl/dw/internal/tui"
 )
 
@@ -72,11 +73,11 @@ func TestTUIReleaseReloadAndQuitHotkeys(t *testing.T) {
 }
 
 func TestTUIFilterAndDestructiveConfirmationTransitions(t *testing.T) {
-	snapshot := tui.Snapshot{Workspaces: []tui.Workspace{{
+	snapshot := cockpit.Snapshot{Workspaces: []cockpit.Workspace{{
 		Path: "/isolated/root/workspaces/42",
-		Actions: []tui.Action{
-			{ID: tui.WorkspaceOpenSlot, Label: "Open", Hotkey: "o", Risk: tui.Safe, Active: true},
-			{ID: tui.WorkspaceRemoveSlot, Label: "Remove", Hotkey: "x", Risk: tui.Destructive, Active: true},
+		Operations: []cockpit.Operation{
+			{ID: tui.WorkspaceOpenSlot, Label: "Open", Risk: cockpit.RiskSafe, Active: true},
+			{ID: tui.WorkspaceRemoveSlot, Label: "Remove", Risk: cockpit.RiskDestructive, Active: true},
 		},
 	}}}
 	model := tui.NewModelWithSnapshot(tui.Dependencies{Root: "/isolated/root"}, snapshot)

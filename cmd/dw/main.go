@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"os/signal"
 
 	"github.com/sachahjkl/dw/internal/bootstrap"
 	"github.com/sachahjkl/dw/internal/platform"
@@ -11,7 +12,9 @@ import (
 func main() {
 	code, cleanup := platform.CleanupExitCode()
 	if !cleanup {
-		code = bootstrap.Run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+		ctx, stop := signal.NotifyContext(context.Background(), terminationSignals()...)
+		defer stop()
+		code = bootstrap.Run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
 	}
 	os.Exit(code)
 }

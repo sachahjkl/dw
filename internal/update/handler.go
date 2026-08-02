@@ -21,31 +21,20 @@ func NewHandler(service *Service) Handler { return Handler{Service: service} }
 func (Handler) ID() action.ID             { return ActionID }
 
 func (handler Handler) Execute(ctx context.Context, request action.Request, runtime action.Runtime) (action.Result, error) {
-	var updateRequest Request
-	switch value := request.(type) {
-	case Request:
-		updateRequest = value
-	case *Request:
-		if value == nil {
-			return nil, fmt.Errorf("update: nil-request")
-		}
-		updateRequest = *value
-	default:
+	updateRequest, ok := request.(Request)
+	if !ok {
 		return nil, fmt.Errorf("update: invalid-request-type %T", request)
 	}
 	service := handler.Service
 	if service == nil {
 		service = NewService(nil)
 	}
-	var sequence uint64
 	report, err := service.Run(ctx, updateRequest, func(event Event) {
-		sequence++
 		_ = runtime.Emit(ctx, action.EventEnvelope{
-			Action:   ActionID,
-			Kind:     eventEnvelopeKind(event.Kind),
-			Sequence: sequence,
-			Message:  eventMessage(event),
-			Data:     event,
+			Action:  ActionID,
+			Kind:    eventEnvelopeKind(event.Kind),
+			Message: eventMessage(event),
+			Data:    event,
 		})
 	})
 	if err != nil {
@@ -54,17 +43,8 @@ func (handler Handler) Execute(ctx context.Context, request action.Request, runt
 	return report, nil
 }
 
-func eventEnvelopeKind(kind string) action.EventKind {
-	switch kind {
-	case "checking-host":
-		return action.EventStarted
-	case "downloaded-asset-bytes":
-		return action.EventProgress
-	case "completed":
-		return action.EventCompleted
-	default:
-		return action.EventProgress
-	}
+func eventEnvelopeKind(string) action.EventKind {
+	return action.EventProgress
 }
 
 func eventMessage(event Event) l10n.Message {

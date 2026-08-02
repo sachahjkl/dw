@@ -29,7 +29,7 @@ const (
 type Authenticator interface {
 	Provider
 	AuthStatus(context.Context, ProjectRef) (AuthStatus, error)
-	Login(context.Context, ProjectRef, AuthMode, func(DeviceLogin) error) (AuthStatus, error)
+	Login(context.Context, ProjectRef, AuthMode, func(LoginInstructions) error) (AuthStatus, error)
 	Logout(context.Context, ProjectRef) (removedLocalSession bool, err error)
 }
 

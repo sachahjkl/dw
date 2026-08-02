@@ -23,7 +23,6 @@ type Route struct {
 	Project Projector
 	Direct  Direct
 	Machine MachineMode
-	Grant   SafetyGrant
 	Status  Status
 }
 

@@ -29,8 +29,11 @@ func (*finishTestFinisher) PlanFinish(context.Context, string, string, string, b
 		Handoff:  workspace.HandoffValidationReport{IsValid: true},
 	}, nil
 }
-func (f *finishTestFinisher) ExecuteLocalFinish(context.Context, workspace.FinishPlanReport, workspace.FinishExecuteOptions, func(workspace.ActionEvent)) (workspace.FinishExecutionReport, error) {
+func (f *finishTestFinisher) ExecuteLocalFinish(_ context.Context, _ workspace.FinishPlanReport, _ workspace.FinishExecuteOptions, emit func(workspace.ActionEvent)) (workspace.FinishExecutionReport, error) {
 	f.executed = true
+	if emit != nil {
+		emit(workspace.ActionEvent{Type: "verifyingFinish", Repository: "repo"})
+	}
 	return workspace.FinishExecutionReport{}, nil
 }
 
@@ -47,5 +50,22 @@ func TestFinishChecksProviderCapabilitiesBeforeLocalEffects(t *testing.T) {
 	}
 	if finisher.executed {
 		t.Fatal("local finish ran before provider capability validation")
+	}
+}
+
+func TestFinishForwardsLocalEvents(t *testing.T) {
+	finisher := &finishTestFinisher{}
+	service := &Service{Lookup: finishTestLookup{}, Finisher: finisher}
+	var events []Event
+
+	_, err := service.Finish(context.Background(), FinishRequest{Execute: true}, func(_ context.Context, event Event) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Kind != "verifyingFinish" || events[0].Repository != "repo" {
+		t.Fatalf("events = %#v, want forwarded verifyingFinish event", events)
 	}
 }

@@ -24,6 +24,19 @@ func (cell Cell) MarshalJSON() ([]byte, error) {
 	return strconv.AppendQuote(nil, cell.Value), nil
 }
 
+func (cell *Cell) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		*cell = Cell{}
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*cell = Cell{Valid: true, Value: value}
+	return nil
+}
+
 type NativeQueryReport struct {
 	Columns   []string `json:"columns"`
 	Rows      [][]Cell `json:"rows"`

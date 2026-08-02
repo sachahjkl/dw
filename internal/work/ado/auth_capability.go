@@ -29,7 +29,7 @@ func (p *Provider) AuthStatus(ctx context.Context, project work.ProjectRef) (wor
 	return result, nil
 }
 
-func (p *Provider) Login(ctx context.Context, project work.ProjectRef, mode work.AuthMode, onDevice func(work.DeviceLogin) error) (work.AuthStatus, error) {
+func (p *Provider) Login(ctx context.Context, project work.ProjectRef, mode work.AuthMode, onInstructions func(work.LoginInstructions) error) (work.AuthStatus, error) {
 	_, auth, err := p.resolve(ctx, project)
 	if err != nil {
 		return work.AuthStatus{}, err
@@ -48,13 +48,25 @@ func (p *Provider) Login(ctx context.Context, project work.ProjectRef, mode work
 			return work.AuthStatus{}, &Error{Kind: ErrorMissingAuth}
 		}
 		token, err = auth.LoginBrowser(ctx)
+	case work.AuthBrowserManual:
+		if auth == nil {
+			return work.AuthStatus{}, &Error{Kind: ErrorMissingAuth}
+		}
+		token, err = auth.LoginBrowserManual(ctx, func(instructions BrowserLoginInstructions) error {
+			if onInstructions == nil {
+				return nil
+			}
+			browser := work.BrowserLogin{AuthorizationURL: instructions.AuthorizationURL, CallbackURI: instructions.CallbackURI}
+			return onInstructions(work.LoginInstructions{Browser: &browser})
+		})
 	case work.AuthDevice:
 		if auth == nil {
 			return work.AuthStatus{}, &Error{Kind: ErrorMissingAuth}
 		}
 		token, err = auth.LoginDeviceCode(ctx, func(instructions DeviceLoginInstructions) {
-			if onDevice != nil && callbackErr == nil {
-				callbackErr = onDevice(work.DeviceLogin{VerificationURI: instructions.VerificationURI, UserCode: instructions.UserCode, ExpiresInSeconds: instructions.ExpiresInSeconds, PollIntervalSeconds: instructions.PollIntervalSeconds})
+			if onInstructions != nil && callbackErr == nil {
+				device := work.DeviceLogin{VerificationURI: instructions.VerificationURI, UserCode: instructions.UserCode, ExpiresInSeconds: instructions.ExpiresInSeconds, PollIntervalSeconds: instructions.PollIntervalSeconds}
+				callbackErr = onInstructions(work.LoginInstructions{Device: &device})
 			}
 		})
 	default:

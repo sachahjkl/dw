@@ -242,7 +242,7 @@ func (s *Service) Open(ctx context.Context, request OpenRequest, sink EventSink)
 	if err != nil {
 		return OpenReport{}, err
 	}
-	return OpenReport{Workspace: workspacePath, Launch: launch, Events: events}, nil
+	return OpenReport{Workspace: workspacePath, Launch: &launch, Events: events}, nil
 }
 
 func (s *Service) Sync(ctx context.Context, request SyncRequest, sink EventSink) (SyncReport, error) {

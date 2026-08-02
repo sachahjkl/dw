@@ -310,7 +310,7 @@ func assign(command *spec.Command, path []string, entry *value, arg spec.Argumen
 		entry.boolean = true
 	case spec.Int:
 		bits := 32
-		if arg.Validate == spec.ValidatePositive {
+		if arg.Validate == spec.ValidatePositive || arg.Validate == spec.ValidatePort {
 			bits = 64
 		}
 		parsed, err := strconv.ParseInt(raw, 10, bits)
@@ -319,6 +319,9 @@ func assign(command *spec.Command, path []string, entry *value, arg spec.Argumen
 		}
 		if arg.Validate == spec.ValidatePositive && parsed <= 0 {
 			return parseError(command, path, InvalidValue, spec.MsgErrPositiveInt, arg.Token(), "")
+		}
+		if arg.Validate == spec.ValidatePort && (parsed < 0 || parsed > 65535) {
+			return parseError(command, path, InvalidValue, spec.MsgErrInvalidValue, raw, arg.Token())
 		}
 		entry.integer = parsed
 	case spec.Strings:

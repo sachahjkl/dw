@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/cockpit"
 )
 
 func TestPanelHonorsRequestedDimensions(t *testing.T) {
@@ -47,7 +48,7 @@ func TestResponsiveTableUsesHeadersAndCompactCards(t *testing.T) {
 }
 
 func TestRenderProjectTabsKeepsSelectedProjectVisible(t *testing.T) {
-	model := NewModelWithSnapshot(Dependencies{}, Snapshot{WorkProjects: []WorkProject{
+	model := NewModelWithSnapshot(Dependencies{}, cockpit.Snapshot{WorkProjects: []cockpit.WorkProject{
 		{Key: "first-very-long-project", Provider: "github"},
 		{Key: "selected-project", Provider: "jira"},
 		{Key: "third-very-long-project", Provider: "linear"},
@@ -81,9 +82,9 @@ func TestActionSuccessAlwaysOpensVisibleResult(t *testing.T) {
 }
 
 func TestDataOperationsAreKeyboardFocusable(t *testing.T) {
-	catalog := Action{ID: DataCatalogSlot, Label: "Catalog", Active: true}
-	describe := Action{ID: "data.describe", Label: "Describe", Active: true}
-	model := NewModelWithSnapshot(Dependencies{}, Snapshot{DataSources: []DataSource{{Key: "people", Provider: "csv", Actions: []Action{catalog, describe}}}})
+	catalog := cockpit.Operation{ID: DataCatalogSlot, Label: "Catalog", Active: true}
+	describe := cockpit.Operation{ID: "data.describe", Label: "Describe", Active: true}
+	model := NewModelWithSnapshot(Dependencies{}, cockpit.Snapshot{DataSources: []cockpit.DataSource{{Key: "people", Provider: "csv", Operations: []cockpit.Operation{catalog, describe}}}})
 	model.setView(Data)
 
 	model.HandleKey(Key{Code: "right"})
@@ -129,7 +130,7 @@ func TestPromptChoiceWindowTracksSelection(t *testing.T) {
 	for index := range choices {
 		choices[index] = "choice"
 	}
-	model.prompt = &inputPrompt{prompt: action.Prompt{Kind: action.PromptSelectOne}, choices: choices, selected: 19}
+	model.prompt = &inputPrompt{prompt: action.SelectOnePrompt{}, choices: choices, selected: 19}
 
 	got := model.renderPromptChoices(4)
 	if lines := strings.Count(got, "\n") + 1; lines != 4 {
@@ -186,19 +187,19 @@ func TestMouseReportingIsDisabled(t *testing.T) {
 }
 
 func TestEveryViewFitsTerminalAtWideAndCompactSizes(t *testing.T) {
-	operation := Action{ID: DataCatalogSlot, Label: "Catalog", Description: "Inspect available records", Active: true}
-	snapshot := Snapshot{
+	operation := cockpit.Operation{ID: DataCatalogSlot, Label: "Catalog", Description: "Inspect available records", Active: true}
+	snapshot := cockpit.Snapshot{
 		Root:            "/tmp/example",
 		ProjectCount:    1,
 		RepositoryCount: 1,
 		DefaultAgent:    "codex",
-		Workspaces: []Workspace{{
-			Project: "example", WorkItems: []string{"WORK-123"}, Type: "feature", Slug: "responsive-layout", Branch: "feature/responsive-layout", Repositories: []string{"repository"}, Actions: []Action{operation},
+		Workspaces: []cockpit.Workspace{{
+			Project: "example", WorkItems: []string{"WORK-123"}, Type: "feature", Slug: "responsive-layout", Branch: "feature/responsive-layout", Repositories: []string{"repository"}, Operations: []cockpit.Operation{operation},
 		}},
-		WorkProjects: []WorkProject{{Key: "example", Provider: "provider", Items: []WorkItem{{ID: "WORK-123", Type: "story", State: "active", Title: "Make every view fit its terminal", Actions: []Action{operation}}}}},
-		PullRequests: []PullRequest{{ID: "42", Project: "example", Repository: "repository", Branch: "feature/responsive-layout", Title: "Responsive layout", Draft: true, WorkItems: []string{"WORK-123"}, Actions: []Action{operation}}},
-		DataSources:  []DataSource{{Project: "example", Key: "people", Provider: "csv", Actions: []Action{operation}}},
-		Cockpit:      []CockpitItem{{Section: "Workspace", Title: "Responsive layout", Status: "true", Primary: operation, Subtitle: "WORK-123"}},
+		WorkProjects: []cockpit.WorkProject{{Key: "example", Provider: "provider", Items: []cockpit.WorkItem{{ID: "WORK-123", Type: "story", State: "active", Title: "Make every view fit its terminal", Operations: []cockpit.Operation{operation}}}}},
+		PullRequests: []cockpit.PullRequest{{ID: "42", Project: "example", Repository: "repository", Branch: "feature/responsive-layout", Title: "Responsive layout", Draft: true, WorkItems: []string{"WORK-123"}, Operations: []cockpit.Operation{operation}}},
+		DataSources:  []cockpit.DataSource{{Project: "example", Key: "people", Provider: "csv", Operations: []cockpit.Operation{operation}}},
+		Cockpit:      []cockpit.CockpitItem{{Section: "Workspace", Title: "Responsive layout", Status: "true", Primary: operation, Subtitle: "WORK-123"}},
 	}
 
 	for _, size := range []struct{ width, height int }{{120, 30}, {50, 14}} {

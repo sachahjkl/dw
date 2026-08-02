@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/l10n"
@@ -110,6 +112,34 @@ func (launch Launch) MarshalJSON() ([]byte, error) {
 	output.Write(workingDirectory)
 	output.WriteByte('}')
 	return output.Bytes(), nil
+}
+
+func (launch *Launch) UnmarshalJSON(data []byte) error {
+	var value struct {
+		FileName         string            `json:"fileName"`
+		Arguments        []string          `json:"arguments"`
+		Environment      map[string]string `json:"environment"`
+		WorkingDirectory string            `json:"workingDirectory"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("agent.invalid-launch-json")
+	}
+	names := make([]string, 0, len(value.Environment))
+	for name := range value.Environment {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	environment := make([]EnvironmentVariable, len(names))
+	for index, name := range names {
+		environment[index] = EnvironmentVariable{Name: name, Value: value.Environment[name]}
+	}
+	*launch = Launch{FileName: value.FileName, Arguments: value.Arguments, Environment: environment, WorkingDirectory: value.WorkingDirectory}
+	return nil
 }
 
 type OpenRequest struct {

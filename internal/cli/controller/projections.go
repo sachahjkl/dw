@@ -7,6 +7,7 @@ import (
 	"github.com/sachahjkl/dw/internal/cli/parse"
 	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/workapp"
+	"github.com/sachahjkl/dw/internal/workspaceapp"
 )
 
 func assignedProject(envelope action.ResultEnvelope, invocation *parse.Result) (console.OutputFormat, *console.JSONProjection, error) {
@@ -61,7 +62,7 @@ func aiContextProject(envelope action.ResultEnvelope, _ *parse.Result) (console.
 	if !ok {
 		return projectionTypeError("work.context.ai", envelope)
 	}
-	projection, err := console.WorkAIContextJSONProjection(report.Items)
+	projection, err := console.WorkAIContextJSONProjection(report.Report.Items)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -72,7 +73,7 @@ func workListProject(envelope action.ResultEnvelope, invocation *parse.Result) (
 	if !invocation.Values.Bool("json") {
 		return console.FormatHuman, nil, nil
 	}
-	report, ok := envelope.Result.(WorkspaceListResult)
+	report, ok := envelope.Result.(workspaceapp.ListResult)
 	if !ok {
 		return projectionTypeError("workspace.list", envelope)
 	}
@@ -84,27 +85,27 @@ func workspacePhaseProject(envelope action.ResultEnvelope, invocation *parse.Res
 		return console.FormatHuman, nil, nil
 	}
 	switch report := envelope.Result.(type) {
-	case WorkspaceItemUpdateResult:
+	case workspaceapp.ItemUpdateResult:
 		if report.Execution != nil {
 			return marshalProjection(*report.Execution)
 		}
 		return marshalProjection(report.Plan)
-	case WorkspaceRenameResult:
+	case workspaceapp.RenameResult:
 		if report.Execution != nil {
 			return marshalProjection(*report.Execution)
 		}
 		return marshalProjection(report.Plan)
-	case WorkspaceRepoAddResult:
+	case workspaceapp.RepoAddResult:
 		if report.Execution != nil {
 			return marshalProjection(*report.Execution)
 		}
 		return marshalProjection(report.Plan)
-	case WorkspaceCommitResult:
+	case workspaceapp.CommitResult:
 		if report.Execution != nil {
 			return marshalProjection(*report.Execution)
 		}
 		return marshalProjection(report.Plan)
-	case WorkspaceTeardownResult:
+	case workspaceapp.TeardownResult:
 		if report.Execution != nil {
 			return marshalProjection(*report.Execution)
 		}

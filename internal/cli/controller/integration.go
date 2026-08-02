@@ -21,6 +21,7 @@ import (
 	"github.com/sachahjkl/dw/internal/update"
 	"github.com/sachahjkl/dw/internal/workapp"
 	"github.com/sachahjkl/dw/internal/workspace"
+	"github.com/sachahjkl/dw/internal/workspaceapp"
 )
 
 // Integration contains the direct-only CLI dependencies. Domain operations use
@@ -32,16 +33,19 @@ type Integration struct {
 	PackageVersion       string
 	Completion           complete.Resolver
 	RunTUI               func(context.Context, string, Execution) error
+	Web                  WebLifecycle
+	RunWebServe          func(context.Context) error
 }
 
 // RegisterRoutes registers every leaf in spec.Root in grammar order. It fails
 // immediately when a direct dependency is absent or grammar and routes drift.
 func RegisterRoutes(registry *Registry, integration Integration) error {
-	if registry == nil || integration.Root == nil || integration.Completion == nil || integration.RunTUI == nil {
+	if registry == nil || integration.Root == nil || integration.Completion == nil || integration.RunTUI == nil || integration.Web == nil || integration.RunWebServe == nil {
 		return fmt.Errorf("cli.invalid-route-integration")
 	}
 	register := func(route Route) error { return registry.Register(route) }
 	direct := directRoutes(integration)
+	web := webRoutes(integration.Web, integration.RunWebServe)
 	for _, route := range []Route{
 		direct["version"], direct["guide"],
 		buildRoute("doctor", buildDoctor, jsonOptionProject),
@@ -103,6 +107,7 @@ func RegisterRoutes(registry *Registry, integration Integration) error {
 		buildRoute("secret.set", buildSecretSet, humanProject),
 		buildRoute("secret.get", buildSecretGet, humanProject),
 		buildRoute("secret.delete", buildSecretDelete, humanProject),
+		web["web.start"], web["web.stop"], web["web.status"], web["web.open"], web["web.register"], web["web.unregister"], web["web.serve"],
 		buildRoute("upgrade", buildUpgrade, upgradeProject),
 	} {
 		if err := register(route); err != nil {
@@ -122,14 +127,6 @@ func buildRoute(key string, build Builder, project Projector) Route {
 	}
 	if key == "work.changelog" {
 		route.Machine = func(values parse.Values) bool { return values.Bool("ids_only") || values.String("format") != "" }
-	}
-	switch key {
-	case "workspace.finish":
-		route.Grant = GrantWorkspaceFinish
-	case "workspace.teardown":
-		route.Grant = GrantWorkspaceTeardown
-	case "workspace.prune":
-		route.Grant = GrantWorkspacePrune
 	}
 	route.Status = statusForKey(key)
 	return route
@@ -188,7 +185,7 @@ func statusForKey(key string) Status {
 		}
 	case "workspace.preflight":
 		return func(result action.ResultEnvelope) console.ExitCode {
-			report, ok := result.Result.(WorkspacePreflightResult)
+			report, ok := result.Result.(workspaceapp.PreflightResult)
 			if ok && report.HasBlockingIssues {
 				return console.ExitFailure
 			}
@@ -196,7 +193,7 @@ func statusForKey(key string) Status {
 		}
 	case "workspace.handoff.validate":
 		return func(result action.ResultEnvelope) console.ExitCode {
-			report, ok := result.Result.(WorkspaceHandoffResult)
+			report, ok := result.Result.(workspaceapp.HandoffResult)
 			if ok && !report.IsValid {
 				return console.ExitFailure
 			}
@@ -293,7 +290,7 @@ func repoLatestProject(result action.ResultEnvelope, invocation *parse.Result) (
 	if !invocation.Values.Bool("json") {
 		return console.FormatHuman, nil, nil
 	}
-	report, ok := result.Result.(WorkspaceRepoLatestResult)
+	report, ok := result.Result.(workspaceapp.RepoLatestResult)
 	if !ok {
 		return 0, nil, fmt.Errorf("cli.invalid-result:workspace.repo.latest:%T", result.Result)
 	}
@@ -426,10 +423,14 @@ func buildWorkItemStateSet(inv *parse.Result) (action.Request, error) {
 	}
 	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
 	request := workapp.StatePlanRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id")), State: inv.Values.String("state"), History: history}
-	if inv.Values.Bool("yes") {
-		return workapp.StateSetRequest{Request: request}, nil
-	}
-	return request, nil
+	return workapp.StateSetRequest{Request: request, Approved: inv.Values.Bool("yes")}, nil
+}
+func buildWorkItemDoing(inv *parse.Result) (action.Request, error) {
+	root := resolvedRoot(inv.Values)
+	states, _, _ := taskStartSettings(root)
+	project := inv.Values.String("project")
+	request := workapp.DoingRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id")), States: states}
+	return workapp.DoingActionRequest{Request: request, Approved: inv.Values.Bool("yes")}, nil
 }
 func buildWorkContextShow(inv *parse.Result) (action.Request, error) {
 	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
@@ -438,7 +439,7 @@ func buildWorkContextShow(inv *parse.Result) (action.Request, error) {
 func buildWorkContextAI(inv *parse.Result) (action.Request, error) {
 	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
 	request := workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Organization: inv.Values.String("organization"), Project: project, IDs: split(inv.Values.String("id")), Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Bool("include_comments"), Mode: workapp.ContextRich}
-	return workapp.AIContextRequest{ContextRequest: request}, nil
+	return workapp.AIContextRequest{Request: request}, nil
 }
 func buildWorkChangelog(inv *parse.Result) (action.Request, error) {
 	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
@@ -560,13 +561,13 @@ func buildUpgrade(inv *parse.Result) (action.Request, error) {
 }
 
 func buildWorkspaceStatus(inv *parse.Result) (action.Request, error) {
-	return WorkspaceStatusRequest{Root: resolvedRoot(inv.Values)}, nil
+	return workspaceapp.StatusRequest{Root: resolvedRoot(inv.Values)}, nil
 }
 func buildWorkspaceList(inv *parse.Result) (action.Request, error) {
-	return WorkspaceListRequest{Root: resolvedRoot(inv.Values), Project: optional(inv.Values, "project"), WorkItemIDs: split(inv.Values.String("work_item"))}, nil
+	return workspaceapp.ListRequest{Root: resolvedRoot(inv.Values), Project: optional(inv.Values, "project"), WorkItemIDs: split(inv.Values.String("work_item"))}, nil
 }
 func buildWorkspaceCurrent(_ *parse.Result) (action.Request, error) {
-	return WorkspaceCurrentRequest{}, nil
+	return workspaceapp.CurrentRequest{}, nil
 }
 func buildWorkspaceItemAdd(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
@@ -577,7 +578,7 @@ func buildWorkspaceItemAdd(inv *parse.Result) (action.Request, error) {
 	if inv.Values.Bool("json") && len(ids) == 0 {
 		return nil, usage(fmt.Errorf("cli.work-item-ids-required"))
 	}
-	return WorkspaceItemAddRequest{Selection: selection, Provider: strings.TrimSpace(inv.Values.String("provider")), IDs: ids, SkipWork: inv.Values.Bool("skip_provider"), Type: inv.Values.String("type"), Title: inv.Values.String("title"), State: inv.Values.String("state"), Execute: inv.Values.Bool("execute")}, nil
+	return workspaceapp.ItemAddRequest{Selection: selection, Provider: strings.TrimSpace(inv.Values.String("provider")), IDs: ids, SkipWork: inv.Values.Bool("skip_provider"), Type: inv.Values.String("type"), Title: inv.Values.String("title"), State: inv.Values.String("state"), Execute: inv.Values.Bool("execute")}, nil
 }
 func buildWorkspaceItemRemove(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
@@ -588,7 +589,7 @@ func buildWorkspaceItemRemove(inv *parse.Result) (action.Request, error) {
 	if inv.Values.Bool("json") && len(ids) == 0 {
 		return nil, usage(fmt.Errorf("cli.work-item-ids-required"))
 	}
-	return WorkspaceItemRemoveRequest{Selection: selection, IDs: ids, Execute: inv.Values.Bool("execute")}, nil
+	return workspaceapp.ItemRemoveRequest{Selection: selection, IDs: ids, Execute: inv.Values.Bool("execute")}, nil
 }
 func buildWorkItemChildCreate(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
@@ -626,7 +627,9 @@ func buildWorkspaceStart(inv *parse.Result) (action.Request, error) {
 		states = nil
 	}
 	project := inv.Values.String("project")
-	return workapp.StartRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, WorkItemIDs: ids, TaskID: optional(inv.Values, "task"), Type: inv.Values.String("type"), Repositories: split(inv.Values.String("only")), Slug: inv.Values.String("slug"), SkipWork: inv.Values.Bool("skip_provider"), WithActiveChildren: inv.Values.Bool("with_active_children"), CreateChildTasks: inv.Values.Bool("create_child_tasks") || createChildren, Execute: inv.Values.Bool("execute"), States: states}, nil
+	execute := inv.Values.Bool("execute")
+	prompt := !execute && !inv.Values.Bool("json")
+	return workapp.StartRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, WorkItemIDs: ids, TaskID: optional(inv.Values, "task"), Type: inv.Values.String("type"), Repositories: split(inv.Values.String("only")), Slug: inv.Values.String("slug"), SkipWork: inv.Values.Bool("skip_provider"), WithActiveChildren: inv.Values.Bool("with_active_children"), CreateChildTasks: inv.Values.Bool("create_child_tasks") || createChildren, Execute: execute, Approved: execute, PromptToExecute: prompt, PromptToOpen: prompt, States: states}, nil
 }
 func buildWorkspacePRStart(inv *parse.Result) (action.Request, error) {
 	id, err := strconv.ParseInt(inv.Values.String("pull_request_id"), 10, 64)
@@ -647,7 +650,7 @@ func buildWorkspacePreflight(inv *parse.Result) (action.Request, error) {
 	if err != nil {
 		return nil, usage(err)
 	}
-	return WorkspacePreflightRequest{Selection: selection, Files: inv.Values.Strings("ai_context_file")}, nil
+	return workspaceapp.PreflightRequest{Selection: selection, Files: inv.Values.Strings("ai_context_file")}, nil
 }
 func buildWorkspaceSync(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
@@ -661,31 +664,31 @@ func buildWorkspaceRename(inv *parse.Result) (action.Request, error) {
 	if err != nil {
 		return nil, usage(err)
 	}
-	return WorkspaceRenameRequest{Selection: selection, Slug: inv.Values.String("slug"), Execute: inv.Values.Bool("execute")}, nil
+	return workspaceapp.RenameRequest{Selection: selection, Slug: inv.Values.String("slug"), Execute: inv.Values.Bool("execute")}, nil
 }
 func buildWorkspaceRepoAdd(inv *parse.Result) (action.Request, error) {
 	repository := inv.Values.String("repo")
 	if inv.Values.Bool("json") && strings.TrimSpace(repository) == "" {
 		return nil, usage(fmt.Errorf("cli.work-repository-required"))
 	}
-	return WorkspaceRepoAddRequest{Selection: WorkspaceSelection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace")}, Repository: repository, Execute: inv.Values.Bool("execute")}, nil
+	return workspaceapp.RepoAddRequest{Selection: workspaceapp.Selection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace")}, Repository: repository, Execute: inv.Values.Bool("execute")}, nil
 }
 func buildWorkspaceRepoLatest(inv *parse.Result) (action.Request, error) {
-	return WorkspaceRepoLatestRequest{Selection: WorkspaceSelection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue")}, Repositories: split(inv.Values.String("only")), Execute: !inv.Values.Bool("json")}, nil
+	return workspaceapp.RepoLatestRequest{Selection: workspaceapp.Selection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue")}, Repositories: split(inv.Values.String("only")), Execute: !inv.Values.Bool("json")}, nil
 }
 func buildWorkspaceCommit(inv *parse.Result) (action.Request, error) {
-	return WorkspaceCommitRequest{Selection: WorkspaceSelection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue")}, Message: inv.Values.String("message"), Execute: inv.Values.Bool("execute")}, nil
+	return workspaceapp.CommitRequest{Selection: workspaceapp.Selection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue")}, Message: inv.Values.String("message"), Execute: inv.Values.Bool("execute")}, nil
 }
 func buildWorkspaceFinish(inv *parse.Result) (action.Request, error) {
 	root := resolvedRoot(inv.Values)
-	return workapp.FinishRequest{Provider: strings.TrimSpace(inv.Values.String("provider")), Root: root, Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue"), Execute: inv.Values.Bool("execute"), CreatePR: inv.Values.Bool("create_pr"), Ready: inv.Values.Bool("ready"), SkipVerify: inv.Values.Bool("skip_verify"), SkipWork: inv.Values.Bool("skip_provider"), ForceWithLease: inv.Values.Bool("force_with_lease"), Message: optional(inv.Values, "message"), FinishStates: taskFinishStates(root)}, nil
+	return workapp.FinishRequest{Provider: strings.TrimSpace(inv.Values.String("provider")), Root: root, Workspace: optional(inv.Values, "workspace"), Continue: inv.Values.Bool("continue"), Execute: inv.Values.Bool("execute"), Approved: inv.Values.Bool("yes"), CreatePR: inv.Values.Bool("create_pr"), Ready: inv.Values.Bool("ready"), SkipVerify: inv.Values.Bool("skip_verify"), SkipWork: inv.Values.Bool("skip_provider"), ForceWithLease: inv.Values.Bool("force_with_lease"), Message: optional(inv.Values, "message"), FinishStates: taskFinishStates(root)}, nil
 }
 func buildWorkspaceHandoff(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
 	if err != nil {
 		return nil, usage(err)
 	}
-	return WorkspaceHandoffRequest{Selection: selection}, nil
+	return workspaceapp.HandoffRequest{Selection: selection}, nil
 }
 func buildWorkspaceTeardown(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
@@ -693,7 +696,7 @@ func buildWorkspaceTeardown(inv *parse.Result) (action.Request, error) {
 		return nil, usage(err)
 	}
 	execute := inv.Values.Bool("execute")
-	return WorkspaceTeardownRequest{Selection: selection, Execute: execute, Approved: execute}, nil
+	return workspaceapp.TeardownRequest{Selection: selection, Execute: execute, Approved: inv.Values.Bool("yes")}, nil
 }
 func buildWorkspacePrune(inv *parse.Result) (action.Request, error) {
 	root := resolvedRoot(inv.Values)
@@ -702,7 +705,7 @@ func buildWorkspacePrune(inv *parse.Result) (action.Request, error) {
 	if project != nil {
 		projectName = *project
 	}
-	return workapp.PruneRequest{Provider: selectedWorkProvider(inv.Values, root, projectName), Root: root, Project: project, WorkItemIDs: split(inv.Values.String("work_item")), Execute: inv.Values.Bool("execute"), NoSync: inv.Values.Bool("no_sync")}, nil
+	return workapp.PruneRequest{Provider: selectedWorkProvider(inv.Values, root, projectName), Root: root, Project: project, WorkItemIDs: split(inv.Values.String("work_item")), Execute: inv.Values.Bool("execute"), Approved: inv.Values.Bool("yes"), NoSync: inv.Values.Bool("no_sync")}, nil
 }
 
 func taskStartSettings(root string) (map[string]string, bool, bool) {
@@ -829,11 +832,11 @@ func split(value string) []string {
 	return result
 }
 
-func workspaceSelection(values parse.Values) (WorkspaceSelection, error) {
+func workspaceSelection(values parse.Values) (workspaceapp.Selection, error) {
 	ids, err := workspace.ResolveWorkItemSelection(values.String("work_item"), values.String("positional_work_item"))
 	if err != nil {
-		return WorkspaceSelection{}, err
+		return workspaceapp.Selection{}, err
 	}
 	project := values.String("project")
-	return WorkspaceSelection{Root: resolvedRoot(values), Workspace: optional(values, "workspace"), Project: project, IDs: ids, Continue: values.Bool("continue") || project != "" || len(ids) != 0}, nil
+	return workspaceapp.Selection{Root: resolvedRoot(values), Workspace: optional(values, "workspace"), Project: project, IDs: ids, Continue: values.Bool("continue") || project != "" || len(ids) != 0}, nil
 }

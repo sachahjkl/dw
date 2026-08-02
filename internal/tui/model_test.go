@@ -9,11 +9,8 @@ import (
 
 func TestConfirmEnterHonorsNegativeDefault(t *testing.T) {
 	model := NewModel(Dependencies{})
-	defaultValue := action.ChoiceValue("false")
-	responses := make(chan action.Response, 1)
 	model.prompt = &inputPrompt{
-		prompt:   action.Prompt{Kind: action.PromptConfirm, Default: &defaultValue},
-		response: responses,
+		prompt: action.ConfirmPrompt{Default: false},
 	}
 
 	effects := model.HandleKey(Key{Code: "enter"})
@@ -21,7 +18,8 @@ func TestConfirmEnterHonorsNegativeDefault(t *testing.T) {
 	if len(effects) != 1 || effects[0].Kind != AnswerInputEffect {
 		t.Fatalf("enter effects = %#v, want one input answer", effects)
 	}
-	if effects[0].Response.Accepted {
+	response, ok := effects[0].Response.(action.ConfirmResponse)
+	if !ok || response.Accepted {
 		t.Fatalf("enter accepted a confirmation whose default is false: %#v", effects[0].Response)
 	}
 }

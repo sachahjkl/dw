@@ -58,7 +58,7 @@
           inherit src ldflags;
           tags = [ "timetzdata" ];
           subPackages = [ "cmd/dw" ];
-          vendorHash = "sha256-/ms4tQysN66o2qeVvLC5gXHVmfZeBgRO5oQ2aTndqeY=";
+          vendorHash = "sha256-v30pxZ6LRbzrdxPd290Tpo5XbLLO/52n6GsDPfXRPOw=";
           env.CGO_ENABLED = "0";
         };
 
@@ -83,7 +83,17 @@
         testCheck = buildGoModule (commonArgs // {
           pname = "dw-tests";
           doCheck = true;
+          nativeBuildInputs = [ pkgs.chromium pkgs.fontconfig pkgs.dejavu_fonts ];
+          env = commonArgs.env // {
+            DW_CHROMIUM = "${pkgs.chromium}/bin/chromium";
+            FONTCONFIG_FILE = pkgs.makeFontsConf {
+              fontDirectories = [ pkgs.dejavu_fonts ];
+            };
+          };
           checkPhase = ''
+            cp internal/web/components_templ.go "$TMPDIR/components_templ.go"
+            go tool templ generate
+            cmp "$TMPDIR/components_templ.go" internal/web/components_templ.go
             runHook preCheck
             go test -tags=timetzdata ./...
             runHook postCheck
@@ -155,6 +165,11 @@
               "Application and core layers must not import concrete providers" \
               'github.com/sachahjkl/dw/internal/(data|work)/[^"]+' \
               internal/dataapp internal/providerapp internal/workapp internal/workspace
+
+            fail_if_matches \
+              "Domain layers must not import web presentation or lifecycle packages" \
+              'github.com/sachahjkl/dw/internal/(web|tui|webservice)' \
+              internal/action internal/cockpit internal/contract internal/data internal/dataapp internal/execution internal/l10n internal/providerapp internal/wirejson internal/work internal/workapp internal/workspace
 
             echo "Architecture check passed."
           '';

@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
@@ -121,9 +122,6 @@ func (m *Model) statusSummary() string {
 			text = run.Events[len(run.Events)-1].Text
 		}
 		parts = append(parts, m.spinner.View()+" "+text)
-	}
-	if len(m.queue) != 0 {
-		parts = append(parts, m.message("tui.status.queue", l10n.A("count", len(m.queue))))
 	}
 	parts = append(parts, m.snapshot.Root)
 	return strings.Join(parts, "  ")
@@ -314,7 +312,7 @@ func (m *Model) renderData(width, height int) string {
 			scope = m.l10n.Text("tui.label.global")
 		}
 		operation := ""
-		if actionItem, ok := findAction(item.Actions, DataCatalogSlot); ok {
+		if actionItem, ok := findAction(item.Operations, DataCatalogSlot); ok {
 			operation = actionItem.Label
 		}
 		rows = append(rows, []string{scope, item.Provider, item.Key, operation})
@@ -424,10 +422,10 @@ func (m *Model) renderConfirmation(width, height int) string {
 func (m *Model) renderInput(width, height int) string {
 	prompt := m.prompt
 	body := m.renderPairs([][]string{{m.l10n.Text("tui.label.prompt"), prompt.label}, {m.l10n.Text("tui.column.help"), prompt.help}}, max(40, width*2/3)) + "\n\n"
-	switch prompt.prompt.Kind {
+	switch prompt.prompt.PromptKind() {
 	case action.PromptConfirm:
 		defaultLabel := m.l10n.Text("tui.label.no")
-		if prompt.prompt.Default != nil && string(*prompt.prompt.Default) == "true" {
+		if typed, ok := prompt.prompt.(action.ConfirmPrompt); ok && typed.Default {
 			defaultLabel = m.l10n.Text("tui.label.yes")
 		}
 		body += m.l10n.Text("tui.label.default") + ": " + defaultLabel
@@ -519,12 +517,6 @@ func (m *Model) stateLines() []string {
 	if m.active != nil {
 		lines = append(lines, "", m.l10n.Text("tui.status.action"), m.active.action.Label)
 	}
-	if len(m.queue) != 0 {
-		lines = append(lines, "", m.l10n.Text("tui.panel.queue"))
-		for _, item := range m.queue {
-			lines = append(lines, item.action.Label)
-		}
-	}
 	lines = append(lines, "", m.l10n.Text("tui.panel.messages"))
 	lines = append(lines, m.messages...)
 	return lines
@@ -547,17 +539,17 @@ func (m *Model) journalLines() []string {
 		return []string{m.l10n.Text("tui.history.empty")}
 	}
 	status := m.l10n.Text("tui.status.running")
-	if run.Status == RunSucceeded {
+	switch run.Status {
+	case execution.StatusSucceeded:
 		status = m.l10n.Text("tui.status.ok")
-	}
-	if run.Status == RunFailed {
+	case execution.StatusFailed, execution.StatusCanceled, execution.StatusInterrupted:
 		status = m.l10n.Text("tui.status.error")
 	}
 	lines := []string{m.message("tui.history.run", l10n.A("current", m.history.Selected+1), l10n.A("total", len(m.history.Runs)), l10n.A("label", run.Label), l10n.A("status", status)), m.message("tui.history.levels", l10n.A("levels", m.levelLabels())), ""}
 	for _, event := range m.history.visibleEvents(run) {
 		lines = append(lines, fmt.Sprintf("%s | %s | %s", event.At.Format("2006-01-02 15:04:05Z"), event.Scope, event.Text))
 	}
-	if run.Status == RunRunning && len(run.Events) == 0 {
+	if !run.Status.Terminal() && len(run.Events) == 0 {
 		lines = append(lines, m.l10n.Text("tui.history.waiting"))
 	}
 	if len(run.Lines) != 0 {
@@ -568,10 +560,6 @@ func (m *Model) journalLines() []string {
 	}
 	if run.Error != "" {
 		lines = append(lines, run.Error)
-	}
-	if len(lines) > maxHistoryEvents {
-		hidden := len(lines) - maxHistoryEvents
-		lines = append([]string{m.message("tui.history.hidden", l10n.A("count", hidden))}, lines[hidden:]...)
 	}
 	return lines
 }
@@ -826,7 +814,7 @@ func (m *Model) renderPromptChoices(height int) string {
 	lines := make([]string, 0, end-start)
 	for index := start; index < end; index++ {
 		checked := " "
-		if prompt.prompt.Kind == action.PromptSelectMany && prompt.selectedMany[index] {
+		if prompt.prompt.PromptKind() == action.PromptSelectMany && prompt.selectedMany[index] {
 			checked = "x"
 		}
 		lines = append(lines, fmt.Sprintf("%s [%s] %s", marker(index == prompt.selected), checked, prompt.choices[index]))

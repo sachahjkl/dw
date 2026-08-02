@@ -17,10 +17,14 @@ import (
 )
 
 func (a *Authenticator) LoginBrowser(ctx context.Context) (Token, error) {
-	return a.loginBrowser(ctx, 180*time.Second)
+	return a.loginBrowser(ctx, 180*time.Second, true, nil)
 }
 
-func (a *Authenticator) loginBrowser(ctx context.Context, timeout time.Duration) (Token, error) {
+func (a *Authenticator) LoginBrowserManual(ctx context.Context, onInstructions func(BrowserLoginInstructions) error) (Token, error) {
+	return a.loginBrowser(ctx, 180*time.Second, false, onInstructions)
+}
+
+func (a *Authenticator) loginBrowser(ctx context.Context, timeout time.Duration, open bool, onInstructions func(BrowserLoginInstructions) error) (Token, error) {
 	tenant, clientID, err := a.tenantAndClient()
 	if err != nil {
 		return Token{}, err
@@ -70,12 +74,19 @@ func (a *Authenticator) loginBrowser(ctx context.Context, timeout time.Duration)
 		_ = server.Close()
 		<-serveDone
 	}()
-	opener := a.OpenURL
-	if opener == nil {
-		opener = openURL
+	if onInstructions != nil {
+		if err := onInstructions(BrowserLoginInstructions{AuthorizationURL: authorizationURL, CallbackURI: redirectURI}); err != nil {
+			return Token{}, err
+		}
 	}
-	if err := opener(authorizationURL); err != nil {
-		return Token{}, browserError(err)
+	if open {
+		opener := a.OpenURL
+		if opener == nil {
+			opener = openURL
+		}
+		if err := opener(authorizationURL); err != nil {
+			return Token{}, browserError(err)
+		}
 	}
 	var result callbackResult
 	timer := time.NewTimer(timeout)

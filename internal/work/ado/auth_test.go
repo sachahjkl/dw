@@ -68,7 +68,7 @@ func TestLoginBrowserClosesLoopbackServer(t *testing.T) {
 					}
 					return err
 				}
-				_, err := authenticator.loginBrowser(context.Background(), time.Second)
+				_, err := authenticator.loginBrowser(context.Background(), time.Second, true, nil)
 				return err
 			},
 		},
@@ -79,7 +79,7 @@ func TestLoginBrowserClosesLoopbackServer(t *testing.T) {
 					*authorizationURL = value
 					return errors.New("cannot open browser")
 				}
-				_, err := authenticator.loginBrowser(context.Background(), time.Second)
+				_, err := authenticator.loginBrowser(context.Background(), time.Second, true, nil)
 				return err
 			},
 		},
@@ -92,7 +92,7 @@ func TestLoginBrowserClosesLoopbackServer(t *testing.T) {
 					cancel()
 					return nil
 				}
-				_, err := authenticator.loginBrowser(ctx, time.Second)
+				_, err := authenticator.loginBrowser(ctx, time.Second, true, nil)
 				return err
 			},
 		},
@@ -103,7 +103,7 @@ func TestLoginBrowserClosesLoopbackServer(t *testing.T) {
 					*authorizationURL = value
 					return nil
 				}
-				_, err := authenticator.loginBrowser(context.Background(), time.Millisecond)
+				_, err := authenticator.loginBrowser(context.Background(), time.Millisecond, true, nil)
 				return err
 			},
 		},
@@ -123,6 +123,50 @@ func TestLoginBrowserClosesLoopbackServer(t *testing.T) {
 			}
 			listener.Close()
 		})
+	}
+}
+
+func TestLoginBrowserManualPublishesCallbackWithoutOpeningBrowser(t *testing.T) {
+	authenticator := NewAuthenticator(&AuthOptions{TenantID: "tenant", ClientID: "client"}, nil)
+	opened := false
+	authenticator.OpenURL = func(string) error {
+		opened = true
+		return nil
+	}
+	authenticator.NewClient = func() HTTPDoer {
+		return httpDoerFunc(func(*http.Request) (*http.Response, error) {
+			return oauthResponse(http.StatusOK, `{"access_token":"access","expires_in":3600}`), nil
+		})
+	}
+	var instructions BrowserLoginInstructions
+	_, err := authenticator.loginBrowser(context.Background(), time.Second, false, func(value BrowserLoginInstructions) error {
+		instructions = value
+		authorization, parseErr := url.Parse(value.AuthorizationURL)
+		if parseErr != nil {
+			return parseErr
+		}
+		callback, parseErr := url.Parse(value.CallbackURI)
+		if parseErr != nil {
+			return parseErr
+		}
+		callback.RawQuery = url.Values{"state": {authorization.Query().Get("state")}, "code": {"code"}}.Encode()
+		response, requestErr := http.Get(callback.String())
+		if requestErr == nil {
+			response.Body.Close()
+		}
+		return requestErr
+	})
+	if err == nil {
+		t.Fatal("browser login without a refresh token returned no error")
+	}
+	if opened {
+		t.Fatal("manual browser login opened the operating-system browser")
+	}
+	if !strings.HasPrefix(instructions.AuthorizationURL, "https://login.microsoftonline.com/") {
+		t.Fatalf("authorization URL = %q", instructions.AuthorizationURL)
+	}
+	if !strings.HasPrefix(instructions.CallbackURI, "http://localhost:") {
+		t.Fatalf("callback URI = %q", instructions.CallbackURI)
 	}
 }
 

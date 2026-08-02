@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/cockpit"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
@@ -33,7 +34,7 @@ type FormTemplate struct {
 	Label       l10n.ID
 	Description l10n.ID
 	ActionID    string
-	Fields      func(Snapshot) []FormField
+	Fields      func(cockpit.Snapshot) []FormField
 }
 
 type FormMode uint8
@@ -69,13 +70,13 @@ func first(values []string) string {
 	return values[0]
 }
 
-func firstWorkspace(s Snapshot) string {
+func firstWorkspace(s cockpit.Snapshot) string {
 	if len(s.Workspaces) == 0 {
 		return ""
 	}
 	return s.Workspaces[0].Path
 }
-func configuredWorkProvider(s Snapshot, project string) string {
+func configuredWorkProvider(s cockpit.Snapshot, project string) string {
 	if provider := s.ProjectProviders[project]; provider != "" {
 		return provider
 	}
@@ -87,14 +88,14 @@ func configuredWorkProvider(s Snapshot, project string) string {
 	return first(s.WorkProviders)
 }
 
-func firstWorkspaceProvider(s Snapshot) string {
+func firstWorkspaceProvider(s cockpit.Snapshot) string {
 	if len(s.Workspaces) == 0 {
 		return configuredWorkProvider(s, first(s.Projects))
 	}
 	return configuredWorkProvider(s, s.Workspaces[0].Project)
 }
 
-func firstWorkItem(s Snapshot) string {
+func firstWorkItem(s cockpit.Snapshot) string {
 	for _, project := range s.WorkProjects {
 		if len(project.Items) != 0 {
 			return project.Items[0].ID
@@ -108,7 +109,7 @@ func firstWorkItem(s Snapshot) string {
 	return ""
 }
 
-func firstPR(s Snapshot) (id, provider, project, repository string) {
+func firstPR(s cockpit.Snapshot) (id, provider, project, repository string) {
 	for _, item := range s.PullRequests {
 		if item.ID != "" {
 			return item.ID, item.Provider, item.Project, item.Repository
@@ -118,7 +119,7 @@ func firstPR(s Snapshot) (id, provider, project, repository string) {
 	return "", configuredWorkProvider(s, project), project, first(s.Repositories)
 }
 
-func firstDataSource(s Snapshot) (project, source, provider string) {
+func firstDataSource(s cockpit.Snapshot) (project, source, provider string) {
 	if len(s.DataSources) == 0 {
 		return first(s.Projects), "", first(s.DataProviders)
 	}
@@ -127,7 +128,7 @@ func firstDataSource(s Snapshot) (project, source, provider string) {
 }
 
 var formTemplates = [...]FormTemplate{
-	{ID: "workspace-start", Label: "tui.form.workspace-start", Description: "tui.form.workspace-start.desc", ActionID: "workspace.start", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-start", Label: "tui.form.workspace-start", Description: "tui.form.workspace-start.desc", ActionID: "workspace.start", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("workItemIds", "tui.field.work-item", firstWorkItem(s), false, workItemSuggestions(s)),
 			textField("provider", "tui.field.provider", configuredWorkProvider(s, first(s.Projects)), false, s.WorkProviders),
@@ -139,7 +140,7 @@ var formTemplates = [...]FormTemplate{
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "workspace-pr-start", Label: "tui.form.workspace-pr-start", Description: "tui.form.workspace-pr-start.desc", ActionID: "workspace.pr.start", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-pr-start", Label: "tui.form.workspace-pr-start", Description: "tui.form.workspace-pr-start.desc", ActionID: "workspace.pr.start", Fields: func(s cockpit.Snapshot) []FormField {
 		id, provider, project, repository := firstPR(s)
 		return []FormField{
 			textField("pullRequest", "tui.field.pull-request", id, true, pullRequestSuggestions(s)),
@@ -151,7 +152,7 @@ var formTemplates = [...]FormTemplate{
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "workspace-finish", Label: "tui.form.workspace-finish", Description: "tui.form.workspace-finish.desc", ActionID: "workspace.finish", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-finish", Label: "tui.form.workspace-finish", Description: "tui.form.workspace-finish.desc", ActionID: "workspace.finish", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
 			toggleField("continue", "tui.field.continue", false),
@@ -164,7 +165,7 @@ var formTemplates = [...]FormTemplate{
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "workspace-teardown", Label: "tui.form.workspace-teardown", Description: "tui.form.workspace-teardown.desc", ActionID: "workspace.teardown", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-teardown", Label: "tui.form.workspace-teardown", Description: "tui.form.workspace-teardown.desc", ActionID: "workspace.teardown", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
 			toggleField("continue", "tui.field.continue", false),
@@ -173,7 +174,7 @@ var formTemplates = [...]FormTemplate{
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "workspace-prune", Label: "tui.form.workspace-prune", Description: "tui.form.workspace-prune.desc", ActionID: "workspace.prune", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-prune", Label: "tui.form.workspace-prune", Description: "tui.form.workspace-prune.desc", ActionID: "workspace.prune", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("project", "tui.field.project", first(s.Projects), false, s.Projects),
 			textField("provider", "tui.field.provider", configuredWorkProvider(s, first(s.Projects)), false, s.WorkProviders),
@@ -182,7 +183,7 @@ var formTemplates = [...]FormTemplate{
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "workspace-add-item", Label: "tui.form.workspace-add-item", Description: "tui.form.workspace-add-item.desc", ActionID: "workspace.item.add", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-add-item", Label: "tui.form.workspace-add-item", Description: "tui.form.workspace-add-item.desc", ActionID: "workspace.item.add", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("workItemIds", "tui.field.work-items", "", false, workItemSuggestions(s)),
 			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
@@ -197,7 +198,7 @@ var formTemplates = [...]FormTemplate{
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "workspace-remove-item", Label: "tui.form.workspace-remove-item", Description: "tui.form.workspace-remove-item.desc", ActionID: "workspace.item.remove", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-remove-item", Label: "tui.form.workspace-remove-item", Description: "tui.form.workspace-remove-item.desc", ActionID: "workspace.item.remove", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("workItemIds", "tui.field.work-items", "", false, workItemSuggestions(s)),
 			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
@@ -207,14 +208,14 @@ var formTemplates = [...]FormTemplate{
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "workspace-add-repo", Label: "tui.form.workspace-add-repo", Description: "tui.form.workspace-add-repo.desc", ActionID: "workspace.repo.add", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-add-repo", Label: "tui.form.workspace-add-repo", Description: "tui.form.workspace-add-repo.desc", ActionID: "workspace.repo.add", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("repository", "tui.field.repository", "", true, s.Repositories),
 			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "workspace-rename", Label: "tui.form.workspace-rename", Description: "tui.form.workspace-rename.desc", ActionID: "workspace.rename", Fields: func(s Snapshot) []FormField {
+	{ID: "workspace-rename", Label: "tui.form.workspace-rename", Description: "tui.form.workspace-rename.desc", ActionID: "workspace.rename", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("slug", "tui.field.slug", "", true, nil),
 			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
@@ -224,7 +225,7 @@ var formTemplates = [...]FormTemplate{
 			toggleField("execute", "tui.field.execute", false),
 		}
 	}},
-	{ID: "work-list", Label: "tui.form.work-list", Description: "tui.form.work-list.desc", ActionID: "work.item.list", Fields: func(s Snapshot) []FormField {
+	{ID: "work-list", Label: "tui.form.work-list", Description: "tui.form.work-list.desc", ActionID: "work.item.list", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("provider", "tui.field.provider", configuredWorkProvider(s, first(s.Projects)), false, s.WorkProviders),
 			textField("project", "tui.field.project", first(s.Projects), false, s.Projects),
@@ -233,7 +234,7 @@ var formTemplates = [...]FormTemplate{
 			toggleField("groupByParent", "tui.field.group-parent", false),
 		}
 	}},
-	{ID: "work-set-state", Label: "tui.form.work-set-state", Description: "tui.form.work-set-state.desc", ActionID: "work.item.state.set", Fields: func(s Snapshot) []FormField {
+	{ID: "work-set-state", Label: "tui.form.work-set-state", Description: "tui.form.work-set-state.desc", ActionID: "work.item.state.set", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("workItemIds", "tui.field.work-item-ids", firstWorkItem(s), true, workItemSuggestions(s)),
 			textField("provider", "tui.field.provider", configuredWorkProvider(s, first(s.Projects)), false, s.WorkProviders),
@@ -242,19 +243,19 @@ var formTemplates = [...]FormTemplate{
 			textField("history", "tui.field.history-note", "tui", false, nil),
 		}
 	}},
-	{ID: "data-catalog", Label: "tui.form.data-catalog", Description: "tui.form.data-catalog.desc", ActionID: "data.catalog", Fields: func(s Snapshot) []FormField {
+	{ID: "data-catalog", Label: "tui.form.data-catalog", Description: "tui.form.data-catalog.desc", ActionID: "data.catalog", Fields: func(s cockpit.Snapshot) []FormField {
 		project, source, provider := firstDataSource(s)
 		return []FormField{textField("provider", "tui.field.provider", provider, false, s.DataProviders), textField("project", "tui.field.project", project, false, s.Projects), textField("source", "tui.field.data-source", source, false, dataSourceSuggestions(s))}
 	}},
-	{ID: "data-describe", Label: "tui.form.data-describe", Description: "tui.form.data-describe.desc", ActionID: "data.describe", Fields: func(s Snapshot) []FormField {
+	{ID: "data-describe", Label: "tui.form.data-describe", Description: "tui.form.data-describe.desc", ActionID: "data.describe", Fields: func(s cockpit.Snapshot) []FormField {
 		project, source, provider := firstDataSource(s)
 		return []FormField{textField("object", "tui.field.object", "", true, nil), textField("provider", "tui.field.provider", provider, false, s.DataProviders), textField("project", "tui.field.project", project, false, s.Projects), textField("source", "tui.field.data-source", source, false, dataSourceSuggestions(s))}
 	}},
-	{ID: "data-query", Label: "tui.form.data-query", Description: "tui.form.data-query.desc", ActionID: "data.query", Fields: func(s Snapshot) []FormField {
+	{ID: "data-query", Label: "tui.form.data-query", Description: "tui.form.data-query.desc", ActionID: "data.query", Fields: func(s cockpit.Snapshot) []FormField {
 		project, source, provider := firstDataSource(s)
 		return []FormField{textField("provider", "tui.field.provider", provider, false, s.DataProviders), textField("project", "tui.field.project", project, false, s.Projects), textField("source", "tui.field.data-source", source, false, dataSourceSuggestions(s)), textField("query", "tui.field.query", "", true, nil), textField("maxRows", "tui.field.max-rows", "100", false, nil)}
 	}},
-	{ID: "agent-open", Label: "tui.form.agent-open", Description: "tui.form.agent-open.desc", ActionID: "workspace.open", Fields: func(s Snapshot) []FormField {
+	{ID: "agent-open", Label: "tui.form.agent-open", Description: "tui.form.agent-open.desc", ActionID: "workspace.open", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{
 			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
 			toggleField("continue", "tui.field.continue", false),
@@ -265,10 +266,10 @@ var formTemplates = [...]FormTemplate{
 			textField("agent", "tui.field.agent", "", false, []string{"opencode", "cursor", "claude", "codex", "codex-cli", "copilot"}),
 		}
 	}},
-	{ID: "secret", Label: "tui.form.secret", Description: "tui.form.secret.desc", ActionID: "secret.get", Fields: func(s Snapshot) []FormField {
+	{ID: "secret", Label: "tui.form.secret", Description: "tui.form.secret.desc", ActionID: "secret.get", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{textField("key", "tui.field.key", "", true, s.SecretKeys), toggleField("setFromEnv", "tui.field.set-env", false), textField("fromEnv", "tui.field.from-env", "", false, s.Environment), toggleField("delete", "tui.field.delete", false)}
 	}},
-	{ID: "config-root", Label: "tui.form.config-root", Description: "tui.form.config-root.desc", ActionID: "config.set-root", Fields: func(s Snapshot) []FormField {
+	{ID: "config-root", Label: "tui.form.config-root", Description: "tui.form.config-root.desc", ActionID: "config.set-root", Fields: func(s cockpit.Snapshot) []FormField {
 		return []FormField{textField("root", "tui.field.root", s.Root, true, nil)}
 	}},
 }
@@ -281,7 +282,7 @@ func (f *FormState) template() FormTemplate {
 	return formTemplates[index]
 }
 
-func (f *FormState) begin(snapshot Snapshot) {
+func (f *FormState) begin(snapshot cockpit.Snapshot) {
 	f.Fields = f.template().Fields(snapshot)
 	f.SelectedField = 0
 	f.Mode = EditFields
@@ -516,7 +517,7 @@ func contains(values []string, value string) bool {
 	return false
 }
 
-func workspaceSuggestions(s Snapshot) []string {
+func workspaceSuggestions(s cockpit.Snapshot) []string {
 	values := make([]string, 0, len(s.Workspaces))
 	for _, item := range s.Workspaces {
 		values = append(values, item.Path)
@@ -524,7 +525,7 @@ func workspaceSuggestions(s Snapshot) []string {
 	return stableStrings(values)
 }
 
-func workItemSuggestions(s Snapshot) []string {
+func workItemSuggestions(s cockpit.Snapshot) []string {
 	var values []string
 	for _, item := range s.Workspaces {
 		values = append(values, item.WorkItems...)
@@ -537,7 +538,7 @@ func workItemSuggestions(s Snapshot) []string {
 	return stableStrings(values)
 }
 
-func pullRequestSuggestions(s Snapshot) []string {
+func pullRequestSuggestions(s cockpit.Snapshot) []string {
 	values := make([]string, 0, len(s.PullRequests))
 	for _, item := range s.PullRequests {
 		values = append(values, item.ID)
@@ -545,7 +546,7 @@ func pullRequestSuggestions(s Snapshot) []string {
 	return stableStrings(values)
 }
 
-func dataSourceSuggestions(s Snapshot) []string {
+func dataSourceSuggestions(s cockpit.Snapshot) []string {
 	values := make([]string, 0, len(s.DataSources))
 	for _, item := range s.DataSources {
 		values = append(values, item.Key)

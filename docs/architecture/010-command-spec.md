@@ -71,8 +71,23 @@ Provider names are positional for administration and authentication. List, show,
 
 Azure DevOps is the current work provider. GitHub and Jira are expected future work providers. SQL Server is the current data provider; SQLite, Excel, and NoSQL providers can supply narrower capability sets without changing these paths.
 
+## Local Web Service
+
+```text
+dw web start [--root <path>] [--port <port>] [--no-open]
+dw web stop
+dw web status [--json]
+dw web open
+dw web register [--root <path>] [--port <port>]
+dw web unregister
+```
+
+The hidden `dw web serve` leaf runs the local server in the foreground. The server listens only on `127.0.0.1`. The default port is `7331`; port `0` requests an ephemeral port.
+
+`start` and `register` persist the resolved workspace root and port outside the workspace. Registration uses a systemd user service on Linux and Task Scheduler on Windows. See [Execution and Local Web Architecture](011-execution-and-web.md).
+
 ## Other Commands
 
-`version`, `guide`, `doctor`, `init`, `refresh`, `tui`, `agent`, `completion`, `config`, `secret`, and `upgrade` retain their existing behavior and output contracts. Help and completion are generated from the authoritative command grammar.
+`version`, `guide`, `doctor`, `init`, `refresh`, `tui`, `agent`, `completion`, `config`, `secret`, and `upgrade` retain their existing behavior and output contracts. Help, completion, CLI forms, and web forms are generated from the authoritative command grammar.
 
 The namespace cutover is clean: removed namespaces and misplaced lifecycle commands are ordinary unknown commands. There are no aliases, deprecated routes, or special rejection shims.

@@ -1,9 +1,11 @@
 package dataapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/sachahjkl/dw/internal/action"
 )
@@ -83,6 +85,24 @@ func (result DescribeResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(result.Result)
 }
 
+func (result *DescribeResult) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		result.Result = nil
+		return nil
+	}
+	var value NativeQueryReport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("data.invalid-describe-result-json")
+	}
+	result.Result = &value
+	return nil
+}
+
 type Handler struct {
 	id      action.ID
 	service *Service
@@ -160,94 +180,31 @@ func (handler Handler) Execute(ctx context.Context, request action.Request, _ ac
 
 func requestTypeError(id action.ID) error { return fmt.Errorf("data.invalid-request:%s", id) }
 func asDataSourceListRequest(request action.Request) (DataSourceListRequest, bool) {
-	switch value := request.(type) {
-	case DataSourceListRequest:
-		return value, true
-	case *DataSourceListRequest:
-		if value == nil {
-			return DataSourceListRequest{}, false
-		}
-		return *value, true
-	default:
-		return DataSourceListRequest{}, false
-	}
+	value, ok := request.(DataSourceListRequest)
+	return value, ok
 }
 func asDataSourceCollectRequest(request action.Request) (DataSourceCollectRequest, bool) {
-	switch value := request.(type) {
-	case DataSourceCollectRequest:
-		return value, true
-	case *DataSourceCollectRequest:
-		if value == nil {
-			return DataSourceCollectRequest{}, false
-		}
-		return *value, true
-	default:
-		return DataSourceCollectRequest{}, false
-	}
+	value, ok := request.(DataSourceCollectRequest)
+	return value, ok
 }
 func asGuardRequest(request action.Request) (GuardRequest, bool) {
-	switch value := request.(type) {
-	case GuardRequest:
-		return value, true
-	case *GuardRequest:
-		if value == nil {
-			return GuardRequest{}, false
-		}
-		return *value, true
-	default:
-		return GuardRequest{}, false
-	}
+	value, ok := request.(GuardRequest)
+	return value, ok
 }
 func asCatalogRequest(request action.Request) (CatalogRequest, bool) {
-	switch value := request.(type) {
-	case CatalogRequest:
-		return value, true
-	case *CatalogRequest:
-		if value == nil {
-			return CatalogRequest{}, false
-		}
-		return *value, true
-	default:
-		return CatalogRequest{}, false
-	}
+	value, ok := request.(CatalogRequest)
+	return value, ok
 }
 func asDescribeRequest(request action.Request) (DescribeRequest, bool) {
-	switch value := request.(type) {
-	case DescribeRequest:
-		return value, true
-	case *DescribeRequest:
-		if value == nil {
-			return DescribeRequest{}, false
-		}
-		return *value, true
-	default:
-		return DescribeRequest{}, false
-	}
+	value, ok := request.(DescribeRequest)
+	return value, ok
 }
 func asQueryRequest(request action.Request) (QueryRequest, bool) {
-	switch value := request.(type) {
-	case QueryRequest:
-		return value, true
-	case *QueryRequest:
-		if value == nil {
-			return QueryRequest{}, false
-		}
-		return *value, true
-	default:
-		return QueryRequest{}, false
-	}
+	value, ok := request.(QueryRequest)
+	return value, ok
 }
 
 func asReadRequest(request action.Request) (ReadRequest, bool) {
-	switch value := request.(type) {
-	case ReadRequest:
-		return value, true
-	case *ReadRequest:
-		if value == nil {
-			return ReadRequest{}, false
-		}
-		return *value, true
-	default:
-		return ReadRequest{}, false
-	}
+	value, ok := request.(ReadRequest)
+	return value, ok
 }

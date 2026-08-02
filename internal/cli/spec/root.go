@@ -55,7 +55,7 @@ func Root(localizer l10n.Localizer) *Command {
 			b.option("tui", "root", String, "DevWorkflow root to use."),
 		}),
 		agentGrammar(b), completionGrammar(b), configGrammar(b),
-		workGrammar(b), workspaceGrammar(b), dataGrammar(b), providerGrammar(b), secretGrammar(b),
+		workGrammar(b), workspaceGrammar(b), dataGrammar(b), providerGrammar(b), secretGrammar(b), webGrammar(b),
 		b.command("upgrade", "upgrade", "Upgrade the dw binary.", []Argument{
 			conflict(b.option("upgrade", "check", Bool, "Check without updating."), "rid"),
 			conflict(b.option("upgrade", "rid", String, "Artifact runtime identifier."), "check"),

@@ -166,9 +166,10 @@ type RichContext struct {
 type AuthMode string
 
 const (
-	AuthEnvironment AuthMode = "environment"
-	AuthBrowser     AuthMode = "browser"
-	AuthDevice      AuthMode = "device"
+	AuthEnvironment   AuthMode = "environment"
+	AuthBrowser       AuthMode = "browser"
+	AuthBrowserManual AuthMode = "browser-manual"
+	AuthDevice        AuthMode = "device"
 )
 
 type AuthStatus struct {
@@ -183,4 +184,14 @@ type DeviceLogin struct {
 	UserCode            string
 	ExpiresInSeconds    uint32
 	PollIntervalSeconds uint32
+}
+
+type BrowserLogin struct {
+	AuthorizationURL string
+	CallbackURI      string
+}
+
+type LoginInstructions struct {
+	Browser *BrowserLogin
+	Device  *DeviceLogin
 }

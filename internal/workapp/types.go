@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/sachahjkl/dw/internal/agent"
 	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/workspace"
 )
@@ -25,9 +26,10 @@ const (
 )
 
 type AuthLoginRequest struct {
-	Provider string        `json:"provider,omitempty"`
-	Root     string        `json:"root,omitempty"`
-	Mode     AuthLoginMode `json:"mode"`
+	Provider    string        `json:"provider,omitempty"`
+	Root        string        `json:"root,omitempty"`
+	Mode        AuthLoginMode `json:"mode"`
+	OpenBrowser bool          `json:"open_browser,omitempty"`
 }
 
 type AuthLoginReport struct {
@@ -38,13 +40,19 @@ type AuthLoginReport struct {
 	Events             []Event       `json:"events,omitempty"`
 }
 
-type AuthStatusRequest struct{ Provider, Root string }
+type AuthStatusRequest struct {
+	Provider string `json:"provider,omitempty"`
+	Root     string `json:"root,omitempty"`
+}
 type AuthStatusReport struct {
 	Connected bool    `json:"connected"`
 	Source    *string `json:"source,omitempty"`
 	ExpiresOn *string `json:"expires_on,omitempty"`
 }
-type AuthLogoutRequest struct{ Provider, Root string }
+type AuthLogoutRequest struct {
+	Provider string `json:"provider,omitempty"`
+	Root     string `json:"root,omitempty"`
+}
 type AuthLogoutReport struct {
 	RemovedLocalSession bool `json:"removed_local_session"`
 }
@@ -85,8 +93,10 @@ type PullRequestsReport struct {
 }
 
 type ItemShowRequest struct {
-	Provider, Root, Project string
-	IDs                     []string
+	Provider string   `json:"provider,omitempty"`
+	Root     string   `json:"root,omitempty"`
+	Project  string   `json:"project"`
+	IDs      []string `json:"ids"`
 }
 type ItemShowReport struct {
 	Root         string         `json:"root"`
@@ -97,9 +107,12 @@ type ItemShowReport struct {
 }
 
 type StatePlanRequest struct {
-	Provider, Root, Project string
-	IDs                     []string
-	State, History          string
+	Provider string   `json:"provider,omitempty"`
+	Root     string   `json:"root,omitempty"`
+	Project  string   `json:"project"`
+	IDs      []string `json:"ids"`
+	State    string   `json:"state"`
+	History  string   `json:"history"`
 }
 type StatePlanReport struct {
 	Provider string   `json:"provider,omitempty"`
@@ -127,12 +140,15 @@ const (
 )
 
 type ContextRequest struct {
-	Provider, Root, Organization, Project string
-	IDs                                   []string
-	Summary                               bool
-	Comments                              int
-	IncludeComments                       bool
-	Mode                                  ContextMode
+	Provider        string      `json:"provider,omitempty"`
+	Root            string      `json:"root,omitempty"`
+	Organization    string      `json:"organization,omitempty"`
+	Project         string      `json:"project"`
+	IDs             []string    `json:"ids"`
+	Summary         bool        `json:"summary"`
+	Comments        int         `json:"comments"`
+	IncludeComments bool        `json:"include_comments"`
+	Mode            ContextMode `json:"mode"`
 }
 type ContextReport struct {
 	Root            string            `json:"root"`
@@ -163,15 +179,19 @@ const (
 )
 
 type ChangelogRequest struct {
-	Provider, Root, Project string
-	Source                  ChangelogSourceKind
-	WorkItemIDs             []string
-	PullRequestIDs          []int64
-	GitFrom, GitTo          string
-	Repositories            []string
-	GroupByParent           bool
-	Format                  ChangelogFormat
-	Table, IDsOnly          bool
+	Provider       string              `json:"provider,omitempty"`
+	Root           string              `json:"root,omitempty"`
+	Project        string              `json:"project"`
+	Source         ChangelogSourceKind `json:"source"`
+	WorkItemIDs    []string            `json:"work_item_ids"`
+	PullRequestIDs []int64             `json:"pull_request_ids"`
+	GitFrom        string              `json:"git_from"`
+	GitTo          string              `json:"git_to"`
+	Repositories   []string            `json:"repositories"`
+	GroupByParent  bool                `json:"group_by_parent"`
+	Format         ChangelogFormat     `json:"format"`
+	Table          bool                `json:"table"`
+	IDsOnly        bool                `json:"ids_only"`
 }
 type ChangelogWarning struct {
 	Detail string `json:"detail"`
@@ -211,9 +231,15 @@ type GitChangelogPort interface {
 }
 
 type DoingRequest struct {
-	Provider, Root, Project string
-	IDs                     []string
-	States                  map[string]string
+	Provider string            `json:"provider,omitempty"`
+	Root     string            `json:"root,omitempty"`
+	Project  string            `json:"project"`
+	IDs      []string          `json:"ids"`
+	States   map[string]string `json:"states"`
+}
+type DoingActionRequest struct {
+	Request  DoingRequest `json:"request"`
+	Approved bool         `json:"approved"`
 }
 type DoingPlanUpdate struct {
 	ID           string  `json:"id"`
@@ -237,16 +263,28 @@ type DoingExecutionReport struct {
 	Events  []Event         `json:"events"`
 	Updated []DoingUpdate   `json:"updated"`
 }
+type DoingActionResult struct {
+	Plan      DoingPlanReport       `json:"plan"`
+	Execution *DoingExecutionReport `json:"execution,omitempty"`
+}
 
 type StartRequest struct {
-	Provider, Root, Project                                 string
-	WorkItemIDs                                             []string
-	TaskID                                                  *string
-	Type                                                    string
-	Repositories                                            []string
-	Slug                                                    string
-	SkipWork, WithActiveChildren, CreateChildTasks, Execute bool
-	States                                                  map[string]string
+	Provider           string            `json:"provider,omitempty"`
+	Root               string            `json:"root,omitempty"`
+	Project            string            `json:"project"`
+	WorkItemIDs        []string          `json:"work_item_ids"`
+	TaskID             *string           `json:"task_id,omitempty"`
+	Type               string            `json:"type"`
+	Repositories       []string          `json:"repositories"`
+	Slug               string            `json:"slug"`
+	SkipWork           bool              `json:"skip_work"`
+	WithActiveChildren bool              `json:"with_active_children"`
+	CreateChildTasks   bool              `json:"create_child_tasks"`
+	Execute            bool              `json:"execute"`
+	Approved           bool              `json:"approved"`
+	PromptToExecute    bool              `json:"prompt_to_execute"`
+	PromptToOpen       bool              `json:"prompt_to_open"`
+	States             map[string]string `json:"states"`
 }
 type StartPlanReport struct {
 	Root       string                `json:"root"`
@@ -270,12 +308,16 @@ type StartExecutionReport struct {
 	Events       []Event               `json:"events"`
 }
 type StartPullRequestRequest struct {
-	Provider, Root, Project            string
-	PullRequestID                      int64
-	Repositories, ProviderRepositories []string
-	Type, Slug                         string
-	Execute                            bool
-	States                             map[string]string
+	Provider             string            `json:"provider,omitempty"`
+	Root                 string            `json:"root,omitempty"`
+	Project              string            `json:"project"`
+	PullRequestID        int64             `json:"pull_request_id"`
+	Repositories         []string          `json:"repositories"`
+	ProviderRepositories []string          `json:"provider_repositories"`
+	Type                 string            `json:"type"`
+	Slug                 string            `json:"slug"`
+	Execute              bool              `json:"execute"`
+	States               map[string]string `json:"states"`
 }
 type StartPullRequestPlanReport struct {
 	PullRequestID        int64           `json:"pullRequestId"`
@@ -286,24 +328,30 @@ type StartPullRequestPlanReport struct {
 }
 
 type OpenRequest struct {
-	Provider, Root, Project string
-	Workspace               *string
-	WorkItemIDs             []string
-	PullRequestID           *int64
-	Continue, ResolveOnly   bool
-	Repository, Agent       string
+	Provider      string   `json:"provider,omitempty"`
+	Root          string   `json:"root,omitempty"`
+	Project       string   `json:"project"`
+	Workspace     *string  `json:"workspace,omitempty"`
+	WorkItemIDs   []string `json:"work_item_ids"`
+	PullRequestID *int64   `json:"pull_request_id,omitempty"`
+	Continue      bool     `json:"continue"`
+	ResolveOnly   bool     `json:"resolve_only"`
+	Repository    string   `json:"repository,omitempty"`
+	Agent         string   `json:"agent,omitempty"`
 }
 type OpenReport struct {
-	Workspace string  `json:"workspace"`
-	Launch    any     `json:"launch,omitempty"`
-	Events    []Event `json:"events"`
+	Workspace string        `json:"workspace"`
+	Launch    *agent.Launch `json:"launch,omitempty"`
+	Events    []Event       `json:"events"`
 }
 
 type SyncRequest struct {
-	Provider, Root, Project string
-	Workspace               *string
-	WorkItemIDs             []string
-	Continue                bool
+	Provider    string   `json:"provider,omitempty"`
+	Root        string   `json:"root,omitempty"`
+	Project     string   `json:"project"`
+	Workspace   *string  `json:"workspace,omitempty"`
+	WorkItemIDs []string `json:"work_item_ids"`
+	Continue    bool     `json:"continue"`
 }
 type SyncReport struct {
 	Workspace    string               `json:"workspace"`
@@ -314,11 +362,14 @@ type SyncReport struct {
 }
 
 type ChildRequest struct {
-	Provider, Root, Project string
-	Workspace               *string
-	WorkItemIDs             []string
-	Continue                bool
-	Repository, Title       string
+	Provider    string   `json:"provider,omitempty"`
+	Root        string   `json:"root,omitempty"`
+	Project     string   `json:"project"`
+	Workspace   *string  `json:"workspace,omitempty"`
+	WorkItemIDs []string `json:"work_item_ids"`
+	Continue    bool     `json:"continue"`
+	Repository  string   `json:"repository"`
+	Title       string   `json:"title"`
 }
 type ChildReport struct {
 	Workspace      string             `json:"workspace"`
@@ -331,11 +382,14 @@ type ChildReport struct {
 }
 
 type PruneRequest struct {
-	Provider, Root     string
-	Project            *string
-	WorkItemIDs        []string
-	SelectedWorkspaces []string
-	Execute, NoSync    bool
+	Provider           string   `json:"provider,omitempty"`
+	Root               string   `json:"root,omitempty"`
+	Project            *string  `json:"project,omitempty"`
+	WorkItemIDs        []string `json:"work_item_ids"`
+	SelectedWorkspaces []string `json:"selected_workspaces"`
+	Execute            bool     `json:"execute"`
+	Approved           bool     `json:"approved"`
+	NoSync             bool     `json:"no_sync"`
 }
 type PruneReport struct {
 	Plan      workspace.PrunePlanReport       `json:"plan"`
@@ -344,11 +398,19 @@ type PruneReport struct {
 }
 
 type FinishRequest struct {
-	Provider, Root                                                           string
-	Workspace                                                                *string
-	Continue, Execute, CreatePR, Ready, SkipVerify, SkipWork, ForceWithLease bool
-	Message                                                                  *string
-	FinishStates                                                             map[string]string
+	Provider       string            `json:"provider,omitempty"`
+	Root           string            `json:"root,omitempty"`
+	Workspace      *string           `json:"workspace,omitempty"`
+	Continue       bool              `json:"continue"`
+	Execute        bool              `json:"execute"`
+	Approved       bool              `json:"approved"`
+	CreatePR       bool              `json:"create_pr"`
+	Ready          bool              `json:"ready"`
+	SkipVerify     bool              `json:"skip_verify"`
+	SkipWork       bool              `json:"skip_work"`
+	ForceWithLease bool              `json:"force_with_lease"`
+	Message        *string           `json:"message,omitempty"`
+	FinishStates   map[string]string `json:"finish_states"`
 }
 type FinishReport struct {
 	Plan      workspace.FinishPlanReport       `json:"plan"`
@@ -382,7 +444,7 @@ type WorkspaceChildWriter interface {
 	AddChild(context.Context, string, workspace.ChildTask) (workspace.Manifest, error)
 }
 type WorkspaceOpener interface {
-	Open(context.Context, string, string, string, bool) (any, error)
+	Open(context.Context, string, string, string, bool) (agent.Launch, error)
 }
 type WorkspacePruner interface {
 	Find(context.Context, string, *string, []string) ([]workspace.Summary, error)

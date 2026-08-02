@@ -293,7 +293,7 @@ func TestCompletionRootOrderAndJSONWireFormat(t *testing.T) {
 			t.Errorf("completion %q has no description", items[index].Label)
 		}
 	}
-	wantLabels := []string{"version", "guide", "doctor", "init", "refresh", "tui", "agent", "completion", "config", "work", "workspace", "data", "provider", "secret", "upgrade"}
+	wantLabels := []string{"version", "guide", "doctor", "init", "refresh", "tui", "agent", "completion", "config", "work", "workspace", "data", "provider", "secret", "web", "upgrade"}
 	if !reflect.DeepEqual(labels, wantLabels) {
 		t.Fatalf("completion root labels = %#v, want %#v", labels, wantLabels)
 	}

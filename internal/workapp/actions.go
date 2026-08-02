@@ -22,6 +22,7 @@ const (
 	ActionWorkItemStatePlan         action.ID = "work.item.state.plan"
 	ActionWorkItemStateExecute      action.ID = "work.item.state.execute"
 	ActionWorkItemStateSet          action.ID = "work.item.state.set"
+	ActionWorkItemDoing             action.ID = "work.item.doing"
 	ActionWorkItemDoingPlan         action.ID = "work.item.doing.plan"
 	ActionWorkItemDoingExecute      action.ID = "work.item.doing.execute"
 	ActionWorkspaceStart            action.ID = "workspace.start"
@@ -41,22 +42,32 @@ func (PullRequestsRequest) ActionID() action.ID { return ActionWorkPullRequestLi
 func (ChangelogRequest) ActionID() action.ID    { return ActionWorkChangelog }
 func (ContextRequest) ActionID() action.ID      { return ActionWorkContextShow }
 
-type AIContextRequest struct{ ContextRequest }
+type AIContextRequest struct {
+	Request ContextRequest `json:"request"`
+}
 
 func (AIContextRequest) ActionID() action.ID { return ActionWorkContextAI }
 func (ItemShowRequest) ActionID() action.ID  { return ActionWorkItemShow }
 func (StatePlanRequest) ActionID() action.ID { return ActionWorkItemStatePlan }
 
-type StateExecuteRequest struct{ Plan StatePlanReport }
+type StateExecuteRequest struct {
+	Plan StatePlanReport `json:"plan"`
+}
 
 func (StateExecuteRequest) ActionID() action.ID { return ActionWorkItemStateExecute }
 
-type StateSetRequest struct{ Request StatePlanRequest }
+type StateSetRequest struct {
+	Request  StatePlanRequest `json:"request"`
+	Approved bool             `json:"approved"`
+}
 
-func (StateSetRequest) ActionID() action.ID { return ActionWorkItemStateSet }
-func (DoingRequest) ActionID() action.ID    { return ActionWorkItemDoingPlan }
+func (StateSetRequest) ActionID() action.ID    { return ActionWorkItemStateSet }
+func (DoingActionRequest) ActionID() action.ID { return ActionWorkItemDoing }
+func (DoingRequest) ActionID() action.ID       { return ActionWorkItemDoingPlan }
 
-type DoingExecuteRequest struct{ Plan DoingPlanReport }
+type DoingExecuteRequest struct {
+	Plan DoingPlanReport `json:"plan"`
+}
 
 func (DoingExecuteRequest) ActionID() action.ID     { return ActionWorkItemDoingExecute }
 func (StartRequest) ActionID() action.ID            { return ActionWorkspaceStart }
@@ -75,22 +86,29 @@ func (PullRequestsReport) ActionID() action.ID { return ActionWorkPullRequestLis
 func (ChangelogReport) ActionID() action.ID    { return ActionWorkChangelog }
 func (ContextReport) ActionID() action.ID      { return ActionWorkContextShow }
 
-type AIContextResult struct{ ContextReport }
+type AIContextResult struct {
+	Report ContextReport `json:"report"`
+}
 
 func (AIContextResult) ActionID() action.ID      { return ActionWorkContextAI }
 func (ItemShowReport) ActionID() action.ID       { return ActionWorkItemShow }
 func (StatePlanReport) ActionID() action.ID      { return ActionWorkItemStatePlan }
 func (StateExecutionReport) ActionID() action.ID { return ActionWorkItemStateExecute }
 
-type StateSetResult struct{ StateExecutionReport }
+type StateSetResult struct {
+	Plan      StatePlanReport      `json:"plan"`
+	Execution StateExecutionReport `json:"execution"`
+}
 
 func (StateSetResult) ActionID() action.ID       { return ActionWorkItemStateSet }
+func (DoingActionResult) ActionID() action.ID    { return ActionWorkItemDoing }
 func (DoingPlanReport) ActionID() action.ID      { return ActionWorkItemDoingPlan }
 func (DoingExecutionReport) ActionID() action.ID { return ActionWorkItemDoingExecute }
 
 type StartResult struct {
 	Plan      StartPlanReport       `json:"plan"`
 	Execution *StartExecutionReport `json:"execution,omitempty"`
+	Open      *OpenReport           `json:"open,omitempty"`
 }
 
 func (StartResult) ActionID() action.ID { return ActionWorkspaceStart }
@@ -110,7 +128,7 @@ func (FinishReport) ActionID() action.ID           { return ActionWorkspaceFinis
 func Handlers(service *Service) []action.Handler {
 	return []action.Handler{
 		handler[AuthLoginRequest](ActionProviderAuthLogin, func(ctx context.Context, r AuthLoginRequest, rt action.Runtime) (action.Result, error) {
-			return service.AuthLogin(ctx, r, eventSink(ActionProviderAuthLogin, rt))
+			return service.runAuthLogin(ctx, r, rt)
 		}),
 		handler[AuthStatusRequest](ActionProviderAuthStatus, func(ctx context.Context, r AuthStatusRequest, _ action.Runtime) (action.Result, error) {
 			return service.AuthStatus(ctx, r)
@@ -135,9 +153,9 @@ func Handlers(service *Service) []action.Handler {
 			return service.Context(ctx, r, eventSink(ActionWorkContextShow, rt))
 		}),
 		handler[AIContextRequest](ActionWorkContextAI, func(ctx context.Context, r AIContextRequest, rt action.Runtime) (action.Result, error) {
-			r.Mode = ContextRich
-			value, err := service.Context(ctx, r.ContextRequest, eventSink(ActionWorkContextAI, rt))
-			return AIContextResult{value}, err
+			r.Request.Mode = ContextRich
+			value, err := service.Context(ctx, r.Request, eventSink(ActionWorkContextAI, rt))
+			return AIContextResult{Report: value}, err
 		}),
 		handler[ItemShowRequest](ActionWorkItemShow, func(ctx context.Context, r ItemShowRequest, rt action.Runtime) (action.Result, error) {
 			return service.ItemShow(ctx, r, eventSink(ActionWorkItemShow, rt))
@@ -149,26 +167,19 @@ func Handlers(service *Service) []action.Handler {
 			return service.ExecuteState(ctx, r.Plan, eventSink(ActionWorkItemStateExecute, rt))
 		}),
 		handler[StateSetRequest](ActionWorkItemStateSet, func(ctx context.Context, r StateSetRequest, rt action.Runtime) (action.Result, error) {
-			plan, err := PlanState(r.Request)
-			if err != nil {
-				return nil, err
-			}
-			value, err := service.ExecuteState(ctx, plan, eventSink(ActionWorkItemStateSet, rt))
-			return StateSetResult{value}, err
+			return service.runStateSet(ctx, r, rt)
 		}),
 		handler[DoingRequest](ActionWorkItemDoingPlan, func(ctx context.Context, r DoingRequest, _ action.Runtime) (action.Result, error) {
 			return service.DoingPlan(ctx, r)
+		}),
+		handler[DoingActionRequest](ActionWorkItemDoing, func(ctx context.Context, r DoingActionRequest, rt action.Runtime) (action.Result, error) {
+			return service.runDoingAction(ctx, r, rt)
 		}),
 		handler[DoingExecuteRequest](ActionWorkItemDoingExecute, func(ctx context.Context, r DoingExecuteRequest, rt action.Runtime) (action.Result, error) {
 			return service.DoingExecute(ctx, r.Plan, eventSink(ActionWorkItemDoingExecute, rt))
 		}),
 		handler[StartRequest](ActionWorkspaceStart, func(ctx context.Context, r StartRequest, rt action.Runtime) (action.Result, error) {
-			resolved, err := service.resolveStartInput(ctx, r, rt)
-			if err != nil {
-				return nil, err
-			}
-			plan, execution, err := service.Start(ctx, resolved, eventSink(ActionWorkspaceStart, rt))
-			return StartResult{Plan: plan, Execution: execution}, err
+			return service.runStartAction(ctx, r, rt)
 		}),
 		handler[StartPullRequestRequest](ActionWorkspacePullRequestStart, func(ctx context.Context, r StartPullRequestRequest, rt action.Runtime) (action.Result, error) {
 			plan, execution, err := service.StartPullRequest(ctx, r, eventSink(ActionWorkspacePullRequestStart, rt))
@@ -184,10 +195,10 @@ func Handlers(service *Service) []action.Handler {
 			return service.CreateChild(ctx, r, eventSink(ActionWorkItemChildCreate, rt))
 		}),
 		handler[PruneRequest](ActionWorkspacePrune, func(ctx context.Context, r PruneRequest, rt action.Runtime) (action.Result, error) {
-			return service.Prune(ctx, r, eventSink(ActionWorkspacePrune, rt))
+			return service.runPruneAction(ctx, r, rt)
 		}),
 		handler[FinishRequest](ActionWorkspaceFinish, func(ctx context.Context, r FinishRequest, rt action.Runtime) (action.Result, error) {
-			return service.Finish(ctx, r, eventSink(ActionWorkspaceFinish, rt))
+			return service.runFinishAction(ctx, r, rt)
 		}),
 	}
 }
@@ -210,11 +221,11 @@ func (s *Service) resolveAssignedInput(ctx context.Context, request AssignedRequ
 	for index, choice := range choices {
 		values[index] = action.Choice{Value: action.ChoiceValue(choice.Value), Label: choice.Label}
 	}
-	response, err := runtime.Ask(ctx, action.Prompt{ID: "project", Kind: action.PromptSelectOne, Label: l10n.M("prompt.project"), Required: true, Choices: values})
+	response, err := runtime.Ask(ctx, action.SelectOnePrompt{Meta: action.PromptMeta{ID: "project", Label: l10n.M("prompt.project")}, Required: true, Choices: values})
 	if err != nil {
 		return request, err
 	}
-	request.Project = string(response.Value)
+	request.Project = string(response.(action.SelectOneResponse).Value)
 	if request.Project == "" {
 		return request, projectRequired("work item list")
 	}
@@ -235,11 +246,11 @@ func (s *Service) resolveStartInput(ctx context.Context, request StartRequest, r
 			for index, choice := range choices {
 				values[index] = action.Choice{Value: action.ChoiceValue(choice.Value), Label: choice.Label}
 			}
-			response, err := runtime.Ask(ctx, action.Prompt{ID: "project", Kind: action.PromptSelectOne, Label: l10n.M("prompt.project"), Required: true, Choices: values})
+			response, err := runtime.Ask(ctx, action.SelectOnePrompt{Meta: action.PromptMeta{ID: "project", Label: l10n.M("prompt.project")}, Required: true, Choices: values})
 			if err != nil {
 				return request, err
 			}
-			request.Project = string(response.Value)
+			request.Project = string(response.(action.SelectOneResponse).Value)
 		}
 	}
 	if len(request.Repositories) == 0 && request.Project != "" && s.Choices != nil {
@@ -252,11 +263,11 @@ func (s *Service) resolveStartInput(ctx context.Context, request StartRequest, r
 			for index, choice := range choices {
 				values[index] = action.Choice{Value: action.ChoiceValue(choice.Value), Label: choice.Label}
 			}
-			response, err := runtime.Ask(ctx, action.Prompt{ID: "repositories", Kind: action.PromptSelectMany, Label: l10n.M("prompt.repositories"), Choices: values})
+			response, err := runtime.Ask(ctx, action.SelectManyPrompt{Meta: action.PromptMeta{ID: "repositories", Label: l10n.M("prompt.repositories")}, Choices: values})
 			if err != nil {
 				return request, err
 			}
-			for _, value := range response.Values {
+			for _, value := range response.(action.SelectManyResponse).Values {
 				request.Repositories = append(request.Repositories, string(value))
 			}
 		}
@@ -282,14 +293,15 @@ func (s *Service) resolveStartInput(ctx context.Context, request StartRequest, r
 			choices = append(choices, action.Choice{Value: action.ChoiceValue(item.ID), Label: l10n.M("prompt.choice.value", l10n.A("value", label))})
 		}
 		choices = append(choices, action.Choice{Value: "__manual_work_item_id__", Label: l10n.M("prompt.work-item.manual")})
-		response, err := runtime.Ask(ctx, action.Prompt{ID: "assigned-work-item", Kind: action.PromptSelectOne, Label: l10n.M("prompt.work-item"), Required: true, Choices: choices})
+		response, err := runtime.Ask(ctx, action.SelectOnePrompt{Meta: action.PromptMeta{ID: "assigned-work-item", Label: l10n.M("prompt.work-item")}, Required: true, Choices: choices})
 		if err != nil {
 			return request, err
 		}
-		if response.Value != "__manual_work_item_id__" {
-			request.WorkItemIDs = []string{string(response.Value)}
+		selected := response.(action.SelectOneResponse).Value
+		if selected != "__manual_work_item_id__" {
+			request.WorkItemIDs = []string{string(selected)}
 			for _, item := range assigned.Items {
-				if item.ID == string(response.Value) && request.Slug == "" && item.Title != nil {
+				if item.ID == string(selected) && request.Slug == "" && item.Title != nil {
 					request.Slug = *item.Title
 					break
 				}
@@ -299,14 +311,15 @@ func (s *Service) resolveStartInput(ctx context.Context, request StartRequest, r
 		manual = true
 	}
 	if manual {
-		response, err := runtime.Ask(ctx, action.Prompt{ID: "work-item-id", Kind: action.PromptText, Label: l10n.M("prompt.work-item-id"), Required: true})
+		response, err := runtime.Ask(ctx, action.TextPrompt{Meta: action.PromptMeta{ID: "work-item-id", Label: l10n.M("prompt.work-item-id")}, Required: true})
 		if err != nil {
 			return request, err
 		}
-		if response.Text == "" {
+		value := response.(action.TextResponse).Value
+		if value == "" {
 			return request, ErrWorkItemsRequired
 		}
-		request.WorkItemIDs = []string{response.Text}
+		request.WorkItemIDs = []string{value}
 	}
 	return request, nil
 }

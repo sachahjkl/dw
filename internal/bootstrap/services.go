@@ -20,6 +20,8 @@ import (
 	"github.com/sachahjkl/dw/internal/data/sqlserver"
 	"github.com/sachahjkl/dw/internal/dataapp"
 	"github.com/sachahjkl/dw/internal/doctor"
+	"github.com/sachahjkl/dw/internal/execution"
+	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/providerapp"
 	"github.com/sachahjkl/dw/internal/secret"
 	"github.com/sachahjkl/dw/internal/update"
@@ -28,20 +30,24 @@ import (
 	"github.com/sachahjkl/dw/internal/work/github"
 	"github.com/sachahjkl/dw/internal/workapp"
 	"github.com/sachahjkl/dw/internal/workspace"
+	"github.com/sachahjkl/dw/internal/workspaceapp"
 )
 
 type services struct {
-	secrets         contract.SecretStore
-	work            *work.Registry
-	data            *data.Registry
-	workspace       *workspace.Engine
-	workapp         *workapp.Service
-	dataApplication *dataapp.Service
-	doctor          *doctor.Service
-	secret          *secret.Service
-	provider        *providerapp.Service
-	update          *update.Service
-	completion      complete.Resolver
+	secrets           contract.SecretStore
+	work              *work.Registry
+	data              *data.Registry
+	workspace         *workspace.Engine
+	workapp           *workapp.Service
+	dataApplication   *dataapp.Service
+	doctor            *doctor.Service
+	secret            *secret.Service
+	provider          *providerapp.Service
+	update            *update.Service
+	completion        complete.Resolver
+	executionRegistry *execution.Registry
+	eventDataRegistry *execution.EventDataRegistry
+	executor          execution.Executor
 }
 
 func newServices() (*services, error) {
@@ -84,6 +90,7 @@ func newServices() (*services, error) {
 	workspacePorts.OpenFunc = openWorkspace
 	workService := workapp.New(workRegistry)
 	workService.ResolveProvider = config.ResolveWorkProvider
+	workService.Choices = interactiveCatalog{}
 	workService.Lookup = workspacePorts
 	workService.Starter = workspacePorts
 	workService.Syncer = workspacePorts
@@ -115,7 +122,7 @@ func registerHandlers(dispatcher *action.Dispatcher, services *services) error {
 	}
 	handlers := make([]action.Handler, 0, 40)
 	handlers = append(handlers, controller.IntegrationHandlers()...)
-	handlers = append(handlers, controller.WorkspaceHandlers(services.workspace, services.workapp, currentDirectory)...)
+	handlers = append(handlers, workspaceapp.Handlers(services.workspace, services.workapp, currentDirectory)...)
 	handlers = append(handlers, bootstrapHandlers()...)
 	handlers = append(handlers, config.Handlers()...)
 	handlers = append(handlers, dataapp.Handlers(services.dataApplication)...)
@@ -132,31 +139,67 @@ func registerHandlers(dispatcher *action.Dispatcher, services *services) error {
 	return nil
 }
 
-func openWorkspace(ctx context.Context, workspacePath, repository, selected string, useLatest bool) (any, error) {
+type interactiveCatalog struct{}
+
+func (interactiveCatalog) ProjectChoices(_ context.Context, root string) ([]workapp.ChoiceOption, error) {
+	projects, err := config.LoadProjectsConfigChecked(config.ResolveRoot(root))
+	if err != nil {
+		return nil, err
+	}
+	choices := make([]workapp.ChoiceOption, 0, len(projects.Projects))
+	for _, project := range projects.Projects {
+		label := project.Project.DisplayName
+		if label == "" {
+			label = project.Key
+		}
+		choices = append(choices, workapp.ChoiceOption{Value: project.Key, Label: l10n.M("prompt.choice.value", l10n.A("value", label))})
+	}
+	return choices, nil
+}
+
+func (interactiveCatalog) RepositoryChoices(_ context.Context, root, projectKey string) ([]workapp.ChoiceOption, error) {
+	projects, err := config.LoadProjectsConfigChecked(config.ResolveRoot(root))
+	if err != nil {
+		return nil, err
+	}
+	for _, project := range projects.Projects {
+		if project.Key != projectKey {
+			continue
+		}
+		choices := make([]workapp.ChoiceOption, 0, len(project.Project.Repositories))
+		for _, repository := range project.Project.Repositories {
+			choices = append(choices, workapp.ChoiceOption{Value: repository.Key, Label: l10n.M("prompt.choice.value", l10n.A("value", repository.Key))})
+		}
+		return choices, nil
+	}
+	return []workapp.ChoiceOption{}, nil
+}
+
+func openWorkspace(ctx context.Context, workspacePath, repository, selected string, useLatest bool) (agent.Launch, error) {
 	root := workspaceRoot(workspacePath)
 	target := workspacePath
 	if strings.TrimSpace(repository) != "" {
 		manifest, err := workspace.ReadManifest(filepath.Join(workspacePath, workspace.ManifestFile))
 		if err != nil {
-			return nil, err
+			return agent.Launch{}, err
 		}
 		project, found, err := (workspace.FileConfigPort{}).Project(ctx, root, manifest.Project)
 		if err != nil {
-			return nil, err
+			return agent.Launch{}, err
 		}
 		if !found {
-			return nil, fmt.Errorf("workspace project is not configured: %s", manifest.Project)
+			return agent.Launch{}, fmt.Errorf("workspace project is not configured: %s", manifest.Project)
 		}
 		target, err = workspace.ResolveOpenTarget(workspacePath, manifest, project, repository)
 		if err != nil {
-			return nil, err
+			return agent.Launch{}, err
 		}
 	}
 	var choice *agent.Agent
 	if strings.TrimSpace(selected) != "" {
 		parsed, err := agent.Parse(selected)
 		if err != nil {
-			return nil, err
+			return agent.Launch{}, err
 		}
 		choice = &parsed
 	}

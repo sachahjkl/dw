@@ -4,17 +4,21 @@
 
 ## Composition and Layers
 
-`cmd/dw` is only the process entry point. `internal/bootstrap` composes the command grammar, routes, action dispatcher, providers, console renderers, and TUI. Business operations remain below those presentation and composition boundaries.
+`cmd/dw` is only the process entry point. `internal/bootstrap` composes the command grammar, routes, execution registry, action dispatcher, providers, console renderers, TUI, and local web server. Business operations remain below those presentation and composition boundaries.
 
 ```text
-CLI grammar / Charm v2 TUI
-  -> controller routes
-     -> typed action dispatcher and application services
-        -> capability-based work and data providers
-           -> filesystem / Git / Azure DevOps / SQL Server / secrets / updates
+CLI grammar / Charm v2 TUI / local HTTP
+  -> controller route builders
+     -> persistent execution.Service
+        -> typed action.Dispatcher
+           -> application handlers
+              -> capability-based work and data providers
+                 -> filesystem / Git / Azure DevOps / SQL Server / secrets / updates
 ```
 
-`internal/cli/spec` is the source of commands, subcommands, arguments, options, descriptions, help, and completion metadata. `internal/cli/controller` maps parsed invocations to typed requests. Both the CLI and TUI dispatch through the same application actions; provider packages do not parse commands or render terminal output.
+`internal/cli/spec` is the source of commands, subcommands, arguments, options, descriptions, help, and completion metadata. `internal/cli/controller` maps parsed invocations to typed requests. The CLI, TUI, and HTTP adapters submit those requests to the same execution service. Provider packages do not parse commands or render presentation output.
+
+`internal/execution` owns the FIFO queue, durable identifiers, lifecycle, prompts, cancellation, event sequence, persistence, leases, and per-root locks. No presentation owns a second queue, prompt store, or execution history. See [Execution and Local Web Architecture](011-execution-and-web.md).
 
 ## Namespace Boundaries
 
@@ -32,9 +36,9 @@ The current data provider is SQL Server, implemented under `internal/data/sqlser
 
 ## Presentation and Localization
 
-The interactive interface uses Charm v2: Bubble Tea, Bubbles, and Lip Gloss. `internal/tui` owns interactive state and rendering while invoking the same typed application actions as the CLI.
+The interactive terminal uses Charm v2: Bubble Tea, Bubbles, and Lip Gloss. The local web interface uses templ components and embedded Datastar over loopback HTTP and SSE. `internal/cockpit` supplies neutral projections to both presentations.
 
-All human-facing CLI, TUI, and console text crosses the localization bridge in `internal/l10n`. English messages are embedded from `locales/active.en.toml`; command names, JSON keys, error codes, and other machine tokens are not localized.
+All human-facing CLI, TUI, web, and console text crosses the localization bridge in `internal/l10n`. English messages are embedded from `locales/active.en.toml`; command names, JSON keys, error codes, and other machine tokens are not localized.
 
 ## Source Layout
 
@@ -44,11 +48,15 @@ internal/action/           typed dispatch contracts
 internal/bootstrap/        static composition root
 internal/cli/              grammar, parsing, completion, and routing
 internal/work/             work-provider contracts and registry
+internal/execution/        persistent execution service, registry, store, and locks
 internal/work/ado/         Azure DevOps provider
 internal/data/             data-provider contracts and registry
 internal/data/sqlserver/   SQL Server provider
 internal/console/          deterministic human and machine output
 internal/tui/              Charm v2 interactive interface
+internal/cockpit/          presentation-neutral cockpit projections
+internal/web/              loopback HTTP, templ, Datastar, and embedded assets
+internal/webservice/       local service configuration and native lifecycle
 internal/l10n/             English localization bridge
 locales/                   embedded message catalogs
 schemas/                   generated-root JSON schemas

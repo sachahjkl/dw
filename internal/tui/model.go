@@ -2,13 +2,16 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/cockpit"
 	"github.com/sachahjkl/dw/internal/contract"
+	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
@@ -69,14 +72,16 @@ const (
 	ReloadEffect
 	StartActionEffect
 	AnswerInputEffect
+	CancelExecutionEffect
 )
 
 // Effect describes side effects produced by a pure HandleKey transition.
 type Effect struct {
-	Kind     EffectKind
-	Action   Action
-	Response action.Response
-	input    chan action.Response
+	Kind        EffectKind
+	Action      Action
+	Response    action.Response
+	ExecutionID execution.ExecutionID
+	PromptID    action.PromptID
 }
 
 type modalKind uint8
@@ -98,19 +103,15 @@ type loaderState struct {
 	errorText  string
 }
 
-type queuedAction struct {
-	action Action
-}
-
 type activeAction struct {
-	id         uint64
+	id         execution.ExecutionID
 	action     Action
 	generation uint64
 	started    time.Time
 }
 
 type inputPrompt struct {
-	runID        uint64
+	executionID  execution.ExecutionID
 	prompt       action.Prompt
 	label        string
 	help         string
@@ -119,7 +120,6 @@ type inputPrompt struct {
 	selected     int
 	selectedMany []bool
 	cursor       int
-	response     chan action.Response
 }
 
 type detailState struct {
@@ -134,7 +134,7 @@ type Model struct {
 	ctx  context.Context
 	l10n l10n.Localizer
 
-	snapshot     Snapshot
+	snapshot     cockpit.Snapshot
 	view         View
 	previousView View
 	width        int
@@ -159,14 +159,12 @@ type Model struct {
 	composer     FormState
 	modalStack   []modalKind
 	detail       *detailState
-	progressRun  uint64
+	progressRun  execution.ExecutionID
 	stateScroll  int
 
 	messages         []string
 	history          History
-	queue            []queuedAction
 	active           *activeAction
-	nextRunID        uint64
 	actionGeneration uint64
 	reloadAfterQueue bool
 	actionUpdates    <-chan actionUpdate
@@ -189,7 +187,7 @@ func NewModel(deps Dependencies) *Model {
 		deps:     deps,
 		ctx:      context.Background(),
 		l10n:     localizer,
-		snapshot: Snapshot{Root: root},
+		snapshot: cockpit.Snapshot{Root: root},
 		view:     Dashboard,
 		messages: []string{localizer.Text(msgReady)},
 		history:  newHistory(),
@@ -201,7 +199,7 @@ func NewModel(deps Dependencies) *Model {
 
 // NewModelWithSnapshot constructs a loader-free pure model for parity and
 // embedding while preserving the same key transition implementation.
-func NewModelWithSnapshot(deps Dependencies, snapshot Snapshot) *Model {
+func NewModelWithSnapshot(deps Dependencies, snapshot cockpit.Snapshot) *Model {
 	model := NewModel(deps)
 	model.snapshot = snapshot
 	activateRequestlessParityActions(&model.snapshot)
@@ -212,28 +210,28 @@ func NewModelWithSnapshot(deps Dependencies, snapshot Snapshot) *Model {
 	return model
 }
 
-func activateRequestlessParityActions(snapshot *Snapshot) {
-	activate := func(actions []Action) {
-		for index := range actions {
-			if actions[index].Request == nil {
-				actions[index].Active = true
+func activateRequestlessParityActions(snapshot *cockpit.Snapshot) {
+	activate := func(operations []cockpit.Operation) {
+		for index := range operations {
+			if operations[index].Request == nil {
+				operations[index].Active = true
 			}
 		}
 	}
-	activate(snapshot.Actions)
+	activate(snapshot.Operations)
 	for index := range snapshot.Workspaces {
-		activate(snapshot.Workspaces[index].Actions)
+		activate(snapshot.Workspaces[index].Operations)
 	}
 	for project := range snapshot.WorkProjects {
 		for item := range snapshot.WorkProjects[project].Items {
-			activate(snapshot.WorkProjects[project].Items[item].Actions)
+			activate(snapshot.WorkProjects[project].Items[item].Operations)
 		}
 	}
 	for index := range snapshot.PullRequests {
-		activate(snapshot.PullRequests[index].Actions)
+		activate(snapshot.PullRequests[index].Operations)
 	}
 	for index := range snapshot.DataSources {
-		activate(snapshot.DataSources[index].Actions)
+		activate(snapshot.DataSources[index].Operations)
 	}
 }
 
@@ -248,7 +246,7 @@ func (m *Model) Selection() SelectionState {
 func (m *Model) ConfirmationOpen() bool { return m.confirmation != nil }
 func (m *Model) FormOpen() bool         { return m.form != nil }
 func (m *Model) Filter() (string, bool) { return m.filter, m.filterActive }
-func (m *Model) QueueLength() int       { return len(m.queue) }
+func (m *Model) QueueLength() int       { return 0 }
 func (m *Model) ActiveAction() (Action, bool) {
 	if m.active == nil {
 		return Action{}, false
@@ -256,10 +254,10 @@ func (m *Model) ActiveAction() (Action, bool) {
 	return m.active.action, true
 }
 
-func (m *Model) CurrentView() View  { return m.view }
-func (m *Model) Snapshot() Snapshot { return m.snapshot }
-func (m *Model) ShouldQuit() bool   { return m.quit }
-func (m *Model) History() History   { return m.history }
+func (m *Model) CurrentView() View          { return m.view }
+func (m *Model) Snapshot() cockpit.Snapshot { return m.snapshot }
+func (m *Model) ShouldQuit() bool           { return m.quit }
+func (m *Model) History() History           { return m.history }
 
 func (m *Model) ModalStack() []string {
 	result := make([]string, 0, len(m.modalStack))
@@ -316,7 +314,7 @@ func (m *Model) closeTopModal() {
 	case detailModal:
 		m.detail = nil
 	case progressModal:
-		m.progressRun = 0
+		m.progressRun = execution.ExecutionID{}
 	}
 }
 
@@ -368,6 +366,10 @@ func (m *Model) HandleKey(key Key) []Effect {
 		return nil
 	}
 	if key.Ctrl && strings.EqualFold(key.Code, "c") || key.Code == "ctrl+c" {
+		if m.active != nil && !m.active.id.IsZero() {
+			m.addMessage(m.l10n.Text("tui.message.canceled"))
+			return []Effect{{Kind: CancelExecutionEffect, ExecutionID: m.active.id}}
+		}
 		m.quit = true
 		return []Effect{{Kind: QuitEffect}}
 	}
@@ -461,7 +463,7 @@ func (m *Model) HandleKey(key Key) []Effect {
 		switch m.view {
 		case Dashboard:
 			if len(m.snapshot.Cockpit) != 0 {
-				return m.requestAction(m.snapshot.Cockpit[m.selectedCockpit].Primary)
+				return m.requestAction(actionFromOperation(m.snapshot.Cockpit[m.selectedCockpit].Primary))
 			}
 		case Workspaces:
 			return m.workspaceAction(WorkspaceOpenSlot)
@@ -480,10 +482,10 @@ func (m *Model) handleBack() []Effect {
 		return nil
 	}
 	if m.prompt != nil {
-		close(m.prompt.response)
+		executionID := m.prompt.executionID
 		m.prompt = nil
 		m.addMessage(m.l10n.Text("tui.message.input-canceled"))
-		return nil
+		return []Effect{{Kind: CancelExecutionEffect, ExecutionID: executionID}}
 	}
 	if m.form != nil {
 		if m.form.Mode == EditFields {
@@ -536,8 +538,8 @@ func (m *Model) handleInitKey(key Key) []Effect {
 		m.quit = true
 		return []Effect{{Kind: QuitEffect}}
 	case "enter", "i":
-		if m.snapshot.InitAction != nil {
-			return m.requestAction(*m.snapshot.InitAction)
+		if m.snapshot.InitOperation != nil {
+			return m.requestAction(actionFromOperation(*m.snapshot.InitOperation))
 		}
 		m.addMessage(m.l10n.Text("tui.message.unavailable"))
 	}
@@ -556,9 +558,9 @@ func (m *Model) handleInputKey(key Key) []Effect {
 			prompt.selected++
 		}
 	case "space":
-		if prompt.prompt.Kind == action.PromptSelectMany && prompt.selected < len(prompt.selectedMany) {
+		if prompt.prompt.PromptKind() == action.PromptSelectMany && prompt.selected < len(prompt.selectedMany) {
 			prompt.selectedMany[prompt.selected] = !prompt.selectedMany[prompt.selected]
-		} else if prompt.prompt.Kind == action.PromptText || prompt.prompt.Kind == action.PromptSecret {
+		} else if prompt.prompt.PromptKind() == action.PromptText || prompt.prompt.PromptKind() == action.PromptSecret {
 			prompt.insert(" ")
 		}
 	case "backspace":
@@ -574,21 +576,21 @@ func (m *Model) handleInputKey(key Key) []Effect {
 	case "end":
 		prompt.cursor = len([]rune(prompt.value))
 	case "y", "Y":
-		if prompt.prompt.Kind == action.PromptConfirm {
+		if prompt.prompt.PromptKind() == action.PromptConfirm {
 			return m.answerInput(true)
 		}
 	case "n", "N":
-		if prompt.prompt.Kind == action.PromptConfirm {
+		if prompt.prompt.PromptKind() == action.PromptConfirm {
 			return m.answerInput(false)
 		}
 	case "enter":
 		accepted := true
-		if prompt.prompt.Kind == action.PromptConfirm && prompt.prompt.Default != nil {
-			accepted = strings.EqualFold(string(*prompt.prompt.Default), "true")
+		if confirm, ok := prompt.prompt.(action.ConfirmPrompt); ok {
+			accepted = confirm.Default
 		}
 		return m.answerInput(accepted)
 	default:
-		if (prompt.prompt.Kind == action.PromptText || prompt.prompt.Kind == action.PromptSecret) && key.Text != "" {
+		if (prompt.prompt.PromptKind() == action.PromptText || prompt.prompt.PromptKind() == action.PromptSecret) && key.Text != "" {
 			prompt.insert(key.Text)
 		}
 	}
@@ -629,26 +631,32 @@ func (p *inputPrompt) moveCursor(delta int) {
 
 func (m *Model) answerInput(accepted bool) []Effect {
 	prompt := m.prompt
-	response := action.Response{Kind: prompt.prompt.Kind, Accepted: accepted}
-	switch prompt.prompt.Kind {
-	case action.PromptSelectOne:
-		if prompt.selected < len(prompt.prompt.Choices) {
-			response.Value = prompt.prompt.Choices[prompt.selected].Value
+	var response action.Response
+	switch typed := prompt.prompt.(type) {
+	case action.ConfirmPrompt:
+		response = action.ConfirmResponse{Accepted: accepted}
+	case action.SelectOnePrompt:
+		value := action.ChoiceValue("")
+		if prompt.selected < len(typed.Choices) {
+			value = typed.Choices[prompt.selected].Value
 		}
-	case action.PromptSelectMany:
+		response = action.SelectOneResponse{Value: value}
+	case action.SelectManyPrompt:
+		values := make([]action.ChoiceValue, 0, len(prompt.selectedMany))
 		for i, selected := range prompt.selectedMany {
 			if selected {
-				response.Values = append(response.Values, prompt.prompt.Choices[i].Value)
+				values = append(values, typed.Choices[i].Value)
 			}
 		}
-	case action.PromptText:
-		response.Text = prompt.value
-	case action.PromptSecret:
-		response.Secret = contract.NewSecretValue(prompt.value)
+		response = action.SelectManyResponse{Values: values}
+	case action.TextPrompt:
+		response = action.TextResponse{Value: prompt.value}
+	case action.SecretPrompt:
+		response = action.SecretResponse{Value: contract.NewSecretValue(prompt.value)}
 	}
 	m.prompt = nil
 	m.addMessage(m.l10n.Text("tui.message.input-sent"))
-	return []Effect{{Kind: AnswerInputEffect, Response: response, input: prompt.response}}
+	return []Effect{{Kind: AnswerInputEffect, Response: response, ExecutionID: prompt.executionID, PromptID: prompt.prompt.PromptID()}}
 }
 
 func (m *Model) handleFormKey(key Key) []Effect {
@@ -902,14 +910,49 @@ func (m *Model) menuItems() []menuItem {
 		}
 	}
 	section := [...]string{"", "configuration", "default-agent", "terminal-color"}[m.selectedMenuSection]
-	var result []menuItem
-	for i := range m.snapshot.Actions {
-		item := &m.snapshot.Actions[i]
-		if item.MenuSection == section {
-			result = append(result, menuItem{label: item.Label, description: item.Description, key: item.Hotkey, action: item})
+	result := make([]menuItem, 0)
+	for i := range m.snapshot.Operations {
+		operationSection, key := menuOperationPlacement(m.snapshot.Operations[i].ID)
+		if operationSection != section {
+			continue
 		}
+		item := actionFromOperation(m.snapshot.Operations[i])
+		result = append(result, menuItem{label: item.Label, description: item.Description, key: key, action: &item})
 	}
 	return result
+}
+
+func menuOperationPlacement(id action.ID) (string, string) {
+	value := string(id)
+	switch value {
+	case "tui.menu.config.show":
+		return "configuration", "s"
+	case "tui.menu.config.doctor":
+		return "configuration", "d"
+	case "tui.menu.config.refresh":
+		return "configuration", "r"
+	case "tui.menu.guide":
+		return "configuration", "g"
+	case "tui.menu.agent.doctor":
+		return "configuration", "a"
+	}
+	if strings.HasPrefix(value, "tui.menu.agent.") {
+		choices := []string{"opencode", "cursor", "claude", "codex", "codex-cli", "copilot"}
+		for index, choice := range choices {
+			if value == "tui.menu.agent."+choice {
+				return "default-agent", strconv.Itoa(index + 1)
+			}
+		}
+	}
+	if strings.HasPrefix(value, "tui.menu.color.") {
+		choices := []string{"auto", "always", "never"}
+		for index, choice := range choices {
+			if value == "tui.menu.color."+choice {
+				return "terminal-color", strconv.Itoa(index + 7)
+			}
+		}
+	}
+	return "", ""
 }
 
 func (m *Model) runSelectedMenuItem(items []menuItem) []Effect {
@@ -1145,7 +1188,7 @@ func (m *Model) handleViewActionKey(key Key) ([]Effect, bool) {
 
 func (m *Model) workspaceAction(id action.ID) []Effect {
 	if m.selectedWorkspace < len(m.snapshot.Workspaces) {
-		if item, ok := findAction(m.snapshot.Workspaces[m.selectedWorkspace].Actions, id); ok {
+		if item, ok := findAction(m.snapshot.Workspaces[m.selectedWorkspace].Operations, id); ok {
 			return m.requestAction(item)
 		}
 	}
@@ -1154,7 +1197,7 @@ func (m *Model) workspaceAction(id action.ID) []Effect {
 }
 func (m *Model) workAction(id action.ID) []Effect {
 	if p := m.selectedWorkProject; p < len(m.snapshot.WorkProjects) && m.selectedWorkItem < len(m.snapshot.WorkProjects[p].Items) {
-		if item, ok := findAction(m.snapshot.WorkProjects[p].Items[m.selectedWorkItem].Actions, id); ok {
+		if item, ok := findAction(m.snapshot.WorkProjects[p].Items[m.selectedWorkItem].Operations, id); ok {
 			return m.requestAction(item)
 		}
 	}
@@ -1163,7 +1206,7 @@ func (m *Model) workAction(id action.ID) []Effect {
 }
 func (m *Model) prAction(id action.ID) []Effect {
 	if m.selectedPR < len(m.snapshot.PullRequests) {
-		if item, ok := findAction(m.snapshot.PullRequests[m.selectedPR].Actions, id); ok {
+		if item, ok := findAction(m.snapshot.PullRequests[m.selectedPR].Operations, id); ok {
 			return m.requestAction(item)
 		}
 	}
@@ -1172,7 +1215,7 @@ func (m *Model) prAction(id action.ID) []Effect {
 }
 func (m *Model) dataAction(id action.ID) []Effect {
 	if m.selectedDataSource < len(m.snapshot.DataSources) {
-		if item, ok := findAction(m.snapshot.DataSources[m.selectedDataSource].Actions, id); ok {
+		if item, ok := findAction(m.snapshot.DataSources[m.selectedDataSource].Operations, id); ok {
 			return m.requestAction(item)
 		}
 	}
@@ -1196,29 +1239,16 @@ func (m *Model) requestAction(item Action) []Effect {
 
 func (m *Model) startOrQueue(item Action) []Effect {
 	if m.active != nil {
-		m.queue = append(m.queue, queuedAction{action: item})
-		m.addMessage(m.message("tui.message.queued", l10n.A("position", len(m.queue)), l10n.A("label", item.Label)))
+		m.addMessage(m.l10n.Text("tui.message.unavailable"))
 		return nil
 	}
-	m.nextRunID++
 	m.actionGeneration++
-	m.active = &activeAction{id: m.nextRunID, action: item, generation: m.actionGeneration, started: time.Now()}
-	m.history.start(m.nextRunID, item.Label)
+	m.active = &activeAction{action: item, generation: m.actionGeneration, started: time.Now()}
 	if item.BlocksUntilDone {
-		m.progressRun = m.nextRunID
 		m.pushModal(progressModal)
 	}
 	m.addMessage(m.message("tui.message.started", l10n.A("label", item.Label)))
 	return []Effect{{Kind: StartActionEffect, Action: item}}
-}
-
-func (m *Model) startNextQueued() []Effect {
-	if m.active != nil || len(m.queue) == 0 {
-		return nil
-	}
-	item := m.queue[0].action
-	m.queue = m.queue[1:]
-	return m.startOrQueue(item)
 }
 
 func (m *Model) openForm(templateID string) {
@@ -1250,7 +1280,7 @@ func (m *Model) openWorkStateForm() {
 	setField(m.form.Fields, "workItemIds", item.ID)
 	setField(m.form.Fields, "project", project.Key)
 	setField(m.form.Fields, "provider", project.Provider)
-	if actionItem, ok := findAction(item.Actions, WorkSetStateSlot); ok {
+	if actionItem, ok := findAction(item.Operations, WorkSetStateSlot); ok {
 		for _, parameter := range requestParameters(actionItem.Request) {
 			if parameter.Name == "state" {
 				setField(m.form.Fields, "state", parameterString(parameter.Value))
@@ -1320,13 +1350,14 @@ func (m *Model) selectedVisibleAction() (Action, bool) {
 
 func (m *Model) visibleActions() []Action {
 	filter := strings.ToLower(strings.TrimSpace(m.filter))
-	items := m.snapshot.Actions
+	operations := m.snapshot.Operations
 	if m.view == Data && m.selectedDataSource < len(m.snapshot.DataSources) {
-		items = m.snapshot.DataSources[m.selectedDataSource].Actions
+		operations = m.snapshot.DataSources[m.selectedDataSource].Operations
 	}
 	var result []Action
-	for _, item := range items {
-		if item.MenuSection != "" || !item.Active {
+	for _, operation := range operations {
+		item := actionFromOperation(operation)
+		if !item.Active {
 			continue
 		}
 		if filter == "" || strings.Contains(strings.ToLower(item.Label), filter) || strings.Contains(strings.ToLower(item.Description), filter) {

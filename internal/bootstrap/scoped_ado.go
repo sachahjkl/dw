@@ -6,12 +6,12 @@ import (
 	"sync"
 
 	"github.com/sachahjkl/dw/internal/action"
-	"github.com/sachahjkl/dw/internal/cli/controller"
 	"github.com/sachahjkl/dw/internal/config"
 	"github.com/sachahjkl/dw/internal/wirejson"
 	"github.com/sachahjkl/dw/internal/work"
 	"github.com/sachahjkl/dw/internal/work/ado"
 	"github.com/sachahjkl/dw/internal/workapp"
+	"github.com/sachahjkl/dw/internal/workspaceapp"
 )
 
 type rootContextKey struct{}
@@ -100,7 +100,7 @@ func (provider *scopedADOProvider) AuthStatus(ctx context.Context, project work.
 	}
 	return delegate.AuthStatus(ctx, project)
 }
-func (provider *scopedADOProvider) Login(ctx context.Context, project work.ProjectRef, mode work.AuthMode, emit func(work.DeviceLogin) error) (work.AuthStatus, error) {
+func (provider *scopedADOProvider) Login(ctx context.Context, project work.ProjectRef, mode work.AuthMode, emit func(work.LoginInstructions) error) (work.AuthStatus, error) {
 	delegate, project, err := provider.resolve(ctx, project)
 	if err != nil {
 		return work.AuthStatus{}, err
@@ -219,7 +219,7 @@ func requestRoot(request action.Request) string {
 	case workapp.ContextRequest:
 		return value.Root
 	case workapp.AIContextRequest:
-		return value.Root
+		return value.Request.Root
 	case workapp.ItemShowRequest:
 		return value.Root
 	case workapp.StatePlanRequest:
@@ -227,6 +227,8 @@ func requestRoot(request action.Request) string {
 	case workapp.StateExecuteRequest:
 		return value.Plan.Root
 	case workapp.StateSetRequest:
+		return value.Request.Root
+	case workapp.DoingActionRequest:
 		return value.Request.Root
 	case workapp.DoingRequest:
 		return value.Root
@@ -246,27 +248,27 @@ func requestRoot(request action.Request) string {
 		return value.Root
 	case workapp.FinishRequest:
 		return value.Root
-	case controller.WorkspaceStatusRequest:
+	case workspaceapp.StatusRequest:
 		return value.Root
-	case controller.WorkspaceListRequest:
+	case workspaceapp.ListRequest:
 		return value.Root
-	case controller.WorkspaceItemAddRequest:
+	case workspaceapp.ItemAddRequest:
 		return value.Selection.Root
-	case controller.WorkspaceItemRemoveRequest:
+	case workspaceapp.ItemRemoveRequest:
 		return value.Selection.Root
-	case controller.WorkspacePreflightRequest:
+	case workspaceapp.PreflightRequest:
 		return value.Selection.Root
-	case controller.WorkspaceRenameRequest:
+	case workspaceapp.RenameRequest:
 		return value.Selection.Root
-	case controller.WorkspaceRepoAddRequest:
+	case workspaceapp.RepoAddRequest:
 		return value.Selection.Root
-	case controller.WorkspaceRepoLatestRequest:
+	case workspaceapp.RepoLatestRequest:
 		return value.Selection.Root
-	case controller.WorkspaceCommitRequest:
+	case workspaceapp.CommitRequest:
 		return value.Selection.Root
-	case controller.WorkspaceHandoffRequest:
+	case workspaceapp.HandoffRequest:
 		return value.Selection.Root
-	case controller.WorkspaceTeardownRequest:
+	case workspaceapp.TeardownRequest:
 		return value.Selection.Root
 	default:
 		return ""
