@@ -159,13 +159,13 @@ jobs:
             accept-flake-config = true
             keep-env-derivations = true
             keep-outputs = true
+
       - name: Setup Cachix
         uses: cachix/cachix-action@v17
         with:
           name: sachahjkl
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           skipPush: ${{ github.event_name == 'pull_request' }}
-
 
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v7
@@ -180,7 +180,24 @@ jobs:
           purge-primary-key: never
 
       - name: Validate Nix package
-        run: nix build --accept-flake-config --no-link .#default
+        id: nix-package
+        shell: bash
+        run: |
+          package_path="$(nix build --accept-flake-config --no-link --print-out-paths .#default)"
+          echo "path=${package_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Push Nix package to Cachix
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: bash
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          if [[ -z "${CACHIX_AUTH_TOKEN}" ]]; then
+            echo "CACHIX_AUTH_TOKEN is required to publish the Nix package." >&2
+            exit 1
+          fi
+          cachix authtoken "${CACHIX_AUTH_TOKEN}"
+          cachix push sachahjkl "${{ steps.nix-package.outputs.path }}"
 
   nix-checks:
     name: Nix checks
