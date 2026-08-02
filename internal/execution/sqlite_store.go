@@ -19,12 +19,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const sqliteSchemaVersion = 1
+const sqliteSchemaVersion = 2
 
 const executionColumns = `
 execution_id, attempt_id, action_id, request_schema, request_json,
-request_redacted, request_hash, root, principal, origin, idempotency_key,
-status, executor_id, lease_expires_at, resumable, created_at, started_at,
+request_redacted, request_hash, root, subject_kind, subject_project,
+subject_key, subject_relation, principal, origin, idempotency_key, status,
+executor_id, lease_expires_at, resumable, created_at, started_at,
 finished_at, cancel_requested_at, result_schema, result_json,
 result_redacted, error_code, error_message_json,
 (SELECT COALESCE(MAX(sequence), 0) FROM events WHERE events.execution_id = executions.execution_id)`
@@ -42,6 +43,10 @@ type executionColumnsValue struct {
 	requestRedacted   int64
 	requestHash       []byte
 	root              string
+	subjectKind       sql.NullString
+	subjectProject    sql.NullString
+	subjectKey        sql.NullString
+	subjectRelation   sql.NullString
 	principal         string
 	origin            string
 	idempotencyKey    []byte
@@ -98,6 +103,13 @@ func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 }
 
 func (store *SQLiteStore) initialize() error {
+	var currentVersion int
+	if err := store.database.QueryRow(`PRAGMA user_version`).Scan(&currentVersion); err != nil {
+		return fmt.Errorf("execution.sqlite-version:%w", err)
+	}
+	if currentVersion > sqliteSchemaVersion {
+		return fmt.Errorf("execution.sqlite-version:%d", currentVersion)
+	}
 	statements := []string{
 		`PRAGMA foreign_keys=ON`,
 		`PRAGMA journal_mode=WAL`,
@@ -111,6 +123,10 @@ func (store *SQLiteStore) initialize() error {
 			request_redacted INTEGER NOT NULL CHECK(request_redacted IN (0,1)),
 			request_hash BLOB NOT NULL CHECK(length(request_hash)=32),
 			root TEXT NOT NULL,
+			subject_kind TEXT,
+			subject_project TEXT,
+			subject_key TEXT,
+			subject_relation TEXT,
 			principal TEXT NOT NULL,
 			origin TEXT NOT NULL CHECK(origin IN ('cli','tui','web')),
 			idempotency_key BLOB NOT NULL CHECK(length(idempotency_key)=16),
@@ -175,12 +191,36 @@ func (store *SQLiteStore) initialize() error {
 		`CREATE INDEX IF NOT EXISTS executions_principal_root_created ON executions(principal, root, created_at)`,
 		`CREATE INDEX IF NOT EXISTS executions_status_lease ON executions(status, lease_expires_at)`,
 		`CREATE INDEX IF NOT EXISTS events_execution_sequence ON events(execution_id, sequence)`,
-		`PRAGMA user_version=1`,
 	}
 	for _, statement := range statements {
 		if _, err := store.database.Exec(statement); err != nil {
 			return fmt.Errorf("execution.sqlite-schema:%w", err)
 		}
+	}
+	if currentVersion != 1 {
+		if _, err := store.database.Exec(fmt.Sprintf("PRAGMA user_version=%d", sqliteSchemaVersion)); err != nil {
+			return fmt.Errorf("execution.sqlite-version:%w", err)
+		}
+		return nil
+	}
+	transaction, err := store.database.Begin()
+	if err != nil {
+		return fmt.Errorf("execution.sqlite-migration:%w", err)
+	}
+	defer transaction.Rollback()
+	for _, statement := range []string{
+		`ALTER TABLE executions ADD COLUMN subject_kind TEXT`,
+		`ALTER TABLE executions ADD COLUMN subject_project TEXT`,
+		`ALTER TABLE executions ADD COLUMN subject_key TEXT`,
+		`ALTER TABLE executions ADD COLUMN subject_relation TEXT`,
+		fmt.Sprintf("PRAGMA user_version=%d", sqliteSchemaVersion),
+	} {
+		if _, err = transaction.Exec(statement); err != nil {
+			return fmt.Errorf("execution.sqlite-migration:%w", err)
+		}
+	}
+	if err = transaction.Commit(); err != nil {
+		return fmt.Errorf("execution.sqlite-migration:%w", err)
 	}
 	return nil
 }
@@ -219,12 +259,16 @@ func (store *SQLiteStore) Create(ctx context.Context, item storedExecution, queu
 
 	if _, err := transaction.ExecContext(ctx, `INSERT INTO executions (
 		execution_id, attempt_id, action_id, request_schema, request_json, request_redacted,
-		request_hash, root, principal, origin, idempotency_key, status, executor_id,
-		lease_expires_at, resumable, created_at
-	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		request_hash, root, subject_kind, subject_project, subject_key, subject_relation,
+		principal, origin, idempotency_key, status, executor_id, lease_expires_at, resumable, created_at
+	) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		identifierBytes(item.Record.ExecutionID.value), identifierBytes(item.Record.AttemptID.value), string(item.Record.ActionID),
 		item.Record.Request.Schema, nullableJSON(item.Record.Request), boolInteger(item.Record.Request.Redacted), item.RequestHash[:],
-		item.Record.Root, item.Record.Principal, item.Record.Origin, identifierBytes(item.IdempotencyKey.value), item.Record.Status,
+		item.Record.Root, nullableSubjectValue(item.Record.Subject, func(subject Subject) string { return subject.Kind }),
+		nullableSubjectValue(item.Record.Subject, func(subject Subject) string { return subject.Project }),
+		nullableSubjectValue(item.Record.Subject, func(subject Subject) string { return subject.Key }),
+		nullableSubjectValue(item.Record.Subject, func(subject Subject) string { return subject.Relation }),
+		item.Record.Principal, item.Record.Origin, identifierBytes(item.IdempotencyKey.value), item.Record.Status,
 		nullableIdentifier(item.ExecutorID), nullableTime(item.LeaseExpiresAt), boolInteger(item.Resumable), unixMilliseconds(item.Record.CreatedAt),
 	); err != nil {
 		return storedExecution{}, false, fmt.Errorf("execution.sqlite-insert:%w", err)
@@ -536,7 +580,8 @@ func (store *SQLiteStore) loadPendingPrompt(ctx context.Context, item *storedExe
 func scanStoredRow(row *sql.Row) (storedExecution, error) {
 	var value executionColumnsValue
 	err := row.Scan(&value.executionID, &value.attemptID, &value.actionID, &value.requestSchema, &value.requestJSON,
-		&value.requestRedacted, &value.requestHash, &value.root, &value.principal, &value.origin, &value.idempotencyKey,
+		&value.requestRedacted, &value.requestHash, &value.root, &value.subjectKind, &value.subjectProject,
+		&value.subjectKey, &value.subjectRelation, &value.principal, &value.origin, &value.idempotencyKey,
 		&value.status, &value.executorID, &value.leaseExpiresAt, &value.resumable, &value.createdAt, &value.startedAt,
 		&value.finishedAt, &value.cancelRequestedAt, &value.resultSchema, &value.resultJSON, &value.resultRedacted,
 		&value.errorCode, &value.errorMessageJSON, &value.lastSequence)
@@ -549,7 +594,8 @@ func scanStoredRow(row *sql.Row) (storedExecution, error) {
 func scanStoredRows(rows *sql.Rows) (storedExecution, error) {
 	var value executionColumnsValue
 	err := rows.Scan(&value.executionID, &value.attemptID, &value.actionID, &value.requestSchema, &value.requestJSON,
-		&value.requestRedacted, &value.requestHash, &value.root, &value.principal, &value.origin, &value.idempotencyKey,
+		&value.requestRedacted, &value.requestHash, &value.root, &value.subjectKind, &value.subjectProject,
+		&value.subjectKey, &value.subjectRelation, &value.principal, &value.origin, &value.idempotencyKey,
 		&value.status, &value.executorID, &value.leaseExpiresAt, &value.resumable, &value.createdAt, &value.startedAt,
 		&value.finishedAt, &value.cancelRequestedAt, &value.resultSchema, &value.resultJSON, &value.resultRedacted,
 		&value.errorCode, &value.errorMessageJSON, &value.lastSequence)
@@ -586,6 +632,15 @@ func decodeStored(value executionColumnsValue) (storedExecution, error) {
 		Principal: PrincipalID(value.principal), Origin: Origin(value.origin),
 		Request:   Encoded{Schema: SchemaVersion(value.requestSchema), JSON: append(json.RawMessage(nil), value.requestJSON...), Redacted: value.requestRedacted == 1},
 		CreatedAt: timeFromMilliseconds(value.createdAt), StartedAt: timePointer(value.startedAt), FinishedAt: timePointer(value.finishedAt),
+	}
+	if value.subjectKind.Valid {
+		record.Subject = &Subject{
+			Kind: value.subjectKind.String, Project: value.subjectProject.String,
+			Key: value.subjectKey.String, Relation: value.subjectRelation.String,
+		}
+		if !record.Subject.Valid() {
+			return storedExecution{}, fmt.Errorf("execution.sqlite-subject")
+		}
 	}
 	if value.resultSchema.Valid {
 		record.Result = &Encoded{Schema: SchemaVersion(value.resultSchema.Int64), JSON: append(json.RawMessage(nil), value.resultJSON...), Redacted: value.resultRedacted.Int64 == 1}
@@ -771,6 +826,13 @@ func nullableIdentifier(id ExecutorID) []byte {
 		return nil
 	}
 	return identifierBytes(id.value)
+}
+
+func nullableSubjectValue(subject *Subject, selectValue func(Subject) string) any {
+	if subject == nil {
+		return nil
+	}
+	return selectValue(*subject)
 }
 
 func unixMilliseconds(value time.Time) int64 {

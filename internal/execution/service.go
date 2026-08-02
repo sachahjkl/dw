@@ -142,6 +142,9 @@ func (service *Service) Submit(ctx context.Context, submission Submission) (Exec
 	if submission.Request == nil || submission.Actor.Principal == "" || !submission.Actor.Origin.Valid() || submission.IdempotencyKey.IsZero() {
 		return ExecutionID{}, fmt.Errorf("execution.invalid-submission")
 	}
+	if submission.Subject != nil && !submission.Subject.Valid() {
+		return ExecutionID{}, fmt.Errorf("execution.invalid-subject")
+	}
 	descriptor, ok := service.registry.Descriptor(submission.Request.ActionID())
 	if !ok {
 		return ExecutionID{}, fmt.Errorf("execution.missing-descriptor:%s", submission.Request.ActionID())
@@ -170,14 +173,14 @@ func (service *Service) Submit(ctx context.Context, submission Submission) (Exec
 		return ExecutionID{}, err
 	}
 	now := time.Now().UTC()
-	requestHash := sha256.Sum256(encoded.JSON)
+	requestHash := submissionHash(encoded.JSON, submission.Subject)
 	message, err := EncodeMessage(l10n.M("execution.event.queued"))
 	if err != nil {
 		return ExecutionID{}, err
 	}
 	record := Record{
 		ExecutionID: executionID, AttemptID: attemptID, ActionID: submission.Request.ActionID(), Status: StatusQueued,
-		Root: root, Principal: submission.Actor.Principal, Origin: submission.Actor.Origin, Request: encoded, CreatedAt: now,
+		Root: root, Subject: cloneSubject(submission.Subject), Principal: submission.Actor.Principal, Origin: submission.Actor.Origin, Request: encoded, CreatedAt: now,
 	}
 	stored := storedExecution{
 		Record: record, RequestHash: requestHash, IdempotencyKey: submission.IdempotencyKey, ExecutorID: service.executorID,
@@ -201,6 +204,28 @@ func (service *Service) Submit(ctx context.Context, submission Submission) (Exec
 	service.queue = append(service.queue, executionID)
 	service.signalWorker()
 	return executionID, nil
+}
+
+func submissionHash(request []byte, subject *Subject) [sha256.Size]byte {
+	hash := sha256.New()
+	_, _ = hash.Write(request)
+	if subject != nil {
+		for _, value := range []string{subject.Kind, subject.Project, subject.Key, subject.Relation} {
+			_, _ = hash.Write([]byte{0})
+			_, _ = hash.Write([]byte(value))
+		}
+	}
+	var result [sha256.Size]byte
+	copy(result[:], hash.Sum(nil))
+	return result
+}
+
+func cloneSubject(subject *Subject) *Subject {
+	if subject == nil {
+		return nil
+	}
+	copy := *subject
+	return &copy
 }
 
 func (service *Service) Get(ctx context.Context, actor Actor, id ExecutionID) (Record, error) {

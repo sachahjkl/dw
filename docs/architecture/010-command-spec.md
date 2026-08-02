@@ -74,10 +74,10 @@ Azure DevOps is the current work provider. GitHub and Jira are expected future w
 ## Local Web Service
 
 ```text
-dw web start [--root <path>] [--port <port>] [--no-open]
+dw web start [--root <path>] [--port <port>] [--open [--no-expiry]] [--unauthenticated | --token <token>]
 dw web stop
 dw web status [--json]
-dw web open
+dw web open [--no-expiry | --token <token>]
 dw web register [--root <path>] [--port <port>]
 dw web unregister
 ```
@@ -85,6 +85,12 @@ dw web unregister
 The hidden `dw web serve` leaf runs the local server in the foreground. The server listens only on `127.0.0.1`. The default port is `7331`; port `0` requests an ephemeral port.
 
 `start` and `register` persist the resolved workspace root and port outside the workspace. Registration uses a systemd user service on Linux and Task Scheduler on Windows. See [Execution and Local Web Architecture](011-execution-and-web.md).
+
+`start` does not open a browser by default. `--open` requests browser launch after startup.
+
+Ticket authentication is the default. `--no-expiry` creates a non-expiring, single-use ticket with `--open` or `web open`.
+
+`--unauthenticated` removes the ticket requirement. `--token <token>` selects a reusable token and stores only its SHA-256 digest.
 
 ## Other Commands
 

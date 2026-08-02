@@ -6,10 +6,12 @@ import (
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/execution"
+	"github.com/sachahjkl/dw/internal/l10n"
 )
 
-func decodePromptView(record execution.Record, csrf string) *promptView {
+func decodePromptView(record execution.Record, csrf string, localizer l10n.Localizer) *promptView {
 	encoded := record.PendingPrompt
 	if encoded == nil {
 		return nil
@@ -22,37 +24,37 @@ func decodePromptView(record execution.Record, csrf string) *promptView {
 		if json.Unmarshal(encoded.JSON, &prompt) != nil {
 			return nil
 		}
-		setPromptMeta(view, prompt.Meta, prompt.Required)
+		setPromptMeta(view, prompt.Meta, prompt.Required, localizer)
 		view.Submit = responseExpression(endpoint, csrf, fmt.Sprintf("{schema:1,value:String($%s)}", view.Signal))
 	case action.PromptSecret:
 		var prompt action.SecretPrompt
 		if json.Unmarshal(encoded.JSON, &prompt) != nil {
 			return nil
 		}
-		setPromptMeta(view, prompt.Meta, prompt.Required)
+		setPromptMeta(view, prompt.Meta, prompt.Required, localizer)
 		view.Submit = fmt.Sprintf("@post(%q, {contentType:'form', headers:{'X-DW-CSRF':%q}}).finally(() => evt.target.reset())", endpoint, csrf)
 	case action.PromptConfirm:
 		var prompt action.ConfirmPrompt
 		if json.Unmarshal(encoded.JSON, &prompt) != nil {
 			return nil
 		}
-		setPromptMeta(view, prompt.Meta, false)
+		setPromptMeta(view, prompt.Meta, false, localizer)
 		view.Submit = responseExpression(endpoint, csrf, fmt.Sprintf("{schema:1,accepted:Boolean($%s)}", view.Signal))
 	case action.PromptSelectOne:
 		var prompt action.SelectOnePrompt
 		if json.Unmarshal(encoded.JSON, &prompt) != nil {
 			return nil
 		}
-		setPromptMeta(view, prompt.Meta, prompt.Required)
-		view.Choices = promptChoices(prompt.Choices)
+		setPromptMeta(view, prompt.Meta, prompt.Required, localizer)
+		view.Choices = promptChoices(prompt.Choices, localizer)
 		view.Submit = responseExpression(endpoint, csrf, fmt.Sprintf("{schema:1,value:String($%s)}", view.Signal))
 	case action.PromptSelectMany:
 		var prompt action.SelectManyPrompt
 		if json.Unmarshal(encoded.JSON, &prompt) != nil {
 			return nil
 		}
-		setPromptMeta(view, prompt.Meta, prompt.Required)
-		view.Choices = promptChoicesWithSignals(prompt.Choices, view.Signal)
+		setPromptMeta(view, prompt.Meta, prompt.Required, localizer)
+		view.Choices = promptChoicesWithSignals(prompt.Choices, view.Signal, localizer)
 		values := make([]string, len(view.Choices))
 		for index, choice := range view.Choices {
 			values[index] = fmt.Sprintf("($%s ? %q : null)", choice.Signal, choice.Value)
@@ -64,24 +66,26 @@ func decodePromptView(record execution.Record, csrf string) *promptView {
 	return view
 }
 
-func setPromptMeta(view *promptView, meta action.PromptMeta, required bool) {
-	view.Label = string(meta.Label.ID)
+func setPromptMeta(view *promptView, meta action.PromptMeta, required bool, localizer l10n.Localizer) {
+	localizer = console.WithConsoleMessages(localizer)
+	view.Label = localizer.Render(meta.Label)
 	view.Required = required
 	if meta.Help != nil {
-		view.Help = string(meta.Help.ID)
+		view.Help = localizer.Render(*meta.Help)
 	}
 }
 
-func promptChoices(choices []action.Choice) []choiceView {
+func promptChoices(choices []action.Choice, localizer l10n.Localizer) []choiceView {
 	values := make([]choiceView, 0, len(choices))
+	localizer = console.WithConsoleMessages(localizer)
 	for _, choice := range choices {
-		values = append(values, choiceView{Value: string(choice.Value), Label: string(choice.Label.ID)})
+		values = append(values, choiceView{Value: string(choice.Value), Label: localizer.Render(choice.Label)})
 	}
 	return values
 }
 
-func promptChoicesWithSignals(choices []action.Choice, prefix string) []choiceView {
-	values := promptChoices(choices)
+func promptChoicesWithSignals(choices []action.Choice, prefix string, localizer l10n.Localizer) []choiceView {
+	values := promptChoices(choices, localizer)
 	for index := range values {
 		values[index].Signal = fmt.Sprintf("%s_%d", prefix, index)
 	}

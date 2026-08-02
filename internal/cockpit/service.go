@@ -17,16 +17,20 @@ const (
 )
 
 type Operation struct {
-	ID             action.ID
+	Relation       Relation
+	Subject        ResourceRef
 	Label          string
 	Description    string
 	Request        action.Request
+	Inputs         []OperationInput
+	Build          RequestBuilder
 	Risk           Risk
 	Active         bool
 	DisabledReason string
 }
 
 type Snapshot struct {
+	Ref              ResourceRef
 	Root             string
 	NeedsInit        bool
 	ProjectCount     int
@@ -53,6 +57,7 @@ type Snapshot struct {
 }
 
 type Workspace struct {
+	Ref          ResourceRef
 	Path         string
 	Project      string
 	WorkItems    []string
@@ -64,14 +69,17 @@ type Workspace struct {
 }
 
 type WorkProject struct {
-	Key      string
-	Label    string
-	Provider string
-	Error    string
-	Items    []WorkItem
+	Ref        ResourceRef
+	Operations []Operation
+	Key        string
+	Label      string
+	Provider   string
+	Error      string
+	Items      []WorkItem
 }
 
 type WorkItem struct {
+	Ref        ResourceRef
 	ID         string
 	Type       string
 	State      string
@@ -81,6 +89,7 @@ type WorkItem struct {
 }
 
 type PullRequest struct {
+	Ref          ResourceRef
 	ID           string
 	Project      string
 	Provider     string
@@ -97,6 +106,7 @@ type PullRequest struct {
 }
 
 type DataSource struct {
+	Ref        ResourceRef
 	Project    string
 	Key        string
 	Provider   string
@@ -104,6 +114,7 @@ type DataSource struct {
 }
 
 type CockpitItem struct {
+	Ref      ResourceRef
 	Section  string
 	Title    string
 	Subtitle string
@@ -148,4 +159,112 @@ func (service *Service) PullRequests(ctx context.Context, snapshot Snapshot) ([]
 		return nil, fmt.Errorf("cockpit.service-required")
 	}
 	return service.pullRequests(ctx, snapshot)
+}
+
+func (service *Service) Resolve(ctx context.Context, ref ResourceRef, relation Relation, values []InputValue) (Operation, action.Request, error) {
+	if err := ref.Validate(); err != nil {
+		return Operation{}, nil, err
+	}
+	if !relation.Valid() {
+		return Operation{}, nil, fmt.Errorf("cockpit.operation-relation-invalid")
+	}
+	snapshot, err := service.Snapshot(ctx, ref.Root)
+	if err != nil {
+		return Operation{}, nil, err
+	}
+	operations, found, err := service.resourceOperations(ctx, snapshot, ref)
+	if err != nil {
+		return Operation{}, nil, err
+	}
+	if !found {
+		return Operation{}, nil, fmt.Errorf("cockpit.resource-not-found")
+	}
+	var match *Operation
+	for index := range operations {
+		if operations[index].Relation != relation {
+			continue
+		}
+		if match != nil {
+			return Operation{}, nil, fmt.Errorf("cockpit.operation-ambiguous")
+		}
+		match = &operations[index]
+	}
+	if match == nil {
+		return Operation{}, nil, fmt.Errorf("cockpit.operation-not-found")
+	}
+	if !match.Subject.Equal(ref) {
+		return Operation{}, nil, fmt.Errorf("cockpit.operation-subject-mismatch")
+	}
+	if !match.Active {
+		if match.DisabledReason != "" {
+			return Operation{}, nil, fmt.Errorf("cockpit.operation-disabled: %s", match.DisabledReason)
+		}
+		return Operation{}, nil, fmt.Errorf("cockpit.operation-disabled")
+	}
+	request, err := match.BuildRequest(values)
+	if err != nil {
+		return Operation{}, nil, err
+	}
+	return *match, request, nil
+}
+
+func (service *Service) resourceOperations(ctx context.Context, snapshot Snapshot, ref ResourceRef) ([]Operation, bool, error) {
+	switch ref.Kind {
+	case ResourceRoot:
+		if !snapshot.Ref.Equal(ref) {
+			return nil, false, nil
+		}
+		return snapshot.Operations, true, nil
+	case ResourceWorkspace:
+		for index := range snapshot.Workspaces {
+			if snapshot.Workspaces[index].Ref.Equal(ref) {
+				return snapshot.Workspaces[index].Operations, true, nil
+			}
+		}
+		return nil, false, nil
+	case ResourceDataSource:
+		for index := range snapshot.DataSources {
+			if snapshot.DataSources[index].Ref.Equal(ref) {
+				return snapshot.DataSources[index].Operations, true, nil
+			}
+		}
+		return nil, false, nil
+	case ResourceProject:
+		projects, err := service.Work(ctx, snapshot)
+		if err != nil {
+			return nil, false, err
+		}
+		for index := range projects {
+			if projects[index].Ref.Equal(ref) {
+				return projects[index].Operations, true, nil
+			}
+		}
+		return nil, false, nil
+	case ResourceWorkItem:
+		projects, err := service.Work(ctx, snapshot)
+		if err != nil {
+			return nil, false, err
+		}
+		for _, project := range projects {
+			for index := range project.Items {
+				if project.Items[index].Ref.Equal(ref) {
+					return project.Items[index].Operations, true, nil
+				}
+			}
+		}
+		return nil, false, nil
+	case ResourcePullRequest:
+		pullRequests, err := service.PullRequests(ctx, snapshot)
+		if err != nil {
+			return nil, false, err
+		}
+		for index := range pullRequests {
+			if pullRequests[index].Ref.Equal(ref) {
+				return pullRequests[index].Operations, true, nil
+			}
+		}
+		return nil, false, nil
+	default:
+		return nil, false, fmt.Errorf("cockpit.resource-kind-invalid")
+	}
 }

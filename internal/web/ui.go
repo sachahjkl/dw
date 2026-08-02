@@ -3,18 +3,20 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/a-h/templ"
-	"github.com/sachahjkl/dw/internal/cli/spec"
 	"github.com/sachahjkl/dw/internal/cockpit"
+	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/execution"
+	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/runtimeconfig"
 	"github.com/sachahjkl/dw/internal/workapp"
 	"github.com/starfederation/datastar-go/datastar"
@@ -23,62 +25,97 @@ import (
 //go:embed assets/*
 var assets embed.FS
 
-type pageView struct {
-	CSRF         string
-	Snapshot     cockpit.Snapshot
-	Work         []cockpit.WorkProject
-	PullRequests []cockpit.PullRequest
-	Commands     []commandView
-	Executions   []executionView
-	Error        string
+var assetVersion = func() string {
+	hash := sha256.New()
+	for _, name := range []string{"app.css", "app.js", "datastar.js"} {
+		content, err := assets.ReadFile("assets/" + name)
+		if err != nil {
+			panic(err)
+		}
+		_, _ = hash.Write(content)
+	}
+	return hex.EncodeToString(hash.Sum(nil)[:8])
+}()
+
+func assetURL(name string) string {
+	return "/assets/" + name + "?v=" + assetVersion
 }
 
-type commandView struct {
-	Key            string
-	Name           string
-	Summary        string
-	CLI            string
+type pageView struct {
+	CSRF              string
+	Snapshot          cockpit.Snapshot
+	Work              []cockpit.WorkProject
+	PullRequests      []cockpit.PullRequest
+	Executions        []executionView
+	Toasts            []toastView
+	ActiveActionCount int
+	Error             string
+}
+
+type operationView struct {
+	Label          string
+	Relation       cockpit.Relation
+	Description    string
+	Risk           cockpit.Risk
 	Disabled       bool
 	DisabledReason string
 	Submit         string
-	Fields         []fieldView
+	Inputs         []operationInputView
 }
 
-type fieldView struct {
-	Name       string
-	Label      string
-	Help       string
-	Signal     string
-	Kind       spec.ValueKind
-	InputType  string
-	Default    string
-	Allowed    []string
-	Required   bool
-	Repeatable bool
-	Positional bool
-	Conflicts  []string
-	Requires   []string
-	Values     string
+type operationInputView struct {
+	ID       string
+	Name     string
+	Label    string
+	Signal   string
+	Kind     cockpit.InputKind
+	Required bool
+	Options  []cockpit.InputOption
 }
 
 type executionView struct {
-	ID        string
-	AttemptID string
-	ActionID  string
-	Status    execution.Status
-	CreatedAt string
-	Failure   string
-	Prompt    *promptView
-	Cancel    string
-	Events    []eventView
+	ID          string
+	AttemptID   string
+	Relation    string
+	Title       string
+	Status      execution.Status
+	StatusLabel string
+	CreatedAt   string
+	Summary     string
+	Failure     string
+	Prompt      *promptView
+	Cancel      string
+	Events      []eventView
+	Subject     *execution.Subject
+	Active      bool
 }
 
 type eventView struct {
 	Sequence         execution.EventSequence
 	Kind             execution.EventKind
+	KindLabel        string
+	At               string
 	Message          string
 	AuthorizationURL string
 	CallbackURI      string
+	VerificationURI  string
+	UserCode         string
+}
+
+type toastView struct {
+	Title  string
+	Detail string
+	Target string
+}
+
+type workRecoveryView struct {
+	Title  string
+	Detail string
+}
+
+type blockerView struct {
+	Title  string
+	Detail string
 }
 
 type promptView struct {
@@ -110,7 +147,7 @@ func (server *Server) handleAsset(writer http.ResponseWriter, request *http.Requ
 	name := request.PathValue("name")
 	contentType := ""
 	switch name {
-	case "datastar.js":
+	case "datastar.js", "app.js":
 		contentType = "text/javascript; charset=utf-8"
 	case "app.css":
 		contentType = "text/css; charset=utf-8"
@@ -126,7 +163,11 @@ func (server *Server) handleAsset(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	writer.Header().Set("Content-Type", contentType)
-	writer.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if request.URL.Query().Get("v") == assetVersion {
+		writer.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		writer.Header().Set("Cache-Control", "no-cache")
+	}
 	_, _ = writer.Write(content)
 }
 
@@ -142,14 +183,30 @@ func (server *Server) handlePageEvents(writer http.ResponseWriter, request *http
 	sse := datastar.NewSSE(writer, request)
 	ticker := time.NewTicker(runtimeconfig.Milliseconds(server.deps.Settings.PagePollMilliseconds))
 	defer ticker.Stop()
+	var previousHTML, previousActions string
 	for {
 		view := server.loadPage(request.Context(), csrf)
 		var buffer bytes.Buffer
 		if err := liveSections(view).Render(request.Context(), &buffer); err != nil {
 			return
 		}
-		if err := sse.PatchElements(buffer.String(), datastar.WithSelector("#live-sections"), datastar.WithModeOuter()); err != nil {
+		html := buffer.String()
+		var actionsBuffer bytes.Buffer
+		if err := actionsShortcut(view.ActiveActionCount).Render(request.Context(), &actionsBuffer); err != nil {
 			return
+		}
+		actionsHTML := actionsBuffer.String()
+		if actionsHTML != previousActions {
+			if err := sse.PatchElements(actionsHTML, datastar.WithSelector("#tab-actions"), datastar.WithModeOuter()); err != nil {
+				return
+			}
+			previousActions = actionsHTML
+		}
+		if html != previousHTML {
+			if err := sse.PatchElements(html, datastar.WithSelector("#live-sections"), datastar.WithModeOuter()); err != nil {
+				return
+			}
+			previousHTML = html
 		}
 		select {
 		case <-ticker.C:
@@ -168,126 +225,131 @@ func (server *Server) sessionCSRF(request *http.Request) (string, bool) {
 }
 
 func (server *Server) loadPage(ctx context.Context, csrf string) pageView {
-	view := pageView{CSRF: csrf, Commands: server.commandCatalog(csrf)}
+	view := pageView{CSRF: csrf}
 	snapshot, err := server.deps.Cockpit.Snapshot(ctx, server.deps.Config.Root)
+	view.Snapshot = snapshot
 	if err != nil {
-		view.Error = err.Error()
+		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
 		return view
 	}
-	view.Snapshot = snapshot
 	view.Work, err = server.deps.Cockpit.Work(ctx, snapshot)
 	if err != nil {
-		view.Error = err.Error()
+		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
 	}
 	view.PullRequests, err = server.deps.Cockpit.PullRequests(ctx, snapshot)
 	if err != nil && view.Error == "" {
-		view.Error = err.Error()
+		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
 	}
-	records, listErr := server.deps.Executor.List(ctx, server.deps.Actor, execution.ListFilter{Root: server.deps.Config.Root, Limit: server.deps.Settings.RecentExecutionLimit})
-	if listErr != nil && view.Error == "" {
-		view.Error = listErr.Error()
+	view.Executions, view.ActiveActionCount, err = server.loadExecutionViews(ctx, csrf)
+	if err != nil && view.Error == "" {
+		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
 	}
-	view.Executions = make([]executionView, 0, len(records))
-	for _, record := range records {
-		item := makeExecutionView(record, csrf)
-		item.Events = server.executionEvents(ctx, record.ExecutionID)
-		view.Executions = append(view.Executions, item)
-	}
+	view.Toasts = actionToasts(view.Executions)
 	return view
 }
 
-func (server *Server) commandCatalog(csrf string) []commandView {
-	commands := make([]commandView, 0, len(server.deps.Routes.Keys()))
-	var visit func(*spec.Command, []string)
-	visit = func(command *spec.Command, path []string) {
-		if command == nil || command.Hidden {
-			return
+func (server *Server) loadExecutionViews(ctx context.Context, csrf string) ([]executionView, int, error) {
+	records, err := server.deps.Executor.List(ctx, server.deps.Actor, execution.ListFilter{Root: server.deps.Config.Root, Limit: server.deps.Settings.RecentExecutionLimit})
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]executionView, 0, len(records))
+	activeCount := 0
+	for _, record := range records {
+		item := makeExecutionView(record, csrf, server.deps.Localizer)
+		item.Events = server.executionEvents(ctx, record.ExecutionID)
+		if len(item.Events) != 0 {
+			item.Summary = item.Events[len(item.Events)-1].Message
 		}
-		path = append(path, command.Name)
-		if len(command.Children) != 0 {
-			for _, child := range command.Children {
-				visit(child, path)
+		if item.Active {
+			activeCount++
+		}
+		items = append(items, item)
+	}
+	sort.SliceStable(items, func(left, right int) bool {
+		return items[left].Active && !items[right].Active
+	})
+	return items, activeCount, nil
+}
+
+func operationViews(csrf string, operations []cockpit.Operation) []operationView {
+	items := make([]operationView, 0, len(operations))
+	for _, operation := range operations {
+		if operation.Risk == cockpit.RiskExternal {
+			continue
+		}
+		item := operationView{
+			Label: operation.Label, Relation: operation.Relation, Description: operation.Description, Risk: operation.Risk,
+			Disabled: !operation.Active, DisabledReason: operation.DisabledReason,
+		}
+		if err := operation.Validate(); err != nil {
+			item.Disabled = true
+			if item.DisabledReason == "" {
+				item.DisabledReason = "This operation is unavailable."
 			}
-			return
 		}
-		if strings.HasPrefix(command.Key, "completion.") || command.Key == "tui" || strings.HasPrefix(command.Key, "web.") {
-			return
+		item.Inputs = make([]operationInputView, 0, len(operation.Inputs))
+		for _, input := range operation.Inputs {
+			hash := sha256.Sum256([]byte(string(operation.Subject.Kind) + "\x00" + operation.Subject.Key + "\x00" + string(operation.Relation) + "\x00" + input.Name))
+			signal := "dw_operation_" + hex.EncodeToString(hash[:6])
+			item.Inputs = append(item.Inputs, operationInputView{
+				ID: signal, Name: input.Name, Label: input.Label, Signal: signal,
+				Kind: input.Kind, Required: input.Required, Options: input.Options,
+			})
 		}
-		route, found := server.deps.Routes.Route(command.Key)
-		if !found || route.Build == nil {
-			return
-		}
-		view := commandView{Key: command.Key, Name: strings.Join(path[1:], " "), Summary: command.Text(command.Summary), CLI: strings.Join(path, " ")}
-		if command.Key == "agent.open" || command.Key == "workspace.open" || command.Key == "workspace.start" {
-			view.Disabled = true
-			view.DisabledReason = "This action requires an external terminal."
-		}
-		arguments := commandArguments(command)
-		view.Fields = make([]fieldView, 0, len(arguments))
-		for _, argument := range arguments {
-			if argument.Hidden {
-				continue
-			}
-			view.Fields = append(view.Fields, makeFieldView(command, argument))
-		}
-		view.Submit = submitExpression(csrf, command.Key, view.Fields)
-		commands = append(commands, view)
+		item.Submit = operationSubmitExpression(csrf, operation, item.Inputs)
+		items = append(items, item)
 	}
-	for _, child := range server.deps.Grammar.Children {
-		visit(child, []string{server.deps.Grammar.Name})
-	}
-	sort.SliceStable(commands, func(left, right int) bool { return commands[left].Key < commands[right].Key })
-	return commands
+	return items
 }
 
-func makeFieldView(command *spec.Command, argument spec.Argument) fieldView {
-	inputType := "text"
-	if argument.Kind == spec.Bool {
-		inputType = "checkbox"
-	} else if argument.Kind == spec.Int || argument.Kind == spec.Count {
-		inputType = "number"
+func operationSubmitExpression(csrf string, operation cockpit.Operation, inputs []operationInputView) string {
+	values := make([]string, 0, len(inputs))
+	for _, input := range inputs {
+		value := fmt.Sprintf("String($%s ?? '')", input.Signal)
+		if input.Kind == cockpit.InputBoolean {
+			value = fmt.Sprintf("$%s ? 'true' : 'false'", input.Signal)
+		}
+		values = append(values, fmt.Sprintf("{name:%q,value:%s}", input.Name, value))
 	}
-	defaultValue := ""
-	if argument.Default != nil {
-		if argument.Kind == spec.Int || argument.Kind == spec.Count {
-			defaultValue = strconv.FormatInt(argument.Default.Int, 10)
-		} else {
-			defaultValue = argument.Default.String
+	resource := operation.Subject
+	return fmt.Sprintf(
+		"@post('/operations', {contentType:'json', headers:{'X-DW-CSRF':%q}, payload:{schema:1,idempotencyKey:crypto.randomUUID().replaceAll('-',''),resource:{kind:%q,root:%q,project:%q,key:%q},relation:%q,inputs:[%s]}})",
+		csrf, resource.Kind, resource.Root, resource.Project, resource.Key, operation.Relation, strings.Join(values, ","),
+	)
+}
+
+func executionForResource(executions []executionView, reference cockpit.ResourceRef) *executionView {
+	for index := range executions {
+		subject := executions[index].Subject
+		if subject == nil {
+			continue
+		}
+		if subject.Kind == string(reference.Kind) && subject.Project == reference.Project && subject.Key == reference.Key {
+			return &executions[index]
 		}
 	}
-	signal := "dw_" + strings.NewReplacer(".", "_", "-", "_", " ", "_").Replace(command.Key+"_"+argument.Name)
-	values := "($" + signal + " === '' || $" + signal + " == null) ? [] : [String($" + signal + ")]"
-	if argument.Kind == spec.Bool {
-		values = "[$" + signal + " ? 'true' : 'false']"
-	} else if argument.Kind == spec.Int || argument.Kind == spec.Count {
-		values = fmt.Sprintf("(document.getElementById(%q).value === '') ? [] : [String($%s)]", signal, signal)
-	} else if argument.Kind == spec.Strings || argument.Repeatable {
-		values = "$" + signal + ".split('\\n').map(value => value.trim()).filter(value => value !== '')"
-	}
-	return fieldView{
-		Name: argument.Name, Label: argument.Token(), Help: command.Text(argument.Help), Signal: signal,
-		Kind: argument.Kind, InputType: inputType, Default: defaultValue, Allowed: append([]string(nil), argument.Allowed...),
-		Required: argument.Required, Repeatable: argument.Repeatable || argument.Kind == spec.Strings,
-		Positional: argument.Positional(), Conflicts: append([]string(nil), argument.Conflicts...),
-		Requires: append([]string(nil), argument.Requires...), Values: values,
-	}
+	return nil
 }
 
-func submitExpression(csrf, commandKey string, fields []fieldView) string {
-	items := make([]string, 0, len(fields))
-	for _, field := range fields {
-		items = append(items, fmt.Sprintf("{name:%q,values:%s}", field.Name, field.Values))
+func makeExecutionView(record execution.Record, csrf string, localizer l10n.Localizer) executionView {
+	title := humanLabel(string(record.ActionID))
+	relation := ""
+	if record.Subject != nil {
+		relation = record.Subject.Relation
+		title = humanLabel(relation)
 	}
-	return fmt.Sprintf("@post('/executions', {contentType:'json', headers:{'X-DW-CSRF':%q}, payload:{schema:1,idempotencyKey:crypto.randomUUID().replaceAll('-',''),commandKey:%q,fields:[%s]}})", csrf, commandKey, strings.Join(items, ","))
-}
-
-func makeExecutionView(record execution.Record, csrf string) executionView {
-	view := executionView{ID: record.ExecutionID.String(), AttemptID: record.AttemptID.String(), ActionID: string(record.ActionID), Status: record.Status, CreatedAt: record.CreatedAt.Local().Format(time.DateTime), Cancel: fmt.Sprintf("@post('/executions/%s/cancel', {headers:{'X-DW-CSRF':%q}})", record.ExecutionID.String(), csrf)}
+	view := executionView{
+		ID: record.ExecutionID.String(), AttemptID: record.AttemptID.String(),
+		Relation: relation, Title: title, Status: record.Status, StatusLabel: statusLabel(record.Status),
+		CreatedAt: record.CreatedAt.Local().Format(time.RFC3339), Subject: record.Subject, Active: activeStatus(record.Status),
+		Cancel: fmt.Sprintf("@post('/executions/%s/cancel', {headers:{'X-DW-CSRF':%q}})", record.ExecutionID.String(), csrf),
+	}
 	if record.Failure != nil {
-		view.Failure = string(record.Failure.Code) + ": " + string(record.Failure.Message.ID)
+		view.Failure = console.LocalizedErrorText(localizer, execution.NewFailureError(*record.Failure))
 	}
 	if record.PendingPrompt != nil {
-		view.Prompt = decodePromptView(record, csrf)
+		view.Prompt = decodePromptView(record, csrf, localizer)
 	}
 	return view
 }
@@ -320,10 +382,15 @@ func (server *Server) executionEvents(ctx context.Context, id execution.Executio
 				}
 				continue
 			}
-			view := eventView{Sequence: event.Sequence, Kind: event.Kind, Message: string(event.Message.ID)}
+			view := eventView{
+				Sequence: event.Sequence, Kind: event.Kind, KindLabel: eventKindLabel(event.Kind),
+				At: event.At.Local().Format(time.RFC3339), Message: localizedExecutionMessage(server.deps.Localizer, event.Message),
+			}
 			if workEvent, ok := event.TypedData.(workapp.Event); ok {
 				view.AuthorizationURL = workEvent.AuthorizationURL
 				view.CallbackURI = workEvent.CallbackURI
+				view.VerificationURI = workEvent.VerificationURI
+				view.UserCode = workEvent.UserCode
 			}
 			events = append(events, view)
 		case streamErr, open := <-errorChannel:
@@ -343,4 +410,167 @@ func (server *Server) executionEvents(ctx context.Context, id execution.Executio
 			return events
 		}
 	}
+}
+
+func localizedExecutionMessage(localizer l10n.Localizer, encoded execution.MessageV1) string {
+	message, err := execution.DecodeMessage(encoded)
+	if err != nil || localizer == nil {
+		return humanLabel(string(encoded.ID))
+	}
+	return console.WithConsoleMessages(localizer).Render(message)
+}
+
+func statusLabel(status execution.Status) string {
+	switch status {
+	case execution.StatusQueued:
+		return "Queued"
+	case execution.StatusRunning:
+		return "Running"
+	case execution.StatusWaitingInput:
+		return "Needs input"
+	case execution.StatusCanceling:
+		return "Canceling"
+	case execution.StatusCanceled:
+		return "Canceled"
+	case execution.StatusSucceeded:
+		return "Completed"
+	case execution.StatusFailed:
+		return "Failed"
+	case execution.StatusInterrupted:
+		return "Interrupted"
+	default:
+		return "Unknown"
+	}
+}
+
+func eventKindLabel(kind execution.EventKind) string {
+	switch kind {
+	case execution.EventQueued:
+		return "Queued"
+	case execution.EventStarted:
+		return "Started"
+	case execution.EventProgress:
+		return "Progress"
+	case execution.EventWarning:
+		return "Warning"
+	case execution.EventLog:
+		return "Log"
+	case execution.EventInputRequired:
+		return "Input required"
+	case execution.EventCanceling:
+		return "Canceling"
+	case execution.EventCanceled:
+		return "Canceled"
+	case execution.EventSucceeded:
+		return "Completed"
+	case execution.EventFailed:
+		return "Failed"
+	case execution.EventInterrupted:
+		return "Interrupted"
+	default:
+		return "Update"
+	}
+}
+
+func activeStatus(status execution.Status) bool {
+	return status == execution.StatusQueued || status == execution.StatusRunning || status == execution.StatusWaitingInput || status == execution.StatusCanceling
+}
+
+func actionToasts(executions []executionView) []toastView {
+	toasts := make([]toastView, 0)
+	for _, item := range executions {
+		switch {
+		case item.Prompt != nil:
+			toasts = append(toasts, toastView{Title: "Input required", Detail: item.Title, Target: "actions"})
+		case item.Active:
+			toasts = append(toasts, toastView{Title: "Action running", Detail: item.Title, Target: "actions"})
+		}
+	}
+	return toasts
+}
+
+func activeExecutions(executions []executionView) []executionView {
+	items := make([]executionView, 0)
+	for _, item := range executions {
+		if item.Active {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func recentOutcomes(executions []executionView) []executionView {
+	items := make([]executionView, 0, 5)
+	for _, item := range executions {
+		if item.Active {
+			continue
+		}
+		items = append(items, item)
+		if len(items) == 5 {
+			break
+		}
+	}
+	return items
+}
+
+func pageBlockers(view pageView) []blockerView {
+	items := make([]blockerView, 0)
+	if view.Snapshot.NeedsInit {
+		items = append(items, blockerView{Title: "Initialization required", Detail: "Initialize this root before you start work."})
+	}
+	if !view.Snapshot.DoctorOK {
+		items = append(items, blockerView{Title: "Doctor requires attention", Detail: "Run Doctor and inspect its result."})
+	}
+	for _, project := range view.Work {
+		if project.Error == "" {
+			continue
+		}
+		if recovery := workRecovery(project); recovery != nil {
+			items = append(items, blockerView{Title: recovery.Title, Detail: recovery.Detail})
+		} else {
+			items = append(items, blockerView{Title: project.Label + " unavailable", Detail: project.Error})
+		}
+	}
+	return items
+}
+
+func workRecovery(project cockpit.WorkProject) *workRecoveryView {
+	switch {
+	case strings.Contains(project.Error, "secret.store-unavailable"):
+		return &workRecoveryView{
+			Title:  "OS credential store unavailable",
+			Detail: "Start a Secret Service provider, such as GNOME Keyring or KeePassXC, then retry.",
+		}
+	case strings.Contains(project.Error, "ado.error:missing-auth"),
+		strings.Contains(project.Error, "github.token-required"),
+		strings.Contains(project.Error, "atlassian.credentials-required"):
+		return &workRecoveryView{
+			Title:  "Connect " + providerLabel(project.Provider),
+			Detail: "Use Sign in above to connect this provider, then work items will refresh.",
+		}
+	default:
+		return nil
+	}
+}
+
+func providerLabel(value string) string {
+	switch strings.ToLower(value) {
+	case "azure-devops":
+		return "Azure DevOps"
+	case "sqlserver":
+		return "SQL Server"
+	default:
+		return humanLabel(value)
+	}
+}
+
+func humanLabel(value string) string {
+	words := strings.Fields(strings.NewReplacer(".", " ", "-", " ", "_", " ").Replace(value))
+	for index, word := range words {
+		if word == "" {
+			continue
+		}
+		words[index] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	return strings.Join(words, " ")
 }

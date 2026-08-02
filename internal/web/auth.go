@@ -28,19 +28,27 @@ type session struct {
 }
 
 type authState struct {
-	mu       sync.Mutex
-	secret   webservice.ServiceSecret
-	settings runtimeconfig.Web
-	tickets  []ticket
-	sessions map[string]session
-	now      func() time.Time
+	mu                sync.Mutex
+	secret            webservice.ServiceSecret
+	settings          runtimeconfig.Web
+	mode              webservice.AuthMode
+	accessTokenDigest string
+	tickets           []ticket
+	sessions          map[string]session
+	now               func() time.Time
 }
 
-func newAuthState(secret webservice.ServiceSecret, settings runtimeconfig.Web) *authState {
+func newAuthState(secret webservice.ServiceSecret, settings runtimeconfig.Web, mode webservice.AuthMode, accessTokenDigest string) *authState {
 	if settings.TicketTTLSeconds == 0 {
 		settings = runtimeconfig.Default().Web
 	}
-	return &authState{secret: secret, settings: settings, sessions: make(map[string]session), now: time.Now}
+	if mode == "" {
+		mode = webservice.AuthTicket
+	}
+	return &authState{
+		secret: secret, settings: settings, mode: mode, accessTokenDigest: accessTokenDigest,
+		sessions: make(map[string]session), now: time.Now,
+	}
 }
 
 func randomToken() ([32]byte, error) {
@@ -61,7 +69,7 @@ func decodeToken(text string) ([32]byte, error) {
 	return token, nil
 }
 
-func (state *authState) createTicket() (ticket, error) {
+func (state *authState) createTicket(noExpiry bool) (ticket, error) {
 	value, err := randomToken()
 	if err != nil {
 		return ticket{}, err
@@ -70,7 +78,10 @@ func (state *authState) createTicket() (ticket, error) {
 	defer state.mu.Unlock()
 	now := state.now()
 	state.pruneLocked(now)
-	created := ticket{value: value, expiresAt: now.Add(runtimeconfig.Seconds(state.settings.TicketTTLSeconds))}
+	created := ticket{value: value}
+	if !noExpiry {
+		created.expiresAt = now.Add(runtimeconfig.Seconds(state.settings.TicketTTLSeconds))
+	}
 	state.tickets = append(state.tickets, created)
 	return created, nil
 }
@@ -89,19 +100,35 @@ func (state *authState) consumeTicket(encoded string) (string, string, bool) {
 			continue
 		}
 		state.tickets = append(state.tickets[:index], state.tickets[index+1:]...)
-		sessionToken, tokenErr := randomToken()
-		if tokenErr != nil {
-			return "", "", false
-		}
-		csrf, csrfErr := randomToken()
-		if csrfErr != nil {
-			return "", "", false
-		}
-		key := encodeToken(sessionToken)
-		state.sessions[key] = session{csrf: csrf, expiresAt: now.Add(runtimeconfig.Seconds(state.settings.SessionTTLSeconds))}
-		return key, encodeToken(csrf), true
+		return state.createSessionLocked(now)
 	}
 	return "", "", false
+}
+
+func (state *authState) createSession() (string, string, bool) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	now := state.now()
+	state.pruneLocked(now)
+	return state.createSessionLocked(now)
+}
+
+func (state *authState) createSessionLocked(now time.Time) (string, string, bool) {
+	sessionToken, err := randomToken()
+	if err != nil {
+		return "", "", false
+	}
+	csrf, err := randomToken()
+	if err != nil {
+		return "", "", false
+	}
+	key := encodeToken(sessionToken)
+	state.sessions[key] = session{csrf: csrf, expiresAt: now.Add(runtimeconfig.Seconds(state.settings.SessionTTLSeconds))}
+	return key, encodeToken(csrf), true
+}
+
+func (state *authState) authenticateAccessToken(token string) bool {
+	return state.mode == webservice.AuthToken && webservice.AccessTokenMatches(state.accessTokenDigest, token)
 }
 
 func (state *authState) authenticate(request *http.Request) (session, bool) {
@@ -149,7 +176,7 @@ func (state *authState) authorizeAdmin(request *http.Request) bool {
 func (state *authState) pruneLocked(now time.Time) {
 	kept := state.tickets[:0]
 	for _, value := range state.tickets {
-		if now.Before(value.expiresAt) {
+		if value.expiresAt.IsZero() || now.Before(value.expiresAt) {
 			kept = append(kept, value)
 		}
 	}

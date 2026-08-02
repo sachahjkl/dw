@@ -9,12 +9,11 @@ import (
 	"time"
 
 	"github.com/sachahjkl/dw/internal/action"
-	"github.com/sachahjkl/dw/internal/cli/parse"
-	"github.com/sachahjkl/dw/internal/cli/spec"
-	"github.com/sachahjkl/dw/internal/config"
+	"github.com/sachahjkl/dw/internal/cockpit"
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/runtimeconfig"
+	"github.com/sachahjkl/dw/internal/workapp"
 	"github.com/starfederation/datastar-go/datastar"
 )
 
@@ -22,7 +21,7 @@ func (server *Server) handleSubmit(writer http.ResponseWriter, request *http.Req
 	if !server.requireMutation(writer, request) {
 		return
 	}
-	var submission SubmitV1
+	var submission OperationSubmitV1
 	if err := decodeRequest(writer, request, &submission, server.deps.Settings.MaxRequestBodyBytes); err != nil {
 		return
 	}
@@ -35,12 +34,30 @@ func (server *Server) handleSubmit(writer http.ResponseWriter, request *http.Req
 		http.Error(writer, "invalid idempotency key", http.StatusBadRequest)
 		return
 	}
-	typedRequest, root, err := server.buildRequest(submission.CommandKey, submission.Fields)
-	if err != nil {
-		http.Error(writer, "invalid command", http.StatusBadRequest)
+	reference := cockpit.ResourceRef{
+		Kind: cockpit.ResourceKind(submission.Resource.Kind), Root: submission.Resource.Root,
+		Project: submission.Resource.Project, Key: submission.Resource.Key,
+	}
+	if reference.Root != server.deps.Config.Root {
+		http.Error(writer, "invalid resource", http.StatusBadRequest)
 		return
 	}
-	executionID, err := server.deps.Executor.Submit(request.Context(), execution.Submission{Request: typedRequest, Root: root, Actor: server.deps.Actor, IdempotencyKey: idempotencyKey})
+	values := make([]cockpit.InputValue, 0, len(submission.Inputs))
+	for _, input := range submission.Inputs {
+		values = append(values, cockpit.InputValue{Name: input.Name, Value: input.Value})
+	}
+	operation, typedRequest, err := server.deps.Cockpit.Resolve(request.Context(), reference, cockpit.Relation(submission.Relation), values)
+	if err != nil {
+		http.Error(writer, "operation unavailable", http.StatusConflict)
+		return
+	}
+	typedRequest = applyWebDefaults(typedRequest)
+	subject := &execution.Subject{
+		Kind: string(reference.Kind), Project: reference.Project, Key: reference.Key, Relation: string(operation.Relation),
+	}
+	executionID, err := server.deps.Executor.Submit(request.Context(), execution.Submission{
+		Request: typedRequest, Root: reference.Root, Subject: subject, Actor: server.deps.Actor, IdempotencyKey: idempotencyKey,
+	})
 	if err != nil {
 		http.Error(writer, "submission failed", http.StatusConflict)
 		return
@@ -171,112 +188,13 @@ func (server *Server) handleResponse(writer http.ResponseWriter, request *http.R
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (server *Server) buildRequest(commandKey string, fields []FieldV1) (action.Request, string, error) {
-	command := commandByKey(server.deps.Grammar, commandKey)
-	if command == nil || command.Hidden || strings.HasPrefix(command.Key, "completion.") || command.Key == "tui" || strings.HasPrefix(command.Key, "web.") {
-		return nil, "", fmt.Errorf("web.unknown-command:%s", commandKey)
+func applyWebDefaults(request action.Request) action.Request {
+	login, ok := request.(workapp.AuthLoginRequest)
+	if ok && login.Mode == "" {
+		login.Mode = workapp.AuthLoginDeviceCode
+		return login
 	}
-	route, ok := server.deps.Routes.Route(command.Key)
-	if !ok || route.Build == nil {
-		return nil, "", fmt.Errorf("web.command-unavailable:%s", commandKey)
-	}
-	arguments := commandArguments(command)
-	declared := make(map[string]spec.Argument, len(arguments))
-	for _, argument := range arguments {
-		declared[argument.Name] = argument
-	}
-	seen := make(map[string]struct{}, len(fields))
-	argv := commandPath(command)
-	root := config.ResolveRoot(server.deps.Config.Root)
-	for _, field := range fields {
-		argument, known := declared[field.Name]
-		if !known {
-			return nil, "", fmt.Errorf("web.unknown-field:%s", field.Name)
-		}
-		if _, duplicate := seen[field.Name]; duplicate {
-			return nil, "", fmt.Errorf("web.duplicate-field:%s", field.Name)
-		}
-		seen[field.Name] = struct{}{}
-		if !argument.Repeatable && len(field.Values) > 1 {
-			return nil, "", fmt.Errorf("web.duplicate-field:%s", field.Name)
-		}
-		if field.Name == "root" && len(field.Values) == 1 {
-			requestedRoot := config.ResolveRoot(field.Values[0])
-			if requestedRoot != root {
-				return nil, "", fmt.Errorf("web.root-mismatch:%s", requestedRoot)
-			}
-		}
-		var fieldErr error
-		argv, fieldErr = appendField(argv, argument, field.Values)
-		if fieldErr != nil {
-			return nil, "", fieldErr
-		}
-	}
-	if _, provided := seen["root"]; !provided {
-		if argument, declaredRoot := declared["root"]; declaredRoot {
-			var fieldErr error
-			argv, fieldErr = appendField(argv, argument, []string{server.deps.Config.Root})
-			if fieldErr != nil {
-				return nil, "", fieldErr
-			}
-		}
-	}
-	invocation, err := parse.Parse(server.deps.Grammar, argv)
-	if err != nil || invocation.Command.Key != command.Key {
-		return nil, "", fmt.Errorf("web.invalid-command:%s", commandKey)
-	}
-	typedRequest, buildErr := route.Build(invocation)
-	return typedRequest, root, buildErr
-}
-
-func appendField(argv []string, argument spec.Argument, values []string) ([]string, error) {
-	if argument.Kind == spec.Bool {
-		if len(values) != 1 || (values[0] != "true" && values[0] != "false") {
-			return nil, fmt.Errorf("web.invalid-boolean-field:%s", argument.Name)
-		}
-		if values[0] == "true" {
-			argv = append(argv, argument.Token())
-		}
-		return argv, nil
-	}
-	if argument.Required && len(values) == 0 {
-		return nil, fmt.Errorf("web.required-field:%s", argument.Name)
-	}
-	if argument.Positional() {
-		return append(argv, values...), nil
-	}
-	for _, value := range values {
-		argv = append(argv, argument.Token(), value)
-	}
-	return argv, nil
-}
-
-func commandByKey(root *spec.Command, key string) *spec.Command {
-	if root.Key == key {
-		return root
-	}
-	for _, child := range root.Children {
-		if result := commandByKey(child, key); result != nil {
-			return result
-		}
-	}
-	return nil
-}
-
-func commandPath(command *spec.Command) []string {
-	var reversed []string
-	for current := command; current != nil && current.Parent() != nil; current = current.Parent() {
-		reversed = append(reversed, current.Name)
-	}
-	path := make([]string, len(reversed))
-	for index := range reversed {
-		path[len(reversed)-1-index] = reversed[index]
-	}
-	return path
-}
-
-func commandArguments(command *spec.Command) []spec.Argument {
-	return append([]spec.Argument(nil), command.Arguments...)
+	return request
 }
 
 func (server *Server) executionRecord(request *http.Request) (execution.Record, error) {
@@ -288,7 +206,7 @@ func (server *Server) executionRecord(request *http.Request) (execution.Record, 
 }
 
 func recordV1(record execution.Record) RecordV1 {
-	return RecordV1{Schema: schemaV1, ExecutionID: record.ExecutionID.String(), AttemptID: record.AttemptID.String(), ActionID: string(record.ActionID), Status: record.Status, Root: record.Root, Origin: record.Origin, Result: record.Result, Failure: record.Failure, PendingPrompt: record.PendingPrompt, CreatedAt: record.CreatedAt, StartedAt: record.StartedAt, FinishedAt: record.FinishedAt}
+	return RecordV1{Schema: schemaV1, ExecutionID: record.ExecutionID.String(), AttemptID: record.AttemptID.String(), ActionID: string(record.ActionID), Status: record.Status, Root: record.Root, Subject: record.Subject, Origin: record.Origin, Result: record.Result, Failure: record.Failure, PendingPrompt: record.PendingPrompt, CreatedAt: record.CreatedAt, StartedAt: record.StartedAt, FinishedAt: record.FinishedAt}
 }
 
 func eventV1(event execution.Event) EventV1 {

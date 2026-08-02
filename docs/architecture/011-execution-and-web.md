@@ -129,7 +129,7 @@ sequenceDiagram
     participant Worker as FIFO worker
     participant Dispatcher as action.Dispatcher
     User->>Adapter: Submit one intent
-    Adapter->>Executor: Submit(request, actor, root, idempotency key)
+    Adapter->>Executor: Submit(request, actor, root, optional subject, idempotency key)
     Executor->>Executor: Validate descriptor and canonical root
     Executor->>Store: Insert execution and queued event
     Store-->>Executor: ExecutionID and AttemptID
@@ -143,7 +143,7 @@ sequenceDiagram
 
 `Submit` requires a non-zero idempotency key. CLI and TUI generate one key for each user intent. The web server supplies the key with the form.
 
-SQLite enforces uniqueness on `(principal, idempotency_key)`. An exact repeat returns the existing `ExecutionID` when action, canonical root, and request hash match. Any mismatch returns `execution.idempotency-conflict`.
+SQLite enforces uniqueness on `(principal, idempotency_key)`. An exact repeat requires the same action, root, request, and optional subject.
 
 A process reserves its submission with its `ExecutorID` before `Submit` returns. One FIFO worker runs per process.
 
@@ -412,10 +412,10 @@ Origin records `cli`, `tui`, or `web` for audit. The same principal can continue
 The public command grammar is:
 
 ```text
-dw web start [--root <path>] [--port <port>] [--no-open]
+dw web start [--root <path>] [--port <port>] [--open [--no-expiry]] [--unauthenticated | --token <token>]
 dw web stop
 dw web status [--json]
-dw web open
+dw web open [--no-expiry | --token <token>]
 dw web register [--root <path>] [--port <port>]
 dw web unregister
 ```
@@ -426,7 +426,7 @@ The default port comes from `runtime.json` and is `7331`. Port `0` requests an e
 
 A busy requested port returns `web.port-unavailable`. The server never selects another port.
 
-`web.json` resides under `PlatformBaseDirs.UserConfigDirectory()`. It stores the root, port, executable, registration type, and service secret.
+`web.json` resides under `PlatformBaseDirs.UserConfigDirectory()`. It stores the root, port, executable, registration type, service secret, authentication mode, and optional token digest.
 
 `runtime.json` resides in the same directory. It stores editable execution, HTTP, session, polling, and web-service limits.
 
@@ -450,9 +450,11 @@ macOS service registration returns a typed unsupported error. Unregistered start
 
 `unregister` stops and removes the native registration and runtime state. It preserves `web.json`, the service secret, and `Registration=none`.
 
-`web start` returns the running service when its configuration is unchanged. A root, port, or executable change restarts the service.
+`web start` returns the running service when its configuration is unchanged. A root, port, executable, or authentication change restarts the service.
 
 The manager removes stale runtime state before an unregistered start. It also removes stale state when shutdown cannot reach the old process.
+
+`web start` does not open a browser by default. `--open` requests browser launch after startup.
 
 ## HTTP Security
 
@@ -464,9 +466,23 @@ Administrative endpoints require a loopback remote address and `Authorization: B
 - `POST /admin/tickets`
 - `POST /admin/shutdown`
 
-`web open` requests a random 32-byte ticket. Its lifetime comes from `runtime.json` and defaults to 60 seconds.
+Ticket authentication is the default. `web open` requests a random 32-byte, single-use ticket.
 
-The browser opens `/?ticket=<ticket>`. The server consumes the ticket, creates a session, and redirects to `/`. It sets `Cache-Control: no-store` on the exchange.
+Ticket lifetime comes from `runtime.json` and defaults to 60 seconds. `--no-expiry` removes the time limit, but not single-use consumption.
+
+Non-expiring tickets remain in process memory. A server restart invalidates all unconsumed tickets.
+
+The browser opens `/?ticket=<ticket>`. The server consumes the ticket, creates a session, and redirects to `/`.
+
+`--unauthenticated` creates a session on the first request without a ticket. Origin and CSRF checks still protect mutations.
+
+`--token <token>` configures a reusable access token. `web.json` stores only its SHA-256 digest.
+
+`web open --token <token>` validates the configured token and opens `/?token=<token>`. The server creates a session and redirects to `/`.
+
+`--unauthenticated` and `--token` are mutually exclusive. `--no-expiry` applies only to ticket authentication.
+
+Ticket and token exchanges set `Cache-Control: no-store`.
 
 The session cookie uses `HttpOnly`, `SameSite=Strict`, and `Path=/`. It uses loopback HTTP, so `Secure=false` is explicit.
 
@@ -476,7 +492,7 @@ Every mutation requires all these values:
 - An exact `Origin` header.
 - An `X-DW-CSRF` token.
 
-Secret and ticket comparisons use `crypto/subtle.ConstantTimeCompare`.
+Secret, ticket, and access-token comparisons use `crypto/subtle.ConstantTimeCompare`.
 
 Every response sets a restrictive Content Security Policy, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`.
 
@@ -486,7 +502,13 @@ The defaults are five-second header reads, 60-second idle connections, 64 KiB he
 
 SSE has no write timeout. Its default heartbeat interval is 15 seconds.
 
-HTTP submission never accepts an action identifier with arbitrary JSON. It accepts a known command key and ordered declared fields. The server reconstructs `argv`, calls the shared parser, and invokes the typed route builder.
+HTTP submission accepts a resource reference, a closed relation, and declared typed inputs. It never accepts CLI command keys or action identifiers.
+
+The cockpit service reloads current projections for each submission. It matches the exact resource and relation before it builds the typed request.
+
+The resolver rejects unknown resources, invalid relations, duplicate operations, disabled operations, stale subjects, and invalid input values.
+
+Web executions persist their resource kind, project, key, and relation. This subject links live status and history to the domain resource.
 
 ## Web Presentation
 
@@ -496,7 +518,7 @@ The embedded UI uses the pinned Datastar browser bundle. Datastar sends HTTP act
 
 The repository contains the pinned browser asset, its MIT license, its SHA-256, and local CSS. The product uses no Node runtime, npm, JavaScript bundler, Tailwind, CDN, or external asset at runtime.
 
-The catalog comes from the command grammar and route registry. It excludes completions, TUI, and web service commands. It disables terminal-only actions and shows their exact CLI command.
+The UI renders cockpit resources and their current operations. It does not derive a command catalog from the CLI grammar.
 
 The UI renders all execution states and all five concrete prompt types. It never adds `--yes` automatically.
 
@@ -510,7 +532,7 @@ Microsoft sign-in is never embedded in an iframe. Environment PAT mode only read
 
 Components render completely into a buffer before Datastar patches them. Morphing preserves focus where possible. Controls have ARIA labels and keyboard navigation.
 
-After successful execution, the server reloads neutral cockpit projections and patches only affected components. `internal/cockpit` contains no TUI controls.
+The server reloads cockpit projections and patches the live workflow sections. `internal/cockpit` exposes closed resources, relations, inputs, and typed requests.
 
 ## Tool and Dependency Inventory
 

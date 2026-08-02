@@ -44,6 +44,7 @@ type Store interface {
 type Submission struct {
 	Request        action.Request
 	Root           string
+	Subject        *Subject
 	Actor          Actor
 	IdempotencyKey IdempotencyKey
 }

@@ -2,6 +2,8 @@ package webservice
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -19,6 +21,14 @@ const (
 	RegistrationNone          Registration = "none"
 	RegistrationSystemdUser   Registration = "systemd-user"
 	RegistrationTaskScheduler Registration = "task-scheduler"
+)
+
+type AuthMode string
+
+const (
+	AuthTicket AuthMode = "ticket"
+	AuthNone   AuthMode = "none"
+	AuthToken  AuthMode = "token"
 )
 
 type Registration string
@@ -44,6 +54,23 @@ func ParseServiceSecret(text string) (ServiceSecret, error) {
 
 func (secret ServiceSecret) String() string {
 	return base64.RawURLEncoding.EncodeToString(secret.value[:])
+}
+
+func HashAccessToken(token string) (string, error) {
+	if token == "" {
+		return "", fmt.Errorf("web.access-token-required")
+	}
+	digest := sha256.Sum256([]byte(token))
+	return base64.RawURLEncoding.EncodeToString(digest[:]), nil
+}
+
+func AccessTokenMatches(encodedDigest, token string) bool {
+	expected, err := base64.RawURLEncoding.DecodeString(encodedDigest)
+	if err != nil || len(expected) != sha256.Size || token == "" {
+		return false
+	}
+	actual := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare(expected, actual[:]) == 1
 }
 
 func (secret ServiceSecret) IsZero() bool    { return secret.value == [32]byte{} }
@@ -94,12 +121,14 @@ func (id *ServerID) UnmarshalJSON(data []byte) error {
 }
 
 type WebConfigV1 struct {
-	Schema        uint16        `json:"schema"`
-	Root          string        `json:"root"`
-	Port          uint16        `json:"port"`
-	Executable    string        `json:"executable"`
-	Registration  Registration  `json:"registration"`
-	ServiceSecret ServiceSecret `json:"serviceSecret"`
+	Schema            uint16        `json:"schema"`
+	Root              string        `json:"root"`
+	Port              uint16        `json:"port"`
+	Executable        string        `json:"executable"`
+	Registration      Registration  `json:"registration"`
+	ServiceSecret     ServiceSecret `json:"serviceSecret"`
+	AuthMode          AuthMode      `json:"authMode,omitempty"`
+	AccessTokenDigest string        `json:"accessTokenDigest,omitempty"`
 }
 
 type WebStateV1 struct {
@@ -112,13 +141,14 @@ type WebStateV1 struct {
 }
 
 type StatusV1 struct {
-	Schema     uint16 `json:"schema"`
-	Running    bool   `json:"running"`
-	Registered bool   `json:"registered"`
-	Address    string `json:"address,omitempty"`
-	PID        int    `json:"pid,omitempty"`
-	Executable string `json:"executable,omitempty"`
-	Stale      bool   `json:"stale"`
+	Schema     uint16   `json:"schema"`
+	Running    bool     `json:"running"`
+	Registered bool     `json:"registered"`
+	Address    string   `json:"address,omitempty"`
+	PID        int      `json:"pid,omitempty"`
+	Executable string   `json:"executable,omitempty"`
+	Stale      bool     `json:"stale"`
+	AuthMode   AuthMode `json:"authMode,omitempty"`
 }
 
 type OpenResult struct {
@@ -131,9 +161,29 @@ type StartResult struct {
 	Open   *OpenResult
 }
 
+func (config WebConfigV1) EffectiveAuthMode() AuthMode {
+	if config.AuthMode == "" {
+		return AuthTicket
+	}
+	return config.AuthMode
+}
+
 func (config WebConfigV1) Validate() error {
 	if config.Schema != SchemaV1 || strings.TrimSpace(config.Root) == "" || strings.TrimSpace(config.Executable) == "" || config.ServiceSecret.IsZero() {
 		return fmt.Errorf("web.invalid-config")
+	}
+	switch config.EffectiveAuthMode() {
+	case AuthTicket, AuthNone:
+		if config.AccessTokenDigest != "" {
+			return fmt.Errorf("web.unexpected-access-token")
+		}
+	case AuthToken:
+		decoded, err := base64.RawURLEncoding.DecodeString(config.AccessTokenDigest)
+		if err != nil || len(decoded) != sha256.Size {
+			return fmt.Errorf("web.invalid-access-token-digest")
+		}
+	default:
+		return fmt.Errorf("web.invalid-auth-mode:%s", config.AuthMode)
 	}
 	switch config.Registration {
 	case RegistrationNone, RegistrationSystemdUser, RegistrationTaskScheduler:

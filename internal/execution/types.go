@@ -77,6 +77,17 @@ type Actor struct {
 	Origin    Origin      `json:"origin"`
 }
 
+type Subject struct {
+	Kind     string `json:"kind"`
+	Project  string `json:"project,omitempty"`
+	Key      string `json:"key"`
+	Relation string `json:"relation"`
+}
+
+func (subject Subject) Valid() bool {
+	return subject.Kind != "" && subject.Key != "" && subject.Relation != ""
+}
+
 type Encoded struct {
 	Schema   SchemaVersion   `json:"schema"`
 	JSON     json.RawMessage `json:"json"`
@@ -108,6 +119,7 @@ type Record struct {
 	ActionID      action.ID      `json:"action_id"`
 	Status        Status         `json:"status"`
 	Root          string         `json:"root"`
+	Subject       *Subject       `json:"subject,omitempty"`
 	Principal     PrincipalID    `json:"principal"`
 	Origin        Origin         `json:"origin"`
 	Request       Encoded        `json:"request"`

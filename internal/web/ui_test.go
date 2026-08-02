@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/sachahjkl/dw/internal/cockpit"
 	"github.com/sachahjkl/dw/internal/execution"
+	"github.com/sachahjkl/dw/internal/workapp"
 )
 
 func TestTemplRendersEveryExecutionStatus(t *testing.T) {
@@ -23,14 +27,14 @@ func TestTemplRendersEveryExecutionStatus(t *testing.T) {
 	}
 	items := make([]executionView, 0, len(statuses))
 	for _, status := range statuses {
-		items = append(items, executionView{ID: "01J00000000000000000000000", AttemptID: "01J00000000000000000000001", ActionID: "test.action", Status: status, Cancel: "@post('/cancel')"})
+		items = append(items, executionView{ID: "01J00000000000000000000000", AttemptID: "01J00000000000000000000001", Title: "Test action", Status: status, StatusLabel: statusLabel(status), Cancel: "/cancel"})
 	}
-	html, err := renderComponent(context.Background(), executionsSection(items))
+	html, err := renderComponent(context.Background(), executionsSection(items, 4))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, status := range statuses {
-		if !strings.Contains(html, ">"+string(status)+"<") {
+		if !strings.Contains(html, ">"+statusLabel(status)+"<") {
 			t.Errorf("status %q was not rendered", status)
 		}
 	}
@@ -53,7 +57,7 @@ func TestTemplRendersStrictPromptControls(t *testing.T) {
 		html.WriteString(component)
 	}
 	value := html.String()
-	for _, marker := range []string{`type="text"`, `type="password"`, `type="checkbox"`, `<select`, `> A</label>`} {
+	for _, marker := range []string{`type="text"`, `type="password"`, `type="checkbox"`, `<select`, `>A</span>`} {
 		if !strings.Contains(value, marker) {
 			t.Errorf("prompt control %q was not rendered", marker)
 		}
@@ -74,14 +78,14 @@ func TestTemplRendersStrictPromptControls(t *testing.T) {
 func TestExecutionViewRendersInteractiveBrowserLogin(t *testing.T) {
 	item := executionView{
 		ID: "01J00000000000000000000000", AttemptID: "01J00000000000000000000001",
-		ActionID: "provider.auth.login", Status: execution.StatusRunning,
+		Title: "Sign in to a work provider", Status: execution.StatusRunning, StatusLabel: "Running", Active: true,
 		Events: []eventView{{
 			Sequence: 3, Kind: execution.EventProgress, Message: "work.event.browser-login-required",
 			AuthorizationURL: "https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?state=secret",
 			CallbackURI:      "http://localhost:43210",
 		}},
 	}
-	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}))
+	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}, 1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +93,65 @@ func TestExecutionViewRendersInteractiveBrowserLogin(t *testing.T) {
 		if !strings.Contains(html, marker) {
 			t.Errorf("browser login marker %q was not rendered", marker)
 		}
+	}
+}
+
+func TestExecutionViewRendersRemoteDeviceLogin(t *testing.T) {
+	item := executionView{
+		ID: "01J00000000000000000000000", AttemptID: "01J00000000000000000000001",
+		Title: "Sign in to a work provider", Status: execution.StatusRunning, StatusLabel: "Running", Active: true,
+		Events: []eventView{{
+			Sequence: 4, Kind: execution.EventProgress, Message: "work.event.device-login-required",
+			VerificationURI: "https://microsoft.com/devicelogin", UserCode: "ABCD-EFGH",
+		}},
+	}
+	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{`Open Microsoft sign-in`, `https://microsoft.com/devicelogin`, `ABCD-EFGH`} {
+		if !strings.Contains(html, marker) {
+			t.Errorf("device login marker %q was not rendered", marker)
+		}
+	}
+	if strings.Contains(html, "localhost") {
+		t.Fatalf("device login rendered a loopback callback: %s", html)
+	}
+}
+
+func TestWorkSectionGuidesObviousRecovery(t *testing.T) {
+	tests := []struct {
+		name    string
+		problem string
+		markers []string
+	}{
+		{
+			name:    "credential store",
+			problem: "OS credential storage unavailable: secret.store-unavailable",
+			markers: []string{`OS credential store unavailable`, `Start a Secret Service provider`, `GNOME Keyring`, `KeePassXC`},
+		},
+		{
+			name:    "provider sign-in",
+			problem: "ado.error:missing-auth",
+			markers: []string{`Connect Azure DevOps`, `Use Sign in above`, `work items will refresh`},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			view := pageView{Work: []cockpit.WorkProject{{
+				Label: "default", Provider: "azure-devops", Error: test.problem,
+			}}}
+			html, err := renderComponent(context.Background(), workSection(view))
+			if err != nil {
+				t.Fatal(err)
+			}
+			markers := append([]string{`class="guided-error"`, `<summary>Technical details</summary>`}, test.markers...)
+			for _, marker := range markers {
+				if !strings.Contains(html, marker) {
+					t.Errorf("recovery marker %q was not rendered", marker)
+				}
+			}
+		})
 	}
 }
 
@@ -111,5 +174,61 @@ func TestVendoredDatastarVersionAndChecksum(t *testing.T) {
 	digest := sha256.Sum256(bundle)
 	if actual := hex.EncodeToString(digest[:]); actual != fields[0] {
 		t.Fatalf("Datastar checksum = %s, want %s", actual, fields[0])
+	}
+}
+
+func TestAssetsUseContentVersionedCache(t *testing.T) {
+	server := &Server{}
+	unversioned := httptest.NewRequest(http.MethodGet, "/assets/app.css", nil)
+	unversioned.SetPathValue("name", "app.css")
+	unversionedResponse := httptest.NewRecorder()
+	server.handleAsset(unversionedResponse, unversioned)
+	if got := unversionedResponse.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("unversioned cache policy = %q", got)
+	}
+
+	versioned := httptest.NewRequest(http.MethodGet, assetURL("app.css"), nil)
+	versioned.SetPathValue("name", "app.css")
+	versionedResponse := httptest.NewRecorder()
+	server.handleAsset(versionedResponse, versioned)
+	if got := versionedResponse.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("versioned cache policy = %q", got)
+	}
+}
+
+func TestActionToastsReportActiveActionsAndPrompts(t *testing.T) {
+	prompt := promptView{}
+	toasts := actionToasts([]executionView{
+		{Title: "Sign in", Events: []eventView{{AuthorizationURL: "https://login.example.test"}}},
+		{Title: "Refresh work", Active: true},
+		{Title: "Confirm deletion", Prompt: &prompt},
+	})
+	if len(toasts) != 2 || toasts[0].Title != "Action running" || toasts[1].Title != "Input required" {
+		t.Fatalf("toasts = %#v", toasts)
+	}
+}
+
+func TestWebDefaultsProviderLoginToDeviceCode(t *testing.T) {
+	request := applyWebDefaults(workapp.AuthLoginRequest{Provider: "azure-devops"})
+	login, ok := request.(workapp.AuthLoginRequest)
+	if !ok || login.Mode != workapp.AuthLoginDeviceCode {
+		t.Fatalf("web login request = %#v", request)
+	}
+}
+
+func TestAppHeaderContainsOnlyBrandAndActions(t *testing.T) {
+	html, err := renderComponent(context.Background(), appHeader(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"DevWorkflow", "Actions", "2"} {
+		if !strings.Contains(html, marker) {
+			t.Errorf("header marker %q was not rendered", marker)
+		}
+	}
+	for _, removed := range []string{"Local control center", "Root"} {
+		if strings.Contains(html, removed) {
+			t.Errorf("header still contains %q: %s", removed, html)
+		}
 	}
 }

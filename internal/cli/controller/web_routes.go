@@ -14,7 +14,7 @@ type WebLifecycle interface {
 	Start(context.Context, webservice.StartOptions) (webservice.StartResult, error)
 	Stop(context.Context) error
 	Status(context.Context) (webservice.StatusV1, error)
-	Open(context.Context) (webservice.OpenResult, error)
+	Open(context.Context, webservice.OpenOptions) (webservice.OpenResult, error)
 	Register(context.Context, webservice.RegisterOptions) (webservice.StatusV1, error)
 	Unregister(context.Context) error
 }
@@ -47,7 +47,14 @@ func webRoutes(lifecycle WebLifecycle, serve func(context.Context) error) map[st
 	}
 	return map[string]Route{
 		"web.start": {Key: "web.start", Direct: func(ctx context.Context, _ Execution, invocation *parse.Result) (Outcome, error) {
-			result, err := lifecycle.Start(ctx, webservice.StartOptions{Root: optionalStringValue(invocation, "root"), Port: optionalPortValue(invocation, "port"), NoOpen: invocation.Values.Bool("no_open")})
+			result, err := lifecycle.Start(ctx, webservice.StartOptions{
+				Root:            optionalStringValue(invocation, "root"),
+				Port:            optionalPortValue(invocation, "port"),
+				Open:            invocation.Values.Bool("open"),
+				NoExpiry:        invocation.Values.Bool("no_expiry"),
+				Unauthenticated: invocation.Values.Bool("unauthenticated"),
+				Token:           optionalStringValue(invocation, "token"),
+			})
 			if err != nil {
 				return Outcome{}, err
 			}
@@ -68,8 +75,13 @@ func webRoutes(lifecycle WebLifecycle, serve func(context.Context) error) map[st
 			}
 			return statusOutcome(status, invocation.Values.Bool("json"))
 		}},
-		"web.open": {Key: "web.open", Direct: func(ctx context.Context, _ Execution, _ *parse.Result) (Outcome, error) {
-			result, err := lifecycle.Open(ctx)
+		"web.open": {Key: "web.open", Direct: func(ctx context.Context, _ Execution, invocation *parse.Result) (Outcome, error) {
+			options := webservice.OpenOptions{}
+			if invocation != nil {
+				options.NoExpiry = invocation.Values.Bool("no_expiry")
+				options.Token = optionalStringValue(invocation, "token")
+			}
+			result, err := lifecycle.Open(ctx, options)
 			if err != nil {
 				return Outcome{}, err
 			}

@@ -127,14 +127,14 @@ func actionFromOperation(operation cockpit.Operation) Action {
 		risk = External
 	}
 	return Action{
-		ID: operation.ID, Label: operation.Label, Description: operation.Description,
+		ID: action.ID(operation.Relation), Label: operation.Label, Description: operation.Description,
 		Risk: risk, Active: operation.Active, Request: operation.Request, RefreshAfterSuccess: true,
 	}
 }
 
 func findAction(operations []cockpit.Operation, id action.ID) (Action, bool) {
 	for i := range operations {
-		if operations[i].ID == id && operations[i].Active {
+		if operations[i].Relation == cockpit.Relation(id) && operations[i].Active {
 			return actionFromOperation(operations[i]), true
 		}
 	}

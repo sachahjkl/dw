@@ -82,8 +82,8 @@ func TestActionSuccessAlwaysOpensVisibleResult(t *testing.T) {
 }
 
 func TestDataOperationsAreKeyboardFocusable(t *testing.T) {
-	catalog := cockpit.Operation{ID: DataCatalogSlot, Label: "Catalog", Active: true}
-	describe := cockpit.Operation{ID: "data.describe", Label: "Describe", Active: true}
+	catalog := cockpit.Operation{Relation: cockpit.Relation(DataCatalogSlot), Label: "Catalog", Active: true}
+	describe := cockpit.Operation{Relation: cockpit.Relation("data.describe"), Label: "Describe", Active: true}
 	model := NewModelWithSnapshot(Dependencies{}, cockpit.Snapshot{DataSources: []cockpit.DataSource{{Key: "people", Provider: "csv", Operations: []cockpit.Operation{catalog, describe}}}})
 	model.setView(Data)
 
@@ -93,7 +93,7 @@ func TestDataOperationsAreKeyboardFocusable(t *testing.T) {
 		t.Fatalf("data focus/action = %d/%d, want 1/1", model.dataFocus, model.selectedAction)
 	}
 	effects := model.HandleKey(Key{Code: "enter"})
-	if len(effects) != 1 || effects[0].Kind != StartActionEffect || effects[0].Action.ID != describe.ID {
+	if len(effects) != 1 || effects[0].Kind != StartActionEffect || effects[0].Action.ID != action.ID(describe.Relation) {
 		t.Fatalf("enter effects = %#v, want selected Describe action", effects)
 	}
 }
@@ -187,7 +187,7 @@ func TestMouseReportingIsDisabled(t *testing.T) {
 }
 
 func TestEveryViewFitsTerminalAtWideAndCompactSizes(t *testing.T) {
-	operation := cockpit.Operation{ID: DataCatalogSlot, Label: "Catalog", Description: "Inspect available records", Active: true}
+	operation := cockpit.Operation{Relation: cockpit.Relation(DataCatalogSlot), Label: "Catalog", Description: "Inspect available records", Active: true}
 	snapshot := cockpit.Snapshot{
 		Root:            "/tmp/example",
 		ProjectCount:    1,

@@ -52,6 +52,7 @@ var bootstrapTUIEnglishEntries = []l10n.Entry{
 	{ID: "bootstrap.tui.refresh", Text: "Refresh"},
 	{ID: "bootstrap.tui.workspaces", Text: "Workspaces"},
 	{ID: "bootstrap.tui.prune", Text: "Prune candidates"},
+	{ID: "bootstrap.tui.sign-in", Text: "Sign in"},
 	{ID: "bootstrap.tui.config-show", Text: "Show configuration"},
 	{ID: "bootstrap.tui.config-doctor", Text: "Diagnose configuration"},
 	{ID: "bootstrap.tui.guide", Text: "Getting-started guide"},
@@ -114,9 +115,16 @@ func bootstrapHandlers() []action.Handler {
 
 func tuiLabel(localizer l10n.Localizer, id l10n.ID) string { return localizer.Text(id) }
 
-func menuAction(id action.ID, labelID l10n.ID, _, _ string, request action.Request, localizer l10n.Localizer) cockpit.Operation {
+func menuAction(relation cockpit.Relation, labelID l10n.ID, _, _ string, request action.Request, localizer l10n.Localizer) cockpit.Operation {
 	label := tuiLabel(localizer, labelID)
-	return cockpit.Operation{ID: id, Label: label, Description: label, Active: true, Request: request}
+	return cockpit.Operation{Relation: relation, Label: label, Description: label, Active: true, Request: request}
+}
+
+func bindOperations(subject cockpit.ResourceRef, operations []cockpit.Operation) []cockpit.Operation {
+	for index := range operations {
+		operations[index].Subject = subject
+	}
+	return operations
 }
 
 type tuiRequestBuilder struct {
@@ -217,7 +225,9 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 		root := config.ResolveRoot(explicitRoot)
 		status := config.Status(root)
 		settings := config.LoadUserSettings()
+		rootRef := cockpit.ResourceRef{Kind: cockpit.ResourceRoot, Root: root, Key: root}
 		snapshot := cockpit.Snapshot{
+			Ref:              rootRef,
 			Root:             root,
 			NeedsInit:        !status.Initialized,
 			DefaultAgent:     string(config.DefaultAgent(root)),
@@ -248,9 +258,9 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 		snapshot.ProjectCount = len(snapshot.Projects)
 		snapshot.RepositoryCount = len(snapshot.Repositories)
 		for _, summary := range workspace.Discover(root) {
-			item := cockpit.Workspace{Path: summary.Path, Project: summary.Manifest.Project, Type: summary.Manifest.Type, Slug: summary.Manifest.Slug, Branch: summary.Manifest.BranchName, Repositories: append([]string(nil), summary.Manifest.Repositories...)}
+			item := cockpit.Workspace{Ref: cockpit.ResourceRef{Kind: cockpit.ResourceWorkspace, Root: root, Project: summary.Manifest.Project, Key: summary.Path}, Path: summary.Path, Project: summary.Manifest.Project, Type: summary.Manifest.Type, Slug: summary.Manifest.Slug, Branch: summary.Manifest.BranchName, Repositories: append([]string(nil), summary.Manifest.Repositories...)}
 			item.WorkItems = summary.Manifest.AllKnownWorkItemIDs()
-			item.Operations = workspaceActions(localizer, root, config.ResolveWorkProvider(root, item.Project), item)
+			item.Operations = bindOperations(item.Ref, workspaceActions(localizer, root, config.ResolveWorkProvider(root, item.Project), item))
 			snapshot.Workspaces = append(snapshot.Workspaces, item)
 		}
 		snapshot.PruneCandidates = len(workspace.PruneCandidates(root, "", nil))
@@ -261,7 +271,9 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 					if entry.Project != nil {
 						project = *entry.Project
 					}
-					snapshot.DataSources = append(snapshot.DataSources, cockpit.DataSource{Project: project, Key: entry.Database, Provider: entry.Provider, Operations: []cockpit.Operation{{ID: tui.DataCatalogSlot, Label: tuiLabel(localizer, "bootstrap.tui.catalog"), Active: true, Request: dataapp.CatalogRequest{Selection: dataapp.Selection{Root: root, Project: project, Source: entry.Database, Provider: entry.Provider}}}}})
+					reference := cockpit.ResourceRef{Kind: cockpit.ResourceDataSource, Root: root, Project: project, Key: entry.Database}
+					operations := []cockpit.Operation{{Relation: cockpit.Relation(tui.DataCatalogSlot), Label: tuiLabel(localizer, "bootstrap.tui.catalog"), Active: true, Request: dataapp.CatalogRequest{Selection: dataapp.Selection{Root: root, Project: project, Source: entry.Database, Provider: entry.Provider}}}}
+					snapshot.DataSources = append(snapshot.DataSources, cockpit.DataSource{Ref: reference, Project: project, Key: entry.Database, Provider: entry.Provider, Operations: bindOperations(reference, operations)})
 				}
 			}
 		}
@@ -269,45 +281,48 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 		if err == nil {
 			snapshot.DoctorOK = doctorReport.Passed()
 		}
-		doctorAction := cockpit.Operation{ID: "tui.doctor", Label: tuiLabel(localizer, "bootstrap.tui.doctor"), Active: true, Request: doctor.Request{Root: root}}
+		doctorAction := cockpit.Operation{Relation: cockpit.RelationDoctor, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.doctor"), Active: true, Request: doctor.Request{Root: root}}
 		snapshot.Operations = []cockpit.Operation{doctorAction}
-		snapshot.Cockpit = []cockpit.CockpitItem{{Section: "system", Title: doctorAction.Label, Status: strconv.FormatBool(snapshot.DoctorOK), Primary: doctorAction}}
+		snapshot.Cockpit = []cockpit.CockpitItem{{Ref: rootRef, Section: "system", Title: doctorAction.Label, Status: strconv.FormatBool(snapshot.DoctorOK), Primary: doctorAction}}
 		configurationActions := []cockpit.Operation{
-			menuAction("tui.menu.config.show", "bootstrap.tui.config-show", "s", "configuration", config.ShowRequest{Root: root}, localizer),
-			menuAction("tui.menu.config.doctor", "bootstrap.tui.config-doctor", "d", "configuration", config.DoctorRequest{Root: root}, localizer),
+			menuAction(cockpit.RelationViewConfiguration, "bootstrap.tui.config-show", "s", "configuration", config.ShowRequest{Root: root}, localizer),
+			menuAction(cockpit.RelationValidateConfig, "bootstrap.tui.config-doctor", "d", "configuration", config.DoctorRequest{Root: root}, localizer),
 		}
 		if status.Initialized {
 			defaultProfile := "default"
-			configurationActions = append(configurationActions, menuAction("tui.menu.config.refresh", "bootstrap.tui.refresh", "r", "configuration", config.RefreshRequest{Root: root, Profile: &defaultProfile}, localizer))
+			configurationActions = append(configurationActions, menuAction(cockpit.RelationRefreshConfig, "bootstrap.tui.refresh", "r", "configuration", config.RefreshRequest{Root: root, Profile: &defaultProfile}, localizer))
 		}
 		configurationActions = append(configurationActions,
-			menuAction("tui.menu.guide", "bootstrap.tui.guide", "g", "configuration", guideRequest{}, localizer),
-			menuAction("tui.menu.agent.doctor", "bootstrap.tui.agent-doctor", "a", "configuration", doctor.AgentRequest{}, localizer),
+			menuAction(cockpit.RelationShowGuide, "bootstrap.tui.guide", "g", "configuration", guideRequest{}, localizer),
+			menuAction(cockpit.RelationValidateAgent, "bootstrap.tui.agent-doctor", "a", "configuration", doctor.AgentRequest{}, localizer),
 		)
 		snapshot.Operations = append(snapshot.Operations, configurationActions...)
 		agentLabels := []l10n.ID{"bootstrap.tui.agent-opencode", "bootstrap.tui.agent-cursor", "bootstrap.tui.agent-claude", "bootstrap.tui.agent-codex", "bootstrap.tui.agent-codex-cli", "bootstrap.tui.agent-copilot"}
+		agentRelations := []cockpit.Relation{cockpit.RelationSetAgentOpenCode, cockpit.RelationSetAgentCursor, cockpit.RelationSetAgentClaude, cockpit.RelationSetAgentCodex, cockpit.RelationSetAgentCodexCLI, cockpit.RelationSetAgentCopilot}
 		for index, agentChoice := range config.AgentDefaultChoices {
-			snapshot.Operations = append(snapshot.Operations, menuAction(action.ID("tui.menu.agent."+string(agentChoice)), agentLabels[index], strconv.Itoa(index+1), "default-agent", config.AgentDefaultSetRequest{Root: root, Agent: agentChoice}, localizer))
+			snapshot.Operations = append(snapshot.Operations, menuAction(agentRelations[index], agentLabels[index], strconv.Itoa(index+1), "default-agent", config.AgentDefaultSetRequest{Root: root, Agent: agentChoice}, localizer))
 		}
 		colorLabels := []l10n.ID{"bootstrap.tui.color-auto", "bootstrap.tui.color-always", "bootstrap.tui.color-never"}
+		colorRelations := []cockpit.Relation{cockpit.RelationSetColorAuto, cockpit.RelationSetColorAlways, cockpit.RelationSetColorNever}
 		for index, colorChoice := range config.ColorModeChoices {
-			snapshot.Operations = append(snapshot.Operations, menuAction(action.ID("tui.menu.color."+string(colorChoice)), colorLabels[index], strconv.Itoa(index+7), "terminal-color", config.ColorSetRequest{Mode: colorChoice}, localizer))
+			snapshot.Operations = append(snapshot.Operations, menuAction(colorRelations[index], colorLabels[index], strconv.Itoa(index+7), "terminal-color", config.ColorSetRequest{Mode: colorChoice}, localizer))
 		}
 		if status.Initialized {
-			refreshAction := cockpit.Operation{ID: "tui.refresh", Label: tuiLabel(localizer, "bootstrap.tui.refresh"), Active: true, Request: config.RefreshRequest{Root: root}}
-			workspaceAction := cockpit.Operation{ID: "tui.workspaces", Label: tuiLabel(localizer, "bootstrap.tui.workspaces"), Active: true, Request: workspaceapp.StatusRequest{Root: root}}
+			refreshAction := cockpit.Operation{Relation: cockpit.RelationRefresh, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.refresh"), Active: true, Request: config.RefreshRequest{Root: root}}
+			workspaceAction := cockpit.Operation{Relation: cockpit.RelationInspect, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.workspaces"), Active: true, Request: workspaceapp.StatusRequest{Root: root}}
 			snapshot.Operations = append(snapshot.Operations, refreshAction, workspaceAction)
-			snapshot.Cockpit = append(snapshot.Cockpit, cockpit.CockpitItem{Section: "work", Title: workspaceAction.Label, Status: strconv.Itoa(len(snapshot.Workspaces)), Primary: workspaceAction})
+			snapshot.Cockpit = append(snapshot.Cockpit, cockpit.CockpitItem{Ref: rootRef, Section: "work", Title: workspaceAction.Label, Status: strconv.Itoa(len(snapshot.Workspaces)), Primary: workspaceAction})
 		}
 		if snapshot.PruneCandidates > 0 {
-			pruneAction := cockpit.Operation{ID: "tui.prune", Label: tuiLabel(localizer, "bootstrap.tui.prune"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.PruneRequest{Root: root, NoSync: true}}
+			pruneAction := cockpit.Operation{Relation: cockpit.RelationReviewPrune, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.prune"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.PruneRequest{Root: root, NoSync: true}}
 			snapshot.Operations = append(snapshot.Operations, pruneAction)
-			snapshot.Cockpit = append(snapshot.Cockpit, cockpit.CockpitItem{Section: "work", Title: pruneAction.Label, Status: strconv.Itoa(snapshot.PruneCandidates), Severity: cockpit.RiskPreview, Primary: pruneAction})
+			snapshot.Cockpit = append(snapshot.Cockpit, cockpit.CockpitItem{Ref: rootRef, Section: "work", Title: pruneAction.Label, Status: strconv.Itoa(snapshot.PruneCandidates), Severity: cockpit.RiskPreview, Primary: pruneAction})
 		}
 		if snapshot.NeedsInit {
-			action := cockpit.Operation{ID: "tui.init", Label: tuiLabel(localizer, "bootstrap.tui.initialize"), Active: true, Request: config.InitRequest{Root: root, Profile: "default"}}
-			snapshot.InitOperation = &action
+			operation := cockpit.Operation{Relation: cockpit.RelationInitialize, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.initialize"), Active: true, Request: config.InitRequest{Root: root, Profile: "default"}}
+			snapshot.InitOperation = &operation
 		}
+		snapshot.Operations = bindOperations(rootRef, snapshot.Operations)
 		return snapshot, nil
 	}
 }
@@ -316,16 +331,16 @@ func workspaceActions(localizer l10n.Localizer, root, provider string, item cock
 	selection := workspaceapp.Selection{Root: root, Workspace: stringPointer(item.Path)}
 	finishStates := tuiFinishStates(root)
 	return []cockpit.Operation{
-		{ID: tui.WorkspaceOpenSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: cockpit.RiskExternal, Request: workapp.OpenRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
-		{ID: tui.WorkspacePreflightSlot, Label: tuiLabel(localizer, "bootstrap.tui.preflight"), Active: true, Request: workspaceapp.PreflightRequest{Selection: selection}},
-		{ID: tui.WorkspaceSyncSlot, Label: tuiLabel(localizer, "bootstrap.tui.sync"), Active: true, Request: workapp.SyncRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
-		{ID: tui.WorkspaceLatestSlot, Label: tuiLabel(localizer, "bootstrap.tui.latest"), Active: true, Request: workspaceapp.RepoLatestRequest{Selection: selection, Execute: true}},
-		{ID: tui.WorkspaceHandoffSlot, Label: tuiLabel(localizer, "bootstrap.tui.handoff"), Active: true, Request: workspaceapp.HandoffRequest{Selection: selection}},
-		{ID: tui.WorkspaceCommitSlot, Label: tuiLabel(localizer, "bootstrap.tui.commit"), Active: true, Risk: cockpit.RiskPreview, Request: workspaceapp.CommitRequest{Selection: selection}},
-		{ID: tui.WorkspaceFinishPlanSlot, Label: tuiLabel(localizer, "bootstrap.tui.finish-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.FinishRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), FinishStates: finishStates}},
-		{ID: tui.WorkspaceFinishSlot, Label: tuiLabel(localizer, "bootstrap.tui.finish"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.FinishRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), Execute: true, FinishStates: finishStates}},
-		{ID: tui.WorkspaceRemovePlanSlot, Label: tuiLabel(localizer, "bootstrap.tui.teardown-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workspaceapp.TeardownRequest{Selection: selection}},
-		{ID: tui.WorkspaceRemoveSlot, Label: tuiLabel(localizer, "bootstrap.tui.teardown"), Active: true, Risk: cockpit.RiskDestructive, Request: workspaceapp.TeardownRequest{Selection: selection, Execute: true, Approved: true}},
+		{Relation: cockpit.Relation(tui.WorkspaceOpenSlot), Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: cockpit.RiskExternal, Request: workapp.OpenRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
+		{Relation: cockpit.Relation(tui.WorkspacePreflightSlot), Label: tuiLabel(localizer, "bootstrap.tui.preflight"), Active: true, Request: workspaceapp.PreflightRequest{Selection: selection}},
+		{Relation: cockpit.Relation(tui.WorkspaceSyncSlot), Label: tuiLabel(localizer, "bootstrap.tui.sync"), Active: true, Request: workapp.SyncRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
+		{Relation: cockpit.Relation(tui.WorkspaceLatestSlot), Label: tuiLabel(localizer, "bootstrap.tui.latest"), Active: true, Request: workspaceapp.RepoLatestRequest{Selection: selection, Execute: true}},
+		{Relation: cockpit.Relation(tui.WorkspaceHandoffSlot), Label: tuiLabel(localizer, "bootstrap.tui.handoff"), Active: true, Request: workspaceapp.HandoffRequest{Selection: selection}},
+		{Relation: cockpit.Relation(tui.WorkspaceCommitSlot), Label: tuiLabel(localizer, "bootstrap.tui.commit"), Active: true, Risk: cockpit.RiskPreview, Request: workspaceapp.CommitRequest{Selection: selection}},
+		{Relation: cockpit.Relation(tui.WorkspaceFinishPlanSlot), Label: tuiLabel(localizer, "bootstrap.tui.finish-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.FinishRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), FinishStates: finishStates}},
+		{Relation: cockpit.Relation(tui.WorkspaceFinishSlot), Label: tuiLabel(localizer, "bootstrap.tui.finish"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.FinishRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), Execute: true, FinishStates: finishStates}},
+		{Relation: cockpit.Relation(tui.WorkspaceRemovePlanSlot), Label: tuiLabel(localizer, "bootstrap.tui.teardown-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workspaceapp.TeardownRequest{Selection: selection}},
+		{Relation: cockpit.Relation(tui.WorkspaceRemoveSlot), Label: tuiLabel(localizer, "bootstrap.tui.teardown"), Active: true, Risk: cockpit.RiskDestructive, Request: workspaceapp.TeardownRequest{Selection: selection, Execute: true, Approved: true}},
 	}
 }
 
@@ -335,35 +350,42 @@ func workLoader(services *services, localizer l10n.Localizer) cockpit.WorkLoader
 		startStates, createChildren, updateState := tuiStartSettings(snapshot.Root)
 		for _, project := range snapshot.Projects {
 			provider := config.ResolveWorkProvider(snapshot.Root, project)
-			item := cockpit.WorkProject{Key: project, Label: project, Provider: provider}
+			reference := cockpit.ResourceRef{Kind: cockpit.ResourceProject, Root: snapshot.Root, Project: project, Key: project}
+			login := cockpit.Operation{
+				Relation: cockpit.RelationAuthenticate, Subject: reference, Label: tuiLabel(localizer, "bootstrap.tui.sign-in"),
+				Description: "Connect the configured work provider.", Active: true,
+				Request: workapp.AuthLoginRequest{Provider: provider, Root: snapshot.Root},
+			}
+			item := cockpit.WorkProject{Ref: reference, Operations: []cockpit.Operation{login}, Key: project, Label: project, Provider: provider}
 			report, err := services.workapp.Assigned(withRoot(ctx, snapshot.Root), workapp.AssignedRequest{Provider: provider, Root: snapshot.Root, Project: project, Top: 20}, nil)
 			if err != nil {
-				item.Error = err.Error()
+				item.Error = console.LocalizedErrorText(localizer, err)
 				result = append(result, item)
 				continue
 			}
 			for _, source := range report.Items {
-				projected := cockpit.WorkItem{ID: source.ID, Type: stringValue(source.Type), State: stringValue(source.State), Title: stringValue(source.Title), URL: stringValue(source.URL)}
+				projected := cockpit.WorkItem{Ref: cockpit.ResourceRef{Kind: cockpit.ResourceWorkItem, Root: snapshot.Root, Project: project, Key: source.ID}, ID: source.ID, Type: stringValue(source.Type), State: stringValue(source.State), Title: stringValue(source.Title), URL: stringValue(source.URL)}
 				targetState := ""
 				if updateState {
 					targetState = startStates[strings.ToLower(strings.TrimSpace(projected.Type))]
 				}
 				projected.Operations = []cockpit.Operation{
-					{ID: tui.WorkStartPlanSlot, Label: tuiLabel(localizer, "bootstrap.tui.start-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.StartRequest{Provider: provider, Root: snapshot.Root, Project: project, WorkItemIDs: []string{source.ID}, CreateChildTasks: createChildren, States: startStates}},
-					{ID: tui.WorkStartSlot, Label: tuiLabel(localizer, "bootstrap.tui.start"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.StartRequest{Provider: provider, Root: snapshot.Root, Project: project, WorkItemIDs: []string{source.ID}, CreateChildTasks: createChildren, States: startStates, Execute: true}},
-					{ID: tui.WorkContextSlot, Label: tuiLabel(localizer, "bootstrap.tui.context"), Active: true, Request: workapp.ContextRequest{Provider: provider, Root: snapshot.Root, Project: project, IDs: []string{source.ID}, Mode: workapp.ContextRich}},
-					{ID: tui.WorkItemSlot, Label: tuiLabel(localizer, "bootstrap.tui.show"), Active: true, Request: workapp.ItemShowRequest{Provider: provider, Root: snapshot.Root, Project: project, IDs: []string{source.ID}}},
+					{Relation: cockpit.Relation(tui.WorkStartPlanSlot), Label: tuiLabel(localizer, "bootstrap.tui.start-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.StartRequest{Provider: provider, Root: snapshot.Root, Project: project, WorkItemIDs: []string{source.ID}, CreateChildTasks: createChildren, States: startStates}},
+					{Relation: cockpit.Relation(tui.WorkStartSlot), Label: tuiLabel(localizer, "bootstrap.tui.start"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.StartRequest{Provider: provider, Root: snapshot.Root, Project: project, WorkItemIDs: []string{source.ID}, CreateChildTasks: createChildren, States: startStates, Execute: true}},
+					{Relation: cockpit.Relation(tui.WorkContextSlot), Label: tuiLabel(localizer, "bootstrap.tui.context"), Active: true, Request: workapp.ContextRequest{Provider: provider, Root: snapshot.Root, Project: project, IDs: []string{source.ID}, Mode: workapp.ContextRich}},
+					{Relation: cockpit.Relation(tui.WorkItemSlot), Label: tuiLabel(localizer, "bootstrap.tui.show"), Active: true, Request: workapp.ItemShowRequest{Provider: provider, Root: snapshot.Root, Project: project, IDs: []string{source.ID}}},
 				}
 				if targetState != "" {
-					projected.Operations = append(projected.Operations, cockpit.Operation{ID: tui.WorkSetStateSlot, Label: tuiLabel(localizer, "bootstrap.tui.set-state"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.StateSetRequest{Request: workapp.StatePlanRequest{Provider: provider, Root: snapshot.Root, Project: project, IDs: []string{source.ID}, State: targetState, History: "tui"}}})
+					projected.Operations = append(projected.Operations, cockpit.Operation{Relation: cockpit.Relation(tui.WorkSetStateSlot), Label: tuiLabel(localizer, "bootstrap.tui.set-state"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.StateSetRequest{Request: workapp.StatePlanRequest{Provider: provider, Root: snapshot.Root, Project: project, IDs: []string{source.ID}, State: targetState, History: "tui"}}})
 				}
 				matches := workspace.WorkspaceValues(snapshot.Root, project, source.ID)
 				if len(matches) != 0 {
-					projected.Operations = append(projected.Operations, cockpit.Operation{ID: tui.WorkOpenAgentSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: cockpit.RiskExternal, Request: workapp.OpenRequest{Provider: provider, Root: snapshot.Root, Project: project, Workspace: stringPointer(matches[0])}})
+					projected.Operations = append(projected.Operations, cockpit.Operation{Relation: cockpit.Relation(tui.WorkOpenAgentSlot), Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: cockpit.RiskExternal, Request: workapp.OpenRequest{Provider: provider, Root: snapshot.Root, Project: project, Workspace: stringPointer(matches[0])}})
 				}
 				if projected.URL != "" {
-					projected.Operations = append(projected.Operations, cockpit.Operation{ID: tui.WorkOpenURLSlot, Label: tuiLabel(localizer, "bootstrap.tui.open-url"), Active: true, Risk: cockpit.RiskExternal, Request: openURLRequest{URL: projected.URL}})
+					projected.Operations = append(projected.Operations, cockpit.Operation{Relation: cockpit.Relation(tui.WorkOpenURLSlot), Label: tuiLabel(localizer, "bootstrap.tui.open-url"), Active: true, Risk: cockpit.RiskExternal, Request: openURLRequest{URL: projected.URL}})
 				}
+				projected.Operations = bindOperations(projected.Ref, projected.Operations)
 				item.Items = append(item.Items, projected)
 			}
 			result = append(result, item)
@@ -399,11 +421,11 @@ func pullRequestLoader(services *services, localizer l10n.Localizer) cockpit.Pul
 			}
 			report, err := services.workapp.PullRequests(withRoot(ctx, snapshot.Root), workapp.PullRequestsRequest{Provider: provider, Root: snapshot.Root, Project: project, Repositories: providerRepositories}, nil)
 			if err != nil {
-				result = append(result, cockpit.PullRequest{Provider: provider, Project: project, Error: err.Error()})
+				result = append(result, cockpit.PullRequest{Provider: provider, Project: project, Error: console.LocalizedErrorText(localizer, err)})
 				continue
 			}
 			for _, source := range report.Items {
-				item := cockpit.PullRequest{ID: strconv.FormatInt(source.PullRequestID, 10), Provider: provider, Project: project, Repository: source.Repository, Branch: stringValue(source.SourceRefName), TargetBranch: stringValue(source.TargetRefName), Title: stringValue(source.Title), Draft: source.IsDraft, WorkItems: append([]string(nil), source.WorkItemIDs...), URL: stringValue(source.WebURL)}
+				item := cockpit.PullRequest{Ref: cockpit.ResourceRef{Kind: cockpit.ResourcePullRequest, Root: snapshot.Root, Project: project, Key: strconv.FormatInt(source.PullRequestID, 10)}, ID: strconv.FormatInt(source.PullRequestID, 10), Provider: provider, Project: project, Repository: source.Repository, Branch: stringValue(source.SourceRefName), TargetBranch: stringValue(source.TargetRefName), Title: stringValue(source.Title), Draft: source.IsDraft, WorkItems: append([]string(nil), source.WorkItemIDs...), URL: stringValue(source.WebURL)}
 				localRepository := source.Repository
 				for index, providerRepository := range providerRepositories {
 					if providerRepository == source.Repository {
@@ -417,23 +439,24 @@ func pullRequestLoader(services *services, localizer l10n.Localizer) cockpit.Pul
 				}
 				if item.Workspace == "" {
 					item.Operations = append(item.Operations,
-						cockpit.Operation{ID: tui.PRStartPlanSlot, Label: tuiLabel(localizer, "bootstrap.tui.start-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.StartPullRequestRequest{Provider: provider, Root: snapshot.Root, Project: project, PullRequestID: source.PullRequestID, Repositories: []string{localRepository}, ProviderRepositories: []string{source.Repository}, States: startStates}},
-						cockpit.Operation{ID: tui.PRStartSlot, Label: tuiLabel(localizer, "bootstrap.tui.start"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.StartPullRequestRequest{Provider: provider, Root: snapshot.Root, Project: project, PullRequestID: source.PullRequestID, Repositories: []string{localRepository}, ProviderRepositories: []string{source.Repository}, States: startStates, Execute: true}},
+						cockpit.Operation{Relation: cockpit.Relation(tui.PRStartPlanSlot), Label: tuiLabel(localizer, "bootstrap.tui.start-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.StartPullRequestRequest{Provider: provider, Root: snapshot.Root, Project: project, PullRequestID: source.PullRequestID, Repositories: []string{localRepository}, ProviderRepositories: []string{source.Repository}, States: startStates}},
+						cockpit.Operation{Relation: cockpit.Relation(tui.PRStartSlot), Label: tuiLabel(localizer, "bootstrap.tui.start"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.StartPullRequestRequest{Provider: provider, Root: snapshot.Root, Project: project, PullRequestID: source.PullRequestID, Repositories: []string{localRepository}, ProviderRepositories: []string{source.Repository}, States: startStates, Execute: true}},
 					)
 				} else {
 					workspaceValue := stringPointer(item.Workspace)
 					selection := workspaceapp.Selection{Root: snapshot.Root, Workspace: workspaceValue}
 					item.Operations = append(item.Operations,
-						cockpit.Operation{ID: tui.PROpenAgentSlot, Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: cockpit.RiskExternal, Request: workapp.OpenRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, Repository: localRepository}},
-						cockpit.Operation{ID: tui.PRFinishPlanSlot, Label: tuiLabel(localizer, "bootstrap.tui.finish-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.FinishRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, CreatePR: true, FinishStates: finishStates}},
-						cockpit.Operation{ID: tui.PRFinishSlot, Label: tuiLabel(localizer, "bootstrap.tui.finish"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.FinishRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, Execute: true, CreatePR: true, FinishStates: finishStates}},
-						cockpit.Operation{ID: tui.PRDiffSlot, Label: tuiLabel(localizer, "bootstrap.tui.diff"), Active: true, Risk: cockpit.RiskPreview, Request: workspaceapp.CommitRequest{Selection: selection}},
+						cockpit.Operation{Relation: cockpit.Relation(tui.PROpenAgentSlot), Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: cockpit.RiskExternal, Request: workapp.OpenRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, Repository: localRepository}},
+						cockpit.Operation{Relation: cockpit.Relation(tui.PRFinishPlanSlot), Label: tuiLabel(localizer, "bootstrap.tui.finish-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.FinishRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, CreatePR: true, FinishStates: finishStates}},
+						cockpit.Operation{Relation: cockpit.Relation(tui.PRFinishSlot), Label: tuiLabel(localizer, "bootstrap.tui.finish"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.FinishRequest{Provider: provider, Root: snapshot.Root, Workspace: workspaceValue, Execute: true, CreatePR: true, FinishStates: finishStates}},
+						cockpit.Operation{Relation: cockpit.Relation(tui.PRDiffSlot), Label: tuiLabel(localizer, "bootstrap.tui.diff"), Active: true, Risk: cockpit.RiskPreview, Request: workspaceapp.CommitRequest{Selection: selection}},
 					)
 				}
-				item.Operations = append(item.Operations, cockpit.Operation{ID: tui.PRChangelogSlot, Label: tuiLabel(localizer, "bootstrap.tui.changelog"), Active: true, Request: workapp.ChangelogRequest{Provider: provider, Root: snapshot.Root, Project: project, Source: workapp.ChangelogPullRequests, PullRequestIDs: []int64{source.PullRequestID}, Repositories: []string{source.Repository}}})
+				item.Operations = append(item.Operations, cockpit.Operation{Relation: cockpit.Relation(tui.PRChangelogSlot), Label: tuiLabel(localizer, "bootstrap.tui.changelog"), Active: true, Request: workapp.ChangelogRequest{Provider: provider, Root: snapshot.Root, Project: project, Source: workapp.ChangelogPullRequests, PullRequestIDs: []int64{source.PullRequestID}, Repositories: []string{source.Repository}}})
 				if item.URL != "" {
-					item.Operations = append(item.Operations, cockpit.Operation{ID: tui.PROpenURLSlot, Label: tuiLabel(localizer, "bootstrap.tui.open-url"), Active: true, Risk: cockpit.RiskExternal, Request: openURLRequest{URL: item.URL}})
+					item.Operations = append(item.Operations, cockpit.Operation{Relation: cockpit.Relation(tui.PROpenURLSlot), Label: tuiLabel(localizer, "bootstrap.tui.open-url"), Active: true, Risk: cockpit.RiskExternal, Request: openURLRequest{URL: item.URL}})
 				}
+				item.Operations = bindOperations(item.Ref, item.Operations)
 				result = append(result, item)
 			}
 		}

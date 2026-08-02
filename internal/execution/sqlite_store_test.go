@@ -266,3 +266,54 @@ func TestSQLiteStoreRecoveryInterruptsUnsafeAndActiveExecutions(t *testing.T) {
 		}
 	}
 }
+
+func TestSQLiteStorePersistsExecutionSubject(t *testing.T) {
+	store, _ := openTestSQLiteStore(t)
+	item, queued := testStoredExecution(t, StatusQueued, true, time.Now().UTC().Add(time.Minute))
+	item.Record.Subject = &Subject{Kind: "work-item", Project: "default", Key: "WI-42", Relation: "start"}
+	if _, _, err := store.Create(context.Background(), item, queued); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.Get(context.Background(), item.Record.ExecutionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Record.Subject == nil || *stored.Record.Subject != *item.Record.Subject {
+		t.Fatalf("subject = %#v, want %#v", stored.Record.Subject, item.Record.Subject)
+	}
+}
+
+func TestSQLiteStoreMigratesVersionOneSubjectColumns(t *testing.T) {
+	store, path := openTestSQLiteStore(t)
+	for _, statement := range []string{
+		`ALTER TABLE executions DROP COLUMN subject_kind`,
+		`ALTER TABLE executions DROP COLUMN subject_project`,
+		`ALTER TABLE executions DROP COLUMN subject_key`,
+		`ALTER TABLE executions DROP COLUMN subject_relation`,
+		`PRAGMA user_version=1`,
+	} {
+		if _, err := store.database.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := OpenSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	var version int
+	if err = migrated.database.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != sqliteSchemaVersion {
+		t.Fatalf("schema version = %d, want %d", version, sqliteSchemaVersion)
+	}
+	item, queued := testStoredExecution(t, StatusQueued, true, time.Now().UTC().Add(time.Minute))
+	item.Record.Subject = &Subject{Kind: "root", Key: "/tmp/root", Relation: "doctor"}
+	if _, _, err = migrated.Create(context.Background(), item, queued); err != nil {
+		t.Fatalf("create after migration: %v", err)
+	}
+}

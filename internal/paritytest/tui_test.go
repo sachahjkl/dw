@@ -76,8 +76,8 @@ func TestTUIFilterAndDestructiveConfirmationTransitions(t *testing.T) {
 	snapshot := cockpit.Snapshot{Workspaces: []cockpit.Workspace{{
 		Path: "/isolated/root/workspaces/42",
 		Operations: []cockpit.Operation{
-			{ID: tui.WorkspaceOpenSlot, Label: "Open", Risk: cockpit.RiskSafe, Active: true},
-			{ID: tui.WorkspaceRemoveSlot, Label: "Remove", Risk: cockpit.RiskDestructive, Active: true},
+			{Relation: cockpit.Relation(tui.WorkspaceOpenSlot), Label: "Open", Risk: cockpit.RiskSafe, Active: true},
+			{Relation: cockpit.Relation(tui.WorkspaceRemoveSlot), Label: "Remove", Risk: cockpit.RiskDestructive, Active: true},
 		},
 	}}}
 	model := tui.NewModelWithSnapshot(tui.Dependencies{Root: "/isolated/root"}, snapshot)

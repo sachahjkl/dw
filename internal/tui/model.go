@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"strconv"
 	"strings"
 	"time"
 
@@ -15,35 +14,34 @@ import (
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
-// Stable action slot IDs let presentation projectors attach concrete requests
-// without teaching the TUI domain request types.
+// Stable semantic relations let presentation adapters select projected operations.
 const (
-	WorkspaceOpenSlot       action.ID = "tui.workspace.open"
-	WorkspacePreflightSlot  action.ID = "tui.workspace.preflight"
-	WorkspaceSyncSlot       action.ID = "tui.workspace.sync"
-	WorkspaceLatestSlot     action.ID = "tui.workspace.repo.latest"
-	WorkspaceHandoffSlot    action.ID = "tui.workspace.handoff.validate"
-	WorkspaceCommitSlot     action.ID = "tui.workspace.commit-preview"
-	WorkspaceFinishPlanSlot action.ID = "tui.workspace.finish-preview"
-	WorkspaceFinishSlot     action.ID = "tui.workspace.finish-execute"
-	WorkspaceRemovePlanSlot action.ID = "tui.workspace.teardown-preview"
-	WorkspaceRemoveSlot     action.ID = "tui.workspace.teardown-execute"
-	WorkStartPlanSlot       action.ID = "tui.workspace.start-preview"
-	WorkStartSlot           action.ID = "tui.workspace.start-execute"
-	WorkOpenAgentSlot       action.ID = "tui.workspace.open-from-work"
-	WorkContextSlot         action.ID = "tui.work.context.show"
-	WorkItemSlot            action.ID = "tui.work.item.show"
-	WorkSetStateSlot        action.ID = "tui.work.item.state.set"
-	WorkOpenURLSlot         action.ID = "tui.work.open-url"
-	PRStartPlanSlot         action.ID = "tui.workspace.pr.start-preview"
-	PRStartSlot             action.ID = "tui.workspace.pr.start-execute"
-	PROpenAgentSlot         action.ID = "tui.workspace.open-from-pr"
-	PRFinishPlanSlot        action.ID = "tui.workspace.finish-from-pr-preview"
-	PRFinishSlot            action.ID = "tui.workspace.finish-from-pr-execute"
-	PRChangelogSlot         action.ID = "tui.work.changelog"
-	PRDiffSlot              action.ID = "tui.workspace.diff-preview"
-	PROpenURLSlot           action.ID = "tui.work.pr.open-url"
-	DataCatalogSlot         action.ID = "tui.data.catalog"
+	WorkspaceOpenSlot       action.ID = "open-workspace"
+	WorkspacePreflightSlot  action.ID = "preflight"
+	WorkspaceSyncSlot       action.ID = "sync"
+	WorkspaceLatestSlot     action.ID = "update-repositories"
+	WorkspaceHandoffSlot    action.ID = "validate-handoff"
+	WorkspaceCommitSlot     action.ID = "review-commit"
+	WorkspaceFinishPlanSlot action.ID = "review-finish"
+	WorkspaceFinishSlot     action.ID = "finish"
+	WorkspaceRemovePlanSlot action.ID = "review-removal"
+	WorkspaceRemoveSlot     action.ID = "remove"
+	WorkStartPlanSlot       action.ID = "review-start"
+	WorkStartSlot           action.ID = "start"
+	WorkOpenAgentSlot       action.ID = "open-workspace"
+	WorkContextSlot         action.ID = "show-context"
+	WorkItemSlot            action.ID = "inspect"
+	WorkSetStateSlot        action.ID = "change-state"
+	WorkOpenURLSlot         action.ID = "open-link"
+	PRStartPlanSlot         action.ID = "review-start"
+	PRStartSlot             action.ID = "start"
+	PROpenAgentSlot         action.ID = "open-workspace"
+	PRFinishPlanSlot        action.ID = "review-finish"
+	PRFinishSlot            action.ID = "finish"
+	PRChangelogSlot         action.ID = "changelog"
+	PRDiffSlot              action.ID = "review-diff"
+	PROpenURLSlot           action.ID = "open-link"
+	DataCatalogSlot         action.ID = "catalog"
 )
 
 type KeyKind uint8
@@ -912,7 +910,7 @@ func (m *Model) menuItems() []menuItem {
 	section := [...]string{"", "configuration", "default-agent", "terminal-color"}[m.selectedMenuSection]
 	result := make([]menuItem, 0)
 	for i := range m.snapshot.Operations {
-		operationSection, key := menuOperationPlacement(m.snapshot.Operations[i].ID)
+		operationSection, key := menuOperationPlacement(m.snapshot.Operations[i].Relation)
 		if operationSection != section {
 			continue
 		}
@@ -922,37 +920,39 @@ func (m *Model) menuItems() []menuItem {
 	return result
 }
 
-func menuOperationPlacement(id action.ID) (string, string) {
-	value := string(id)
-	switch value {
-	case "tui.menu.config.show":
+func menuOperationPlacement(relation cockpit.Relation) (string, string) {
+	switch relation {
+	case cockpit.RelationViewConfiguration:
 		return "configuration", "s"
-	case "tui.menu.config.doctor":
+	case cockpit.RelationValidateConfig:
 		return "configuration", "d"
-	case "tui.menu.config.refresh":
+	case cockpit.RelationRefreshConfig:
 		return "configuration", "r"
-	case "tui.menu.guide":
+	case cockpit.RelationShowGuide:
 		return "configuration", "g"
-	case "tui.menu.agent.doctor":
+	case cockpit.RelationValidateAgent:
 		return "configuration", "a"
+	case cockpit.RelationSetAgentOpenCode:
+		return "default-agent", "1"
+	case cockpit.RelationSetAgentCursor:
+		return "default-agent", "2"
+	case cockpit.RelationSetAgentClaude:
+		return "default-agent", "3"
+	case cockpit.RelationSetAgentCodex:
+		return "default-agent", "4"
+	case cockpit.RelationSetAgentCodexCLI:
+		return "default-agent", "5"
+	case cockpit.RelationSetAgentCopilot:
+		return "default-agent", "6"
+	case cockpit.RelationSetColorAuto:
+		return "terminal-color", "7"
+	case cockpit.RelationSetColorAlways:
+		return "terminal-color", "8"
+	case cockpit.RelationSetColorNever:
+		return "terminal-color", "9"
+	default:
+		return "", ""
 	}
-	if strings.HasPrefix(value, "tui.menu.agent.") {
-		choices := []string{"opencode", "cursor", "claude", "codex", "codex-cli", "copilot"}
-		for index, choice := range choices {
-			if value == "tui.menu.agent."+choice {
-				return "default-agent", strconv.Itoa(index + 1)
-			}
-		}
-	}
-	if strings.HasPrefix(value, "tui.menu.color.") {
-		choices := []string{"auto", "always", "never"}
-		for index, choice := range choices {
-			if value == "tui.menu.color."+choice {
-				return "terminal-color", strconv.Itoa(index + 7)
-			}
-		}
-	}
-	return "", ""
 }
 
 func (m *Model) runSelectedMenuItem(items []menuItem) []Effect {

@@ -113,14 +113,13 @@ func newController(localizer l10n.Localizer, policy console.Policy, dirs config.
 			return cockpitErr
 		}
 		server, serverErr := web.New(web.Dependencies{
-			Executor: runningExecutor,
-			Actor:    actor,
-			Grammar:  grammar,
-			Routes:   routes,
-			Cockpit:  cockpitService,
-			Store:    webManager.Store(),
-			Config:   webConfig,
-			Settings: runtimeSettings.Web,
+			Executor:  runningExecutor,
+			Actor:     actor,
+			Localizer: localizer,
+			Cockpit:   cockpitService,
+			Store:     webManager.Store(),
+			Config:    webConfig,
+			Settings:  runtimeSettings.Web,
 		})
 		if serverErr != nil {
 			return serverErr

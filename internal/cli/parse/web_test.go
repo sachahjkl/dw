@@ -8,7 +8,7 @@ import (
 
 func TestWebPortAcceptsCompleteRange(t *testing.T) {
 	for _, value := range []string{"0", "7331", "65535"} {
-		result, err := Parse(spec.Root(nil), []string{"web", "start", "--port", value, "--no-open"})
+		result, err := Parse(spec.Root(nil), []string{"web", "start", "--port", value})
 		if err != nil {
 			t.Fatalf("port %s: %v", value, err)
 		}
@@ -23,6 +23,25 @@ func TestWebPortRejectsOutOfRangeValues(t *testing.T) {
 		if _, err := Parse(spec.Root(nil), []string{"web", "register", "--port", value}); err == nil {
 			t.Fatalf("port %s was accepted", value)
 		}
+	}
+}
+
+func TestWebAccessOptionsParse(t *testing.T) {
+	result, err := Parse(spec.Root(nil), []string{
+		"web", "start", "--open", "--no-expiry", "--unauthenticated",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Values.Bool("open") || !result.Values.Bool("no_expiry") || !result.Values.Bool("unauthenticated") {
+		t.Fatalf("start values = %#v", result.Values)
+	}
+	result, err = Parse(spec.Root(nil), []string{"web", "open", "--token", "chosen-token"})
+	if err != nil || result.Values.String("token") != "chosen-token" {
+		t.Fatalf("open token = %q, err = %v", result.Values.String("token"), err)
+	}
+	if _, err = Parse(spec.Root(nil), []string{"web", "start", "--no-open"}); err == nil {
+		t.Fatal("removed --no-open option was accepted")
 	}
 }
 

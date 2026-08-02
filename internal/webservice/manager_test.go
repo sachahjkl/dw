@@ -2,6 +2,7 @@ package webservice
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -35,6 +36,7 @@ func TestManagerOpenAcceptsCompleteTicketResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var noExpiryRequested atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Header.Get("Authorization") != "Bearer "+configValue.ServiceSecret.String() {
 			http.Error(writer, "unauthorized", http.StatusUnauthorized)
@@ -44,9 +46,18 @@ func TestManagerOpenAcceptsCompleteTicketResponse(t *testing.T) {
 		case "/healthz":
 			writer.WriteHeader(http.StatusOK)
 		case "/admin/tickets":
+			var value struct {
+				Schema   uint16 `json:"schema"`
+				NoExpiry bool   `json:"noExpiry"`
+			}
+			if decodeErr := json.NewDecoder(request.Body).Decode(&value); decodeErr != nil || value.Schema != SchemaV1 {
+				http.Error(writer, "invalid request", http.StatusBadRequest)
+				return
+			}
+			noExpiryRequested.Store(value.NoExpiry)
 			writer.Header().Set("Content-Type", "application/json")
 			writer.WriteHeader(http.StatusCreated)
-			_, _ = fmt.Fprintf(writer, `{"schema":1,"ticket":"ticket-value","expiresAt":%q}`, time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano))
+			_, _ = fmt.Fprint(writer, `{"schema":1,"ticket":"ticket-value"}`)
 		default:
 			http.NotFound(writer, request)
 		}
@@ -66,22 +77,28 @@ func TestManagerOpenAcceptsCompleteTicketResponse(t *testing.T) {
 	}
 	manager.client = server.Client()
 
-	result, err := manager.Open(context.Background())
+	result, err := manager.Open(context.Background(), OpenOptions{NoExpiry: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Location != "http://"+address+"/?ticket=ticket-value" {
 		t.Fatalf("ticket URL = %q", result.Location)
 	}
+	if !noExpiryRequested.Load() {
+		t.Fatal("non-expiring ticket was not requested")
+	}
 	if !result.Opened {
 		t.Fatal("browser was not marked as opened")
+	}
+	if result.Location != "http://"+address+"/?ticket=ticket-value" {
+		t.Fatalf("non-expiring ticket URL = %q", result.Location)
 	}
 	if opened != result.Location {
 		t.Fatalf("opened URL = %q", opened)
 	}
 
 	manager.launch = func(string) error { return fmt.Errorf("browser unavailable") }
-	result, err = manager.Open(context.Background())
+	result, err = manager.Open(context.Background(), OpenOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +184,11 @@ func TestManagerStartStopsPreviousExecutableBeforeReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager.client = oldServer.Client()
+	var launchCalled atomic.Bool
+	manager.launch = func(string) error {
+		launchCalled.Store(true)
+		return nil
+	}
 
 	var newServer *httptest.Server
 	t.Cleanup(func() {
@@ -197,7 +219,7 @@ func TestManagerStartStopsPreviousExecutableBeforeReplacement(t *testing.T) {
 		})
 	}
 
-	result, err := manager.Start(context.Background(), StartOptions{NoOpen: true})
+	result, err := manager.Start(context.Background(), StartOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,5 +228,44 @@ func TestManagerStartStopsPreviousExecutableBeforeReplacement(t *testing.T) {
 	}
 	if !result.Status.Running || result.Status.Executable != newExecutable || result.Status.PID != 2 {
 		t.Fatalf("replacement status = %#v", result.Status)
+	}
+	if result.Open != nil || launchCalled.Load() {
+		t.Fatalf("default start opened a browser: %#v", result.Open)
+	}
+}
+
+func TestManagerRejectsNoExpiryWithoutOpen(t *testing.T) {
+	directory := t.TempDir()
+	manager, err := NewManager(config.PlatformBaseDirs{
+		HomeDir:    directory,
+		ConfigDir:  filepath.Join(directory, "config"),
+		StateDir:   filepath.Join(directory, "state"),
+		RuntimeDir: filepath.Join(directory, "run"),
+	}, filepath.Join(directory, "dw"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = manager.Start(context.Background(), StartOptions{NoExpiry: true}); err == nil || err.Error() != "web.no-expiry-requires-open" {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestResolveStartAuthModes(t *testing.T) {
+	token := "chosen reusable token"
+	mode, digest, err := resolveStartAuth(WebConfigV1{}, false, StartOptions{Token: &token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode != AuthToken || digest == token || !AccessTokenMatches(digest, token) {
+		t.Fatalf("token mode = %q, digest = %q", mode, digest)
+	}
+
+	mode, digest, err = resolveStartAuth(WebConfigV1{}, false, StartOptions{Unauthenticated: true})
+	if err != nil || mode != AuthNone || digest != "" {
+		t.Fatalf("unauthenticated mode = %q, digest = %q, error = %v", mode, digest, err)
+	}
+
+	if _, _, err = resolveStartAuth(WebConfigV1{}, false, StartOptions{Unauthenticated: true, Token: &token}); err == nil {
+		t.Fatal("conflicting authentication options were accepted")
 	}
 }

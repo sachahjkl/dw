@@ -22,9 +22,18 @@ import (
 )
 
 type StartOptions struct {
-	Root   *string
-	Port   *uint16
-	NoOpen bool
+	Root            *string
+	Port            *uint16
+	Open            bool
+	NoExpiry        bool
+	Unauthenticated bool
+	Token           *string
+	preserveAuth    bool
+}
+
+type OpenOptions struct {
+	NoExpiry bool
+	Token    *string
 }
 
 type RegisterOptions struct {
@@ -83,9 +92,19 @@ func NewManagerWithSettings(dirs config.PlatformBaseDirs, executable string, set
 func (manager *Manager) Store() *Store { return manager.store }
 
 func (manager *Manager) Start(ctx context.Context, options StartOptions) (StartResult, error) {
+	if options.NoExpiry && !options.Open {
+		return StartResult{}, fmt.Errorf("web.no-expiry-requires-open")
+	}
 	previous, previousErr := manager.store.LoadConfig()
 	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
 		return StartResult{}, previousErr
+	}
+	authMode, accessTokenDigest, err := resolveStartAuth(previous, previousErr == nil, options)
+	if err != nil {
+		return StartResult{}, err
+	}
+	if options.NoExpiry && authMode != AuthTicket {
+		return StartResult{}, fmt.Errorf("web.authentication-option-unavailable")
 	}
 	if previousErr == nil && previous.Registration == RegistrationNone {
 		resolvedRoot := previous.Root
@@ -96,7 +115,7 @@ func (manager *Manager) Start(ctx context.Context, options StartOptions) (StartR
 		if options.Port != nil {
 			resolvedPort = *options.Port
 		}
-		if previous.Root != resolvedRoot || previous.Port != resolvedPort || previous.Executable != manager.executable {
+		if previous.Root != resolvedRoot || previous.Port != resolvedPort || previous.Executable != manager.executable || previous.EffectiveAuthMode() != authMode || previous.AccessTokenDigest != accessTokenDigest {
 			if err := manager.Stop(ctx); err != nil {
 				return StartResult{}, err
 			}
@@ -106,16 +125,23 @@ func (manager *Manager) Start(ctx context.Context, options StartOptions) (StartR
 	if err != nil {
 		return StartResult{}, err
 	}
+	current.AuthMode = authMode
+	current.AccessTokenDigest = accessTokenDigest
+	if err = manager.store.SaveConfig(current); err != nil {
+		return StartResult{}, err
+	}
 	changed := previousErr != nil ||
 		previous.Root != current.Root ||
 		previous.Port != current.Port ||
-		previous.Executable != current.Executable
+		previous.Executable != current.Executable ||
+		previous.EffectiveAuthMode() != current.EffectiveAuthMode() ||
+		previous.AccessTokenDigest != current.AccessTokenDigest
 	status, err := manager.Status(ctx)
 	if err != nil {
 		return StartResult{}, err
 	}
 	if status.Running && !changed {
-		return manager.completeStart(ctx, status, options.NoOpen)
+		return manager.completeStart(ctx, status, options)
 	}
 	if current.Registration != RegistrationNone {
 		if current.Registration != manager.native.Registration() {
@@ -147,7 +173,7 @@ func (manager *Manager) Start(ctx context.Context, options StartOptions) (StartR
 	if err != nil {
 		return StartResult{}, err
 	}
-	return manager.completeStart(ctx, status, options.NoOpen)
+	return manager.completeStart(ctx, status, options)
 }
 
 func (manager *Manager) launchLocal(current WebConfigV1) error {
@@ -168,12 +194,12 @@ func (manager *Manager) launchLocal(current WebConfigV1) error {
 	return command.Process.Release()
 }
 
-func (manager *Manager) completeStart(ctx context.Context, status StatusV1, noOpen bool) (StartResult, error) {
+func (manager *Manager) completeStart(ctx context.Context, status StatusV1, options StartOptions) (StartResult, error) {
 	result := StartResult{Status: status}
-	if noOpen {
+	if !options.Open {
 		return result, nil
 	}
-	opened, err := manager.Open(ctx)
+	opened, err := manager.Open(ctx, OpenOptions{NoExpiry: options.NoExpiry, Token: options.Token})
 	result.Open = &opened
 	return result, err
 }
@@ -244,6 +270,7 @@ func (manager *Manager) Status(ctx context.Context) (StatusV1, error) {
 		Registered: configValue.Registration != RegistrationNone,
 		Address:    net.JoinHostPort("127.0.0.1", strconv.Itoa(int(configValue.Port))),
 		Executable: configValue.Executable,
+		AuthMode:   configValue.EffectiveAuthMode(),
 	}
 	if status.Registered {
 		if configValue.Registration != manager.native.Registration() {
@@ -321,13 +348,13 @@ func (manager *Manager) Unregister(ctx context.Context) error {
 	return manager.store.RemoveState()
 }
 
-func (manager *Manager) Open(ctx context.Context) (OpenResult, error) {
+func (manager *Manager) Open(ctx context.Context, options OpenOptions) (OpenResult, error) {
 	status, statusErr := manager.Status(ctx)
 	if statusErr != nil {
 		return OpenResult{}, statusErr
 	}
 	if !status.Running {
-		if _, startErr := manager.Start(ctx, StartOptions{NoOpen: true}); startErr != nil {
+		if _, startErr := manager.Start(ctx, StartOptions{preserveAuth: true}); startErr != nil {
 			return OpenResult{}, startErr
 		}
 	}
@@ -339,29 +366,57 @@ func (manager *Manager) Open(ctx context.Context) (OpenResult, error) {
 	if err != nil {
 		return OpenResult{}, err
 	}
-	request, err := manager.adminRequest(ctx, http.MethodPost, state.Address, "/admin/tickets", configValue.ServiceSecret, nil)
-	if err != nil {
-		return OpenResult{}, err
+	location := url.URL{Scheme: "http", Host: state.Address, Path: "/"}
+	switch configValue.EffectiveAuthMode() {
+	case AuthNone:
+		if options.NoExpiry || options.Token != nil {
+			return OpenResult{}, fmt.Errorf("web.authentication-option-unavailable")
+		}
+	case AuthToken:
+		if options.NoExpiry {
+			return OpenResult{}, fmt.Errorf("web.authentication-option-unavailable")
+		}
+		if options.Token == nil || !AccessTokenMatches(configValue.AccessTokenDigest, *options.Token) {
+			return OpenResult{}, fmt.Errorf("web.access-token-invalid")
+		}
+		location.RawQuery = url.Values{"token": []string{*options.Token}}.Encode()
+	case AuthTicket:
+		if options.Token != nil {
+			return OpenResult{}, fmt.Errorf("web.authentication-option-unavailable")
+		}
+		body, marshalErr := json.Marshal(struct {
+			Schema   uint16 `json:"schema"`
+			NoExpiry bool   `json:"noExpiry"`
+		}{Schema: SchemaV1, NoExpiry: options.NoExpiry})
+		if marshalErr != nil {
+			return OpenResult{}, marshalErr
+		}
+		request, requestErr := manager.adminRequest(ctx, http.MethodPost, state.Address, "/admin/tickets", configValue.ServiceSecret, body)
+		if requestErr != nil {
+			return OpenResult{}, requestErr
+		}
+		response, requestErr := manager.client.Do(request)
+		if requestErr != nil {
+			return OpenResult{}, requestErr
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusCreated {
+			return OpenResult{}, fmt.Errorf("web.ticket-failed:%d", response.StatusCode)
+		}
+		var ticket struct {
+			Schema    uint16     `json:"schema"`
+			Ticket    string     `json:"ticket"`
+			ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+		}
+		decoder := json.NewDecoder(response.Body)
+		decoder.DisallowUnknownFields()
+		if requestErr = decoder.Decode(&ticket); requestErr != nil || ticket.Schema != SchemaV1 || ticket.Ticket == "" {
+			return OpenResult{}, fmt.Errorf("web.invalid-ticket")
+		}
+		location.RawQuery = url.Values{"ticket": []string{ticket.Ticket}}.Encode()
+	default:
+		return OpenResult{}, fmt.Errorf("web.invalid-auth-mode:%s", configValue.AuthMode)
 	}
-	response, err := manager.client.Do(request)
-	if err != nil {
-		return OpenResult{}, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusCreated {
-		return OpenResult{}, fmt.Errorf("web.ticket-failed:%d", response.StatusCode)
-	}
-	var ticket struct {
-		Schema    uint16    `json:"schema"`
-		Ticket    string    `json:"ticket"`
-		ExpiresAt time.Time `json:"expiresAt"`
-	}
-	decoder := json.NewDecoder(response.Body)
-	decoder.DisallowUnknownFields()
-	if err = decoder.Decode(&ticket); err != nil || ticket.Schema != SchemaV1 || ticket.Ticket == "" {
-		return OpenResult{}, fmt.Errorf("web.invalid-ticket")
-	}
-	location := url.URL{Scheme: "http", Host: state.Address, Path: "/", RawQuery: url.Values{"ticket": []string{ticket.Ticket}}.Encode()}
 	result := OpenResult{Location: location.String()}
 	if err = manager.launch(result.Location); err == nil {
 		result.Opened = true
@@ -386,6 +441,23 @@ func (manager *Manager) loadOrCreateConfig(root *string, port *uint16) (WebConfi
 		resolvedPort = *port
 	}
 	return manager.store.EnsureConfig(resolvedRoot, resolvedPort, manager.executable)
+}
+
+func resolveStartAuth(previous WebConfigV1, hasPrevious bool, options StartOptions) (AuthMode, string, error) {
+	if options.preserveAuth && hasPrevious {
+		return previous.EffectiveAuthMode(), previous.AccessTokenDigest, nil
+	}
+	if options.Unauthenticated && options.Token != nil {
+		return "", "", fmt.Errorf("web.authentication-options-conflict")
+	}
+	if options.Unauthenticated {
+		return AuthNone, "", nil
+	}
+	if options.Token != nil {
+		digest, err := HashAccessToken(*options.Token)
+		return AuthToken, digest, err
+	}
+	return AuthTicket, "", nil
 }
 
 func (manager *Manager) waitForStatus(ctx context.Context, running bool) (StatusV1, error) {

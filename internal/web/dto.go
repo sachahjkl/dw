@@ -10,16 +10,24 @@ import (
 
 const schemaV1 uint16 = 1
 
-type FieldV1 struct {
-	Name   string   `json:"name"`
-	Values []string `json:"values"`
+type ResourceRefV1 struct {
+	Kind    string `json:"kind"`
+	Root    string `json:"root"`
+	Project string `json:"project,omitempty"`
+	Key     string `json:"key"`
 }
 
-type SubmitV1 struct {
-	Schema         uint16    `json:"schema"`
-	IdempotencyKey string    `json:"idempotencyKey"`
-	CommandKey     string    `json:"commandKey"`
-	Fields         []FieldV1 `json:"fields"`
+type OperationInputV1 struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type OperationSubmitV1 struct {
+	Schema         uint16             `json:"schema"`
+	IdempotencyKey string             `json:"idempotencyKey"`
+	Resource       ResourceRefV1      `json:"resource"`
+	Relation       string             `json:"relation"`
+	Inputs         []OperationInputV1 `json:"inputs"`
 }
 
 type ExecutionRefV1 struct {
@@ -53,6 +61,7 @@ type RecordV1 struct {
 	ActionID      string                   `json:"actionId"`
 	Status        execution.Status         `json:"status"`
 	Root          string                   `json:"root"`
+	Subject       *execution.Subject       `json:"subject,omitempty"`
 	Origin        execution.Origin         `json:"origin"`
 	Result        *execution.Encoded       `json:"result,omitempty"`
 	Failure       *execution.Failure       `json:"failure,omitempty"`
@@ -83,10 +92,15 @@ type SelectManyResponseV1 struct {
 	Values []string `json:"values"`
 }
 
+type TicketRequestV1 struct {
+	Schema   uint16 `json:"schema"`
+	NoExpiry bool   `json:"noExpiry"`
+}
+
 type TicketV1 struct {
-	Schema    uint16    `json:"schema"`
-	Ticket    string    `json:"ticket"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	Schema    uint16     `json:"schema"`
+	Ticket    string     `json:"ticket"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 type ShutdownV1 struct {

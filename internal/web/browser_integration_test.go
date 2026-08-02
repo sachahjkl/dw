@@ -98,36 +98,86 @@ func TestBrowserLiveModeEndToEnd(t *testing.T) {
 		chromedp.Navigate(location),
 		chromedp.WaitVisible("h1", chromedp.ByQuery),
 		chromedp.Title(&title),
-		chromedp.Evaluate(`(() => { const node = [...document.querySelectorAll('details')].find(item => item.querySelector('code')?.textContent === 'doctor'); if (!node) throw new Error('doctor command missing'); node.open = true; })()`, nil),
-		chromedp.Click(`details[open] button[type="submit"]`, chromedp.ByQuery),
-		chromedp.WaitVisible(`#executions .status.succeeded`, chromedp.ByQuery),
-		chromedp.Poll(`document.querySelector('#executions')?.innerText.includes('#3 succeeded')`, nil, chromedp.WithPollingMutation()),
+		chromedp.Poll(`(() => { const tabs=[...document.querySelectorAll('[role="tablist"] [role="tab"]')]; const panels=[...document.querySelectorAll('[role="tabpanel"]')]; const selected=tabs.filter(tab => tab.getAttribute('aria-selected') === 'true'); const actions=document.querySelector('#tab-actions'); return tabs.length === 6 && panels.length === 7 && selected.length === 1 && selected[0].id === 'tab-overview' && actions?.getAttribute('aria-controls') === 'actions' && tabs.every(tab => document.getElementById(tab.getAttribute('aria-controls'))?.getAttribute('aria-labelledby') === tab.id); })()`, nil),
 	); err != nil {
-		t.Fatalf("%v\n%s", err, chromeOutput.String())
+		t.Fatalf("verify tab semantics: %v\n%s", err, chromeOutput.String())
+	}
+	if err = chromedp.Run(browserContext,
+		chromedp.Focus(`#tab-overview`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight', bubbles:true}))`, nil),
+		chromedp.Poll(`document.activeElement?.id === 'tab-work' && document.querySelector('#tab-work')?.getAttribute('aria-selected') === 'true'`, nil),
+		chromedp.WaitVisible(`#work`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("use tab keyboard navigation: %v\n%s", err, chromeOutput.String())
+	}
+	var resourceDriven bool
+	if err = chromedp.Run(browserContext,
+		chromedp.Evaluate(`document.querySelector('#tab-commands, #commands, [data-command-key], [data-command-target]') === null`, &resourceDriven),
+		chromedp.Click(`#tab-overview`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#overview`, chromedp.ByQuery),
+		chromedp.Click(`#overview form[data-operation-relation="doctor"] button[type="submit"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#action-feedback`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatalf("submit contextual doctor operation: %v\nbrowser events: %v\n%s", err, browserErrors, chromeOutput.String())
+	}
+	if err = chromedp.Run(browserContext,
+		chromedp.Poll(`document.querySelector('#actions article[data-relation="doctor"]:is([data-status="succeeded"],[data-status="failed"],[data-status="canceled"],[data-status="interrupted"])') !== null`, nil, chromedp.WithPollingMutation()),
+		chromedp.Click(`#tab-actions`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#actions article[data-relation="doctor"]`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelector('#actions article[data-relation="doctor"] .activity').open = true`, nil),
+		chromedp.Poll(`(() => { const times=[...document.querySelectorAll('#actions time')]; return times.length > 0 && times.every(item => item.textContent !== item.dateTime); })()`, nil),
+	); err != nil {
+		t.Fatalf("run contextual doctor operation: %v\nbrowser events: %v\n%s", err, browserErrors, chromeOutput.String())
+	}
+	if !resourceDriven {
+		t.Fatal("web UI still exposes command catalogue elements")
 	}
 	if title != "DevWorkflow" {
 		t.Fatalf("title = %q", title)
 	}
 	var executionText string
-	if err = chromedp.Run(browserContext, chromedp.Text("#executions", &executionText, chromedp.ByQuery)); err != nil {
+	if err = chromedp.Run(browserContext, chromedp.Text("#actions", &executionText, chromedp.ByQuery)); err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{"doctor", "succeeded", "#1 queued", "#2 started", "#3 succeeded"} {
+	for _, marker := range []string{"Doctor", "Completed", "Action queued.", "Action started.", "Action completed."} {
 		if !strings.Contains(executionText, marker) {
 			t.Errorf("execution view does not contain %q: %s", marker, executionText)
 		}
 	}
+	var compactMobileChecks []bool
 	if err = chromedp.Run(browserContext,
-		chromedp.Evaluate(`(() => { const node = [...document.querySelectorAll('details')].find(item => item.querySelector('code')?.textContent === 'secret.delete'); if (!node) throw new Error('secret delete command missing'); node.open = true; const input = node.querySelector('input[type="text"]'); input.value = 'dw-browser-confirm'; input.dispatchEvent(new Event('input', {bubbles:true})); node.querySelector('button[type="submit"]').click(); })()`, nil),
-		chromedp.Poll(`[...document.querySelectorAll('#executions article.execution')].some(item => item.querySelector('h3')?.textContent === 'secret.delete' && item.querySelector('.status')?.textContent === 'waiting-input' && item.querySelector('.prompt input[type="checkbox"]'))`, nil, chromedp.WithPollingMutation()),
-		chromedp.Evaluate(`(() => { const item = [...document.querySelectorAll('#executions article.execution')].find(node => node.querySelector('h3')?.textContent === 'secret.delete' && node.querySelector('.status')?.textContent === 'waiting-input'); item.querySelector('.prompt input[type="checkbox"]').click(); item.querySelector('.prompt button[type="submit"]').click(); })()`, nil),
-		chromedp.Poll(`[...document.querySelectorAll('#executions article.execution')].some(item => item.querySelector('h3')?.textContent === 'secret.delete' && ['failed','succeeded'].includes(item.querySelector('.status')?.textContent) && !item.querySelector('.prompt'))`, nil, chromedp.WithPollingMutation()),
-		chromedp.Evaluate(`(() => { const node = [...document.querySelectorAll('details')].find(item => item.querySelector('code')?.textContent === 'secret.delete'); const input = node.querySelector('input[type="text"]'); input.value = 'dw-browser-cancel'; input.dispatchEvent(new Event('input', {bubbles:true})); node.querySelector('button[type="submit"]').click(); })()`, nil),
-		chromedp.Poll(`[...document.querySelectorAll('#executions article.execution')].some(item => item.querySelector('h3')?.textContent === 'secret.delete' && item.querySelector('.status')?.textContent === 'waiting-input')`, nil, chromedp.WithPollingMutation()),
-		chromedp.Evaluate(`(() => { const item = [...document.querySelectorAll('#executions article.execution')].find(node => node.querySelector('h3')?.textContent === 'secret.delete' && node.querySelector('.status')?.textContent === 'waiting-input'); item.querySelector('button[aria-label^="Cancel execution"]').click(); })()`, nil),
-		chromedp.Poll(`[...document.querySelectorAll('#executions article.execution')].some(item => item.querySelector('h3')?.textContent === 'secret.delete' && item.querySelector('.status')?.textContent === 'canceled')`, nil, chromedp.WithPollingMutation()),
+		emulation.SetDeviceMetricsOverride(390, 844, 1, false),
+		chromedp.Evaluate(`(() => { document.documentElement.style.scrollBehavior = 'auto'; document.querySelector('#tab-overview').click(); window.scrollTo(0, 300); })()`, nil),
+		chromedp.Poll(`Math.abs(document.querySelector('.navbar').getBoundingClientRect().top) <= 1`, nil),
+		chromedp.Evaluate(`(() => {
+			const header = document.querySelector('.app-header');
+			const nav = document.querySelector('.navbar');
+			const tabs = [...document.querySelectorAll('.nav-tabs .nav-tab')];
+			const stack = document.createElement('aside');
+			stack.className = 'toast-stack';
+			stack.innerHTML = '<button class="toast"><strong>Input required</strong><span>Confirm operation</span><small>Open</small></button>';
+			nav.after(stack);
+			const navRect = nav.getBoundingClientRect();
+			return [
+				header.getBoundingClientRect().height <= 52,
+				header.querySelector('.eyebrow, .root-path') === null,
+				header.querySelector('#tab-actions') !== null,
+				getComputedStyle(header.querySelector('h1')).whiteSpace === 'nowrap',
+				getComputedStyle(nav).position === 'sticky',
+				Math.abs(navRect.top) <= 1,
+				Math.abs(navRect.left) <= 1,
+				Math.abs(navRect.right - innerWidth) <= 1,
+				new Set(tabs.map(tab => Math.round(tab.getBoundingClientRect().top))).size === 1,
+				getComputedStyle(stack).position === 'static',
+			];
+		})()`, &compactMobileChecks),
 	); err != nil {
-		t.Fatalf("prompt and cancellation flow: %v\n%s", err, chromeOutput.String())
+		t.Fatal(err)
+	}
+	for index, passed := range compactMobileChecks {
+		if !passed {
+			t.Fatalf("mobile layout check %d failed: %v", index, compactMobileChecks)
+		}
 	}
 	var noHorizontalOverflow bool
 	if err = chromedp.Run(browserContext,
@@ -156,7 +206,9 @@ func TestBrowserLiveModeEndToEnd(t *testing.T) {
 	if err = chromedp.Run(browserContext,
 		emulation.SetDeviceMetricsOverride(1280, 800, 1, false),
 		chromedp.Navigate(restartedLocation),
-		chromedp.WaitVisible(`#executions .status.succeeded`, chromedp.ByQuery),
+		chromedp.Poll(`document.querySelector('#actions .status.succeeded') !== null`, nil, chromedp.WithPollingMutation()),
+		chromedp.Click(`#tab-actions`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#actions .status.succeeded`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -164,8 +216,9 @@ func TestBrowserLiveModeEndToEnd(t *testing.T) {
 
 func startWebTestService(t *testing.T, directory, binary string, environment []string, arguments ...string) {
 	t.Helper()
-	commandArguments := append([]string{"web", "start", "--no-open"}, arguments...)
+	commandArguments := append([]string{"web", "start"}, arguments...)
 	command := exec.Command(binary, commandArguments...)
+
 	command.Dir = directory
 	command.Env = environment
 	if output, err := command.CombinedOutput(); err != nil {
@@ -212,7 +265,7 @@ func webTestTicketURL(t *testing.T, temporary, address string) string {
 	if err = json.Unmarshal(configContent, &configValue); err != nil {
 		t.Fatal(err)
 	}
-	request, err := http.NewRequest(http.MethodPost, "http://"+address+"/admin/tickets", bytes.NewReader(nil))
+	request, err := http.NewRequest(http.MethodPost, "http://"+address+"/admin/tickets", bytes.NewReader([]byte(`{"schema":1,"noExpiry":false}`)))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sachahjkl/dw/internal/cli/spec"
+	"github.com/sachahjkl/dw/internal/cockpit"
 )
 
 templ page(view pageView) {
@@ -14,291 +14,461 @@ templ page(view pageView) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>DevWorkflow</title>
-			<link rel="stylesheet" href="/assets/app.css"/>
-			<script type="module" src="/assets/datastar.js"></script>
+			<link rel="stylesheet" href={ assetURL("app.css") }/>
+			<script type="module" src={ assetURL("app.js") }></script>
+			<script type="module" src={ assetURL("datastar.js") }></script>
 		</head>
-		<body>
+		<body data-signals="{activeTab:sessionStorage.getItem('dw.activeTab')||'overview'}" data-init="@get('/events')">
 			<a class="skip-link" href="#main">Skip to content</a>
-			<header>
-				<h1>DevWorkflow</h1>
-				<p><code>{ view.Snapshot.Root }</code></p>
-			</header>
-			<nav aria-label="Main navigation">
-				<a href="#dashboard">Dashboard</a>
-				<a href="#workspaces">Workspaces</a>
-				<a href="#work">Work</a>
-				<a href="#pull-requests">Pull requests</a>
-				<a href="#data">Data</a>
-				<a href="#providers">Providers</a>
-				<a href="#configuration">Configuration</a>
-				<a href="#commands">Commands</a>
-				<a href="#executions">Executions</a>
-			</nav>
-			<main id="main" data-init="@get('/events')">
+			@appHeader(view.ActiveActionCount)
+			<main id="main">
+				@navigation()
 				@liveSections(view)
-				@commandsSection(view.Commands)
 			</main>
+			<div id="action-feedback" class="action-feedback" role="status" aria-live="polite" hidden>Starting action…</div>
 			<footer>Datastar v1.0.2 · <a href="/assets/datastar-LICENSE.md">MIT license</a></footer>
 		</body>
 	</html>
 }
 
+templ appHeader(activeActions int) {
+	<header id="app-header" class="app-header">
+		<h1>DevWorkflow</h1>
+		@actionsShortcut(activeActions)
+	</header>
+}
+
+templ actionsShortcut(activeActions int) {
+	<button id="tab-actions" type="button" aria-controls="actions" aria-pressed="false" class="actions-link" data-tab="actions" data-class:active="$activeTab === 'actions'" data-attr:aria-pressed="$activeTab === 'actions' ? 'true' : 'false'" data-on:click="$activeTab = 'actions'; sessionStorage.setItem('dw.activeTab','actions')">
+		<span>Actions</span>
+		<span class="count-badge" aria-label={ fmt.Sprintf("%d active actions", activeActions) }>{ fmt.Sprint(activeActions) }</span>
+	</button>
+}
+
+templ navigation() {
+	<nav class="navbar" aria-label="Main views" role="tablist" aria-orientation="horizontal">
+		<div class="nav-tabs">
+			<button id="tab-overview" type="button" role="tab" aria-controls="overview" aria-selected="true" tabindex="0" class="nav-tab" data-tab="overview" data-class:active="$activeTab === 'overview'" data-attr:aria-selected="$activeTab === 'overview' ? 'true' : 'false'" data-attr:tabindex="$activeTab === 'overview' ? '0' : '-1'" data-on:click="$activeTab = 'overview'; sessionStorage.setItem('dw.activeTab','overview')">Overview</button>
+			<button id="tab-work" type="button" role="tab" aria-controls="work" aria-selected="false" tabindex="-1" class="nav-tab" data-tab="work" data-class:active="$activeTab === 'work'" data-attr:aria-selected="$activeTab === 'work' ? 'true' : 'false'" data-attr:tabindex="$activeTab === 'work' ? '0' : '-1'" data-on:click="$activeTab = 'work'; sessionStorage.setItem('dw.activeTab','work')">Work</button>
+			<button id="tab-workspaces" type="button" role="tab" aria-controls="workspaces" aria-selected="false" tabindex="-1" class="nav-tab" data-tab="workspaces" data-class:active="$activeTab === 'workspaces'" data-attr:aria-selected="$activeTab === 'workspaces' ? 'true' : 'false'" data-attr:tabindex="$activeTab === 'workspaces' ? '0' : '-1'" data-on:click="$activeTab = 'workspaces'; sessionStorage.setItem('dw.activeTab','workspaces')">Workspaces</button>
+			<button id="tab-pull-requests" type="button" role="tab" aria-controls="pull-requests" aria-selected="false" tabindex="-1" class="nav-tab" data-tab="pull-requests" data-class:active="$activeTab === 'pull-requests'" data-attr:aria-selected="$activeTab === 'pull-requests' ? 'true' : 'false'" data-attr:tabindex="$activeTab === 'pull-requests' ? '0' : '-1'" data-on:click="$activeTab = 'pull-requests'; sessionStorage.setItem('dw.activeTab','pull-requests')">Pull requests</button>
+			<button id="tab-data" type="button" role="tab" aria-controls="data" aria-selected="false" tabindex="-1" class="nav-tab" data-tab="data" data-class:active="$activeTab === 'data'" data-attr:aria-selected="$activeTab === 'data' ? 'true' : 'false'" data-attr:tabindex="$activeTab === 'data' ? '0' : '-1'" data-on:click="$activeTab = 'data'; sessionStorage.setItem('dw.activeTab','data')">Data</button>
+			<button id="tab-settings" type="button" role="tab" aria-controls="settings" aria-selected="false" tabindex="-1" class="nav-tab" data-tab="settings" data-class:active="$activeTab === 'settings'" data-attr:aria-selected="$activeTab === 'settings' ? 'true' : 'false'" data-attr:tabindex="$activeTab === 'settings' ? '0' : '-1'" data-on:click="$activeTab = 'settings'; sessionStorage.setItem('dw.activeTab','settings')">Settings</button>
+		</div>
+	</nav>
+}
+
 templ liveSections(view pageView) {
-	<div id="live-sections" aria-live="polite">
+	<div id="live-sections">
+		@notifications(view.Toasts)
 		if view.Error != "" {
-			<p class="error" role="alert"><strong>Refresh failed:</strong> { view.Error }</p>
+			<p class="error page-error" role="alert"><strong>Refresh failed</strong><span>{ view.Error }</span></p>
 		}
 		@dashboardSection(view)
-		@workspacesSection(view)
 		@workSection(view)
+		@workspacesSection(view)
 		@pullRequestsSection(view)
 		@dataSection(view)
-		@providersSection(view)
-		@configurationSection(view)
-		@executionsSection(view.Executions)
+		@settingsSection(view)
+		@executionsSection(view.Executions, view.ActiveActionCount)
 	</div>
 }
 
+templ notifications(toasts []toastView) {
+	if len(toasts) != 0 {
+		<aside class="toast-stack" aria-label="Notifications" aria-live="assertive">
+			for _, toast := range toasts {
+				<button type="button" class="toast" data-tab={ toast.Target } data-on:click={ "$activeTab = '" + toast.Target + "'; sessionStorage.setItem('dw.activeTab','" + toast.Target + "')" }>
+					<strong>{ toast.Title }</strong>
+					<span>{ toast.Detail }</span>
+					<small>Open</small>
+				</button>
+			}
+		</aside>
+	}
+}
+
 templ dashboardSection(view pageView) {
-	<section id="dashboard">
-		<h2>Dashboard</h2>
+	<section id="overview" class="tab-panel active" role="tabpanel" aria-labelledby="tab-overview" tabindex="0" data-class:active="$activeTab === 'overview'">
+		<header class="panel-heading">
+			<div><p class="eyebrow">At a glance</p><h2>Overview</h2></div>
+			<p>Active work, blockers, outcomes, and available next operations.</p>
+		</header>
 		<dl class="metrics">
 			<div><dt>Projects</dt><dd>{ fmt.Sprint(view.Snapshot.ProjectCount) }</dd></div>
 			<div><dt>Repositories</dt><dd>{ fmt.Sprint(view.Snapshot.RepositoryCount) }</dd></div>
 			<div><dt>Workspaces</dt><dd>{ fmt.Sprint(len(view.Snapshot.Workspaces)) }</dd></div>
-			<div><dt>Prune candidates</dt><dd>{ fmt.Sprint(view.Snapshot.PruneCandidates) }</dd></div>
+			<div><dt>Active actions</dt><dd>{ fmt.Sprint(view.ActiveActionCount) }</dd></div>
 			<div><dt>Doctor</dt><dd>{ fmt.Sprint(view.Snapshot.DoctorOK) }</dd></div>
 		</dl>
-		if view.Snapshot.NeedsInit {
-			<p class="notice">This root needs initialization. Run <code>dw init</code>.</p>
+		if view.Snapshot.NeedsInit && view.Snapshot.InitOperation != nil {
+			<article class="guided-error">
+				<strong>Initialization required</strong>
+				<p>Initialize this root before you start work.</p>
+				@operationControls(view.CSRF, []cockpit.Operation{*view.Snapshot.InitOperation})
+			</article>
 		}
-	</section>
-}
-
-templ workspacesSection(view pageView) {
-	<section id="workspaces">
-		<h2>Workspaces</h2>
-		if len(view.Snapshot.Workspaces) == 0 {
-			<p class="empty">No workspaces.</p>
-		}
-		if len(view.Snapshot.Workspaces) != 0 {
-			<table>
-				<thead><tr><th>Project</th><th>Workspace</th><th>Branch</th><th>Work</th></tr></thead>
-				<tbody>
-					for _, workspace := range view.Snapshot.Workspaces {
-						<tr><td>{ workspace.Project }</td><td><code>{ workspace.Path }</code></td><td><code>{ workspace.Branch }</code></td><td>{ strings.Join(workspace.WorkItems, ", ") }</td></tr>
+		<div class="settings-grid overview-workflow">
+			<article class="settings-card">
+				<h3>Active work</h3>
+				if items := activeExecutions(view.Executions); len(items) != 0 {
+					<ul>
+						for _, item := range items {
+							<li><button type="button" class="text-action" data-tab="actions" data-on:click="$activeTab = 'actions'; sessionStorage.setItem('dw.activeTab','actions')">{ item.Title } · { item.StatusLabel }</button></li>
+						}
+					</ul>
+				} else {
+					<p class="empty">No active operations.</p>
+				}
+			</article>
+			<article class="settings-card">
+				<h3>Blockers</h3>
+				if items := pageBlockers(view); len(items) != 0 {
+					<ul>
+						for _, item := range items {
+							<li><strong>{ item.Title }</strong><br/><span>{ item.Detail }</span></li>
+						}
+					</ul>
+				} else {
+					<p class="empty">No blockers detected.</p>
+				}
+			</article>
+			<article class="settings-card">
+				<h3>Recent outcomes</h3>
+				if items := recentOutcomes(view.Executions); len(items) != 0 {
+					<ul>
+						for _, item := range items {
+							<li><button type="button" class="text-action" data-tab="actions" data-on:click="$activeTab = 'actions'; sessionStorage.setItem('dw.activeTab','actions')">{ item.Title } · { item.StatusLabel }</button></li>
+						}
+					</ul>
+				} else {
+					<p class="empty">No completed operations.</p>
+				}
+			</article>
+		</div>
+		<div class="project-list overview-grid">
+			for _, item := range view.Snapshot.Cockpit {
+				<article class="project-card">
+					<header><div><p class="eyebrow">{ humanLabel(item.Section) }</p><h3>{ item.Title }</h3></div><span class={ "status " + string(item.Severity) }>{ item.Status }</span></header>
+					if item.Subtitle != "" {
+						<p>{ item.Subtitle }</p>
 					}
-				</tbody>
-			</table>
-		}
+					if current := executionForResource(view.Executions, item.Ref); current != nil {
+						<p class="action-summary"><strong>{ current.Title }</strong> · { current.StatusLabel }</p>
+					}
+					@operationControls(view.CSRF, []cockpit.Operation{item.Primary})
+				</article>
+			}
+		</div>
 	</section>
 }
 
 templ workSection(view pageView) {
-	<section id="work">
-		<h2>Work</h2>
+	<section id="work" class="tab-panel" role="tabpanel" aria-labelledby="tab-work" tabindex="0" data-class:active="$activeTab === 'work'">
+		<header class="panel-heading">
+			<div><p class="eyebrow">Assigned items</p><h2>Work</h2></div>
+			<p>Work grouped by configured project.</p>
+		</header>
 		if len(view.Work) == 0 {
-			<p class="empty">No work items.</p>
+			<p class="empty-state">No work items are available.</p>
 		}
-		for _, project := range view.Work {
-			<h3>{ project.Label } <small>{ project.Provider }</small></h3>
-			if project.Error != "" {
-				<p class="error" role="alert">{ project.Error }</p>
+		<div class="project-list">
+			for _, project := range view.Work {
+				<article class="project-card">
+					<header>
+						<div><p class="eyebrow">Project</p><h3>{ project.Label }</h3></div>
+						<span class="provider-badge">{ providerLabel(project.Provider) }</span>
+					</header>
+					if current := executionForResource(view.Executions, project.Ref); current != nil {
+						<p class="action-summary">{ current.Title } · { current.StatusLabel }</p>
+					}
+					@operationControls(view.CSRF, project.Operations)
+					if project.Error != "" {
+						if recovery := workRecovery(project); recovery != nil {
+							<div class="guided-error" role="alert">
+								<strong>{ recovery.Title }</strong>
+								<p>{ recovery.Detail }</p>
+								<details>
+									<summary>Technical details</summary>
+									<code>{ project.Error }</code>
+								</details>
+							</div>
+						} else {
+							<div class="error" role="alert"><strong>Work items unavailable</strong><p>{ project.Error }</p></div>
+						}
+					}
+					if len(project.Items) == 0 && project.Error == "" {
+						<p class="empty">No assigned work items.</p>
+					}
+					if len(project.Items) != 0 {
+						<ul class="item-list">
+							for _, item := range project.Items {
+								<li class="resource-card">
+									<div>
+										if item.URL != "" {
+											<a href={ templ.SafeURL(item.URL) } target="_blank" rel="noopener noreferrer"><strong>{ item.Title }</strong></a>
+										} else {
+											<strong>{ item.Title }</strong>
+										}
+										<span><code>{ item.ID }</code> · { item.State }</span>
+									</div>
+									if current := executionForResource(view.Executions, item.Ref); current != nil {
+										<p class="action-summary">{ current.Title } · { current.StatusLabel }</p>
+									}
+									@operationControls(view.CSRF, item.Operations)
+								</li>
+							}
+						</ul>
+					}
+				</article>
 			}
-			<ul>
-				for _, item := range project.Items {
-					<li><strong>{ item.ID }</strong> · { item.Title } · <span>{ item.State }</span></li>
+		</div>
+	</section>
+}
+
+templ workspacesSection(view pageView) {
+	<section id="workspaces" class="tab-panel" role="tabpanel" aria-labelledby="tab-workspaces" tabindex="0" data-class:active="$activeTab === 'workspaces'">
+		<header class="panel-heading">
+			<div><p class="eyebrow">Local tasks</p><h2>Workspaces</h2></div>
+			<p>Branches and work items in active local workspaces.</p>
+		</header>
+		if len(view.Snapshot.Workspaces) == 0 {
+			<p class="empty-state">No workspaces.</p>
+		}
+		if len(view.Snapshot.Workspaces) != 0 {
+			<div class="project-list">
+				for _, workspace := range view.Snapshot.Workspaces {
+					<article class="project-card">
+						<header><div><p class="eyebrow">{ workspace.Project }</p><h3>{ workspace.Slug }</h3></div><code>{ workspace.Branch }</code></header>
+						<p><code>{ workspace.Path }</code></p>
+						<p>{ strings.Join(workspace.WorkItems, ", ") }</p>
+						if current := executionForResource(view.Executions, workspace.Ref); current != nil {
+							<p class="action-summary">{ current.Title } · { current.StatusLabel }</p>
+						}
+						@operationControls(view.CSRF, workspace.Operations)
+					</article>
+				}
+			</div>
+		}
+	</section>
+}
+
+templ pullRequestsSection(view pageView) {
+	<section id="pull-requests" class="tab-panel" role="tabpanel" aria-labelledby="tab-pull-requests" tabindex="0" data-class:active="$activeTab === 'pull-requests'">
+		<header class="panel-heading">
+			<div><p class="eyebrow">Reviews</p><h2>Pull requests</h2></div>
+			<p>Open pull requests across configured projects.</p>
+		</header>
+		if len(view.PullRequests) == 0 {
+			<p class="empty-state">No pull requests.</p>
+		}
+		if len(view.PullRequests) != 0 {
+			<div class="project-list">
+				for _, item := range view.PullRequests {
+					<article class="project-card">
+						<header>
+							<div><p class="eyebrow">{ item.Project } · { item.Repository }</p><h3>
+								if item.URL != "" {
+									<a href={ templ.SafeURL(item.URL) } target="_blank" rel="noopener noreferrer">{ item.Title }</a>
+								} else {
+									{ item.Title }
+								}
+							</h3></div>
+							if item.Draft {
+								<span class="provider-badge">Draft</span>
+							}
+						</header>
+						<p><code>{ item.Branch }</code> → <code>{ item.TargetBranch }</code></p>
+						if current := executionForResource(view.Executions, item.Ref); current != nil {
+							<p class="action-summary">{ current.Title } · { current.StatusLabel }</p>
+						}
+						@operationControls(view.CSRF, item.Operations)
+					</article>
+				}
+			</div>
+		}
+	</section>
+}
+
+templ dataSection(view pageView) {
+	<section id="data" class="tab-panel" role="tabpanel" aria-labelledby="tab-data" tabindex="0" data-class:active="$activeTab === 'data'">
+		<header class="panel-heading">
+			<div><p class="eyebrow">Connections</p><h2>Data</h2></div>
+			<p>Configured data sources and their providers.</p>
+		</header>
+		if len(view.Snapshot.DataSources) == 0 {
+			<p class="empty-state">No data sources.</p>
+		}
+		if len(view.Snapshot.DataSources) != 0 {
+			<ul class="resource-list">
+				for _, source := range view.Snapshot.DataSources {
+					<li class="resource-card">
+						<div><strong>{ source.Key }</strong><span>{ source.Project }</span></div>
+						<span class="provider-badge">{ providerLabel(source.Provider) }</span>
+						if current := executionForResource(view.Executions, source.Ref); current != nil {
+							<p class="action-summary">{ current.Title } · { current.StatusLabel }</p>
+						}
+						@operationControls(view.CSRF, source.Operations)
+					</li>
 				}
 			</ul>
 		}
 	</section>
 }
 
-templ pullRequestsSection(view pageView) {
-	<section id="pull-requests">
-		<h2>Pull requests</h2>
-		if len(view.PullRequests) == 0 {
-			<p class="empty">No pull requests.</p>
-		}
-		if len(view.PullRequests) != 0 {
-			<table>
-				<thead><tr><th>Project</th><th>Title</th><th>Repository</th><th>Branches</th></tr></thead>
-				<tbody>
-					for _, item := range view.PullRequests {
-						<tr><td>{ item.Project }</td><td>{ item.Title }</td><td>{ item.Repository }</td><td><code>{ item.Branch }</code> → <code>{ item.TargetBranch }</code></td></tr>
-					}
-				</tbody>
-			</table>
-		}
-	</section>
-}
-
-templ dataSection(view pageView) {
-	<section id="data">
-		<h2>Data</h2>
-		if len(view.Snapshot.DataSources) == 0 {
-			<p class="empty">No data sources.</p>
-		}
-		<ul>
-			for _, source := range view.Snapshot.DataSources {
-				<li><strong>{ source.Key }</strong> · { source.Project } · { source.Provider }</li>
-			}
-		</ul>
-	</section>
-}
-
-templ providersSection(view pageView) {
-	<section id="providers">
-		<h2>Providers</h2>
-		<div class="columns">
-			<div><h3>Work</h3><ul>
-				for _, provider := range view.Snapshot.WorkProviders {
-					<li>{ provider }</li>
-				}
-			</ul></div>
-			<div><h3>Data</h3><ul>
-				for _, provider := range view.Snapshot.DataProviders {
-					<li>{ provider }</li>
-				}
-			</ul></div>
+templ settingsSection(view pageView) {
+	<section id="settings" class="tab-panel" role="tabpanel" aria-labelledby="tab-settings" tabindex="0" data-class:active="$activeTab === 'settings'">
+		<header class="panel-heading">
+			<div><p class="eyebrow">Environment</p><h2>Settings</h2></div>
+			<p>Providers and effective configuration.</p>
+		</header>
+		<div class="settings-grid">
+			<article class="settings-card">
+				<h3>Providers</h3>
+				<div class="columns">
+					<div><h4>Work</h4><ul>
+						for _, provider := range view.Snapshot.WorkProviders {
+							<li>{ providerLabel(provider) }</li>
+						}
+					</ul></div>
+					<div><h4>Data</h4><ul>
+						for _, provider := range view.Snapshot.DataProviders {
+							<li>{ providerLabel(provider) }</li>
+						}
+					</ul></div>
+				</div>
+			</article>
+			<article class="settings-card">
+				<h3>Configuration</h3>
+				<dl>
+					<div><dt>Root</dt><dd><code>{ view.Snapshot.Root }</code></dd></div>
+					<div><dt>Default agent</dt><dd>{ providerLabel(view.Snapshot.DefaultAgent) }</dd></div>
+					<div><dt>Color mode</dt><dd>{ providerLabel(view.Snapshot.ColorMode) }</dd></div>
+					<div><dt>States</dt><dd>{ strings.Join(view.Snapshot.States, ", ") }</dd></div>
+					<div><dt>Secrets</dt><dd>{ fmt.Sprint(len(view.Snapshot.SecretKeys)) } configured</dd></div>
+				</dl>
+			</article>
 		</div>
 	</section>
 }
 
-templ configurationSection(view pageView) {
-	<section id="configuration">
-		<h2>Configuration</h2>
-		<dl>
-			<div><dt>Root</dt><dd><code>{ view.Snapshot.Root }</code></dd></div>
-			<div><dt>Default agent</dt><dd>{ view.Snapshot.DefaultAgent }</dd></div>
-			<div><dt>Color mode</dt><dd>{ view.Snapshot.ColorMode }</dd></div>
-			<div><dt>States</dt><dd>{ strings.Join(view.Snapshot.States, ", ") }</dd></div>
-			<div><dt>Secrets</dt><dd>{ fmt.Sprint(len(view.Snapshot.SecretKeys)) } configured</dd></div>
-		</dl>
-	</section>
-}
-
-templ commandsSection(commands []commandView) {
-	<section id="commands">
-		<h2>Commands</h2>
-		<p>The server rebuilds each command through the CLI grammar.</p>
-		for _, command := range commands {
-			<details>
-				<summary><strong>{ command.Name }</strong> — { command.Summary } <code>{ command.Key }</code></summary>
-				<p>CLI: <code>{ command.CLI }</code></p>
-				if command.Disabled {
-					<p class="notice" role="status">{ command.DisabledReason } Use <code>{ command.CLI }</code>.</p>
-				}
-				<form data-on:submit={ command.Submit }>
-					<fieldset disabled?={ command.Disabled }>
-						<legend>{ command.Name }</legend>
-						for _, field := range command.Fields {
-							@commandField(field)
-						}
-						<button type="submit">Run command</button>
-					</fieldset>
-				</form>
-			</details>
-		}
-	</section>
-}
-
-templ commandField(field fieldView) {
-	<div class="field">
-		<label>
-			<span>{ field.Label }</span>
-			if field.Required {
-				<strong> required</strong>
-			}
-			if len(field.Allowed) != 0 {
-				<select data-bind={ field.Signal } required?={ field.Required } aria-label={ field.Label }>
-					<option value="">Select a value</option>
-					for _, value := range field.Allowed {
-						<option value={ value } selected?={ value == field.Default }>{ value }</option>
+templ operationControls(csrf string, operations []cockpit.Operation) {
+	if items := operationViews(csrf, operations); len(items) != 0 {
+		<div class="operation-list">
+			for _, operation := range items {
+				<form class={ "operation operation-" + string(operation.Risk) } data-operation-relation={ string(operation.Relation) } data-on:submit={ operation.Submit }>
+					if operation.Description != "" {
+						<p>{ operation.Description }</p>
 					}
-				</select>
+					if len(operation.Inputs) != 0 {
+						<div class="form-grid">
+							for _, input := range operation.Inputs {
+								<div class="field">
+									<label for={ input.ID }>{ input.Label }</label>
+									if input.Kind == cockpit.InputSelect {
+										<select id={ input.ID } data-bind={ input.Signal } required?={ input.Required }>
+											<option value="">No selection</option>
+											for _, option := range input.Options {
+												<option value={ option.Value }>{ option.Label }</option>
+											}
+										</select>
+									}
+									if input.Kind == cockpit.InputBoolean {
+										<label class="toggle" for={ input.ID }><input id={ input.ID } type="checkbox" data-bind={ input.Signal }/><span>Enabled</span></label>
+									}
+									if input.Kind == cockpit.InputText {
+										<input id={ input.ID } type="text" data-bind={ input.Signal } required?={ input.Required }/>
+									}
+								</div>
+							}
+						</div>
+					}
+					<button type="submit" disabled?={ operation.Disabled }>{ operation.Label }</button>
+					if operation.DisabledReason != "" {
+						<small>{ operation.DisabledReason }</small>
+					}
+				</form>
 			}
-			if len(field.Allowed) == 0 && field.Kind == spec.Bool {
-				<input type="checkbox" data-bind={ field.Signal } aria-label={ field.Label }/>
-			}
-			if len(field.Allowed) == 0 && field.Kind != spec.Bool && field.Repeatable {
-				<textarea data-bind={ field.Signal } required?={ field.Required } placeholder="One value per line" aria-label={ field.Label }>{ field.Default }</textarea>
-			}
-			if len(field.Allowed) == 0 && field.Kind != spec.Bool && !field.Repeatable {
-				<input id={ field.Signal } type={ field.InputType } value={ field.Default } data-bind={ field.Signal } required?={ field.Required } aria-label={ field.Label }/>
-			}
-		</label>
-		if field.Help != "" {
-			<small>{ field.Help }</small>
-		}
-		<ul class="constraints">
-			if field.Default != "" {
-				<li>Default: <code>{ field.Default }</code></li>
-			}
-			if len(field.Allowed) != 0 {
-				<li>Allowed: { strings.Join(field.Allowed, ", ") }</li>
-			}
-			if len(field.Conflicts) != 0 {
-				<li>Conflicts: { strings.Join(field.Conflicts, ", ") }</li>
-			}
-			if len(field.Requires) != 0 {
-				<li>Requires: { strings.Join(field.Requires, ", ") }</li>
-			}
-			if field.Positional {
-				<li>Positional</li>
-			}
-		</ul>
-	</div>
+		</div>
+	}
 }
 
-templ executionsSection(executions []executionView) {
-	<section id="executions">
-		<h2>Executions</h2>
+templ executionsSection(executions []executionView, activeCount int) {
+	<section id="actions" class="tab-panel" role="tabpanel" aria-labelledby="tab-actions" tabindex="0" data-class:active="$activeTab === 'actions'">
+		<header class="panel-heading">
+			<div><p class="eyebrow">Queue and history</p><h2>Actions</h2></div>
+			<p>{ fmt.Sprintf("%d active · %d recent", activeCount, len(executions)) }</p>
+		</header>
 		if len(executions) == 0 {
-			<p class="empty">No executions.</p>
+			<p class="empty-state">No actions have run yet.</p>
 		}
-		for _, item := range executions {
-			<article class="execution" data-status={ string(item.Status) }>
-				<header><h3>{ item.ActionID }</h3><strong class={ "status " + string(item.Status) }>{ string(item.Status) }</strong></header>
-				<dl><div><dt>Execution</dt><dd><code>{ item.ID }</code></dd></div><div><dt>Attempt</dt><dd><code>{ item.AttemptID }</code></dd></div><div><dt>Created</dt><dd>{ item.CreatedAt }</dd></div></dl>
-				if len(item.Events) != 0 {
-					<h4>Event sequences</h4>
-					<ol class="events">
-						for _, event := range item.Events {
-							<li value={ fmt.Sprint(event.Sequence) }>
-								<code>#{ fmt.Sprint(event.Sequence) }</code> { string(event.Kind) } · { event.Message }
-								if event.AuthorizationURL != "" {
-									<div class="auth-panel" role="status">
-										<p class="auth-kicker">Microsoft OAuth callback ready</p>
-										<h5>Continue sign-in in a secure Microsoft tab.</h5>
-										<p>This page will update after Microsoft returns to the local callback.</p>
-										<a class="auth-action" href={ templ.SafeURL(event.AuthorizationURL) } target="_blank" rel="noopener noreferrer">Continue with Microsoft</a>
-										if event.CallbackURI != "" {
-											<small>Callback listener: <code>{ event.CallbackURI }</code></small>
-										}
-									</div>
+		<div class="action-list">
+			for _, item := range executions {
+				<article class="execution" data-status={ string(item.Status) } data-relation={ item.Relation }>
+					<header>
+						<div><p class="eyebrow">Action</p><h3>{ item.Title }</h3></div>
+						<strong class={ "status " + string(item.Status) }>{ item.StatusLabel }</strong>
+					</header>
+					if item.Summary != "" {
+						<p class="action-summary">{ item.Summary }</p>
+					}
+					<p class="action-meta">Created <time datetime={ item.CreatedAt } data-text={ fmt.Sprintf("globalThis.dwDateTimeFormatter.format(new Date(%q))", item.CreatedAt) }>{ item.CreatedAt }</time></p>
+					if item.Failure != "" {
+						<p class="error" role="alert">{ item.Failure }</p>
+					}
+					for _, event := range item.Events {
+						if event.AuthorizationURL != "" {
+							<div class="auth-panel" role="status">
+								<p class="auth-kicker">Sign-in required</p>
+								<h4>Continue with Microsoft</h4>
+								<p>Complete sign-in in a secure Microsoft tab. This action updates after the callback.</p>
+								<a class="auth-action" href={ templ.SafeURL(event.AuthorizationURL) } target="_blank" rel="noopener noreferrer">Continue with Microsoft</a>
+								if event.CallbackURI != "" {
+									<small>Callback listener: <code>{ event.CallbackURI }</code></small>
 								}
-							</li>
+							</div>
 						}
-					</ol>
-				}
-				if item.Failure != "" {
-					<p class="error" role="alert">{ item.Failure }</p>
-				}
-				if item.Prompt != nil {
-					@promptForm(item.ID, *item.Prompt)
-				}
-				if item.Status == "queued" || item.Status == "running" || item.Status == "waiting-input" || item.Status == "canceling" {
-					<button type="button" data-on:click={ item.Cancel } aria-label={ "Cancel execution " + item.ID }>Cancel</button>
-				}
-			</article>
-		}
+						if event.VerificationURI != "" {
+							<div class="auth-panel" role="status">
+								<p class="auth-kicker">Sign-in required</p>
+								<h4>Continue with Microsoft</h4>
+								<p>Open Microsoft sign-in, then enter this device code.</p>
+								<code class="device-code">{ event.UserCode }</code>
+								<a class="auth-action" href={ templ.SafeURL(event.VerificationURI) } target="_blank" rel="noopener noreferrer">Open Microsoft sign-in</a>
+							</div>
+						}
+					}
+					if item.Prompt != nil {
+						@promptForm(item.ID, *item.Prompt)
+					}
+					<div class="action-controls">
+						if item.Active {
+							<button type="button" data-on:click={ item.Cancel } aria-label={ "Cancel " + item.Title }>Cancel action</button>
+						}
+					</div>
+					if len(item.Events) != 0 {
+						<details class="activity">
+							<summary>Activity</summary>
+							<ol class="timeline">
+								for _, event := range item.Events {
+									<li><div><strong>{ event.KindLabel }</strong><time datetime={ event.At } data-text={ fmt.Sprintf("globalThis.dwTimeFormatter.format(new Date(%q))", event.At) }>{ event.At }</time></div><p>{ event.Message }</p></li>
+								}
+							</ol>
+						</details>
+					}
+					<details class="technical-details">
+						<summary>Technical details</summary>
+						<dl><div><dt>Execution</dt><dd><code>{ item.ID }</code></dd></div><div><dt>Attempt</dt><dd><code>{ item.AttemptID }</code></dd></div></dl>
+					</details>
+				</article>
+			}
+		</div>
 	</section>
 }
 
 templ promptForm(executionID string, prompt promptView) {
-	<form class="prompt" data-on:submit={ prompt.Submit } aria-label={ "Prompt for execution " + executionID }>
-		<h4>{ prompt.Label }</h4>
+	<form class="prompt" data-on:submit={ prompt.Submit } aria-label={ "Input for " + executionID }>
+		<div><p class="eyebrow">Input required</p><h4>{ prompt.Label }</h4></div>
 		if prompt.Help != "" {
 			<p>{ prompt.Help }</p>
 		}
@@ -307,7 +477,7 @@ templ promptForm(executionID string, prompt promptView) {
 			<label>Secret <input type="password" name="value" required?={ prompt.Required } autocomplete="off" aria-label="Secret response"/></label>
 		}
 		if prompt.Kind == "confirm" {
-			<label><input type="checkbox" data-bind={ prompt.Signal }/> Confirm</label>
+			<label class="toggle"><input type="checkbox" data-bind={ prompt.Signal }/><span>Confirm</span></label>
 		}
 		if prompt.Kind == "select-one" {
 			<label>Response <select data-bind={ prompt.Signal } required?={ prompt.Required }>
@@ -317,16 +487,15 @@ templ promptForm(executionID string, prompt promptView) {
 			</select></label>
 		}
 		if prompt.Kind == "select-many" {
-			<fieldset>
-				<legend>Responses</legend>
+			<fieldset><legend>Responses</legend>
 				for _, choice := range prompt.Choices {
-					<label><input type="checkbox" data-bind={ choice.Signal }/> { choice.Label }</label>
+					<label class="toggle"><input type="checkbox" data-bind={ choice.Signal }/><span>{ choice.Label }</span></label>
 				}
 			</fieldset>
 		}
 		if prompt.Kind == "text" {
 			<label>Response <input type="text" data-bind={ prompt.Signal } required?={ prompt.Required }/></label>
 		}
-		<button type="submit">Respond</button>
+		<button type="submit">Submit response</button>
 	</form>
 }
