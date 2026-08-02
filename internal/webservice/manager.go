@@ -49,6 +49,7 @@ type Manager struct {
 	client     *http.Client
 	now        func() time.Time
 	settings   runtimeconfig.WebService
+	start      func(WebConfigV1) error
 	launch     func(string) error
 }
 
@@ -71,22 +72,39 @@ func NewManagerWithSettings(dirs config.PlatformBaseDirs, executable string, set
 	if err != nil {
 		return nil, err
 	}
-	return &Manager{
+	manager := &Manager{
 		store: NewStore(dirs), native: native, executable: absolute, settings: settings,
 		client: &http.Client{Timeout: runtimeconfig.Milliseconds(settings.HTTPClientTimeoutMilliseconds)}, now: time.Now, launch: openBrowser,
-	}, nil
+	}
+	manager.start = manager.launchLocal
+	return manager, nil
 }
 
 func (manager *Manager) Store() *Store { return manager.store }
 
-func (manager *Manager) Start(ctx context.Context, options StartOptions) (StatusV1, error) {
+func (manager *Manager) Start(ctx context.Context, options StartOptions) (StartResult, error) {
 	previous, previousErr := manager.store.LoadConfig()
 	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
-		return StatusV1{}, previousErr
+		return StartResult{}, previousErr
+	}
+	if previousErr == nil && previous.Registration == RegistrationNone {
+		resolvedRoot := previous.Root
+		resolvedPort := previous.Port
+		if options.Root != nil {
+			resolvedRoot = config.ResolveRoot(*options.Root)
+		}
+		if options.Port != nil {
+			resolvedPort = *options.Port
+		}
+		if previous.Root != resolvedRoot || previous.Port != resolvedPort || previous.Executable != manager.executable {
+			if err := manager.Stop(ctx); err != nil {
+				return StartResult{}, err
+			}
+		}
 	}
 	current, err := manager.loadOrCreateConfig(options.Root, options.Port)
 	if err != nil {
-		return StatusV1{}, err
+		return StartResult{}, err
 	}
 	changed := previousErr != nil ||
 		previous.Root != current.Root ||
@@ -94,14 +112,14 @@ func (manager *Manager) Start(ctx context.Context, options StartOptions) (Status
 		previous.Executable != current.Executable
 	status, err := manager.Status(ctx)
 	if err != nil {
-		return StatusV1{}, err
+		return StartResult{}, err
 	}
 	if status.Running && !changed {
 		return manager.completeStart(ctx, status, options.NoOpen)
 	}
 	if current.Registration != RegistrationNone {
 		if current.Registration != manager.native.Registration() {
-			return StatusV1{}, fmt.Errorf("web.registration-platform-mismatch:%s", current.Registration)
+			return StartResult{}, fmt.Errorf("web.registration-platform-mismatch:%s", current.Registration)
 		}
 		if changed || status.Stale {
 			err = manager.native.Restart(ctx)
@@ -109,25 +127,25 @@ func (manager *Manager) Start(ctx context.Context, options StartOptions) (Status
 			err = manager.native.Start(ctx)
 		}
 		if err != nil {
-			return StatusV1{}, err
+			return StartResult{}, err
 		}
 	} else {
 		if status.Running {
 			if err = manager.Stop(ctx); err != nil {
-				return StatusV1{}, err
+				return StartResult{}, err
 			}
 		} else if status.Stale {
 			if err = manager.store.RemoveState(); err != nil {
-				return StatusV1{}, err
+				return StartResult{}, err
 			}
 		}
-		if err = manager.launchLocal(current); err != nil {
-			return StatusV1{}, err
+		if err = manager.start(current); err != nil {
+			return StartResult{}, err
 		}
 	}
 	status, err = manager.waitForStatus(ctx, true)
 	if err != nil {
-		return StatusV1{}, err
+		return StartResult{}, err
 	}
 	return manager.completeStart(ctx, status, options.NoOpen)
 }
@@ -150,11 +168,14 @@ func (manager *Manager) launchLocal(current WebConfigV1) error {
 	return command.Process.Release()
 }
 
-func (manager *Manager) completeStart(ctx context.Context, status StatusV1, noOpen bool) (StatusV1, error) {
+func (manager *Manager) completeStart(ctx context.Context, status StatusV1, noOpen bool) (StartResult, error) {
+	result := StartResult{Status: status}
 	if noOpen {
-		return status, nil
+		return result, nil
 	}
-	return status, manager.Open(ctx)
+	opened, err := manager.Open(ctx)
+	result.Open = &opened
+	return result, err
 }
 
 func (manager *Manager) Stop(ctx context.Context) error {
@@ -218,7 +239,12 @@ func (manager *Manager) Status(ctx context.Context) (StatusV1, error) {
 	if err != nil {
 		return StatusV1{}, err
 	}
-	status := StatusV1{Schema: SchemaV1, Registered: configValue.Registration != RegistrationNone, Executable: configValue.Executable}
+	status := StatusV1{
+		Schema:     SchemaV1,
+		Registered: configValue.Registration != RegistrationNone,
+		Address:    net.JoinHostPort("127.0.0.1", strconv.Itoa(int(configValue.Port))),
+		Executable: configValue.Executable,
+	}
 	if status.Registered {
 		if configValue.Registration != manager.native.Registration() {
 			return StatusV1{}, fmt.Errorf("web.registration-platform-mismatch:%s", configValue.Registration)
@@ -295,35 +321,35 @@ func (manager *Manager) Unregister(ctx context.Context) error {
 	return manager.store.RemoveState()
 }
 
-func (manager *Manager) Open(ctx context.Context) error {
+func (manager *Manager) Open(ctx context.Context) (OpenResult, error) {
 	status, statusErr := manager.Status(ctx)
 	if statusErr != nil {
-		return statusErr
+		return OpenResult{}, statusErr
 	}
 	if !status.Running {
 		if _, startErr := manager.Start(ctx, StartOptions{NoOpen: true}); startErr != nil {
-			return startErr
+			return OpenResult{}, startErr
 		}
 	}
 	configValue, err := manager.store.LoadConfig()
 	if err != nil {
-		return err
+		return OpenResult{}, err
 	}
 	state, err := manager.store.LoadState()
 	if err != nil {
-		return err
+		return OpenResult{}, err
 	}
 	request, err := manager.adminRequest(ctx, http.MethodPost, state.Address, "/admin/tickets", configValue.ServiceSecret, nil)
 	if err != nil {
-		return err
+		return OpenResult{}, err
 	}
 	response, err := manager.client.Do(request)
 	if err != nil {
-		return err
+		return OpenResult{}, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusCreated {
-		return fmt.Errorf("web.ticket-failed:%d", response.StatusCode)
+		return OpenResult{}, fmt.Errorf("web.ticket-failed:%d", response.StatusCode)
 	}
 	var ticket struct {
 		Schema    uint16    `json:"schema"`
@@ -333,10 +359,14 @@ func (manager *Manager) Open(ctx context.Context) error {
 	decoder := json.NewDecoder(response.Body)
 	decoder.DisallowUnknownFields()
 	if err = decoder.Decode(&ticket); err != nil || ticket.Schema != SchemaV1 || ticket.Ticket == "" {
-		return fmt.Errorf("web.invalid-ticket")
+		return OpenResult{}, fmt.Errorf("web.invalid-ticket")
 	}
 	location := url.URL{Scheme: "http", Host: state.Address, Path: "/", RawQuery: url.Values{"ticket": []string{ticket.Ticket}}.Encode()}
-	return manager.launch(location.String())
+	result := OpenResult{Location: location.String()}
+	if err = manager.launch(result.Location); err == nil {
+		result.Opened = true
+	}
+	return result, nil
 }
 
 func (manager *Manager) loadOrCreateConfig(root *string, port *uint16) (WebConfigV1, error) {

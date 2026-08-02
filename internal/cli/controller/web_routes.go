@@ -11,10 +11,10 @@ import (
 )
 
 type WebLifecycle interface {
-	Start(context.Context, webservice.StartOptions) (webservice.StatusV1, error)
+	Start(context.Context, webservice.StartOptions) (webservice.StartResult, error)
 	Stop(context.Context) error
 	Status(context.Context) (webservice.StatusV1, error)
-	Open(context.Context) error
+	Open(context.Context) (webservice.OpenResult, error)
 	Register(context.Context, webservice.RegisterOptions) (webservice.StatusV1, error)
 	Unregister(context.Context) error
 }
@@ -38,13 +38,25 @@ func webRoutes(lifecycle WebLifecycle, serve func(context.Context) error) map[st
 		text := fmt.Sprintf("Web service: %s\nAddress: %s\n", state, status.Address)
 		return success(console.TextOutput(console.FormatHuman, text)), nil
 	}
+	openOutcome := func(result webservice.OpenResult) Outcome {
+		browser := "not opened; use the URL above"
+		if result.Opened {
+			browser = "opened"
+		}
+		return success(console.TextOutput(console.FormatHuman, fmt.Sprintf("URL: %s\nBrowser: %s\n", result.Location, browser)))
+	}
 	return map[string]Route{
 		"web.start": {Key: "web.start", Direct: func(ctx context.Context, _ Execution, invocation *parse.Result) (Outcome, error) {
-			status, err := lifecycle.Start(ctx, webservice.StartOptions{Root: optionalStringValue(invocation, "root"), Port: optionalPortValue(invocation, "port"), NoOpen: invocation.Values.Bool("no_open")})
+			result, err := lifecycle.Start(ctx, webservice.StartOptions{Root: optionalStringValue(invocation, "root"), Port: optionalPortValue(invocation, "port"), NoOpen: invocation.Values.Bool("no_open")})
 			if err != nil {
 				return Outcome{}, err
 			}
-			return statusOutcome(status, false)
+			outcome, err := statusOutcome(result.Status, false)
+			if err == nil && result.Open != nil {
+				opened := openOutcome(*result.Open)
+				outcome.Output.Body = append(outcome.Output.Body, opened.Output.Body...)
+			}
+			return outcome, err
 		}},
 		"web.stop": {Key: "web.stop", Direct: func(ctx context.Context, _ Execution, _ *parse.Result) (Outcome, error) {
 			return success(console.Output{}), lifecycle.Stop(ctx)
@@ -57,7 +69,11 @@ func webRoutes(lifecycle WebLifecycle, serve func(context.Context) error) map[st
 			return statusOutcome(status, invocation.Values.Bool("json"))
 		}},
 		"web.open": {Key: "web.open", Direct: func(ctx context.Context, _ Execution, _ *parse.Result) (Outcome, error) {
-			return success(console.Output{}), lifecycle.Open(ctx)
+			result, err := lifecycle.Open(ctx)
+			if err != nil {
+				return Outcome{}, err
+			}
+			return openOutcome(result), nil
 		}},
 		"web.register": {Key: "web.register", Direct: func(ctx context.Context, _ Execution, invocation *parse.Result) (Outcome, error) {
 			status, err := lifecycle.Register(ctx, webservice.RegisterOptions{Root: optionalStringValue(invocation, "root"), Port: optionalPortValue(invocation, "port")})

@@ -121,6 +121,16 @@ type StatusV1 struct {
 	Stale      bool   `json:"stale"`
 }
 
+type OpenResult struct {
+	Location string
+	Opened   bool
+}
+
+type StartResult struct {
+	Status StatusV1
+	Open   *OpenResult
+}
+
 func (config WebConfigV1) Validate() error {
 	if config.Schema != SchemaV1 || strings.TrimSpace(config.Root) == "" || strings.TrimSpace(config.Executable) == "" || config.ServiceSecret.IsZero() {
 		return fmt.Errorf("web.invalid-config")
