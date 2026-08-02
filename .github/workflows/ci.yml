@@ -159,6 +159,13 @@ jobs:
             accept-flake-config = true
             keep-env-derivations = true
             keep-outputs = true
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v17
+        with:
+          name: sachahjkl
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ github.event_name == 'pull_request' }}
+
 
       - name: Restore and save Nix store
         uses: nix-community/cache-nix-action@v7
