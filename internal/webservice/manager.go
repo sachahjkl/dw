@@ -326,8 +326,9 @@ func (manager *Manager) Open(ctx context.Context) error {
 		return fmt.Errorf("web.ticket-failed:%d", response.StatusCode)
 	}
 	var ticket struct {
-		Schema uint16 `json:"schema"`
-		Ticket string `json:"ticket"`
+		Schema    uint16    `json:"schema"`
+		Ticket    string    `json:"ticket"`
+		ExpiresAt time.Time `json:"expiresAt"`
 	}
 	decoder := json.NewDecoder(response.Body)
 	decoder.DisallowUnknownFields()
