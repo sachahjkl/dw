@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -92,12 +93,14 @@ func TestSQLiteStoreInitializesSchemaPragmasAndPermissions(t *testing.T) {
 	if foreignKeys != 1 || journalMode != "wal" || busyTimeout != 5000 || userVersion != sqliteSchemaVersion {
 		t.Fatalf("pragmas = foreign_keys:%d journal_mode:%s busy_timeout:%d user_version:%d", foreignKeys, journalMode, busyTimeout, userVersion)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("database mode = %o, want 600", info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("database mode = %o, want 600", info.Mode().Perm())
+		}
 	}
 	for _, table := range []string{"executions", "attempts", "events", "prompts"} {
 		var name string

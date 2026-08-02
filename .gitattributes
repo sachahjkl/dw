@@ -1,1 +1,4 @@
 *.go text eol=lf
+
+internal/web/assets/datastar.js text eol=lf
+internal/web/assets/datastar.js.sha256 text eol=lf

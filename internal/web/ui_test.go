@@ -2,6 +2,8 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -102,7 +104,12 @@ func TestVendoredDatastarVersionAndChecksum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(checksum) != "2837d87acf6ee0ba8e4e63765926c25a98d63883b02f88be194a86b81d3fd24a  datastar.js\n" {
-		t.Fatal("unexpected Datastar checksum")
+	fields := strings.Fields(string(checksum))
+	if len(fields) != 2 || fields[1] != "datastar.js" {
+		t.Fatalf("unexpected Datastar checksum file: %q", checksum)
+	}
+	digest := sha256.Sum256(bundle)
+	if actual := hex.EncodeToString(digest[:]); actual != fields[0] {
+		t.Fatalf("Datastar checksum = %s, want %s", actual, fields[0])
 	}
 }
