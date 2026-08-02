@@ -25,7 +25,11 @@ func TestCanonicalRootResolvesExistingLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := normalizePlatformRoot(filepath.Join(realRoot, "missing"))
+	resolvedRoot, err := filepath.EvalSymlinks(realRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := normalizePlatformRoot(filepath.Join(resolvedRoot, "missing"))
 	if canonical != want {
 		t.Fatalf("canonical root = %q, want %q", canonical, want)
 	}
