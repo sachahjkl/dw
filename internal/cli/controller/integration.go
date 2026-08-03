@@ -16,6 +16,7 @@ import (
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/dataapp"
 	"github.com/sachahjkl/dw/internal/doctor"
+	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/providerapp"
 	"github.com/sachahjkl/dw/internal/secret"
 	"github.com/sachahjkl/dw/internal/update"
@@ -217,7 +218,7 @@ func directRoutes(integration Integration) map[string]Route {
 		}},
 		"tui": {Key: "tui", Direct: func(ctx context.Context, execution Execution, invocation *parse.Result) (Outcome, error) {
 			if !execution.Policy.Streams.StdinTTY || !execution.Policy.Streams.StdoutTTY {
-				return Outcome{}, console.WithExitCode(fmt.Errorf("cli.tui-requires-terminal"), console.ExitUsage)
+				return Outcome{}, usage(l10n.NewError("cli.error.tui-requires-terminal"))
 			}
 			if err := integration.RunTUI(ctx, invocation.Values.String("root"), execution); err != nil {
 				return Outcome{}, err
@@ -359,7 +360,7 @@ func buildAgentDoctor(inv *parse.Result) (action.Request, error) {
 	if inv.Values.Has("agent") {
 		value := contract.Agent(inv.Values.String("agent"))
 		if !value.Valid() {
-			return nil, usage(fmt.Errorf("cli.invalid-agent:%s", value))
+			return nil, usage(l10n.NewError("cli.error.invalid-agent", l10n.A("agent", value)))
 		}
 		selected = &value
 	}
@@ -399,7 +400,7 @@ func buildConfigColorSet(inv *parse.Result) (action.Request, error) {
 func buildWorkItemList(inv *parse.Result) (action.Request, error) {
 	project := inv.Values.String("project")
 	if inv.Values.Bool("json") && project == "" {
-		return nil, usage(fmt.Errorf("cli.project-required"))
+		return nil, usage(l10n.NewError("cli.error.project-required"))
 	}
 	root := resolvedRoot(inv.Values)
 	return workapp.AssignedRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, Top: int(inv.Values.Int("top")), IncludeFinalStates: inv.Values.Bool("all"), GroupByParent: inv.Values.Bool("group_by_parent")}, nil
@@ -458,7 +459,7 @@ func buildWorkChangelog(inv *parse.Result) (action.Request, error) {
 		for _, value := range split(ids) {
 			id, err := strconv.ParseInt(value, 10, 64)
 			if err != nil {
-				return nil, usage(fmt.Errorf("cli.invalid-pull-request:%s", value))
+				return nil, usage(l10n.NewError("cli.error.invalid-pull-request", l10n.A("value", value)))
 			}
 			request.PullRequestIDs = append(request.PullRequestIDs, id)
 		}
@@ -497,13 +498,13 @@ func buildDataQuery(inv *parse.Result) (action.Request, error) {
 	query := strings.TrimSpace(inv.Values.String("query"))
 	parts := inv.Values.Strings("query_parts")
 	if query != "" && len(parts) != 0 {
-		return nil, usage(fmt.Errorf("cli.data-query-conflicting-query"))
+		return nil, usage(l10n.NewError("cli.error.data-query-conflict"))
 	}
 	if query == "" {
 		query = strings.Join(parts, " ")
 	}
 	if query == "" {
-		return nil, usage(fmt.Errorf("cli.data-query-missing-query"))
+		return nil, usage(l10n.NewError("cli.error.data-query-required"))
 	}
 	var maximum *int
 	if inv.Values.Has("max_rows") {
@@ -576,7 +577,7 @@ func buildWorkspaceItemAdd(inv *parse.Result) (action.Request, error) {
 	}
 	ids := split(inv.Values.String("work_item_ids"))
 	if inv.Values.Bool("json") && len(ids) == 0 {
-		return nil, usage(fmt.Errorf("cli.work-item-ids-required"))
+		return nil, usage(l10n.NewError("cli.error.work-item-ids-required"))
 	}
 	return workspaceapp.ItemAddRequest{Selection: selection, Provider: strings.TrimSpace(inv.Values.String("provider")), IDs: ids, SkipWork: inv.Values.Bool("skip_provider"), Type: inv.Values.String("type"), Title: inv.Values.String("title"), State: inv.Values.String("state"), Execute: inv.Values.Bool("execute")}, nil
 }
@@ -587,7 +588,7 @@ func buildWorkspaceItemRemove(inv *parse.Result) (action.Request, error) {
 	}
 	ids := split(inv.Values.String("work_item_ids"))
 	if inv.Values.Bool("json") && len(ids) == 0 {
-		return nil, usage(fmt.Errorf("cli.work-item-ids-required"))
+		return nil, usage(l10n.NewError("cli.error.work-item-ids-required"))
 	}
 	return workspaceapp.ItemRemoveRequest{Selection: selection, IDs: ids, Execute: inv.Values.Bool("execute")}, nil
 }
@@ -610,7 +611,7 @@ func openRequest(inv *parse.Result, resolveOnly bool) (action.Request, error) {
 	if value := strings.TrimSpace(inv.Values.String("pr")); value != "" {
 		parsed, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || parsed <= 0 {
-			return nil, usage(fmt.Errorf("cli.invalid-pull-request:%s", value))
+			return nil, usage(l10n.NewError("cli.error.invalid-pull-request", l10n.A("value", value)))
 		}
 		pullRequest = &parsed
 	}
@@ -620,7 +621,7 @@ func buildWorkspaceStart(inv *parse.Result) (action.Request, error) {
 	root := resolvedRoot(inv.Values)
 	ids := split(inv.Values.String("work_item_id"))
 	if inv.Values.Bool("json") && len(ids) == 0 {
-		return nil, usage(fmt.Errorf("cli.work-item-ids-required"))
+		return nil, usage(l10n.NewError("cli.error.work-item-ids-required"))
 	}
 	states, createChildren, updateState := taskStartSettings(root)
 	if !updateState {
@@ -634,7 +635,7 @@ func buildWorkspaceStart(inv *parse.Result) (action.Request, error) {
 func buildWorkspacePRStart(inv *parse.Result) (action.Request, error) {
 	id, err := strconv.ParseInt(inv.Values.String("pull_request_id"), 10, 64)
 	if err != nil {
-		return nil, usage(fmt.Errorf("cli.invalid-pull-request:%s", inv.Values.String("pull_request_id")))
+		return nil, usage(l10n.NewError("cli.error.invalid-pull-request", l10n.A("value", inv.Values.String("pull_request_id"))))
 	}
 	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
 	local, provider := configuredRepositoryPairs(root, project)
@@ -669,7 +670,7 @@ func buildWorkspaceRename(inv *parse.Result) (action.Request, error) {
 func buildWorkspaceRepoAdd(inv *parse.Result) (action.Request, error) {
 	repository := inv.Values.String("repo")
 	if inv.Values.Bool("json") && strings.TrimSpace(repository) == "" {
-		return nil, usage(fmt.Errorf("cli.work-repository-required"))
+		return nil, usage(l10n.NewError("cli.error.repository-required"))
 	}
 	return workspaceapp.RepoAddRequest{Selection: workspaceapp.Selection{Root: resolvedRoot(inv.Values), Workspace: optional(inv.Values, "workspace")}, Repository: repository, Execute: inv.Values.Bool("execute")}, nil
 }

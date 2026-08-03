@@ -7,6 +7,7 @@ import (
 
 	"github.com/sachahjkl/dw/internal/cli/parse"
 	"github.com/sachahjkl/dw/internal/console"
+	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/webservice"
 )
 
@@ -80,6 +81,16 @@ func webRoutes(lifecycle WebLifecycle, serve func(context.Context) error) map[st
 			if invocation != nil {
 				options.NoExpiry = invocation.Values.Bool("no_expiry")
 				options.Token = optionalStringValue(invocation, "token")
+			}
+			if options.Token != nil {
+				result, err := lifecycle.Start(ctx, webservice.StartOptions{Open: true, Token: options.Token})
+				if err != nil {
+					return Outcome{}, err
+				}
+				if result.Open == nil {
+					return Outcome{}, l10n.NewError("web.error.open-result-missing")
+				}
+				return openOutcome(*result.Open), nil
 			}
 			result, err := lifecycle.Open(ctx, options)
 			if err != nil {

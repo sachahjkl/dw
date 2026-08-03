@@ -11,6 +11,7 @@ import (
 
 type webLifecycleStub struct {
 	opened      webservice.OpenResult
+	started     webservice.StartResult
 	startedWith *webservice.StartOptions
 	openedWith  *webservice.OpenOptions
 }
@@ -19,7 +20,7 @@ func (stub webLifecycleStub) Start(_ context.Context, options webservice.StartOp
 	if stub.startedWith != nil {
 		*stub.startedWith = options
 	}
-	return webservice.StartResult{}, nil
+	return stub.started, nil
 }
 
 func (stub webLifecycleStub) Stop(context.Context) error { return nil }
@@ -83,5 +84,33 @@ func TestWebRoutesMapAccessOptions(t *testing.T) {
 	}
 	if !openOptions.NoExpiry {
 		t.Fatalf("open options = %#v", openOptions)
+	}
+}
+
+func TestWebOpenWithTokenConfiguresAndOpensService(t *testing.T) {
+	token := "chosen-token"
+	invocation, err := parse.Parse(spec.Root(nil), []string{"web", "open", "--token", token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var startOptions webservice.StartOptions
+	var openOptions webservice.OpenOptions
+	lifecycle := webLifecycleStub{
+		started:     webservice.StartResult{Open: &webservice.OpenResult{Location: "http://127.0.0.1:7331/?token=chosen-token", Opened: true}},
+		startedWith: &startOptions,
+		openedWith:  &openOptions,
+	}
+	outcome, routeErr := webRoutes(lifecycle, nil)["web.open"].Direct(context.Background(), Execution{}, invocation)
+	if routeErr != nil {
+		t.Fatal(routeErr)
+	}
+	if !startOptions.Open || startOptions.Token == nil || *startOptions.Token != token {
+		t.Fatalf("start options = %#v", startOptions)
+	}
+	if openOptions.Token != nil || openOptions.NoExpiry {
+		t.Fatalf("Open was called unexpectedly: %#v", openOptions)
+	}
+	if got := string(outcome.Output.Body); got != "URL: http://127.0.0.1:7331/?token=chosen-token\nBrowser: opened\n" {
+		t.Fatalf("output = %q", got)
 	}
 }

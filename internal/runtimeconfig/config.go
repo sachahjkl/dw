@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/sachahjkl/dw/internal/config"
+	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 const SchemaV1 uint16 = 1
@@ -118,10 +118,10 @@ func Load(dirs config.PlatformBaseDirs) (Config, error) {
 	decoder.DisallowUnknownFields()
 	var value Config
 	if err = decoder.Decode(&value); err != nil {
-		return Config{}, fmt.Errorf("runtime-config.invalid-json:%w", err)
+		return Config{}, l10n.WrapError(err, "runtime.error.invalid-json", l10n.A("detail", err))
 	}
 	if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return Config{}, fmt.Errorf("runtime-config.trailing-json")
+		return Config{}, l10n.NewError("runtime.error.trailing-json")
 	}
 	if err = value.Validate(); err != nil {
 		return Config{}, err
@@ -131,7 +131,7 @@ func Load(dirs config.PlatformBaseDirs) (Config, error) {
 
 func (value Config) Validate() error {
 	if value.Schema != SchemaV1 {
-		return fmt.Errorf("runtime-config.invalid-schema:%d", value.Schema)
+		return l10n.NewError("runtime.error.invalid-schema", l10n.A("schema", value.Schema))
 	}
 	positive := map[string]int64{
 		"execution.leaseRenewMilliseconds":         value.Execution.LeaseRenewMilliseconds,
@@ -155,20 +155,20 @@ func (value Config) Validate() error {
 	}
 	for name, number := range positive {
 		if number <= 0 {
-			return fmt.Errorf("runtime-config.non-positive:%s", name)
+			return l10n.NewError("runtime.error.non-positive", l10n.A("setting", name))
 		}
 	}
 	if value.Execution.LeaseDurationMilliseconds <= value.Execution.LeaseRenewMilliseconds {
-		return fmt.Errorf("runtime-config.invalid-lease-duration")
+		return l10n.NewError("runtime.error.invalid-lease-duration")
 	}
 	if value.Execution.MaxEvents < 3 || value.Execution.MaxPayloadBytes <= 0 || value.Execution.MaxTerminalRecordsPerRoot == 0 || value.Execution.SubscriberCapacity <= 0 || value.Execution.EventFetchLimit == 0 {
-		return fmt.Errorf("runtime-config.invalid-execution-limit")
+		return l10n.NewError("runtime.error.invalid-execution-limit")
 	}
 	if value.Web.MaxHeaderBytes <= 0 || value.Web.RecentExecutionLimit == 0 {
-		return fmt.Errorf("runtime-config.invalid-web-limit")
+		return l10n.NewError("runtime.error.invalid-web-limit")
 	}
 	if value.WebService.DefaultPort == 0 {
-		return fmt.Errorf("runtime-config.invalid-default-port")
+		return l10n.NewError("runtime.error.invalid-default-port")
 	}
 	return nil
 }

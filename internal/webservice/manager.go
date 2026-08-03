@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/sachahjkl/dw/internal/config"
+	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/runtimeconfig"
 )
 
@@ -93,7 +94,7 @@ func (manager *Manager) Store() *Store { return manager.store }
 
 func (manager *Manager) Start(ctx context.Context, options StartOptions) (StartResult, error) {
 	if options.NoExpiry && !options.Open {
-		return StartResult{}, fmt.Errorf("web.no-expiry-requires-open")
+		return StartResult{}, localizedError("web.error.no-expiry-requires-open")
 	}
 	previous, previousErr := manager.store.LoadConfig()
 	if previousErr != nil && !errors.Is(previousErr, os.ErrNotExist) {
@@ -104,7 +105,7 @@ func (manager *Manager) Start(ctx context.Context, options StartOptions) (StartR
 		return StartResult{}, err
 	}
 	if options.NoExpiry && authMode != AuthTicket {
-		return StartResult{}, fmt.Errorf("web.authentication-option-unavailable")
+		return StartResult{}, localizedError("web.error.authentication-option-unavailable")
 	}
 	if previousErr == nil && previous.Registration == RegistrationNone {
 		resolvedRoot := previous.Root
@@ -180,7 +181,7 @@ func (manager *Manager) launchLocal(current WebConfigV1) error {
 	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(int(current.Port)))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("web.port-unavailable:%s", address)
+		return l10n.WrapError(err, "web.error.port-unavailable", l10n.A("address", address))
 	}
 	_ = listener.Close()
 	command := exec.Command(manager.executable, "web", "serve")
@@ -249,7 +250,7 @@ func (manager *Manager) Stop(ctx context.Context) error {
 	}
 	_ = response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("web.shutdown-failed:%d", response.StatusCode)
+		return localizedError("web.error.shutdown-failed", l10n.A("status", response.StatusCode))
 	}
 	if _, err = manager.waitForStatus(ctx, false); err != nil {
 		return err
@@ -370,19 +371,19 @@ func (manager *Manager) Open(ctx context.Context, options OpenOptions) (OpenResu
 	switch configValue.EffectiveAuthMode() {
 	case AuthNone:
 		if options.NoExpiry || options.Token != nil {
-			return OpenResult{}, fmt.Errorf("web.authentication-option-unavailable")
+			return OpenResult{}, localizedError("web.error.authentication-option-unavailable")
 		}
 	case AuthToken:
 		if options.NoExpiry {
-			return OpenResult{}, fmt.Errorf("web.authentication-option-unavailable")
+			return OpenResult{}, localizedError("web.error.authentication-option-unavailable")
 		}
 		if options.Token == nil || !AccessTokenMatches(configValue.AccessTokenDigest, *options.Token) {
-			return OpenResult{}, fmt.Errorf("web.access-token-invalid")
+			return OpenResult{}, localizedError("web.error.access-token-invalid")
 		}
 		location.RawQuery = url.Values{"token": []string{*options.Token}}.Encode()
 	case AuthTicket:
 		if options.Token != nil {
-			return OpenResult{}, fmt.Errorf("web.authentication-option-unavailable")
+			return OpenResult{}, localizedError("web.error.authentication-option-unavailable")
 		}
 		body, marshalErr := json.Marshal(struct {
 			Schema   uint16 `json:"schema"`
@@ -401,7 +402,7 @@ func (manager *Manager) Open(ctx context.Context, options OpenOptions) (OpenResu
 		}
 		defer response.Body.Close()
 		if response.StatusCode != http.StatusCreated {
-			return OpenResult{}, fmt.Errorf("web.ticket-failed:%d", response.StatusCode)
+			return OpenResult{}, localizedError("web.error.ticket-failed", l10n.A("status", response.StatusCode))
 		}
 		var ticket struct {
 			Schema    uint16     `json:"schema"`
@@ -411,7 +412,7 @@ func (manager *Manager) Open(ctx context.Context, options OpenOptions) (OpenResu
 		decoder := json.NewDecoder(response.Body)
 		decoder.DisallowUnknownFields()
 		if requestErr = decoder.Decode(&ticket); requestErr != nil || ticket.Schema != SchemaV1 || ticket.Ticket == "" {
-			return OpenResult{}, fmt.Errorf("web.invalid-ticket")
+			return OpenResult{}, localizedError("web.error.invalid-ticket")
 		}
 		location.RawQuery = url.Values{"ticket": []string{ticket.Ticket}}.Encode()
 	default:
@@ -448,7 +449,7 @@ func resolveStartAuth(previous WebConfigV1, hasPrevious bool, options StartOptio
 		return previous.EffectiveAuthMode(), previous.AccessTokenDigest, nil
 	}
 	if options.Unauthenticated && options.Token != nil {
-		return "", "", fmt.Errorf("web.authentication-options-conflict")
+		return "", "", localizedError("web.error.authentication-options-conflict")
 	}
 	if options.Unauthenticated {
 		return AuthNone, "", nil
@@ -474,7 +475,7 @@ func (manager *Manager) waitForStatus(ctx context.Context, running bool) (Status
 		case <-ctx.Done():
 			return StatusV1{}, ctx.Err()
 		case <-timeout.C:
-			return StatusV1{}, fmt.Errorf("web.service-timeout")
+			return StatusV1{}, localizedError("web.error.service-timeout")
 		case <-ticker.C:
 		}
 	}

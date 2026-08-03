@@ -3,9 +3,12 @@ package console
 import (
 	"errors"
 	"io"
+	"regexp"
 
 	"github.com/sachahjkl/dw/internal/l10n"
 )
+
+var technicalErrorPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)+(?:[:].*)?$`)
 
 type OutputFormat uint8
 
@@ -108,7 +111,11 @@ func LocalizedErrorText(localizer Localizer, err error) string {
 	if errors.As(err, &localized) {
 		return localizer.Render(localized.Localized())
 	}
-	return err.Error()
+	text := err.Error()
+	if technicalErrorPattern.MatchString(text) {
+		return localize(localizer, "console.error.internal")
+	}
+	return text
 }
 
 func ErrorLine(localizer Localizer, theme Theme, err error) string {

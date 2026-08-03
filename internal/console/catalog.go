@@ -7,6 +7,7 @@ import "github.com/sachahjkl/dw/internal/l10n"
 var EnglishEntries = []l10n.Entry{
 	{ID: "console.error", Text: "Error"},
 	{ID: "console.error.detail", Text: "{label}: {detail}"},
+	{ID: "console.error.internal", Text: "An unexpected internal error occurred."},
 	{ID: "guide.title", Text: "Dev Workflow {version}"},
 	{ID: "guide.subtitle", Text: "Step-by-step getting started guide"},
 	{ID: "guide.step.numbered", Text: "{number}. {title}"},

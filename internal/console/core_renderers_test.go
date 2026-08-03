@@ -1,11 +1,19 @@
 package console
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/sachahjkl/dw/internal/data"
 )
+
+func TestLocalizedErrorTextDoesNotExposeTechnicalCode(t *testing.T) {
+	text := LocalizedErrorText(NewEnglishLocalizer(), errors.New("execution.sqlite-open:detail"))
+	if text != "An unexpected internal error occurred." {
+		t.Fatalf("error text = %q", text)
+	}
+}
 
 func TestActionPageUsesReadableTitleWithoutInternalActionField(t *testing.T) {
 	rendered := RenderPage(actionPage(ResultWorkspaceList, Field{Label: "result.items", Value: "0"}), NewEnglishLocalizer(), NewTheme(false))

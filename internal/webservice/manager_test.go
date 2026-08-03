@@ -245,7 +245,7 @@ func TestManagerRejectsNoExpiryWithoutOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = manager.Start(context.Background(), StartOptions{NoExpiry: true}); err == nil || err.Error() != "web.no-expiry-requires-open" {
+	if _, err = manager.Start(context.Background(), StartOptions{NoExpiry: true}); err == nil || err.Error() != "A non-expiring ticket can only be requested when opening the browser." {
 		t.Fatalf("error = %v", err)
 	}
 }

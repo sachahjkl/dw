@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/cockpit"
+	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
@@ -233,7 +234,7 @@ func (m *Model) loadHistory() tea.Cmd {
 
 func (m *Model) acceptHistory(msg historyLoadedMsg) tea.Cmd {
 	if msg.err != nil {
-		m.addMessage(msg.err.Error())
+		m.addMessage(m.errorText(msg.err))
 		return nil
 	}
 	var resume *execution.Record
@@ -244,7 +245,7 @@ func (m *Model) acceptHistory(msg historyLoadedMsg) tea.Cmd {
 			run.Lines = m.deps.ProjectResult(item.record.TypedResult)
 		}
 		if item.record.Failure != nil {
-			run.Error = execution.NewFailureError(*item.record.Failure).Error()
+			run.Error = m.errorText(execution.NewFailureError(*item.record.Failure))
 		}
 		m.history.load(run)
 		for eventIndex := range item.events {
@@ -333,8 +334,8 @@ func (m *Model) acceptSnapshot(msg snapshotLoadedMsg) tea.Cmd {
 	}
 	m.snapshotLoad.running = false
 	if msg.err != nil {
-		m.snapshotLoad.errorText = msg.err.Error()
-		m.addMessage(m.message("tui.message.load-failed", l10n.A("label", m.l10n.Text("tui.status.snapshot")), l10n.A("error", msg.err)))
+		m.snapshotLoad.errorText = m.errorText(msg.err)
+		m.addMessage(m.message("tui.message.load-failed", l10n.A("label", m.l10n.Text("tui.status.snapshot")), l10n.A("error", m.snapshotLoad.errorText)))
 		return nil
 	}
 	m.snapshot = msg.snapshot
@@ -355,8 +356,8 @@ func (m *Model) acceptWork(msg workLoadedMsg) {
 	}
 	m.workLoad.running = false
 	if msg.err != nil {
-		m.workLoad.errorText = msg.err.Error()
-		m.addMessage(m.message("tui.message.load-failed", l10n.A("label", m.l10n.Text("tui.status.work")), l10n.A("error", msg.err)))
+		m.workLoad.errorText = m.errorText(msg.err)
+		m.addMessage(m.message("tui.message.load-failed", l10n.A("label", m.l10n.Text("tui.status.work")), l10n.A("error", m.workLoad.errorText)))
 		return
 	}
 	m.snapshot.WorkProjects = msg.items
@@ -374,8 +375,8 @@ func (m *Model) acceptPullRequests(msg prsLoadedMsg) {
 	}
 	m.prLoad.running = false
 	if msg.err != nil {
-		m.prLoad.errorText = msg.err.Error()
-		m.addMessage(m.message("tui.message.load-failed", l10n.A("label", m.l10n.Text("tui.status.prs")), l10n.A("error", msg.err)))
+		m.prLoad.errorText = m.errorText(msg.err)
+		m.addMessage(m.message("tui.message.load-failed", l10n.A("label", m.l10n.Text("tui.status.prs")), l10n.A("error", m.prLoad.errorText)))
 		return
 	}
 	m.snapshot.PullRequests = msg.items
@@ -648,21 +649,26 @@ func promptPresentation(prompt action.Prompt) (action.PromptMeta, []action.Choic
 
 func (m *Model) finishActionFailure(runID execution.ExecutionID, result action.Result, lines []string, status execution.Status, err error) tea.Cmd {
 	label := m.active.action.Label
+	errorText := m.errorText(err)
 	if !status.Terminal() {
 		status = execution.StatusFailed
 	}
-	m.history.finish(runID, status, lines, err.Error(), nil)
-	m.addMessage(m.message("tui.message.failed", l10n.A("label", label), l10n.A("error", err)))
+	m.history.finish(runID, status, lines, errorText, nil)
+	m.addMessage(m.message("tui.message.failed", l10n.A("label", label), l10n.A("error", errorText)))
 	m.progressRun = execution.ExecutionID{}
 	m.removeModal(progressModal)
 	if result != nil && m.deps.ProjectState != nil {
 		m.applyStateEffect(m.deps.ProjectState(result))
 	}
-	detailLines := append(append([]string(nil), lines...), err.Error())
+	detailLines := append(append([]string(nil), lines...), errorText)
 	m.detail = &detailState{title: label, lines: detailLines}
 	m.active, m.actionUpdates = nil, nil
 	m.pushModal(detailModal)
 	return m.continueQueue()
+}
+
+func (m *Model) errorText(err error) string {
+	return console.LocalizedErrorText(m.l10n, err)
 }
 
 func (m *Model) finishActionSuccess(runID execution.ExecutionID, result action.Result, lines []string, external *ExternalProcess) tea.Cmd {

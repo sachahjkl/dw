@@ -5,12 +5,12 @@ package webservice
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os/exec"
 	"strings"
 	"syscall"
 
 	"github.com/sachahjkl/dw/internal/config"
+	"github.com/sachahjkl/dw/internal/l10n"
 	"golang.org/x/sys/windows"
 )
 
@@ -65,7 +65,7 @@ func schtasks(ctx context.Context, arguments ...string) error {
 	command := exec.CommandContext(ctx, "schtasks.exe", arguments...)
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("web.schtasks:%s:%w", string(output), err)
+		return l10n.WrapError(err, "web.error.system-service", l10n.A("detail", strings.TrimSpace(string(output))))
 	}
 	return nil
 }

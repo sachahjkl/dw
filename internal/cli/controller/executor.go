@@ -8,6 +8,7 @@ import (
 	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/cli/parse"
 	"github.com/sachahjkl/dw/internal/execution"
+	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 func executeRequest(ctx context.Context, adapter Execution, invocation *parse.Result, request action.Request) (action.ResultEnvelope, error) {
@@ -108,9 +109,9 @@ func handleExecutionEvent(ctx context.Context, adapter Execution, id execution.E
 		}
 		if adapter.Policy.Machine || !adapter.Policy.Interactive() {
 			if prompt.PromptKind() == action.PromptConfirm {
-				return fmt.Errorf("cli.confirmation-required")
+				return l10n.NewError("cli.error.confirmation-required")
 			}
-			return fmt.Errorf("cli.input-requires-terminal:%s", prompt.PromptID())
+			return l10n.NewError("cli.error.input-requires-terminal", l10n.A("prompt", prompt.PromptID()))
 		}
 		response, err := input.Request(ctx, prompt)
 		if err != nil {

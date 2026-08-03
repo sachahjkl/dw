@@ -36,7 +36,7 @@ func (input *TerminalInput) Request(ctx context.Context, prompt action.Prompt) (
 		return nil, fmt.Errorf("action.invalid-prompt")
 	}
 	if !input.streams.StdinTTY {
-		return nil, fmt.Errorf("cli.input-requires-terminal:%s", prompt.PromptID())
+		return nil, l10n.NewError("cli.error.input-requires-terminal", l10n.A("prompt", prompt.PromptID()))
 	}
 	if err := prompt.Validate(); err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func (input *TerminalInput) confirm(label string, defaultAccepted bool) (bool, e
 	case "n", "no":
 		return false, nil
 	default:
-		return false, fmt.Errorf("cli.invalid-confirmation")
+		return false, l10n.NewError("cli.error.invalid-confirmation")
 	}
 }
 
@@ -169,7 +169,7 @@ func (input *TerminalInput) runSelection(ctx context.Context, meta action.Prompt
 		return nil, err
 	}
 	if model.canceled {
-		return nil, fmt.Errorf("selection canceled")
+		return nil, l10n.NewError("cli.error.selection-canceled")
 	}
 	return model, nil
 }
