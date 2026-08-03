@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/sachahjkl/dw/internal/action"
@@ -33,12 +34,19 @@ type Dependencies struct {
 }
 
 type Server struct {
-	deps       Dependencies
-	auth       *authState
-	serverID   webservice.ServerID
-	origin     string
-	shutdown   chan struct{}
-	httpServer *http.Server
+	deps              Dependencies
+	auth              *authState
+	serverID          webservice.ServerID
+	origin            string
+	shutdown          chan struct{}
+	httpServer        *http.Server
+	actionMu          sync.Mutex
+	actionSubscribers map[uint64]chan struct{}
+	actionWatches     map[execution.ExecutionID]struct{}
+	knownExecutions   map[execution.ExecutionID]struct{}
+	nextActionSubID   uint64
+	watchContext      context.Context
+	stopWatches       context.CancelFunc
 }
 
 func New(dependencies Dependencies) (*Server, error) {
@@ -58,6 +66,7 @@ func New(dependencies Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	watchContext, stopWatches := context.WithCancel(context.Background())
 	dependencies.Actor.Origin = execution.OriginWeb
 	return &Server{
 		deps: dependencies,
@@ -67,12 +76,122 @@ func New(dependencies Dependencies) (*Server, error) {
 			dependencies.Config.EffectiveAuthMode(),
 			dependencies.Config.AccessTokenDigest,
 		),
-		serverID: serverID,
-		shutdown: make(chan struct{}, 1),
+		serverID:          serverID,
+		shutdown:          make(chan struct{}, 1),
+		actionSubscribers: make(map[uint64]chan struct{}),
+		actionWatches:     make(map[execution.ExecutionID]struct{}),
+		knownExecutions:   make(map[execution.ExecutionID]struct{}),
+		watchContext:      watchContext,
+		stopWatches:       stopWatches,
 	}, nil
 }
 
+func (server *Server) subscribeActionUpdates() (<-chan struct{}, func()) {
+	server.actionMu.Lock()
+	if server.actionSubscribers == nil {
+		server.actionSubscribers = make(map[uint64]chan struct{})
+	}
+	server.nextActionSubID++
+	id := server.nextActionSubID
+	updates := make(chan struct{}, 1)
+	server.actionSubscribers[id] = updates
+	server.actionMu.Unlock()
+	return updates, func() {
+		server.actionMu.Lock()
+		delete(server.actionSubscribers, id)
+		server.actionMu.Unlock()
+	}
+}
+
+func (server *Server) broadcastActionUpdate() {
+	server.actionMu.Lock()
+	defer server.actionMu.Unlock()
+	for _, updates := range server.actionSubscribers {
+		select {
+		case updates <- struct{}{}:
+		default:
+		}
+	}
+}
+
+func (server *Server) watchExecution(id execution.ExecutionID) {
+	server.actionMu.Lock()
+	if server.actionWatches == nil {
+		server.actionWatches = make(map[execution.ExecutionID]struct{})
+	}
+	if _, exists := server.actionWatches[id]; exists {
+		server.actionMu.Unlock()
+		return
+	}
+	server.actionWatches[id] = struct{}{}
+	server.actionMu.Unlock()
+	go func() {
+		defer func() {
+			server.actionMu.Lock()
+			delete(server.actionWatches, id)
+			server.actionMu.Unlock()
+		}()
+		watchContext := server.watchContext
+		if watchContext == nil {
+			watchContext = context.Background()
+		}
+		subscription, err := server.deps.Executor.Subscribe(watchContext, server.deps.Actor, id, 0)
+		if err != nil {
+			return
+		}
+		events, errors := subscription.Events, subscription.Errors
+		for events != nil || errors != nil {
+			select {
+			case _, open := <-events:
+				if !open {
+					events = nil
+					continue
+				}
+				server.broadcastActionUpdate()
+			case _, open := <-errors:
+				if !open {
+					errors = nil
+					continue
+				}
+				return
+			}
+		}
+	}()
+}
+
+func (server *Server) rememberExecution(id execution.ExecutionID) bool {
+	server.actionMu.Lock()
+	defer server.actionMu.Unlock()
+	if server.knownExecutions == nil {
+		server.knownExecutions = make(map[execution.ExecutionID]struct{})
+	}
+	if _, exists := server.knownExecutions[id]; exists {
+		return false
+	}
+	server.knownExecutions[id] = struct{}{}
+	return true
+}
+
+func (server *Server) retainKnownExecutions(records []execution.Record) {
+	recent := make(map[execution.ExecutionID]struct{}, len(records))
+	for _, record := range records {
+		recent[record.ExecutionID] = struct{}{}
+	}
+	server.actionMu.Lock()
+	defer server.actionMu.Unlock()
+	for id := range server.knownExecutions {
+		if _, keep := recent[id]; !keep {
+			if _, watching := server.actionWatches[id]; !watching {
+				delete(server.knownExecutions, id)
+			}
+		}
+	}
+}
+
 func (server *Server) Serve(ctx context.Context) error {
+	if server.stopWatches != nil {
+		defer server.stopWatches()
+	}
 	address := net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", server.deps.Config.Port))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

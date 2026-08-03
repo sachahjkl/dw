@@ -32,7 +32,7 @@ func decodePromptView(record execution.Record, csrf string, localizer l10n.Local
 			return nil
 		}
 		setPromptMeta(view, prompt.Meta, prompt.Required, localizer)
-		view.Submit = fmt.Sprintf("@post(%q, {contentType:'form', headers:{'X-DW-CSRF':%q}}).finally(() => evt.target.reset())", endpoint, csrf)
+		view.Submit = fmt.Sprintf("fetch(%q, {method:'POST', headers:{'X-DW-CSRF':%q}, body:new FormData(evt.target)}).then(response => response.ok ? globalThis.dwPromptAccepted(evt.target) : globalThis.dwPromptRejected(evt.target)).catch(() => globalThis.dwPromptRejected(evt.target))", endpoint, csrf)
 	case action.PromptConfirm:
 		var prompt action.ConfirmPrompt
 		if json.Unmarshal(encoded.JSON, &prompt) != nil {
@@ -93,5 +93,5 @@ func promptChoicesWithSignals(choices []action.Choice, prefix string, localizer 
 }
 
 func responseExpression(endpoint, csrf, payload string) string {
-	return fmt.Sprintf("@post(%q, {contentType:'json', headers:{'X-DW-CSRF':%q}, payload:%s})", endpoint, csrf, payload)
+	return fmt.Sprintf("fetch(%q, {method:'POST', headers:{'Content-Type':'application/json','X-DW-CSRF':%q}, body:JSON.stringify(%s)}).then(response => response.ok ? globalThis.dwPromptAccepted(evt.target) : globalThis.dwPromptRejected(evt.target)).catch(() => globalThis.dwPromptRejected(evt.target))", endpoint, csrf, payload)
 }

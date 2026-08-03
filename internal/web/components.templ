@@ -18,7 +18,7 @@ templ page(view pageView) {
 			<script type="module" src={ assetURL("app.js") }></script>
 			<script type="module" src={ assetURL("datastar.js") }></script>
 		</head>
-		<body data-signals="{activeTab:sessionStorage.getItem('dw.activeTab')||'overview'}" data-init="@get('/events')">
+		<body data-action-response-timeout={ fmt.Sprint(view.ActionResponseTimeoutMilliseconds) } data-signals="{activeTab:sessionStorage.getItem('dw.activeTab')||'overview'}" data-init="@get('/events')">
 			<a class="skip-link" href="#main">Skip to content</a>
 			@appHeader(view.ActiveActionCount)
 			<main id="main">
@@ -85,7 +85,7 @@ templ notifications(toasts []toastView) {
 	<aside id="action-notifications" class="toast-stack" aria-label="Notifications" aria-live="assertive">
 		if len(toasts) != 0 {
 			for _, toast := range toasts {
-				<button type="button" class="toast" data-tab={ toast.Target } data-on:click={ "$activeTab = '" + toast.Target + "'; sessionStorage.setItem('dw.activeTab','" + toast.Target + "')" }>
+				<button type="button" class="toast" data-expires-at={ fmt.Sprint(toast.ExpiresAt) } data-tab={ toast.Target } data-on:click={ "$activeTab = '" + toast.Target + "'; sessionStorage.setItem('dw.activeTab','" + toast.Target + "')" }>
 					<strong>{ toast.Title }</strong>
 					<span>{ toast.Detail }</span>
 					<small>Open</small>
@@ -411,7 +411,7 @@ templ executionsSection(executions []executionView, activeCount int) {
 		}
 		<div class="action-list">
 			for _, item := range executions {
-				<article class="execution" data-execution-id={ item.ID } data-status={ string(item.Status) } data-status-label={ item.StatusLabel } data-progress={ item.Summary } data-relation={ item.Relation } data-operation-key={ item.OperationKey } data-operation-subject={ item.SubjectKey }>
+				<article class="execution" data-execution-id={ item.ID } data-status={ string(item.Status) } data-status-label={ item.StatusLabel } data-progress={ item.Summary } data-interaction-label={ interactionLabel(item) } data-relation={ item.Relation } data-operation-key={ item.OperationKey } data-operation-subject={ item.SubjectKey }>
 					<header>
 						<div><p class="eyebrow">Action</p><h3>{ item.Title }</h3></div>
 						<strong class={ "status " + string(item.Status) }>{ item.StatusLabel }</strong>
@@ -424,32 +424,10 @@ templ executionsSection(executions []executionView, activeCount int) {
 						<p class="error" role="alert">{ item.Failure }</p>
 					}
 					if item.Status.Final() {
-						<button type="button" class="view-result" data-on:click={ fmt.Sprintf("document.getElementById(%q).showModal()", "result-"+item.ID) }>View result</button>
+						<button type="button" class="view-result" data-on:click={ fmt.Sprintf("globalThis.dwOpenActionDialog('result',%q)", item.ID) }>View result</button>
 					}
-					for _, event := range item.Events {
-						if event.AuthorizationURL != "" {
-							<div class="auth-panel" role="status">
-								<p class="auth-kicker">Sign-in required</p>
-								<h4>Continue with Microsoft</h4>
-								<p>Complete sign-in in a secure Microsoft tab. This action updates after the callback.</p>
-								<a class="auth-action" href={ templ.SafeURL(event.AuthorizationURL) } target="_blank" rel="noopener noreferrer">Continue with Microsoft</a>
-								if event.CallbackURI != "" {
-									<small>Callback listener: <code>{ event.CallbackURI }</code></small>
-								}
-							</div>
-						}
-						if event.VerificationURI != "" {
-							<div class="auth-panel" role="status">
-								<p class="auth-kicker">Sign-in required</p>
-								<h4>Continue with Microsoft</h4>
-								<p>Open Microsoft sign-in, then enter this device code.</p>
-								<code class="device-code">{ event.UserCode }</code>
-								<a class="auth-action" href={ templ.SafeURL(event.VerificationURI) } target="_blank" rel="noopener noreferrer">Open Microsoft sign-in</a>
-							</div>
-						}
-					}
-					if item.Prompt != nil {
-						@promptForm(item.ID, *item.Prompt)
+					if item.Prompt != nil || item.Active && authenticationInteraction(item.Events) != nil {
+						<button type="button" class="view-input" data-on:click={ fmt.Sprintf("globalThis.dwOpenActionDialog('interaction',%q)", item.ID) }>Provide input</button>
 					}
 					<div class="action-controls">
 						if item.Active {
@@ -479,15 +457,56 @@ templ executionsSection(executions []executionView, activeCount int) {
 templ resultDialogs(executions []executionView) {
 	<div id="action-results">
 		for _, item := range executions {
-			if item.Status.Final() {
+			if item.Prompt != nil || item.Active && authenticationInteraction(item.Events) != nil {
+				@interactionDialog(item)
+			} else if item.Status.Final() {
 				@resultDialog(item)
 			}
 		}
 	</div>
 }
 
+templ interactionDialog(item executionView) {
+	<dialog id={ "interaction-" + item.ID } class="action-dialog interaction-dialog" data-execution-id={ item.ID } data-operation-key={ item.OperationKey } data-dialog-token={ interactionToken(item) } aria-labelledby={ "interaction-title-" + item.ID }>
+		<form method="dialog" class="dialog-close"><button type="submit" aria-label="Close input">Close</button></form>
+		<header>
+			<p class="eyebrow">Action paused</p>
+			<h2 id={ "interaction-title-" + item.ID }>{ item.Title }</h2>
+		</header>
+		if item.Prompt != nil {
+			@promptForm(item.ID, *item.Prompt)
+		}
+		if event := authenticationInteraction(item.Events); event != nil {
+			@authenticationPanel(*event)
+		}
+	</dialog>
+}
+
+templ authenticationPanel(event eventView) {
+	if event.AuthorizationURL != "" {
+			<div class="auth-panel" role="status">
+				<p class="auth-kicker">Sign-in required</p>
+				<h4>Continue with Microsoft</h4>
+				<p>Complete sign-in in a secure Microsoft tab. This action updates after the callback.</p>
+				<a class="auth-action" href={ templ.SafeURL(event.AuthorizationURL) } target="_blank" rel="noopener noreferrer">Continue with Microsoft</a>
+				if event.CallbackURI != "" {
+					<small>Callback listener: <code>{ event.CallbackURI }</code></small>
+				}
+			</div>
+	}
+	if event.VerificationURI != "" {
+			<div class="auth-panel" role="status">
+				<p class="auth-kicker">Sign-in required</p>
+				<h4>Continue with Microsoft</h4>
+				<p>Open Microsoft sign-in, then enter this device code.</p>
+				<code class="device-code">{ event.UserCode }</code>
+				<a class="auth-action" href={ templ.SafeURL(event.VerificationURI) } target="_blank" rel="noopener noreferrer">Open Microsoft sign-in</a>
+			</div>
+	}
+}
+
 templ resultDialog(item executionView) {
-	<dialog id={ "result-" + item.ID } class="result-dialog" data-operation-key={ item.OperationKey } aria-labelledby={ "result-title-" + item.ID }>
+	<dialog id={ "result-" + item.ID } class="action-dialog result-dialog" data-execution-id={ item.ID } data-operation-key={ item.OperationKey } aria-labelledby={ "result-title-" + item.ID }>
 		<form method="dialog" class="dialog-close"><button type="submit" aria-label="Close result">Close</button></form>
 		<header>
 			<p class="eyebrow">Action result</p>
@@ -627,6 +646,7 @@ templ promptForm(executionID string, prompt promptView) {
 		if prompt.Kind == "text" {
 			<label>Response <input type="text" data-bind={ prompt.Signal } required?={ prompt.Required }/></label>
 		}
+		<p class="prompt-feedback" role="status" aria-live="polite"></p>
 		<button type="submit">Submit response</button>
 	</form>
 }

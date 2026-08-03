@@ -44,14 +44,15 @@ func assetURL(name string) string {
 }
 
 type pageView struct {
-	CSRF              string
-	Snapshot          cockpit.Snapshot
-	Work              []cockpit.WorkProject
-	PullRequests      []cockpit.PullRequest
-	Executions        []executionView
-	Toasts            []toastView
-	ActiveActionCount int
-	Error             string
+	CSRF                              string
+	Snapshot                          cockpit.Snapshot
+	Work                              []cockpit.WorkProject
+	PullRequests                      []cockpit.PullRequest
+	Executions                        []executionView
+	Toasts                            []toastView
+	ActiveActionCount                 int
+	Error                             string
+	ActionResponseTimeoutMilliseconds int64
 }
 
 type operationView struct {
@@ -156,9 +157,10 @@ type eventView struct {
 }
 
 type toastView struct {
-	Title  string
-	Detail string
-	Target string
+	Title     string
+	Detail    string
+	Target    string
+	ExpiresAt int64
 }
 
 type workRecoveryView struct {
@@ -234,8 +236,8 @@ func (server *Server) handlePageEvents(writer http.ResponseWriter, request *http
 		return
 	}
 	sse := datastar.NewSSE(writer, request)
-	actionTicker := time.NewTicker(250 * time.Millisecond)
-	defer actionTicker.Stop()
+	actionUpdates, unsubscribeActions := server.subscribeActionUpdates()
+	defer unsubscribeActions()
 	resourceTicker := time.NewTicker(runtimeconfig.Milliseconds(server.deps.Settings.PagePollMilliseconds))
 	defer resourceTicker.Stop()
 	resourceUpdates := make(chan pageView, 1)
@@ -263,44 +265,55 @@ func (server *Server) handlePageEvents(writer http.ResponseWriter, request *http
 	}
 	requestResources()
 	var previousResources, previousActions, previousResults, previousShortcut, previousToasts string
+	requestActions := func() (bool, bool) {
+		executions, activeCount, err := server.loadExecutionViews(request.Context(), csrf)
+		if err != nil {
+			return true, true
+		}
+		toasts := actionToasts(executions, time.Now(), runtimeconfig.Milliseconds(server.deps.Settings.NotificationTTLMilliseconds))
+		var actionsBuffer, resultsBuffer, shortcutBuffer, toastBuffer bytes.Buffer
+		if executionsSection(executions, activeCount).Render(request.Context(), &actionsBuffer) != nil ||
+			resultDialogs(executions).Render(request.Context(), &resultsBuffer) != nil ||
+			actionsShortcut(activeCount).Render(request.Context(), &shortcutBuffer) != nil ||
+			notifications(toasts).Render(request.Context(), &toastBuffer) != nil {
+			return false, false
+		}
+		if html := actionsBuffer.String(); html != previousActions {
+			if sse.PatchElements(html, datastar.WithSelector("#actions"), datastar.WithModeOuter()) != nil {
+				return false, false
+			}
+			previousActions = html
+		}
+		if html := resultsBuffer.String(); html != previousResults {
+			if sse.PatchElements(html, datastar.WithSelector("#action-results"), datastar.WithModeOuter()) != nil {
+				return false, false
+			}
+			previousResults = html
+		}
+		if html := shortcutBuffer.String(); html != previousShortcut {
+			if sse.PatchElements(html, datastar.WithSelector("#tab-actions"), datastar.WithModeOuter()) != nil {
+				return false, false
+			}
+			previousShortcut = html
+		}
+		if html := toastBuffer.String(); html != previousToasts {
+			if sse.PatchElements(html, datastar.WithSelector("#action-notifications"), datastar.WithModeOuter()) != nil {
+				return false, false
+			}
+			previousToasts = html
+		}
+		return true, false
+	}
+	connected, retryActions := requestActions()
+	if !connected {
+		return
+	}
 	for {
 		select {
-		case <-actionTicker.C:
-			executions, activeCount, err := server.loadExecutionViews(request.Context(), csrf)
-			if err != nil {
-				continue
-			}
-			toasts := actionToasts(executions, time.Now())
-			var actionsBuffer, resultsBuffer, shortcutBuffer, toastBuffer bytes.Buffer
-			if executionsSection(executions, activeCount).Render(request.Context(), &actionsBuffer) != nil ||
-				resultDialogs(executions).Render(request.Context(), &resultsBuffer) != nil ||
-				actionsShortcut(activeCount).Render(request.Context(), &shortcutBuffer) != nil ||
-				notifications(toasts).Render(request.Context(), &toastBuffer) != nil {
+		case <-actionUpdates:
+			connected, retryActions = requestActions()
+			if !connected {
 				return
-			}
-			if html := actionsBuffer.String(); html != previousActions {
-				if sse.PatchElements(html, datastar.WithSelector("#actions"), datastar.WithModeOuter()) != nil {
-					return
-				}
-				previousActions = html
-			}
-			if html := resultsBuffer.String(); html != previousResults {
-				if sse.PatchElements(html, datastar.WithSelector("#action-results"), datastar.WithModeOuter()) != nil {
-					return
-				}
-				previousResults = html
-			}
-			if html := shortcutBuffer.String(); html != previousShortcut {
-				if sse.PatchElements(html, datastar.WithSelector("#tab-actions"), datastar.WithModeOuter()) != nil {
-					return
-				}
-				previousShortcut = html
-			}
-			if html := toastBuffer.String(); html != previousToasts {
-				if sse.PatchElements(html, datastar.WithSelector("#action-notifications"), datastar.WithModeOuter()) != nil {
-					return
-				}
-				previousToasts = html
 			}
 		case view := <-resourceUpdates:
 			var buffer bytes.Buffer
@@ -315,8 +328,33 @@ func (server *Server) handlePageEvents(writer http.ResponseWriter, request *http
 			}
 		case <-resourceTicker.C:
 			requestResources()
+			server.discoverExecutions(request.Context())
+			if retryActions {
+				connected, retryActions = requestActions()
+				if !connected {
+					return
+				}
+			}
 		case <-request.Context().Done():
 			return
+		}
+	}
+}
+
+func (server *Server) discoverExecutions(ctx context.Context) {
+	records, err := server.deps.Executor.List(ctx, server.deps.Actor, execution.ListFilter{
+		Root: server.deps.Config.Root, Limit: server.deps.Settings.RecentExecutionLimit,
+	})
+	if err != nil {
+		return
+	}
+	defer server.retainKnownExecutions(records)
+	for _, record := range records {
+		newExecution := server.rememberExecution(record.ExecutionID)
+		if activeStatus(record.Status) {
+			server.watchExecution(record.ExecutionID)
+		} else if newExecution {
+			server.broadcastActionUpdate()
 		}
 	}
 }
@@ -336,12 +374,12 @@ func (server *Server) loadPage(ctx context.Context, csrf string) pageView {
 	if err != nil && view.Error == "" {
 		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
 	}
-	view.Toasts = actionToasts(view.Executions, time.Now())
+	view.Toasts = actionToasts(view.Executions, time.Now(), runtimeconfig.Milliseconds(server.deps.Settings.NotificationTTLMilliseconds))
 	return view
 }
 
 func (server *Server) loadResourcePage(ctx context.Context, csrf string) pageView {
-	view := pageView{CSRF: csrf}
+	view := pageView{CSRF: csrf, ActionResponseTimeoutMilliseconds: server.deps.Settings.ActionResponseTimeoutMilliseconds}
 	snapshot, err := server.deps.Cockpit.Snapshot(ctx, server.deps.Config.Root)
 	view.Snapshot = snapshot
 	if err != nil {
@@ -368,9 +406,11 @@ func (server *Server) loadExecutionViews(ctx context.Context, csrf string) ([]ex
 	activeCount := 0
 	var events sync.WaitGroup
 	for index, record := range records {
+		server.rememberExecution(record.ExecutionID)
 		item := makeExecutionView(record, csrf, server.deps.Localizer, server.deps.ProjectResult, server.deps.ProjectPage)
 		if item.Active {
 			activeCount++
+			server.watchExecution(record.ExecutionID)
 		}
 		items = append(items, item)
 		events.Add(1)
@@ -569,6 +609,37 @@ func resultValueClass(style console.ValueStyle) string {
 	return classes[int(style)]
 }
 
+func authenticationInteraction(events []eventView) *eventView {
+	if len(events) == 0 {
+		return nil
+	}
+	event := events[len(events)-1]
+	if event.AuthorizationURL == "" && event.VerificationURI == "" {
+		return nil
+	}
+	return &event
+}
+
+func interactionLabel(item executionView) string {
+	if item.Prompt != nil {
+		return "Input required"
+	}
+	if authenticationInteraction(item.Events) != nil {
+		return "Sign-in required"
+	}
+	return ""
+}
+
+func interactionToken(item executionView) string {
+	if item.Prompt != nil {
+		return item.ID + ":" + item.Prompt.ID
+	}
+	if event := authenticationInteraction(item.Events); event != nil {
+		return fmt.Sprintf("%s:%d", item.ID, event.Sequence)
+	}
+	return item.ID
+}
+
 func renderComponent(ctx context.Context, component templ.Component) (string, error) {
 	var buffer bytes.Buffer
 	if err := component.Render(ctx, &buffer); err != nil {
@@ -701,7 +772,7 @@ func activeStatus(status execution.Status) bool {
 	return status == execution.StatusQueued || status == execution.StatusRunning || status == execution.StatusWaitingInput || status == execution.StatusCanceling
 }
 
-func actionToasts(executions []executionView, now time.Time) []toastView {
+func actionToasts(executions []executionView, now time.Time, notificationTTL time.Duration) []toastView {
 	toasts := make([]toastView, 0)
 	for _, item := range executions {
 		switch {
@@ -709,18 +780,18 @@ func actionToasts(executions []executionView, now time.Time) []toastView {
 			toasts = append(toasts, toastView{Title: "Input required", Detail: item.Title, Target: "actions"})
 		case item.Active:
 			toasts = append(toasts, toastView{Title: "Action running", Detail: item.Title, Target: "actions"})
-		case item.Status == execution.StatusSucceeded && recentlyFinished(item, now):
+		case item.Status == execution.StatusSucceeded && recentlyFinished(item, now, notificationTTL):
 			detail := item.Title
 			if text := firstResultLine(item.Result); text != "" {
 				detail = text
 			}
-			toasts = append(toasts, toastView{Title: "Action completed", Detail: detail, Target: "actions"})
-		case item.Status == execution.StatusFailed && recentlyFinished(item, now):
+			toasts = append(toasts, toastView{Title: "Action completed", Detail: detail, Target: "actions", ExpiresAt: item.FinishedAt.Add(notificationTTL).UnixMilli()})
+		case item.Status == execution.StatusFailed && recentlyFinished(item, now, notificationTTL):
 			detail := item.Failure
 			if detail == "" {
 				detail = item.Title
 			}
-			toasts = append(toasts, toastView{Title: "Action failed", Detail: detail, Target: "actions"})
+			toasts = append(toasts, toastView{Title: "Action failed", Detail: detail, Target: "actions", ExpiresAt: item.FinishedAt.Add(notificationTTL).UnixMilli()})
 		}
 	}
 	return toasts
@@ -738,8 +809,8 @@ func firstResultLine(spans []ansiSpan) string {
 	return strings.TrimSpace(text.String())
 }
 
-func recentlyFinished(item executionView, now time.Time) bool {
-	return item.FinishedAt != nil && !item.FinishedAt.After(now) && now.Sub(*item.FinishedAt) <= 8*time.Second
+func recentlyFinished(item executionView, now time.Time, notificationTTL time.Duration) bool {
+	return item.FinishedAt != nil && !item.FinishedAt.After(now) && now.Sub(*item.FinishedAt) <= notificationTTL
 }
 
 func activeExecutions(executions []executionView) []executionView {

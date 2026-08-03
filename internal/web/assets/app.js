@@ -29,7 +29,16 @@ document.addEventListener("keydown", (event) => {
 const pendingOperations = new Map();
 const observedActiveOperations = new Set();
 const settlingOperations = new Set();
-let autoOpenOperation = "";
+const pendingResults = new Set();
+const dismissedInteractions = new Set();
+let activeDialogID = "";
+const promptSubmissionTimers = new WeakMap();
+const toastExpiryTimers = new WeakMap();
+
+function actionResponseTimeout() {
+  const value = Number(document.body.dataset.actionResponseTimeout);
+  return Number.isFinite(value) && value > 0 ? value : 15000;
+}
 
 function operationForms(key) {
   return [...document.querySelectorAll("form.operation")].filter((form) => form.dataset.operationKey === key);
@@ -62,12 +71,63 @@ function resetOperation(key) {
   }
 }
 
-function openCompletedResult(key) {
-  autoOpenOperation = key;
-  const dialog = [...document.querySelectorAll("dialog.result-dialog")].find((item) => item.dataset.operationKey === key);
-  if (!(dialog instanceof HTMLDialogElement) || dialog.open) return;
+function openOperationDialog(kind, executionID) {
+  if (kind === "result") pendingResults.add(executionID);
+  openNextDialog();
+}
+
+function showActionDialog(dialog) {
+  activeDialogID = dialog.id;
   dialog.showModal();
 }
+
+function openNextDialog() {
+  const dialogs = [...document.querySelectorAll("dialog.interaction-dialog")];
+  const liveTokens = new Set(dialogs.map((dialog) => dialog.dataset.dialogToken || ""));
+  for (const token of dismissedInteractions) {
+    if (!liveTokens.has(token)) dismissedInteractions.delete(token);
+  }
+  const openDialog = document.querySelector("dialog.action-dialog[open]");
+  if (openDialog instanceof HTMLDialogElement && openDialog.matches(":modal")) return;
+  if (openDialog instanceof HTMLDialogElement) openDialog.open = false;
+  if (activeDialogID) {
+    const activeDialog = document.getElementById(activeDialogID);
+    if (activeDialog instanceof HTMLDialogElement) {
+      showActionDialog(activeDialog);
+      queueMicrotask(() => activeDialog.querySelector('.prompt input:not([type="hidden"]), .prompt select, .auth-action')?.focus());
+      return;
+    }
+    activeDialogID = "";
+  }
+  for (const execution of document.querySelectorAll("#actions .execution[data-interaction-label]")) {
+    if (!execution.dataset.interactionLabel) continue;
+    const executionID = execution.dataset.executionId || "";
+    const dialog = dialogs.find((item) => item.dataset.executionId === executionID);
+    if (!dialog || dismissedInteractions.has(dialog.dataset.dialogToken || "")) continue;
+    showActionDialog(dialog);
+    queueMicrotask(() => dialog.querySelector('.prompt input:not([type="hidden"]), .prompt select, .auth-action')?.focus());
+    return;
+  }
+  for (const executionID of pendingResults) {
+    const dialog = [...document.querySelectorAll("dialog.result-dialog")].find((item) => item.dataset.executionId === executionID);
+    if (!(dialog instanceof HTMLDialogElement)) {
+      const execution = [...document.querySelectorAll("#actions .execution")].find((item) => item.dataset.executionId === executionID);
+      if (!execution) pendingResults.delete(executionID);
+      continue;
+    }
+    pendingResults.delete(executionID);
+    showActionDialog(dialog);
+    return;
+  }
+}
+
+globalThis.dwOpenActionDialog = (kind, executionID) => {
+  if (kind === "interaction") {
+    const dialog = [...document.querySelectorAll("dialog.interaction-dialog")].find((item) => item.dataset.executionId === executionID);
+    if (dialog instanceof HTMLDialogElement) dismissedInteractions.delete(dialog.dataset.dialogToken || "");
+  }
+  openOperationDialog(kind, executionID);
+};
 
 function syncOperations() {
   const activeNow = new Set();
@@ -75,15 +135,17 @@ function syncOperations() {
     const key = execution.dataset.operationKey;
     const status = execution.dataset.status || "";
     if (!key || !["queued", "running", "waiting-input", "canceling"].includes(status)) continue;
+    if (activeNow.has(key)) continue;
     activeNow.add(key);
-    const progress = execution.dataset.progress || execution.dataset.statusLabel || "Running";
+    const interaction = execution.dataset.interactionLabel || "";
+    const progress = interaction || execution.dataset.progress || execution.dataset.statusLabel || "Running";
     setOperationState(key, status, progress);
   }
   for (const key of observedActiveOperations) {
     if (activeNow.has(key) || pendingOperations.has(key) || settlingOperations.has(key)) continue;
     const execution = operationExecution(key);
     if (execution && ["succeeded", "failed", "canceled", "interrupted"].includes(execution.dataset.status || "")) {
-      openCompletedResult(key);
+      openOperationDialog("result", execution.dataset.executionId || "");
     }
     resetOperation(key);
   }
@@ -102,10 +164,10 @@ function syncOperations() {
     clearTimeout(pending.timeout);
     const status = execution.dataset.status || "running";
     const progress = execution.dataset.progress || execution.dataset.statusLabel || "Running";
-    const terminal = ["succeeded", "failed", "canceled", "interrupted"].includes(status);
-    setOperationState(key, status, terminal ? (execution.dataset.statusLabel || progress) : progress);
-    if (!terminal) continue;
-    openCompletedResult(key);
+    const final = ["succeeded", "failed", "canceled", "interrupted"].includes(status);
+    setOperationState(key, status, final ? (execution.dataset.statusLabel || progress) : progress);
+    if (!final) continue;
+    openOperationDialog("result", executionID);
     pendingOperations.delete(key);
     settlingOperations.add(key);
     setTimeout(() => {
@@ -122,16 +184,30 @@ function syncOperations() {
     const label = form?.querySelector(".operation-button")?.dataset.operationLabel;
     if (label && next.textContent !== label) next.textContent = label;
   }
-  if (autoOpenOperation) openCompletedResult(autoOpenOperation);
+  scheduleToastExpiry();
+  openNextDialog();
 }
 
 document.addEventListener("submit", (event) => {
-  if (!(event.target instanceof HTMLFormElement) || !event.target.matches("form.operation")) return;
+  if (!(event.target instanceof HTMLFormElement)) return;
+  if (event.target.matches("form.prompt")) {
+    const button = event.target.querySelector('button[type="submit"]');
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = true;
+      button.textContent = "Submitting…";
+      const feedback = event.target.querySelector(".prompt-feedback");
+      if (feedback instanceof HTMLElement) feedback.textContent = "Submitting response…";
+      clearTimeout(promptSubmissionTimers.get(event.target));
+      promptSubmissionTimers.set(event.target, setTimeout(() => globalThis.dwPromptRejected(event.target), actionResponseTimeout()));
+    }
+    return;
+  }
+  if (!event.target.matches("form.operation")) return;
   const key = event.target.dataset.operationKey;
   if (!key) return;
   clearTimeout(pendingOperations.get(key)?.timeout);
   const current = operationExecution(key);
-  const timeout = setTimeout(() => globalThis.dwOperationRejected(key), 15000);
+  const timeout = setTimeout(() => globalThis.dwOperationRejected(key), actionResponseTimeout());
   pendingOperations.set(key, {previousExecution: current?.dataset.executionId || "", started: false, timeout});
   setOperationState(key, "starting", "Starting…");
 });
@@ -146,6 +222,35 @@ globalThis.dwOperationRejected = (key) => {
     resetOperation(key);
   }, 1800);
 };
+
+globalThis.dwPromptAccepted = (form) => {
+  clearTimeout(promptSubmissionTimers.get(form));
+  promptSubmissionTimers.delete(form);
+  const feedback = form?.querySelector(".prompt-feedback");
+  if (feedback instanceof HTMLElement) feedback.textContent = "Response accepted.";
+};
+
+globalThis.dwPromptRejected = (form) => {
+  clearTimeout(promptSubmissionTimers.get(form));
+  promptSubmissionTimers.delete(form);
+  const button = form?.querySelector('button[type="submit"]');
+  if (button instanceof HTMLButtonElement) {
+    button.disabled = false;
+    button.textContent = "Submit response";
+  }
+  const feedback = form?.querySelector(".prompt-feedback");
+  if (feedback instanceof HTMLElement) feedback.textContent = "Response was not accepted. Try again.";
+};
+
+function scheduleToastExpiry() {
+  for (const toast of document.querySelectorAll(".toast[data-expires-at]")) {
+    if (!(toast instanceof HTMLElement) || toastExpiryTimers.has(toast)) continue;
+    const expiresAt = Number(toast.dataset.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= 0) continue;
+    const timeout = setTimeout(() => toast.remove(), Math.max(0, expiresAt - Date.now()));
+    toastExpiryTimers.set(toast, timeout);
+  }
+}
 
 document.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) return;
@@ -162,9 +267,11 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("close", (event) => {
-  if (event.target instanceof HTMLDialogElement && event.target.dataset.operationKey === autoOpenOperation) {
-    autoOpenOperation = "";
+  if (event.target instanceof HTMLDialogElement && event.target.classList.contains("interaction-dialog")) {
+    dismissedInteractions.add(event.target.dataset.dialogToken || "");
   }
+  if (event.target instanceof HTMLDialogElement && event.target.id === activeDialogID) activeDialogID = "";
+  queueMicrotask(syncOperations);
 }, true);
 
 new MutationObserver(syncOperations).observe(document.body, {childList: true, subtree: true});

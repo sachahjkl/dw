@@ -14,6 +14,7 @@ import (
 )
 
 const SchemaV1 uint16 = 1
+const MaxBrowserTimerMilliseconds int64 = 1<<31 - 1
 
 // Config contains user-editable process limits and polling intervals.
 type Config struct {
@@ -37,17 +38,19 @@ type Execution struct {
 }
 
 type Web struct {
-	TicketTTLSeconds         int64  `json:"ticketTTLSeconds"`
-	SessionTTLSeconds        int64  `json:"sessionTTLSeconds"`
-	MaxRequestBodyBytes      int64  `json:"maxRequestBodyBytes"`
-	MaxHeaderBytes           int    `json:"maxHeaderBytes"`
-	ReadHeaderTimeoutSeconds int64  `json:"readHeaderTimeoutSeconds"`
-	IdleTimeoutSeconds       int64  `json:"idleTimeoutSeconds"`
-	ShutdownTimeoutSeconds   int64  `json:"shutdownTimeoutSeconds"`
-	SSEHeartbeatSeconds      int64  `json:"sseHeartbeatSeconds"`
-	PagePollMilliseconds     int64  `json:"pagePollMilliseconds"`
-	EventSettleMilliseconds  int64  `json:"eventSettleMilliseconds"`
-	RecentExecutionLimit     uint16 `json:"recentExecutionLimit"`
+	TicketTTLSeconds                  int64  `json:"ticketTTLSeconds"`
+	SessionTTLSeconds                 int64  `json:"sessionTTLSeconds"`
+	MaxRequestBodyBytes               int64  `json:"maxRequestBodyBytes"`
+	MaxHeaderBytes                    int    `json:"maxHeaderBytes"`
+	ReadHeaderTimeoutSeconds          int64  `json:"readHeaderTimeoutSeconds"`
+	IdleTimeoutSeconds                int64  `json:"idleTimeoutSeconds"`
+	ShutdownTimeoutSeconds            int64  `json:"shutdownTimeoutSeconds"`
+	SSEHeartbeatSeconds               int64  `json:"sseHeartbeatSeconds"`
+	PagePollMilliseconds              int64  `json:"pagePollMilliseconds"`
+	EventSettleMilliseconds           int64  `json:"eventSettleMilliseconds"`
+	ActionResponseTimeoutMilliseconds int64  `json:"actionResponseTimeoutMilliseconds"`
+	NotificationTTLMilliseconds       int64  `json:"notificationTTLMilliseconds"`
+	RecentExecutionLimit              uint16 `json:"recentExecutionLimit"`
 }
 
 type WebService struct {
@@ -74,17 +77,19 @@ func Default() Config {
 			EventFetchLimit:             1_000,
 		},
 		Web: Web{
-			TicketTTLSeconds:         60,
-			SessionTTLSeconds:        12 * 60 * 60,
-			MaxRequestBodyBytes:      1 << 20,
-			MaxHeaderBytes:           64 << 10,
-			ReadHeaderTimeoutSeconds: 5,
-			IdleTimeoutSeconds:       60,
-			ShutdownTimeoutSeconds:   10,
-			SSEHeartbeatSeconds:      15,
-			PagePollMilliseconds:     2_000,
-			EventSettleMilliseconds:  25,
-			RecentExecutionLimit:     20,
+			TicketTTLSeconds:                  60,
+			SessionTTLSeconds:                 12 * 60 * 60,
+			MaxRequestBodyBytes:               1 << 20,
+			MaxHeaderBytes:                    64 << 10,
+			ReadHeaderTimeoutSeconds:          5,
+			IdleTimeoutSeconds:                60,
+			ShutdownTimeoutSeconds:            10,
+			SSEHeartbeatSeconds:               15,
+			PagePollMilliseconds:              2_000,
+			EventSettleMilliseconds:           25,
+			ActionResponseTimeoutMilliseconds: 15_000,
+			NotificationTTLMilliseconds:       8_000,
+			RecentExecutionLimit:              20,
 		},
 		WebService: WebService{
 			DefaultPort:                   7331,
@@ -114,6 +119,14 @@ func Load(dirs config.PlatformBaseDirs) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	var persisted struct {
+		Web map[string]json.RawMessage `json:"web"`
+	}
+	if err = json.Unmarshal(content, &persisted); err != nil {
+		return Config{}, l10n.WrapError(err, "runtime.error.invalid-json", l10n.A("detail", err))
+	}
+	_, hasActionTimeout := persisted.Web["actionResponseTimeoutMilliseconds"]
+	_, hasNotificationTTL := persisted.Web["notificationTTLMilliseconds"]
 	decoder := json.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 	var value Config
@@ -123,8 +136,20 @@ func Load(dirs config.PlatformBaseDirs) (Config, error) {
 	if err = decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return Config{}, l10n.NewError("runtime.error.trailing-json")
 	}
+	defaults := Default().Web
+	if !hasActionTimeout {
+		value.Web.ActionResponseTimeoutMilliseconds = defaults.ActionResponseTimeoutMilliseconds
+	}
+	if !hasNotificationTTL {
+		value.Web.NotificationTTLMilliseconds = defaults.NotificationTTLMilliseconds
+	}
 	if err = value.Validate(); err != nil {
 		return Config{}, err
+	}
+	if !hasActionTimeout || !hasNotificationTTL {
+		if err = save(path, value); err != nil {
+			return Config{}, err
+		}
 	}
 	return value, nil
 }
@@ -148,6 +173,8 @@ func (value Config) Validate() error {
 		"web.sseHeartbeatSeconds":                  value.Web.SSEHeartbeatSeconds,
 		"web.pagePollMilliseconds":                 value.Web.PagePollMilliseconds,
 		"web.eventSettleMilliseconds":              value.Web.EventSettleMilliseconds,
+		"web.actionResponseTimeoutMilliseconds":    value.Web.ActionResponseTimeoutMilliseconds,
+		"web.notificationTTLMilliseconds":          value.Web.NotificationTTLMilliseconds,
 		"webService.httpClientTimeoutMilliseconds": value.WebService.HTTPClientTimeoutMilliseconds,
 		"webService.startTimeoutMilliseconds":      value.WebService.StartTimeoutMilliseconds,
 		"webService.statusPollMilliseconds":        value.WebService.StatusPollMilliseconds,
@@ -165,6 +192,9 @@ func (value Config) Validate() error {
 		return l10n.NewError("runtime.error.invalid-execution-limit")
 	}
 	if value.Web.MaxHeaderBytes <= 0 || value.Web.RecentExecutionLimit == 0 {
+		return l10n.NewError("runtime.error.invalid-web-limit")
+	}
+	if value.Web.ActionResponseTimeoutMilliseconds > MaxBrowserTimerMilliseconds || value.Web.NotificationTTLMilliseconds > MaxBrowserTimerMilliseconds {
 		return l10n.NewError("runtime.error.invalid-web-limit")
 	}
 	if value.WebService.DefaultPort == 0 {

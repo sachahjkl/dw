@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +22,37 @@ import (
 type finalReplayExecutor struct {
 	execution.Executor
 	events []execution.Event
+}
+
+type discoveryExecutor struct {
+	finalReplayExecutor
+	records []execution.Record
+}
+
+type retryDiscoveryExecutor struct {
+	finalReplayExecutor
+	records  []execution.Record
+	mu       sync.Mutex
+	attempts int
+}
+
+func (executor discoveryExecutor) List(context.Context, execution.Actor, execution.ListFilter) ([]execution.Record, error) {
+	return executor.records, nil
+}
+
+func (executor *retryDiscoveryExecutor) List(context.Context, execution.Actor, execution.ListFilter) ([]execution.Record, error) {
+	return executor.records, nil
+}
+
+func (executor *retryDiscoveryExecutor) Subscribe(ctx context.Context, actor execution.Actor, id execution.ExecutionID, sequence execution.EventSequence) (execution.Subscription, error) {
+	executor.mu.Lock()
+	executor.attempts++
+	attempt := executor.attempts
+	executor.mu.Unlock()
+	if attempt == 1 {
+		return execution.Subscription{}, errors.New("transient subscription failure")
+	}
+	return executor.finalReplayExecutor.Subscribe(ctx, actor, id, sequence)
 }
 
 func (executor finalReplayExecutor) Subscribe(context.Context, execution.Actor, execution.ExecutionID, execution.EventSequence) (execution.Subscription, error) {
@@ -111,7 +144,7 @@ func TestExecutionViewRendersInteractiveBrowserLogin(t *testing.T) {
 			CallbackURI:      "http://localhost:43210",
 		}},
 	}
-	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}, 1))
+	html, err := renderComponent(context.Background(), liveSections(pageView{Executions: []executionView{item}, ActiveActionCount: 1}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +164,7 @@ func TestExecutionViewRendersRemoteDeviceLogin(t *testing.T) {
 			VerificationURI: "https://microsoft.com/devicelogin", UserCode: "ABCD-EFGH",
 		}},
 	}
-	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}, 1))
+	html, err := renderComponent(context.Background(), liveSections(pageView{Executions: []executionView{item}, ActiveActionCount: 1}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,9 +265,12 @@ func TestActionToastsReportActiveActionsAndPrompts(t *testing.T) {
 		{Title: "Doctor", Status: execution.StatusSucceeded, FinishedAt: timePointer(now.Add(-time.Second)), Result: ansiToSpans("Doctor report\nPassed 6/6")},
 		{Title: "Refresh", Status: execution.StatusFailed, FinishedAt: timePointer(now.Add(-time.Second)), Failure: "Network unavailable"},
 		{Title: "Old action", Status: execution.StatusSucceeded, FinishedAt: timePointer(now.Add(-time.Minute)), Result: ansiToSpans("Old result")},
-	}, now)
+	}, now, runtimeconfig.Milliseconds(runtimeconfig.Default().Web.NotificationTTLMilliseconds))
 	if len(toasts) != 4 || toasts[0].Title != "Action running" || toasts[1].Title != "Input required" || toasts[2].Title != "Action completed" || toasts[2].Detail != "Doctor report" || toasts[3].Title != "Action failed" {
 		t.Fatalf("toasts = %#v", toasts)
+	}
+	if toasts[0].ExpiresAt != 0 || toasts[2].ExpiresAt <= now.UnixMilli() || toasts[3].ExpiresAt <= now.UnixMilli() {
+		t.Fatalf("toast expiry = %#v", toasts)
 	}
 }
 
@@ -250,7 +286,7 @@ func TestExecutionViewRendersProjectedResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, marker := range []string{`class="view-result"`, `class="result-dialog"`, `class="terminal-result"`, `Root  S:\dw`, `Passed  6/6`} {
+	for _, marker := range []string{`class="view-result"`, `class="action-dialog result-dialog"`, `class="terminal-result"`, `Root  S:\dw`, `Passed  6/6`} {
 		if !strings.Contains(html, marker) {
 			t.Errorf("result marker %q was not rendered: %s", marker, html)
 		}
@@ -318,8 +354,38 @@ func TestActiveExecutionDoesNotExposeResultDialog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(html, `class="result-dialog"`) || strings.Contains(html, `class="view-result"`) {
+	if strings.Contains(html, `class="action-dialog result-dialog"`) || strings.Contains(html, `class="view-result"`) {
 		t.Fatalf("active execution exposed a result: %s", html)
+	}
+}
+
+func TestWaitingExecutionExposesOneForegroundPrompt(t *testing.T) {
+	prompt := &promptView{ID: "confirm-workspace", Kind: "confirm", Label: "Create workspace", Signal: "confirm_signal", Submit: "@post('/response')"}
+	item := executionView{
+		ID: "01J00000000000000000000000", Title: "Start workspace", Status: execution.StatusWaitingInput,
+		StatusLabel: "Needs input", Active: true, OperationKey: "operation-key", Prompt: prompt,
+	}
+	html, err := renderComponent(context.Background(), liveSections(pageView{Executions: []executionView{item}, ActiveActionCount: 1}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{`class="view-input"`, `class="action-dialog interaction-dialog"`, `data-dialog-token="01J00000000000000000000000:confirm-workspace"`, `>Create workspace</h4>`} {
+		if !strings.Contains(html, marker) {
+			t.Errorf("foreground prompt marker %q is missing: %s", marker, html)
+		}
+	}
+	if count := strings.Count(html, `class="prompt"`); count != 1 {
+		t.Fatalf("prompt form count = %d, want 1", count)
+	}
+}
+
+func TestAuthenticationInteractionUsesOnlyLatestBlockingEvent(t *testing.T) {
+	auth := eventView{Sequence: 1, AuthorizationURL: "https://login.example.test"}
+	if label := interactionLabel(executionView{Events: []eventView{auth}}); label != "Sign-in required" {
+		t.Fatalf("authentication interaction label = %q", label)
+	}
+	if interaction := authenticationInteraction([]eventView{auth, {Sequence: 2, Message: "Work resumed"}}); interaction != nil {
+		t.Fatalf("resolved authentication remained blocking: %#v", interaction)
 	}
 }
 
@@ -337,6 +403,128 @@ func TestFinalExecutionReplayWaitsForCompleteBacklog(t *testing.T) {
 	projected := server.executionEvents(context.Background(), execution.ExecutionID{})
 	if len(projected) != len(events) || projected[len(projected)-1].Sequence != events[len(events)-1].Sequence {
 		t.Fatalf("final replay = %d events, want %d", len(projected), len(events))
+	}
+}
+
+func TestExecutionEventBroadcastsActionUpdateWithoutPolling(t *testing.T) {
+	executor := finalReplayExecutor{events: []execution.Event{{
+		Sequence: 1, Kind: execution.EventStarted,
+		Message: execution.MessageV1{Schema: execution.MessageSchemaV1, ID: "execution.event.started"},
+	}}}
+	server := &Server{deps: Dependencies{Executor: executor}}
+	updates, unsubscribe := server.subscribeActionUpdates()
+	defer unsubscribe()
+	server.watchExecution(execution.ExecutionID{})
+	select {
+	case <-updates:
+	case <-time.After(runtimeconfig.Milliseconds(runtimeconfig.Default().Web.EventSettleMilliseconds * 4)):
+		t.Fatal("execution event did not produce an immediate action update")
+	}
+}
+
+func TestExternalActiveExecutionDiscoveryStartsPushWatcher(t *testing.T) {
+	id, err := execution.NewExecutionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := discoveryExecutor{
+		finalReplayExecutor: finalReplayExecutor{events: []execution.Event{{Sequence: 1, Kind: execution.EventStarted, Message: execution.MessageV1{Schema: execution.MessageSchemaV1, ID: "execution.event.started"}}}},
+		records:             []execution.Record{{ExecutionID: id, Status: execution.StatusRunning}},
+	}
+	server := &Server{deps: Dependencies{Executor: executor, Settings: runtimeconfig.Default().Web}}
+	updates, unsubscribe := server.subscribeActionUpdates()
+	defer unsubscribe()
+	server.discoverExecutions(context.Background())
+	select {
+	case <-updates:
+	case <-time.After(runtimeconfig.Milliseconds(runtimeconfig.Default().Web.EventSettleMilliseconds * 4)):
+		t.Fatal("external active execution was not connected to the push stream")
+	}
+}
+
+func TestExternalFinalExecutionDiscoveryBroadcastsUpdate(t *testing.T) {
+	id, err := execution.NewExecutionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := discoveryExecutor{
+		finalReplayExecutor: finalReplayExecutor{events: []execution.Event{{Sequence: 1}}},
+		records:             []execution.Record{{ExecutionID: id, Status: execution.StatusSucceeded}},
+	}
+	server := &Server{deps: Dependencies{Executor: executor, Settings: runtimeconfig.Default().Web}}
+	updates, unsubscribe := server.subscribeActionUpdates()
+	defer unsubscribe()
+	server.discoverExecutions(context.Background())
+	select {
+	case <-updates:
+	case <-time.After(runtimeconfig.Milliseconds(runtimeconfig.Default().Web.EventSettleMilliseconds * 2)):
+		t.Fatal("external final execution did not produce an immediate action update")
+	}
+}
+
+func TestExternalExecutionDiscoveryRetriesFailedWatcher(t *testing.T) {
+	id, err := execution.NewExecutionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &retryDiscoveryExecutor{
+		finalReplayExecutor: finalReplayExecutor{events: []execution.Event{{Sequence: 1, Kind: execution.EventStarted}}},
+		records:             []execution.Record{{ExecutionID: id, Status: execution.StatusRunning}},
+	}
+	server := &Server{deps: Dependencies{Executor: executor, Settings: runtimeconfig.Default().Web}}
+	server.discoverExecutions(context.Background())
+	deadline := time.Now().Add(time.Second)
+	for {
+		executor.mu.Lock()
+		attempts := executor.attempts
+		executor.mu.Unlock()
+		server.actionMu.Lock()
+		_, watching := server.actionWatches[id]
+		server.actionMu.Unlock()
+		if attempts == 1 && !watching {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("failed watcher did not stop")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	updates, unsubscribe := server.subscribeActionUpdates()
+	defer unsubscribe()
+	server.discoverExecutions(context.Background())
+	select {
+	case <-updates:
+	case <-time.After(time.Second):
+		t.Fatal("failed watcher was not retried")
+	}
+}
+
+func TestKnownExecutionsStayWithinRecentAndActiveSets(t *testing.T) {
+	oldID, err := execution.NewExecutionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeID, err := execution.NewExecutionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recentID, err := execution.NewExecutionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{
+		knownExecutions: map[execution.ExecutionID]struct{}{oldID: {}, activeID: {}, recentID: {}},
+		actionWatches:   map[execution.ExecutionID]struct{}{activeID: {}},
+	}
+	server.retainKnownExecutions([]execution.Record{{ExecutionID: recentID}})
+	if _, exists := server.knownExecutions[oldID]; exists {
+		t.Fatal("old execution remained known")
+	}
+	if _, exists := server.knownExecutions[activeID]; !exists {
+		t.Fatal("active execution was removed")
+	}
+	if _, exists := server.knownExecutions[recentID]; !exists {
+		t.Fatal("recent execution was removed")
 	}
 }
 

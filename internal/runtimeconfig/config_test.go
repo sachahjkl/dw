@@ -58,6 +58,15 @@ func TestLoadRejectsUnknownAndInvalidValues(t *testing.T) {
 			execution["leaseDurationMilliseconds"] = execution["leaseRenewMilliseconds"]
 		}},
 		{"zero port", func(value map[string]any) { value["webService"].(map[string]any)["defaultPort"] = float64(0) }},
+		{"zero action response timeout", func(value map[string]any) {
+			value["web"].(map[string]any)["actionResponseTimeoutMilliseconds"] = float64(0)
+		}},
+		{"browser timer overflow", func(value map[string]any) {
+			value["web"].(map[string]any)["notificationTTLMilliseconds"] = float64(MaxBrowserTimerMilliseconds + 1)
+		}},
+		{"missing existing field", func(value map[string]any) {
+			delete(value["web"].(map[string]any), "maxHeaderBytes")
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -86,5 +95,46 @@ func TestLoadRejectsUnknownAndInvalidValues(t *testing.T) {
 				t.Fatal("invalid runtime config was accepted")
 			}
 		})
+	}
+}
+
+func TestLoadAddsNewWebLimitsToPersistedConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	dirs := config.PlatformBaseDirs{HomeDir: directory, ConfigDir: filepath.Join(directory, "config")}
+	encoded, err := json.Marshal(Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err = json.Unmarshal(encoded, &value); err != nil {
+		t.Fatal(err)
+	}
+	web := value["web"].(map[string]any)
+	delete(web, "actionResponseTimeoutMilliseconds")
+	delete(web, "notificationTTLMilliseconds")
+	encoded, err = json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(Path(dirs)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(Path(dirs), encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(dirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults := Default().Web
+	if loaded.Web.ActionResponseTimeoutMilliseconds != defaults.ActionResponseTimeoutMilliseconds || loaded.Web.NotificationTTLMilliseconds != defaults.NotificationTTLMilliseconds {
+		t.Fatalf("loaded web limits = %#v", loaded.Web)
+	}
+	updated, err := os.ReadFile(Path(dirs))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), `"actionResponseTimeoutMilliseconds": 15000`) || !strings.Contains(string(updated), `"notificationTTLMilliseconds": 8000`) {
+		t.Fatalf("persisted web limits were not normalized:\n%s", updated)
 	}
 }

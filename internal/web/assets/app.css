@@ -119,11 +119,14 @@ button:disabled { cursor: not-allowed; color: var(--muted); }
 .action-controls { display: flex; justify-content: end; gap: .5rem; }
 .prompt { display: grid; gap: .55rem; padding: .75rem; border: 1px solid var(--warning); background: var(--background); }
 .prompt p, .prompt h4 { margin: 0; }
+.prompt-feedback { min-height: 1.4em; color: var(--muted); }
 .activity, .technical-details { border-top: 1px solid var(--border); }
 .view-result { justify-self: start; }
-.result-dialog { width: min(70rem, calc(100vw - 2rem)); max-width: none; max-height: calc(100vh - 2rem); padding: 1rem; color: var(--text); background: var(--background); border: 1px solid var(--text); }
-.result-dialog::backdrop { background: rgb(0 0 0 / .58); }
-.result-dialog > header { padding-right: 1rem; }
+.action-dialog { width: min(70rem, calc(100vw - 2rem)); max-width: none; max-height: calc(100vh - 2rem); padding: 1rem; color: var(--text); background: var(--background); border: 1px solid var(--text); }
+.action-dialog::backdrop { background: rgb(0 0 0 / .58); }
+.action-dialog > header { padding-right: 1rem; }
+.interaction-dialog { width: min(42rem, calc(100vw - 2rem)); }
+.interaction-dialog > .prompt, .interaction-dialog > .auth-panel { margin-top: 1rem; }
 .dialog-close { position: sticky; top: 0; z-index: 2; display: flex; justify-content: end; width: 100%; margin-bottom: .5rem; pointer-events: none; }
 .dialog-close button { flex: 0 0 auto; width: auto; max-width: 100%; white-space: nowrap; pointer-events: auto; }
 .structured-result { display: grid; gap: 1rem; min-width: 0; }

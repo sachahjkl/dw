@@ -62,6 +62,8 @@ func (server *Server) handleSubmit(writer http.ResponseWriter, request *http.Req
 		http.Error(writer, "submission failed", http.StatusConflict)
 		return
 	}
+	server.rememberExecution(executionID)
+	server.watchExecution(executionID)
 	record, err := server.deps.Executor.Get(request.Context(), server.deps.Actor, executionID)
 	if err != nil {
 		http.Error(writer, "execution unavailable", http.StatusInternalServerError)
@@ -185,6 +187,7 @@ func (server *Server) handleResponse(writer http.ResponseWriter, request *http.R
 		http.Error(writer, "response rejected", http.StatusConflict)
 		return
 	}
+	server.broadcastActionUpdate()
 	writer.WriteHeader(http.StatusNoContent)
 }
 
