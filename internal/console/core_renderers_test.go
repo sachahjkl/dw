@@ -7,11 +7,23 @@ import (
 
 	"github.com/sachahjkl/dw/internal/data"
 	"github.com/sachahjkl/dw/internal/doctor"
+	"github.com/sachahjkl/dw/internal/l10n"
 )
+
+type canceledActionError struct{}
+
+func (canceledActionError) Error() string           { return "work.execution-canceled" }
+func (canceledActionError) Localized() l10n.Message { return l10n.M("work.execution-canceled") }
 
 func TestLocalizedErrorTextDoesNotExposeTechnicalCode(t *testing.T) {
 	text := LocalizedErrorText(NewEnglishLocalizer(), errors.New("execution.sqlite-open:detail"))
 	if text != "An unexpected internal error occurred." {
+		t.Fatalf("error text = %q", text)
+	}
+}
+
+func TestLocalizedErrorTextRendersCanceledAction(t *testing.T) {
+	if text := LocalizedErrorText(NewEnglishLocalizer(), canceledActionError{}); text != "Action canceled." {
 		t.Fatalf("error text = %q", text)
 	}
 }

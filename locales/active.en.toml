@@ -131,6 +131,7 @@
 "execution.event.succeeded" = "Action completed."
 "execution.event.failed" = "Action failed."
 "execution.event.interrupted" = "Action interrupted."
+"work.execution-canceled" = "Action canceled."
 "work.error.project-required" = "a configured project is required"
 "work.error.command-project-required" = "{command} requires a configured project: a configured project is required"
 "work.error.items-required" = "at least one work item is required"
