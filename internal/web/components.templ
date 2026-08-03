@@ -61,6 +61,13 @@ templ navigation() {
 templ liveSections(view pageView) {
 	<div id="live-sections">
 		@notifications(view.Toasts)
+		@resourceSections(view)
+		@executionsSection(view.Executions, view.ActiveActionCount)
+	</div>
+}
+
+templ resourceSections(view pageView) {
+	<div id="resource-sections">
 		if view.Error != "" {
 			<p class="error page-error" role="alert"><strong>Refresh failed</strong><span>{ view.Error }</span></p>
 		}
@@ -70,13 +77,12 @@ templ liveSections(view pageView) {
 		@pullRequestsSection(view)
 		@dataSection(view)
 		@settingsSection(view)
-		@executionsSection(view.Executions, view.ActiveActionCount)
 	</div>
 }
 
 templ notifications(toasts []toastView) {
-	if len(toasts) != 0 {
-		<aside class="toast-stack" aria-label="Notifications" aria-live="assertive">
+	<aside id="action-notifications" class="toast-stack" aria-label="Notifications" aria-live="assertive">
+		if len(toasts) != 0 {
 			for _, toast := range toasts {
 				<button type="button" class="toast" data-tab={ toast.Target } data-on:click={ "$activeTab = '" + toast.Target + "'; sessionStorage.setItem('dw.activeTab','" + toast.Target + "')" }>
 					<strong>{ toast.Title }</strong>
@@ -84,8 +90,8 @@ templ notifications(toasts []toastView) {
 					<small>Open</small>
 				</button>
 			}
-		</aside>
-	}
+		}
+	</aside>
 }
 
 templ dashboardSection(view pageView) {
@@ -416,11 +422,9 @@ templ executionsSection(executions []executionView, activeCount int) {
 					if item.Failure != "" {
 						<p class="error" role="alert">{ item.Failure }</p>
 					}
-					if len(item.ResultLines) != 0 {
-						<details class="action-result" open>
-							<summary>Result</summary>
-							<pre>{ strings.Join(item.ResultLines, "\n") }</pre>
-						</details>
+					if item.ResultPage != nil || len(item.Result) != 0 {
+						<button type="button" class="view-result" data-on:click={ fmt.Sprintf("document.getElementById(%q).showModal()", "result-"+item.ID) }>View result</button>
+						@resultDialog(item)
 					}
 					for _, event := range item.Events {
 						if event.AuthorizationURL != "" {
@@ -470,6 +474,103 @@ templ executionsSection(executions []executionView, activeCount int) {
 			}
 		</div>
 	</section>
+}
+
+templ resultDialog(item executionView) {
+	<dialog id={ "result-" + item.ID } class="result-dialog" aria-labelledby={ "result-title-" + item.ID }>
+		<form method="dialog" class="dialog-close"><button type="submit" aria-label="Close result">Close</button></form>
+		<header>
+			<p class="eyebrow">Action result</p>
+			<h2 id={ "result-title-" + item.ID }>{ item.Title }</h2>
+		</header>
+		if item.ResultPage != nil {
+			@structuredResult(*item.ResultPage)
+		} else {
+			<div class="terminal-result" role="region" aria-label="Terminal output" tabindex="0"><pre>
+				for _, span := range item.Result {
+					if span.Class != "" {
+						<span class={ span.Class }>{ span.Text }</span>
+					} else {
+						{ span.Text }
+					}
+				}
+			</pre></div>
+		}
+	</dialog>
+}
+
+templ structuredResult(result resultPageView) {
+	<div class="structured-result">
+		<header class="result-heading">
+			<h3>{ result.Title }</h3>
+			if result.Badge != "" {
+				<strong class={ "result-badge " + result.Status }>{ result.Badge }</strong>
+			}
+		</header>
+		if len(result.Summary) != 0 {
+			@resultFields(result.Summary)
+		}
+		for _, section := range result.Sections {
+			<section class="result-section">
+				if section.Title != "" {
+					<h4>{ section.Title }</h4>
+				}
+				if len(section.Fields) != 0 {
+					@resultFields(section.Fields)
+				}
+				if section.Table != nil {
+					@resultTable(*section.Table)
+				}
+				for _, panel := range section.Panels {
+					<article class="result-panel">
+						if panel.Title != "" {
+							<h5>{ panel.Title }</h5>
+						}
+						<p>{ panel.Body }</p>
+					</article>
+				}
+				if len(section.Items) != 0 {
+					<ul>
+						for _, value := range section.Items {
+							<li>{ value }</li>
+						}
+					</ul>
+				}
+			</section>
+		}
+		if result.Hint != nil {
+			<aside class="result-hint">@resultFields([]resultFieldView{*result.Hint})</aside>
+		}
+	</div>
+}
+
+templ resultFields(fields []resultFieldView) {
+	<dl class="result-fields">
+		for _, field := range fields {
+			<div><dt>{ field.Label }</dt><dd class={ field.Style }>{ field.Value }</dd></div>
+		}
+	</dl>
+}
+
+templ resultTable(table resultTableView) {
+	<div class="result-table-wrap" role="region" tabindex="0">
+		<table class="result-table">
+			<thead><tr>
+				for _, column := range table.Columns {
+					<th scope="col">{ column }</th>
+				}
+			</tr></thead>
+			<tbody>
+				for _, row := range table.Rows {
+					<tr>
+						for _, value := range row {
+							<td>{ value }</td>
+						}
+					</tr>
+				}
+			</tbody>
+		</table>
+	</div>
 }
 
 templ promptForm(executionID string, prompt promptView) {

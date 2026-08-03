@@ -6,12 +6,28 @@ import (
 	"testing"
 
 	"github.com/sachahjkl/dw/internal/data"
+	"github.com/sachahjkl/dw/internal/doctor"
 )
 
 func TestLocalizedErrorTextDoesNotExposeTechnicalCode(t *testing.T) {
 	text := LocalizedErrorText(NewEnglishLocalizer(), errors.New("execution.sqlite-open:detail"))
 	if text != "An unexpected internal error occurred." {
 		t.Fatalf("error text = %q", text)
+	}
+}
+
+func TestDoctorExposesStructuredPageProjection(t *testing.T) {
+	registry := NewRegistry()
+	if err := RegisterCoreRenderers(registry); err != nil {
+		t.Fatal(err)
+	}
+	report := doctor.Report{Root: `S:\dw`, Checks: []doctor.Check{{Kind: doctor.CheckGit, Passed: true}}}
+	page, ok, err := registry.ProjectPage(doctor.ActionDoctor, report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || len(page.Summary) == 0 || len(page.Sections) != 1 || page.Sections[0].Table == nil {
+		t.Fatalf("Doctor page projection = %#v", page)
 	}
 }
 

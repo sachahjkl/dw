@@ -78,27 +78,44 @@ func RegisterCoreRenderers(results *Registry) error {
 		},
 		func() error { return RegisterPageResult(results, dataapp.ActionDataGuard, guardPage) },
 		func() error {
-			return RegisterResult(results, dataapp.ActionDataCatalog, func(c RenderContext, r dataapp.CatalogResult) (Output, error) {
+			if err := RegisterResult(results, dataapp.ActionDataCatalog, func(c RenderContext, r dataapp.CatalogResult) (Output, error) {
 				return renderDataQuery(r.NativeQueryReport, c, "data.catalog.title"), nil
-			})
+			}); err != nil {
+				return err
+			}
+			return results.RegisterPage(dataapp.ActionDataCatalog, PageProjectorFor(func(r dataapp.CatalogResult) Page { return nativeQueryPage(r.NativeQueryReport, "data.catalog.title") }))
 		},
 		func() error {
-			return RegisterResult(results, dataapp.ActionDataQuery, func(c RenderContext, r dataapp.DataQueryResult) (Output, error) {
+			if err := RegisterResult(results, dataapp.ActionDataQuery, func(c RenderContext, r dataapp.DataQueryResult) (Output, error) {
 				return renderDataQuery(r.NativeQueryReport, c, "data.query.title"), nil
-			})
+			}); err != nil {
+				return err
+			}
+			return results.RegisterPage(dataapp.ActionDataQuery, PageProjectorFor(func(r dataapp.DataQueryResult) Page { return nativeQueryPage(r.NativeQueryReport, "data.query.title") }))
 		},
 		func() error {
-			return RegisterResult(results, dataapp.ActionDataRead, func(c RenderContext, r dataapp.DataReadResult) (Output, error) {
+			if err := RegisterResult(results, dataapp.ActionDataRead, func(c RenderContext, r dataapp.DataReadResult) (Output, error) {
 				return renderDataQuery(r.NativeQueryReport, c, "data.read.title"), nil
-			})
+			}); err != nil {
+				return err
+			}
+			return results.RegisterPage(dataapp.ActionDataRead, PageProjectorFor(func(r dataapp.DataReadResult) Page { return nativeQueryPage(r.NativeQueryReport, "data.read.title") }))
 		},
 		func() error {
-			return RegisterResult(results, dataapp.ActionDataDescribe, func(c RenderContext, r dataapp.DescribeResult) (Output, error) {
+			if err := RegisterResult(results, dataapp.ActionDataDescribe, func(c RenderContext, r dataapp.DescribeResult) (Output, error) {
 				if r.Result == nil {
 					return Output{}, nil
 				}
 				return renderDataQuery(*r.Result, c, "data.describe.title"), nil
-			})
+			}); err != nil {
+				return err
+			}
+			return results.RegisterPage(dataapp.ActionDataDescribe, PageProjectorFor(func(r dataapp.DescribeResult) Page {
+				if r.Result == nil {
+					return Page{Title: "data.describe.title"}
+				}
+				return nativeQueryPage(*r.Result, "data.describe.title")
+			}))
 		},
 		func() error { return RegisterPageResult(results, workapp.ActionProviderAuthLogin, authLoginPage) },
 		func() error { return RegisterPageResult(results, workapp.ActionProviderAuthStatus, authStatusPage) },
@@ -452,6 +469,28 @@ func renderDataQuery(r dataapp.NativeQueryReport, c RenderContext, title Message
 		}
 	}
 	return RenderDataTable(t, c.Policy, c.Localizer, c.Theme, title)
+}
+
+func nativeQueryPage(r dataapp.NativeQueryReport, title MessageID) Page {
+	rows := make([][]string, len(r.Rows))
+	for index, row := range r.Rows {
+		rows[index] = make([]string, len(row))
+		for cellIndex, cell := range row {
+			if cell.Valid {
+				rows[index][cellIndex] = cell.Value
+			} else {
+				rows[index][cellIndex] = "NULL"
+			}
+		}
+	}
+	page := Page{Title: title, Summary: []Field{countField("result.items", len(rows))}}
+	if len(r.Columns) != 0 {
+		page.Sections = []Section{{Table: &Table{ColumnNames: append([]string(nil), r.Columns...), Rows: rows}}}
+	}
+	if r.Truncated {
+		page.Badge, page.Status = "data.query.truncated.badge", StatusWarning
+	}
+	return page
 }
 
 func assignedItemsPage(r workapp.AssignedReport) Page {

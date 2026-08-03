@@ -113,13 +113,17 @@ func NewRenderContextForFormat(policy Policy, localizer Localizer, format Output
 }
 
 type ResultRenderer func(RenderContext, any) (Output, error)
+type PageProjector func(any) (Page, error)
 
 type Registry struct {
 	mu        sync.RWMutex
 	renderers map[ResultKind]ResultRenderer
+	pages     map[ResultKind]PageProjector
 }
 
-func NewRegistry() *Registry { return &Registry{renderers: make(map[ResultKind]ResultRenderer)} }
+func NewRegistry() *Registry {
+	return &Registry{renderers: make(map[ResultKind]ResultRenderer), pages: make(map[ResultKind]PageProjector)}
+}
 
 func (r *Registry) Register(kind ResultKind, renderer ResultRenderer) error {
 	if kind == "" || renderer == nil {
@@ -145,10 +149,47 @@ func RegisterResult[T any](registry *Registry, kind ResultKind, renderer func(Re
 }
 
 func RegisterPageResult[T any](registry *Registry, kind ResultKind, project func(T) Page) error {
-	return RegisterResult(registry, kind, func(context RenderContext, value T) (Output, error) {
+	if err := RegisterResult(registry, kind, func(context RenderContext, value T) (Output, error) {
 		page := project(value)
 		return TextOutput(FormatHuman, RenderPage(page, context.Localizer, context.Theme)), nil
-	})
+	}); err != nil {
+		return err
+	}
+	return registry.RegisterPage(kind, PageProjectorFor(project))
+}
+
+func PageProjectorFor[T any](project func(T) Page) PageProjector {
+	return func(payload any) (Page, error) {
+		value, ok := payload.(T)
+		if !ok {
+			return Page{}, PayloadTypeError{}
+		}
+		return project(value), nil
+	}
+}
+
+func (r *Registry) RegisterPage(kind ResultKind, projector PageProjector) error {
+	if kind == "" || projector == nil {
+		return errors.New("console.invalid-page-projector-registration")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.pages[kind]; exists {
+		return errors.New("console.duplicate-page-projector:" + string(kind))
+	}
+	r.pages[kind] = projector
+	return nil
+}
+
+func (r *Registry) ProjectPage(kind ResultKind, payload any) (Page, bool, error) {
+	r.mu.RLock()
+	projector, ok := r.pages[kind]
+	r.mu.RUnlock()
+	if !ok {
+		return Page{}, false, nil
+	}
+	page, err := projector(payload)
+	return page, true, err
 }
 
 func (r *Registry) Render(context RenderContext, kind ResultKind, payload any) (Output, error) {

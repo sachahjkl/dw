@@ -13,6 +13,7 @@ import (
 
 	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/cockpit"
+	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/runtimeconfig"
@@ -25,6 +26,7 @@ type Dependencies struct {
 	Localizer     l10n.Localizer
 	Cockpit       *cockpit.Service
 	ProjectResult func(action.Result) []string
+	ProjectPage   func(action.Result) (console.Page, bool, error)
 	Store         *webservice.Store
 	Config        webservice.WebConfigV1
 	Settings      runtimeconfig.Web
@@ -40,7 +42,7 @@ type Server struct {
 }
 
 func New(dependencies Dependencies) (*Server, error) {
-	if dependencies.Executor == nil || dependencies.Actor.Principal == "" || dependencies.Cockpit == nil || dependencies.ProjectResult == nil || dependencies.Store == nil || dependencies.Localizer == nil {
+	if dependencies.Executor == nil || dependencies.Actor.Principal == "" || dependencies.Cockpit == nil || dependencies.ProjectResult == nil || dependencies.ProjectPage == nil || dependencies.Store == nil || dependencies.Localizer == nil {
 		return nil, fmt.Errorf("web.invalid-server-dependency")
 	}
 	if err := dependencies.Config.Validate(); err != nil {

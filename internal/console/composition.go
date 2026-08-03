@@ -7,6 +7,7 @@ import "github.com/sachahjkl/dw/internal/action"
 type Registration struct {
 	Action action.ID
 	Result ResultRenderer
+	Page   PageProjector
 	Event  EventProjector
 }
 
@@ -28,6 +29,11 @@ func RegisterAll(results *Registry, events *EventRegistry, registrations ...Regi
 				return err
 			}
 		}
+		if registration.Page != nil {
+			if err := results.RegisterPage(registration.Action, registration.Page); err != nil {
+				return err
+			}
+		}
 		if registration.Event != nil {
 			if err := events.Register(registration.Action, registration.Event); err != nil {
 				return err
@@ -35,6 +41,10 @@ func RegisterAll(results *Registry, events *EventRegistry, registrations ...Regi
 		}
 	}
 	return results.ValidateComplete(RequiredResultKinds)
+}
+
+func PageRegistration[T any](id action.ID, project func(T) Page) Registration {
+	return Registration{Action: id, Result: PageRenderer(project), Page: PageProjectorFor(project)}
 }
 
 func PageRenderer[T any](project func(T) Page) ResultRenderer {

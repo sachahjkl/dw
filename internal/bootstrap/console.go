@@ -40,16 +40,16 @@ func registerConsole(results *console.Registry, events *console.EventRegistry) e
 
 func controllerResultRegistrations() []console.Registration {
 	return []console.Registration{
-		{Action: providerapp.ActionList, Result: console.PageRenderer(providerListPage)},
-		{Action: providerapp.ActionShow, Result: console.PageRenderer(func(result providerapp.ShowReport) console.Page {
+		console.PageRegistration(providerapp.ActionList, providerListPage),
+		console.PageRegistration(providerapp.ActionShow, func(result providerapp.ShowReport) console.Page {
 			page := resultPage(providerapp.ActionShow,
 				console.Field{Label: "result.provider", Value: result.Provider.Name},
 				console.Field{Label: "result.type", Value: providerKinds(result.Provider.Kinds)},
 			)
 			page.Sections = []console.Section{{Title: "result.features", Items: providerFeatures(result.Provider.Capabilities)}}
 			return page
-		})},
-		{Action: providerapp.ActionCapabilities, Result: console.PageRenderer(func(result providerapp.CapabilitiesReport) console.Page {
+		}),
+		console.PageRegistration(providerapp.ActionCapabilities, func(result providerapp.CapabilitiesReport) console.Page {
 			rows := make([][]string, len(result.Capabilities))
 			for index, capability := range result.Capabilities {
 				rows[index] = []string{capability, capabilityDescription(capability)}
@@ -60,7 +60,7 @@ func controllerResultRegistrations() []console.Registration {
 			)
 			page.Sections = []console.Section{{Table: &console.Table{Columns: []console.MessageID{"result.capability", "result.description"}, Rows: rows}}}
 			return page
-		})},
+		}),
 		{Action: actionGuide, Result: func(context console.RenderContext, payload any) (console.Output, error) {
 			result, ok := payload.(guideResult)
 			if !ok {
@@ -68,49 +68,49 @@ func controllerResultRegistrations() []console.Registration {
 			}
 			return console.TextOutput(console.FormatHuman, console.RenderGuide(console.GuideResult{Version: result.Version}, context.Localizer, context.Theme)), nil
 		}},
-		{Action: console.ResultAgentContext, Result: console.PageRenderer(func(result controller.AgentContextResult) console.Page {
+		console.PageRegistration(console.ResultAgentContext, func(result controller.AgentContextResult) console.Page {
 			return resultPage(console.ResultAgentContext, console.Field{Label: "result.root", Value: result.Root, Style: console.ValuePath})
-		})},
-		{Action: console.ResultWorkspaceStatus, Result: console.PageRenderer(func(result workspaceapp.StatusResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceStatus, func(result workspaceapp.StatusResult) console.Page {
 			return workspaceListPage(console.ResultWorkspaceStatus, result.Root, result.Items)
-		})},
-		{Action: console.ResultWorkspaceList, Result: console.PageRenderer(func(result workspaceapp.ListResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceList, func(result workspaceapp.ListResult) console.Page {
 			return workspaceListPage(console.ResultWorkspaceList, result.Root, result.Items)
-		})},
-		{Action: console.ResultWorkspaceCurrent, Result: console.PageRenderer(func(result workspaceapp.CurrentResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceCurrent, func(result workspaceapp.CurrentResult) console.Page {
 			return resultPage(console.ResultWorkspaceCurrent, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, console.Field{Label: "result.project", Value: result.Project})
-		})},
-		{Action: console.ResultWorkspaceItemAdd, Result: console.PageRenderer(workItemUpdatePage(console.ResultWorkspaceItemAdd))},
-		{Action: console.ResultWorkspaceItemRemove, Result: console.PageRenderer(workItemUpdatePage(console.ResultWorkspaceItemRemove))},
-		{Action: console.ResultWorkspacePreflight, Result: console.PageRenderer(func(result workspaceapp.PreflightResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceItemAdd, workItemUpdatePage(console.ResultWorkspaceItemAdd)),
+		console.PageRegistration(console.ResultWorkspaceItemRemove, workItemUpdatePage(console.ResultWorkspaceItemRemove)),
+		console.PageRegistration(console.ResultWorkspacePreflight, func(result workspaceapp.PreflightResult) console.Page {
 			return resultPage(console.ResultWorkspacePreflight, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, statusField(!result.HasBlockingIssues, "Ready", "Blocked"))
-		})},
-		{Action: console.ResultWorkspaceRename, Result: console.PageRenderer(func(result workspaceapp.RenameResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceRename, func(result workspaceapp.RenameResult) console.Page {
 			return resultPage(console.ResultWorkspaceRename, console.Field{Label: "result.workspace", Value: result.Plan.NewWorkspace, Style: console.ValuePath}, executedField(result.Execution != nil))
-		})},
-		{Action: console.ResultWorkspaceAddRepo, Result: console.PageRenderer(func(result workspaceapp.RepoAddResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceAddRepo, func(result workspaceapp.RepoAddResult) console.Page {
 			return resultPage(console.ResultWorkspaceAddRepo, console.Field{Label: "result.repository", Value: result.Plan.Repository}, executedField(result.Execution != nil))
-		})},
-		{Action: console.ResultWorkspaceRepoLatest, Result: console.PageRenderer(func(result workspaceapp.RepoLatestResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceRepoLatest, func(result workspaceapp.RepoLatestResult) console.Page {
 			count := 0
 			if result.Execution != nil {
 				count = len(result.Execution.Updated)
 			}
 			return resultPage(console.ResultWorkspaceRepoLatest, console.Field{Label: "result.workspace", Value: result.Plan.Workspace, Style: console.ValuePath}, countField("result.repositories", count))
-		})},
-		{Action: console.ResultWorkspaceCommit, Result: console.PageRenderer(func(result workspaceapp.CommitResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceCommit, func(result workspaceapp.CommitResult) console.Page {
 			return resultPage(console.ResultWorkspaceCommit, console.Field{Label: "result.workspace", Value: result.Plan.Workspace, Style: console.ValuePath}, executedField(result.Execution != nil))
-		})},
-		{Action: console.ResultWorkspaceHandoffValidate, Result: console.PageRenderer(func(result workspaceapp.HandoffResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceHandoffValidate, func(result workspaceapp.HandoffResult) console.Page {
 			return resultPage(console.ResultWorkspaceHandoffValidate, console.Field{Label: "result.workspace", Value: result.Workspace, Style: console.ValuePath}, statusField(result.IsValid, "Valid", "Invalid"))
-		})},
-		{Action: console.ResultWorkspaceTeardown, Result: console.PageRenderer(func(result workspaceapp.TeardownResult) console.Page {
+		}),
+		console.PageRegistration(console.ResultWorkspaceTeardown, func(result workspaceapp.TeardownResult) console.Page {
 			workspacePath := ""
 			if result.Plan.Workspace != nil {
 				workspacePath = *result.Plan.Workspace
 			}
 			return resultPage(console.ResultWorkspaceTeardown, console.Field{Label: "result.workspace", Value: workspacePath, Style: console.ValuePath}, executedField(result.Execution != nil))
-		})},
+		}),
 	}
 }
 

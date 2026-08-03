@@ -124,6 +124,9 @@ func newController(localizer l10n.Localizer, policy console.Policy, dirs config.
 				}
 				return console.Lines(output)
 			},
+			ProjectPage: func(result action.Result) (console.Page, bool, error) {
+				return engine.Results.ProjectPage(result.ActionID(), result)
+			},
 			Store:    webManager.Store(),
 			Config:   webConfig,
 			Settings: runtimeSettings.Web,

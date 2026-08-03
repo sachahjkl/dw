@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/a-h/templ"
@@ -84,13 +85,52 @@ type executionView struct {
 	CreatedAt   string
 	FinishedAt  *time.Time
 	Summary     string
-	ResultLines []string
+	Result      []ansiSpan
+	ResultPage  *resultPageView
 	Failure     string
 	Prompt      *promptView
 	Cancel      string
 	Events      []eventView
 	Subject     *execution.Subject
 	Active      bool
+}
+
+type ansiSpan struct {
+	Text  string
+	Class string
+}
+
+type resultPageView struct {
+	Title    string
+	Badge    string
+	Status   string
+	Summary  []resultFieldView
+	Sections []resultSectionView
+	Hint     *resultFieldView
+}
+
+type resultFieldView struct {
+	Label string
+	Value string
+	Style string
+}
+
+type resultSectionView struct {
+	Title  string
+	Fields []resultFieldView
+	Table  *resultTableView
+	Panels []resultPanelView
+	Items  []string
+}
+
+type resultTableView struct {
+	Columns []string
+	Rows    [][]string
+}
+
+type resultPanelView struct {
+	Title string
+	Body  string
 }
 
 type eventView struct {
@@ -184,35 +224,80 @@ func (server *Server) handlePageEvents(writer http.ResponseWriter, request *http
 		return
 	}
 	sse := datastar.NewSSE(writer, request)
-	ticker := time.NewTicker(runtimeconfig.Milliseconds(server.deps.Settings.PagePollMilliseconds))
-	defer ticker.Stop()
-	var previousHTML, previousActions string
-	for {
-		view := server.loadPage(request.Context(), csrf)
-		var buffer bytes.Buffer
-		if err := liveSections(view).Render(request.Context(), &buffer); err != nil {
-			return
-		}
-		html := buffer.String()
-		var actionsBuffer bytes.Buffer
-		if err := actionsShortcut(view.ActiveActionCount).Render(request.Context(), &actionsBuffer); err != nil {
-			return
-		}
-		actionsHTML := actionsBuffer.String()
-		if actionsHTML != previousActions {
-			if err := sse.PatchElements(actionsHTML, datastar.WithSelector("#tab-actions"), datastar.WithModeOuter()); err != nil {
+	actionTicker := time.NewTicker(250 * time.Millisecond)
+	defer actionTicker.Stop()
+	resourceTicker := time.NewTicker(runtimeconfig.Milliseconds(server.deps.Settings.PagePollMilliseconds))
+	defer resourceTicker.Stop()
+	resourceUpdates := make(chan pageView, 1)
+	resourceRequests := make(chan struct{}, 1)
+	go func() {
+		for {
+			select {
+			case <-resourceRequests:
+				view := server.loadResourcePage(request.Context(), csrf)
+				select {
+				case resourceUpdates <- view:
+				case <-request.Context().Done():
+					return
+				}
+			case <-request.Context().Done():
 				return
 			}
-			previousActions = actionsHTML
 		}
-		if html != previousHTML {
-			if err := sse.PatchElements(html, datastar.WithSelector("#live-sections"), datastar.WithModeOuter()); err != nil {
-				return
-			}
-			previousHTML = html
-		}
+	}()
+	requestResources := func() {
 		select {
-		case <-ticker.C:
+		case resourceRequests <- struct{}{}:
+		default:
+		}
+	}
+	requestResources()
+	var previousResources, previousActions, previousShortcut, previousToasts string
+	for {
+		select {
+		case <-actionTicker.C:
+			executions, activeCount, err := server.loadExecutionViews(request.Context(), csrf)
+			if err != nil {
+				continue
+			}
+			toasts := actionToasts(executions, time.Now())
+			var actionsBuffer, shortcutBuffer, toastBuffer bytes.Buffer
+			if executionsSection(executions, activeCount).Render(request.Context(), &actionsBuffer) != nil ||
+				actionsShortcut(activeCount).Render(request.Context(), &shortcutBuffer) != nil ||
+				notifications(toasts).Render(request.Context(), &toastBuffer) != nil {
+				return
+			}
+			if html := actionsBuffer.String(); html != previousActions {
+				if sse.PatchElements(html, datastar.WithSelector("#actions"), datastar.WithModeOuter()) != nil {
+					return
+				}
+				previousActions = html
+			}
+			if html := shortcutBuffer.String(); html != previousShortcut {
+				if sse.PatchElements(html, datastar.WithSelector("#tab-actions"), datastar.WithModeOuter()) != nil {
+					return
+				}
+				previousShortcut = html
+			}
+			if html := toastBuffer.String(); html != previousToasts {
+				if sse.PatchElements(html, datastar.WithSelector("#action-notifications"), datastar.WithModeOuter()) != nil {
+					return
+				}
+				previousToasts = html
+			}
+		case view := <-resourceUpdates:
+			var buffer bytes.Buffer
+			if resourceSections(view).Render(request.Context(), &buffer) != nil {
+				return
+			}
+			if html := buffer.String(); html != previousResources {
+				if sse.PatchElements(html, datastar.WithSelector("#resource-sections"), datastar.WithModeOuter()) != nil {
+					return
+				}
+				previousResources = html
+			}
+		case <-resourceTicker.C:
+			requestResources()
 		case <-request.Context().Done():
 			return
 		}
@@ -228,6 +313,17 @@ func (server *Server) sessionCSRF(request *http.Request) (string, bool) {
 }
 
 func (server *Server) loadPage(ctx context.Context, csrf string) pageView {
+	view := server.loadResourcePage(ctx, csrf)
+	var err error
+	view.Executions, view.ActiveActionCount, err = server.loadExecutionViews(ctx, csrf)
+	if err != nil && view.Error == "" {
+		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
+	}
+	view.Toasts = actionToasts(view.Executions, time.Now())
+	return view
+}
+
+func (server *Server) loadResourcePage(ctx context.Context, csrf string) pageView {
 	view := pageView{CSRF: csrf}
 	snapshot, err := server.deps.Cockpit.Snapshot(ctx, server.deps.Config.Root)
 	view.Snapshot = snapshot
@@ -243,11 +339,6 @@ func (server *Server) loadPage(ctx context.Context, csrf string) pageView {
 	if err != nil && view.Error == "" {
 		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
 	}
-	view.Executions, view.ActiveActionCount, err = server.loadExecutionViews(ctx, csrf)
-	if err != nil && view.Error == "" {
-		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
-	}
-	view.Toasts = actionToasts(view.Executions, time.Now())
 	return view
 }
 
@@ -258,17 +349,23 @@ func (server *Server) loadExecutionViews(ctx context.Context, csrf string) ([]ex
 	}
 	items := make([]executionView, 0, len(records))
 	activeCount := 0
-	for _, record := range records {
-		item := makeExecutionView(record, csrf, server.deps.Localizer, server.deps.ProjectResult)
-		item.Events = server.executionEvents(ctx, record.ExecutionID)
-		if len(item.Events) != 0 {
-			item.Summary = item.Events[len(item.Events)-1].Message
-		}
+	var events sync.WaitGroup
+	for index, record := range records {
+		item := makeExecutionView(record, csrf, server.deps.Localizer, server.deps.ProjectResult, server.deps.ProjectPage)
 		if item.Active {
 			activeCount++
 		}
 		items = append(items, item)
+		events.Add(1)
+		go func(index int, id execution.ExecutionID) {
+			defer events.Done()
+			items[index].Events = server.executionEvents(ctx, id)
+			if len(items[index].Events) != 0 {
+				items[index].Summary = items[index].Events[len(items[index].Events)-1].Message
+			}
+		}(index, record.ExecutionID)
 	}
+	events.Wait()
 	sort.SliceStable(items, func(left, right int) bool {
 		return items[left].Active && !items[right].Active
 	})
@@ -335,7 +432,7 @@ func executionForResource(executions []executionView, reference cockpit.Resource
 	return nil
 }
 
-func makeExecutionView(record execution.Record, csrf string, localizer l10n.Localizer, projectResult func(action.Result) []string) executionView {
+func makeExecutionView(record execution.Record, csrf string, localizer l10n.Localizer, projectResult func(action.Result) []string, projectPage func(action.Result) (console.Page, bool, error)) executionView {
 	title := humanLabel(string(record.ActionID))
 	relation := ""
 	if record.Subject != nil {
@@ -353,12 +450,83 @@ func makeExecutionView(record execution.Record, csrf string, localizer l10n.Loca
 		view.Failure = console.LocalizedErrorText(localizer, execution.NewFailureError(*record.Failure))
 	}
 	if record.TypedResult != nil {
-		view.ResultLines = projectResult(record.TypedResult)
+		if page, ok, err := projectPage(record.TypedResult); err == nil && ok {
+			projected := webResultPage(page, localizer)
+			view.ResultPage = &projected
+		} else {
+			view.Result = ansiToSpans(strings.Join(projectResult(record.TypedResult), "\n"))
+		}
 	}
 	if record.PendingPrompt != nil {
 		view.Prompt = decodePromptView(record, csrf, localizer)
 	}
 	return view
+}
+
+func webResultPage(page console.Page, localizer l10n.Localizer) resultPageView {
+	localizer = console.WithConsoleMessages(localizer)
+	result := resultPageView{Title: page.TitleText, Status: resultStatusClass(page.Status)}
+	if result.Title == "" && page.Title != "" {
+		result.Title = localizer.Text(page.Title)
+	}
+	if page.Badge != "" {
+		result.Badge = localizer.Text(page.Badge)
+	}
+	result.Summary = webResultFields(page.Summary, localizer)
+	if page.Hint != nil {
+		hint := webResultField(*page.Hint, localizer)
+		result.Hint = &hint
+	}
+	for _, section := range page.Sections {
+		projected := resultSectionView{Fields: webResultFields(section.Fields, localizer), Items: append([]string(nil), section.Items...)}
+		if section.Title != "" {
+			projected.Title = localizer.Text(section.Title)
+		}
+		if section.Table != nil {
+			columns := append([]string(nil), section.Table.ColumnNames...)
+			for _, id := range section.Table.Columns {
+				columns = append(columns, localizer.Text(id))
+			}
+			projected.Table = &resultTableView{Columns: columns, Rows: section.Table.Rows}
+		}
+		for _, panel := range section.Panels {
+			title := ""
+			if panel.Title != "" {
+				title = localizer.Text(panel.Title)
+			}
+			projected.Panels = append(projected.Panels, resultPanelView{Title: title, Body: panel.Body})
+		}
+		result.Sections = append(result.Sections, projected)
+	}
+	return result
+}
+
+func webResultFields(fields []console.Field, localizer l10n.Localizer) []resultFieldView {
+	result := make([]resultFieldView, len(fields))
+	for index, field := range fields {
+		result[index] = webResultField(field, localizer)
+	}
+	return result
+}
+
+func webResultField(field console.Field, localizer l10n.Localizer) resultFieldView {
+	label := ""
+	if field.Label != "" {
+		label = localizer.Text(field.Label)
+	}
+	return resultFieldView{Label: label, Value: field.Value, Style: resultValueClass(field.Style)}
+}
+
+func resultStatusClass(status console.Status) string {
+	return []string{"neutral", "success", "warning", "failure"}[int(status)]
+}
+
+func resultValueClass(style console.ValueStyle) string {
+	classes := []string{"plain", "path", "command", "success", "warning", "failure", "muted"}
+	if int(style) >= len(classes) {
+		return "plain"
+	}
+	return classes[int(style)]
 }
 
 func renderComponent(ctx context.Context, component templ.Component) (string, error) {
@@ -493,8 +661,8 @@ func actionToasts(executions []executionView, now time.Time) []toastView {
 			toasts = append(toasts, toastView{Title: "Action running", Detail: item.Title, Target: "actions"})
 		case item.Status == execution.StatusSucceeded && recentlyFinished(item, now):
 			detail := item.Title
-			if len(item.ResultLines) != 0 {
-				detail = item.ResultLines[0]
+			if text := firstResultLine(item.Result); text != "" {
+				detail = text
 			}
 			toasts = append(toasts, toastView{Title: "Action completed", Detail: detail, Target: "actions"})
 		case item.Status == execution.StatusFailed && recentlyFinished(item, now):
@@ -506,6 +674,18 @@ func actionToasts(executions []executionView, now time.Time) []toastView {
 		}
 	}
 	return toasts
+}
+
+func firstResultLine(spans []ansiSpan) string {
+	var text strings.Builder
+	for _, span := range spans {
+		if before, _, found := strings.Cut(span.Text, "\n"); found {
+			text.WriteString(before)
+			break
+		}
+		text.WriteString(span.Text)
+	}
+	return strings.TrimSpace(text.String())
 }
 
 func recentlyFinished(item executionView, now time.Time) bool {
