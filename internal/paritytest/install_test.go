@@ -17,8 +17,7 @@ func TestUnixInstallerNormalizesReleaseTag(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix installer test requires Unix path semantics")
 	}
-	root := repositoryRoot(t)
-	installer := filepath.Join(root, "scripts", "install.sh")
+	installer := installerPath(t, "install.sh")
 	for _, test := range []struct {
 		version string
 		wantTag string
@@ -109,7 +108,7 @@ func TestUnixInstallerRejectsUnsafeArchiveWithoutReplacingBinary(t *testing.T) {
 for argument do case "$argument" in */release.json) source="$DW_INSTALL_MANIFEST";; https://*) source="$DW_INSTALL_ARCHIVE";; esac; done
 while [ "$#" -gt 0 ]; do if [ "$1" = "-o" ]; then cp "$source" "$2"; exit; fi; shift; done
 `)
-	installer := filepath.Join(repositoryRoot(t), "scripts", "install.sh")
+	installer := installerPath(t, "install.sh")
 	command := exec.Command("sh", installer, "--install-dir", installDir, "--no-path-update")
 	command.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "DW_INSTALL_MANIFEST="+manifest, "DW_INSTALL_ARCHIVE="+archive)
 	if output, err := command.CombinedOutput(); err == nil {
@@ -128,8 +127,7 @@ func TestPowerShellInstallerNormalizesReleaseTag(t *testing.T) {
 	if err != nil {
 		t.Skip("PowerShell is unavailable")
 	}
-	root := repositoryRoot(t)
-	installer := filepath.Join(root, "scripts", "install.ps1")
+	installer := installerPath(t, "install.ps1")
 	wrapper := filepath.Join(t.TempDir(), "invoke-installer.ps1")
 	if err := os.WriteFile(wrapper, []byte(`function Invoke-WebRequest {
     param([string]$Uri, [string]$OutFile, [hashtable]$Headers)
@@ -177,6 +175,17 @@ func repositoryRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
+}
+
+func installerPath(t *testing.T, name string) string {
+	t.Helper()
+	path := filepath.Join(repositoryRoot(t), "scripts", name)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Skipf("%s is not distributed in this build", name)
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func writeExecutable(t *testing.T, path, content string) {

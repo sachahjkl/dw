@@ -9,6 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 func appendPlatformCandidates(candidates []ResolvedCommand, fileName string, arguments []string) []ResolvedCommand {
@@ -45,10 +48,14 @@ func prepareCandidate(candidate ResolvedCommand) (ResolvedCommand, error) {
 		return ResolvedCommand{}, err
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
-	if candidate.kind == candidateDirect && (extension == ".cmd" || extension == ".bat") {
-		if filepath.Ext(candidate.FileName) == "" {
+	if candidate.kind == candidateDirect && filepath.Ext(candidate.FileName) == "" {
+		switch extension {
+		case ".exe", ".com":
+		default:
 			return ResolvedCommand{}, exec.ErrNotFound
 		}
+	}
+	if candidate.kind == candidateDirect && (extension == ".cmd" || extension == ".bat") {
 		candidate.kind = candidateCommandScript
 	}
 	candidate.FileName = resolved
@@ -64,14 +71,20 @@ func lookPath(fileName string) (string, error) {
 }
 
 func executableCommand(ctx context.Context, candidate ResolvedCommand) *exec.Cmd {
+	var command *exec.Cmd
+	attributes := &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW, HideWindow: true}
 	if candidate.kind != candidateCommandScript {
-		return exec.CommandContext(ctx, candidate.FileName, candidate.Arguments...)
+		command = exec.CommandContext(ctx, candidate.FileName, candidate.Arguments...)
+	} else {
+		interpreter := os.Getenv("ComSpec")
+		if interpreter == "" {
+			interpreter = "cmd.exe"
+		}
+		command = exec.CommandContext(ctx, interpreter)
+		attributes.CmdLine = `"` + interpreter + `" /d /s /c "` + batchCommandLine(candidate) + `"`
 	}
-	interpreter := os.Getenv("ComSpec")
-	if interpreter == "" {
-		interpreter = "cmd.exe"
-	}
-	return exec.CommandContext(ctx, interpreter, "/d", "/s", "/c", batchCommandLine(candidate))
+	command.SysProcAttr = attributes
+	return command
 }
 
 // batchCommandLine keeps metacharacters inside double quotes, disables percent expansion, and does

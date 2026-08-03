@@ -255,6 +255,7 @@ func (ShellVerification) Run(ctx context.Context, directory, command string) (in
 	} else {
 		process = exec.CommandContext(ctx, "sh", "-lc", command)
 	}
+	configureVerificationProcess(process)
 	process.Dir = directory
 	var stdout, stderr strings.Builder
 	process.Stdout = &stdout
