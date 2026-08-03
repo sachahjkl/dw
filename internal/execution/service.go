@@ -252,6 +252,13 @@ func (service *Service) List(ctx context.Context, actor Actor, filter ListFilter
 	if actor.Principal == "" {
 		return nil, fmt.Errorf("execution.forbidden")
 	}
+	if filter.Root != "" {
+		root, err := CanonicalRoot(filter.Root)
+		if err != nil {
+			return nil, err
+		}
+		filter.Root = root
+	}
 	for _, status := range filter.Statuses {
 		if !status.Valid() {
 			return nil, fmt.Errorf("execution.invalid-status:%s", status)

@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +20,31 @@ type memoryStore struct {
 	mu      sync.Mutex
 	records map[ExecutionID]storedExecution
 	events  map[ExecutionID][]Event
+}
+
+func TestListCanonicalizesRootFilter(t *testing.T) {
+	const actionID action.ID = "test.list-root"
+	service, _ := newTestService(t, actionID, func(_ context.Context, request serviceRequest, _ action.Runtime) (action.Result, error) {
+		return serviceResult{ID: request.ID}, nil
+	})
+	root := t.TempDir()
+	id, err := service.Submit(context.Background(), Submission{
+		Request: serviceRequest{ID: actionID}, Root: root, Actor: testActor(), IdempotencyKey: newTestIdempotencyKey(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	filterRoot := filepath.Join(root, ".")
+	if runtime.GOOS == "windows" {
+		filterRoot = strings.ToUpper(filterRoot)
+	}
+	records, err := service.List(context.Background(), testActor(), ListFilter{Root: filterRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].ExecutionID != id {
+		t.Fatalf("records = %#v, want execution %s", records, id)
+	}
 }
 
 func newMemoryStore() *memoryStore {
