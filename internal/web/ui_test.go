@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sachahjkl/dw/internal/cockpit"
 	"github.com/sachahjkl/dw/internal/execution"
@@ -198,13 +199,36 @@ func TestAssetsUseContentVersionedCache(t *testing.T) {
 
 func TestActionToastsReportActiveActionsAndPrompts(t *testing.T) {
 	prompt := promptView{}
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 	toasts := actionToasts([]executionView{
 		{Title: "Sign in", Events: []eventView{{AuthorizationURL: "https://login.example.test"}}},
 		{Title: "Refresh work", Active: true},
 		{Title: "Confirm deletion", Prompt: &prompt},
-	})
-	if len(toasts) != 2 || toasts[0].Title != "Action running" || toasts[1].Title != "Input required" {
+		{Title: "Doctor", Status: execution.StatusSucceeded, FinishedAt: timePointer(now.Add(-time.Second)), ResultLines: []string{"Doctor report", "Passed 6/6"}},
+		{Title: "Refresh", Status: execution.StatusFailed, FinishedAt: timePointer(now.Add(-time.Second)), Failure: "Network unavailable"},
+		{Title: "Old action", Status: execution.StatusSucceeded, FinishedAt: timePointer(now.Add(-time.Minute)), ResultLines: []string{"Old result"}},
+	}, now)
+	if len(toasts) != 4 || toasts[0].Title != "Action running" || toasts[1].Title != "Input required" || toasts[2].Title != "Action completed" || toasts[2].Detail != "Doctor report" || toasts[3].Title != "Action failed" {
 		t.Fatalf("toasts = %#v", toasts)
+	}
+}
+
+func timePointer(value time.Time) *time.Time { return &value }
+
+func TestExecutionViewRendersProjectedResult(t *testing.T) {
+	item := executionView{
+		ID: "01J00000000000000000000000", AttemptID: "01J00000000000000000000001",
+		Title: "Doctor", Status: execution.StatusSucceeded, StatusLabel: "Completed",
+		ResultLines: []string{"Doctor", "Root  S:\\dw", "Passed  6/6"},
+	}
+	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{`class="action-result" open`, `<summary>Result</summary>`, `Root  S:\dw`, `Passed  6/6`} {
+		if !strings.Contains(html, marker) {
+			t.Errorf("result marker %q was not rendered: %s", marker, html)
+		}
 	}
 }
 

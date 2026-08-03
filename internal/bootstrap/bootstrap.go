@@ -117,9 +117,16 @@ func newController(localizer l10n.Localizer, policy console.Policy, dirs config.
 			Actor:     actor,
 			Localizer: localizer,
 			Cockpit:   cockpitService,
-			Store:     webManager.Store(),
-			Config:    webConfig,
-			Settings:  runtimeSettings.Web,
+			ProjectResult: func(result action.Result) []string {
+				output, renderErr := engine.Results.Render(console.NewRenderContext(policy, localizer), result.ActionID(), result)
+				if renderErr != nil {
+					return []string{console.LocalizedErrorText(localizer, renderErr)}
+				}
+				return console.Lines(output)
+			},
+			Store:    webManager.Store(),
+			Config:   webConfig,
+			Settings: runtimeSettings.Web,
 		})
 		if serverErr != nil {
 			return serverErr

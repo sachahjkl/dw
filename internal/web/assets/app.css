@@ -102,6 +102,9 @@ button:disabled { cursor: not-allowed; color: var(--muted); }
 .prompt { display: grid; gap: .55rem; padding: .75rem; border: 1px solid var(--warning); background: var(--background); }
 .prompt p, .prompt h4 { margin: 0; }
 .activity, .technical-details { border-top: 1px solid var(--border); }
+.action-result { padding: .65rem; border: 1px solid var(--border); background: var(--background); }
+.action-result > summary { cursor: pointer; font-weight: 700; }
+.action-result pre { margin: .6rem 0 0; overflow-x: auto; white-space: pre-wrap; font-family: ui-monospace, monospace; }
 .activity > summary, .technical-details > summary { padding: .5rem 0 0; cursor: pointer; color: var(--muted); }
 .timeline { display: grid; gap: 0; margin: .55rem 0 0; padding: 0; list-style: none; border-left: 2px solid var(--border); }
 .timeline li { display: grid; gap: .15rem; padding: .35rem .65rem; }

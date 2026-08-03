@@ -416,6 +416,12 @@ templ executionsSection(executions []executionView, activeCount int) {
 					if item.Failure != "" {
 						<p class="error" role="alert">{ item.Failure }</p>
 					}
+					if len(item.ResultLines) != 0 {
+						<details class="action-result" open>
+							<summary>Result</summary>
+							<pre>{ strings.Join(item.ResultLines, "\n") }</pre>
+						</details>
+					}
 					for _, event := range item.Events {
 						if event.AuthorizationURL != "" {
 							<div class="auth-panel" role="status">

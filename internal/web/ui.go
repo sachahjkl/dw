@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/cockpit"
 	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/execution"
@@ -81,7 +82,9 @@ type executionView struct {
 	Status      execution.Status
 	StatusLabel string
 	CreatedAt   string
+	FinishedAt  *time.Time
 	Summary     string
+	ResultLines []string
 	Failure     string
 	Prompt      *promptView
 	Cancel      string
@@ -244,7 +247,7 @@ func (server *Server) loadPage(ctx context.Context, csrf string) pageView {
 	if err != nil && view.Error == "" {
 		view.Error = console.LocalizedErrorText(server.deps.Localizer, err)
 	}
-	view.Toasts = actionToasts(view.Executions)
+	view.Toasts = actionToasts(view.Executions, time.Now())
 	return view
 }
 
@@ -256,7 +259,7 @@ func (server *Server) loadExecutionViews(ctx context.Context, csrf string) ([]ex
 	items := make([]executionView, 0, len(records))
 	activeCount := 0
 	for _, record := range records {
-		item := makeExecutionView(record, csrf, server.deps.Localizer)
+		item := makeExecutionView(record, csrf, server.deps.Localizer, server.deps.ProjectResult)
 		item.Events = server.executionEvents(ctx, record.ExecutionID)
 		if len(item.Events) != 0 {
 			item.Summary = item.Events[len(item.Events)-1].Message
@@ -332,7 +335,7 @@ func executionForResource(executions []executionView, reference cockpit.Resource
 	return nil
 }
 
-func makeExecutionView(record execution.Record, csrf string, localizer l10n.Localizer) executionView {
+func makeExecutionView(record execution.Record, csrf string, localizer l10n.Localizer, projectResult func(action.Result) []string) executionView {
 	title := humanLabel(string(record.ActionID))
 	relation := ""
 	if record.Subject != nil {
@@ -345,8 +348,12 @@ func makeExecutionView(record execution.Record, csrf string, localizer l10n.Loca
 		CreatedAt: record.CreatedAt.Local().Format(time.RFC3339), Subject: record.Subject, Active: activeStatus(record.Status),
 		Cancel: fmt.Sprintf("@post('/executions/%s/cancel', {headers:{'X-DW-CSRF':%q}})", record.ExecutionID.String(), csrf),
 	}
+	view.FinishedAt = record.FinishedAt
 	if record.Failure != nil {
 		view.Failure = console.LocalizedErrorText(localizer, execution.NewFailureError(*record.Failure))
+	}
+	if record.TypedResult != nil {
+		view.ResultLines = projectResult(record.TypedResult)
 	}
 	if record.PendingPrompt != nil {
 		view.Prompt = decodePromptView(record, csrf, localizer)
@@ -476,7 +483,7 @@ func activeStatus(status execution.Status) bool {
 	return status == execution.StatusQueued || status == execution.StatusRunning || status == execution.StatusWaitingInput || status == execution.StatusCanceling
 }
 
-func actionToasts(executions []executionView) []toastView {
+func actionToasts(executions []executionView, now time.Time) []toastView {
 	toasts := make([]toastView, 0)
 	for _, item := range executions {
 		switch {
@@ -484,9 +491,25 @@ func actionToasts(executions []executionView) []toastView {
 			toasts = append(toasts, toastView{Title: "Input required", Detail: item.Title, Target: "actions"})
 		case item.Active:
 			toasts = append(toasts, toastView{Title: "Action running", Detail: item.Title, Target: "actions"})
+		case item.Status == execution.StatusSucceeded && recentlyFinished(item, now):
+			detail := item.Title
+			if len(item.ResultLines) != 0 {
+				detail = item.ResultLines[0]
+			}
+			toasts = append(toasts, toastView{Title: "Action completed", Detail: detail, Target: "actions"})
+		case item.Status == execution.StatusFailed && recentlyFinished(item, now):
+			detail := item.Failure
+			if detail == "" {
+				detail = item.Title
+			}
+			toasts = append(toasts, toastView{Title: "Action failed", Detail: detail, Target: "actions"})
 		}
 	}
 	return toasts
+}
+
+func recentlyFinished(item executionView, now time.Time) bool {
+	return item.FinishedAt != nil && !item.FinishedAt.After(now) && now.Sub(*item.FinishedAt) <= 8*time.Second
 }
 
 func activeExecutions(executions []executionView) []executionView {

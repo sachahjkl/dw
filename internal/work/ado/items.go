@@ -123,7 +123,7 @@ func (p *Provider) ReadItems(ctx context.Context, project work.ProjectRef, ids [
 	}
 	items := make([]work.Item, 0, len(snapshots))
 	for _, snapshot := range snapshots {
-		item := snapshotWorkItem(snapshot)
+		item := snapshotWorkItem(adoOptions, snapshot)
 		if options.IncludeRelations {
 			parents, relationErr := p.GetRelatedWorkItemIDs(ctx, adoOptions, snapshot.ID, RelationHierarchyReverse, token)
 			if relationErr != nil {
@@ -152,7 +152,7 @@ func (p *Provider) QueryAssigned(ctx context.Context, project work.ProjectRef, q
 		if query.ExcludeFinalStates && IsFinalState(valueOrEmpty(item.Type), valueOrEmpty(item.State)) {
 			continue
 		}
-		result = append(result, snapshotWorkItem(item))
+		result = append(result, snapshotWorkItem(adoOptions, item))
 	}
 	return result, nil
 }
@@ -211,8 +211,8 @@ func (p *Provider) ReadRawItem(ctx context.Context, project work.ProjectRef, id 
 	return value, nil
 }
 
-func snapshotWorkItem(snapshot WorkItemSnapshot) work.Item {
-	item := work.Item{ID: work.ItemID(snapshot.ID)}
+func snapshotWorkItem(options Options, snapshot WorkItemSnapshot) work.Item {
+	item := work.Item{ID: work.ItemID(snapshot.ID), URL: WorkItemWebURL(options, snapshot.ID)}
 	if snapshot.Type != nil {
 		item.Type = work.ItemType(*snapshot.Type)
 	}
@@ -221,9 +221,6 @@ func snapshotWorkItem(snapshot WorkItemSnapshot) work.Item {
 	}
 	if snapshot.Title != nil {
 		item.Title = *snapshot.Title
-	}
-	if snapshot.URL != nil {
-		item.URL = *snapshot.URL
 	}
 	item.Tags = make([]string, 0)
 	return item

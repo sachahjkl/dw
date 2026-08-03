@@ -65,3 +65,12 @@ func TestOrganizationNameUsesURLPath(t *testing.T) {
 		t.Fatalf("OrganizationName = %q", got)
 	}
 }
+
+func TestSnapshotWorkItemUsesBrowserURL(t *testing.T) {
+	options := Options{Organization: "https://dev.azure.com/acme", Project: "Project"}
+	apiURL := "https://dev.azure.com/acme/Project/_apis/wit/workItems/42"
+	item := snapshotWorkItem(options, WorkItemSnapshot{ID: "42", URL: &apiURL})
+	if item.URL != "https://dev.azure.com/acme/Project/_workitems/edit/42" {
+		t.Fatalf("work item URL = %q", item.URL)
+	}
+}
