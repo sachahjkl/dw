@@ -55,6 +55,8 @@ type pageView struct {
 }
 
 type operationView struct {
+	Key            string
+	SubjectKey     string
 	Label          string
 	Relation       cockpit.Relation
 	Description    string
@@ -76,23 +78,25 @@ type operationInputView struct {
 }
 
 type executionView struct {
-	ID          string
-	AttemptID   string
-	Relation    string
-	Title       string
-	Status      execution.Status
-	StatusLabel string
-	CreatedAt   string
-	FinishedAt  *time.Time
-	Summary     string
-	Result      []ansiSpan
-	ResultPage  *resultPageView
-	Failure     string
-	Prompt      *promptView
-	Cancel      string
-	Events      []eventView
-	Subject     *execution.Subject
-	Active      bool
+	ID           string
+	AttemptID    string
+	Relation     string
+	OperationKey string
+	SubjectKey   string
+	Title        string
+	Status       execution.Status
+	StatusLabel  string
+	CreatedAt    string
+	FinishedAt   *time.Time
+	Summary      string
+	Result       []ansiSpan
+	ResultPage   *resultPageView
+	Failure      string
+	Prompt       *promptView
+	Cancel       string
+	Events       []eventView
+	Subject      *execution.Subject
+	Active       bool
 }
 
 type ansiSpan struct {
@@ -107,6 +111,12 @@ type resultPageView struct {
 	Summary  []resultFieldView
 	Sections []resultSectionView
 	Hint     *resultFieldView
+	Actions  []resultActionView
+}
+
+type resultActionView struct {
+	Relation string
+	Label    string
 }
 
 type resultFieldView struct {
@@ -252,7 +262,7 @@ func (server *Server) handlePageEvents(writer http.ResponseWriter, request *http
 		}
 	}
 	requestResources()
-	var previousResources, previousActions, previousShortcut, previousToasts string
+	var previousResources, previousActions, previousResults, previousShortcut, previousToasts string
 	for {
 		select {
 		case <-actionTicker.C:
@@ -261,8 +271,9 @@ func (server *Server) handlePageEvents(writer http.ResponseWriter, request *http
 				continue
 			}
 			toasts := actionToasts(executions, time.Now())
-			var actionsBuffer, shortcutBuffer, toastBuffer bytes.Buffer
+			var actionsBuffer, resultsBuffer, shortcutBuffer, toastBuffer bytes.Buffer
 			if executionsSection(executions, activeCount).Render(request.Context(), &actionsBuffer) != nil ||
+				resultDialogs(executions).Render(request.Context(), &resultsBuffer) != nil ||
 				actionsShortcut(activeCount).Render(request.Context(), &shortcutBuffer) != nil ||
 				notifications(toasts).Render(request.Context(), &toastBuffer) != nil {
 				return
@@ -272,6 +283,12 @@ func (server *Server) handlePageEvents(writer http.ResponseWriter, request *http
 					return
 				}
 				previousActions = html
+			}
+			if html := resultsBuffer.String(); html != previousResults {
+				if sse.PatchElements(html, datastar.WithSelector("#action-results"), datastar.WithModeOuter()) != nil {
+					return
+				}
+				previousResults = html
 			}
 			if html := shortcutBuffer.String(); html != previousShortcut {
 				if sse.PatchElements(html, datastar.WithSelector("#tab-actions"), datastar.WithModeOuter()) != nil {
@@ -379,7 +396,9 @@ func operationViews(csrf string, operations []cockpit.Operation) []operationView
 			continue
 		}
 		item := operationView{
-			Label: operation.Label, Relation: operation.Relation, Description: operation.Description, Risk: operation.Risk,
+			Key:        operationKey(operation.Subject.Kind, operation.Subject.Project, operation.Subject.Key, operation.Relation),
+			SubjectKey: operationSubjectKey(operation.Subject.Kind, operation.Subject.Project, operation.Subject.Key),
+			Label:      operation.Label, Relation: operation.Relation, Description: operation.Description, Risk: operation.Risk,
 			Disabled: !operation.Active, DisabledReason: operation.DisabledReason,
 		}
 		if err := operation.Validate(); err != nil {
@@ -401,6 +420,16 @@ func operationViews(csrf string, operations []cockpit.Operation) []operationView
 		items = append(items, item)
 	}
 	return items
+}
+
+func operationSubjectKey(kind cockpit.ResourceKind, project, key string) string {
+	hash := sha256.Sum256([]byte(string(kind) + "\x00" + project + "\x00" + key))
+	return hex.EncodeToString(hash[:8])
+}
+
+func operationKey(kind cockpit.ResourceKind, project, key string, relation cockpit.Relation) string {
+	hash := sha256.Sum256([]byte(operationSubjectKey(kind, project, key) + "\x00" + string(relation)))
+	return hex.EncodeToString(hash[:8])
 }
 
 func operationSubmitExpression(csrf string, operation cockpit.Operation, inputs []operationInputView) string {
@@ -444,6 +473,10 @@ func makeExecutionView(record execution.Record, csrf string, localizer l10n.Loca
 		Relation: relation, Title: title, Status: record.Status, StatusLabel: statusLabel(record.Status),
 		CreatedAt: record.CreatedAt.Local().Format(time.RFC3339), Subject: record.Subject, Active: activeStatus(record.Status),
 		Cancel: fmt.Sprintf("@post('/executions/%s/cancel', {headers:{'X-DW-CSRF':%q}})", record.ExecutionID.String(), csrf),
+	}
+	if record.Subject != nil {
+		view.SubjectKey = operationSubjectKey(cockpit.ResourceKind(record.Subject.Kind), record.Subject.Project, record.Subject.Key)
+		view.OperationKey = operationKey(cockpit.ResourceKind(record.Subject.Kind), record.Subject.Project, record.Subject.Key, cockpit.Relation(record.Subject.Relation))
 	}
 	view.FinishedAt = record.FinishedAt
 	if record.Failure != nil {
@@ -497,6 +530,9 @@ func webResultPage(page console.Page, localizer l10n.Localizer) resultPageView {
 			projected.Panels = append(projected.Panels, resultPanelView{Title: title, Body: panel.Body})
 		}
 		result.Sections = append(result.Sections, projected)
+	}
+	for _, action := range page.Actions {
+		result.Actions = append(result.Actions, resultActionView{Relation: string(action.Relation), Label: humanLabel(string(action.Relation))})
 	}
 	return result
 }
@@ -592,7 +628,11 @@ func localizedExecutionMessage(localizer l10n.Localizer, encoded execution.Messa
 	if err != nil || localizer == nil {
 		return humanLabel(string(encoded.ID))
 	}
-	return console.WithConsoleMessages(localizer).Render(message)
+	localizer = console.WithConsoleMessages(localizer)
+	if !localizer.Has(message.ID) {
+		return humanLabel(string(message.ID))
+	}
+	return localizer.Render(message)
 }
 
 func statusLabel(status execution.Status) string {

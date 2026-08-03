@@ -1,9 +1,12 @@
 package console
 
 import (
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/sachahjkl/dw/internal/contract"
 
 	"charm.land/lipgloss/v2"
 	"github.com/sachahjkl/dw/internal/l10n"
@@ -131,6 +134,7 @@ type Page struct {
 	Summary   []Field
 	Sections  []Section
 	Hint      *Field
+	Actions   []contract.ActionLink
 }
 
 func ActionPage(action string, fields ...Field) Page {
@@ -198,7 +202,42 @@ func RenderPage(page Page, localizer Localizer, theme Theme) string {
 	if page.Hint != nil {
 		blocks = append(blocks, theme.Muted(localizer.Text(page.Hint.Label)+": ")+styleValue(page.Hint.Value, page.Hint.Style, theme))
 	}
+	for _, action := range page.Actions {
+		blocks = append(blocks, theme.Muted(localizer.Text("result.next")+": ")+theme.Command(renderConsoleAction(action)))
+	}
 	return strings.Join(blocks, "\n\n")
+}
+
+func renderConsoleAction(link contract.ActionLink) string {
+	argument := func(name string) string {
+		for _, item := range link.Arguments {
+			if item.Name == name {
+				return item.Value
+			}
+		}
+		return ""
+	}
+	root := argument("root")
+	withRoot := func(command string) string {
+		if root == "" {
+			return command
+		}
+		return command + " --root " + strconv.Quote(root)
+	}
+	switch link.Relation {
+	case "initialize":
+		return withRoot("dw init")
+	case "doctor":
+		return withRoot("dw doctor")
+	case "doctor-fix":
+		return withRoot("dw doctor --fix")
+	case "refresh-work":
+		return "dw work item list --all"
+	case "start":
+		return "dw workspace start <work-item-id>"
+	default:
+		return "dw " + strings.ReplaceAll(string(link.Relation), "-", " ")
+	}
 }
 
 func renderFields(fields []Field, localizer Localizer, theme Theme) string {

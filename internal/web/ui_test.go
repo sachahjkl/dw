@@ -221,7 +221,7 @@ func TestExecutionViewRendersProjectedResult(t *testing.T) {
 		Title: "Doctor", Status: execution.StatusSucceeded, StatusLabel: "Completed",
 		Result: ansiToSpans("Doctor\nRoot  S:\\dw\nPassed  6/6"),
 	}
-	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}, 0))
+	html, err := renderComponent(context.Background(), liveSections(pageView{Executions: []executionView{item}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestExecutionViewRendersStructuredResultDialog(t *testing.T) {
 			Sections: []resultSectionView{{Table: &resultTableView{Columns: []string{"Check", "Status"}, Rows: [][]string{{"Git", "Passed"}}}}},
 		},
 	}
-	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}, 0))
+	html, err := renderComponent(context.Background(), liveSections(pageView{Executions: []executionView{item}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,10 +261,29 @@ func TestLivePageExposesIndependentDatastarPatchTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{`id="tab-actions"`, `id="action-notifications"`, `id="resource-sections"`, `id="actions"`} {
+	for _, id := range []string{`id="tab-actions"`, `id="action-notifications"`, `id="resource-sections"`, `id="actions"`, `id="action-results"`} {
 		if !strings.Contains(html, id) {
 			t.Errorf("Datastar patch target %s is missing", id)
 		}
+	}
+}
+
+func TestStructuredResultRendersSemanticNextAction(t *testing.T) {
+	item := executionView{
+		ID: "01J00000000000000000000000", Title: "Doctor", SubjectKey: "root-key", Status: execution.StatusSucceeded,
+		ResultPage: &resultPageView{Title: "Doctor", Actions: []resultActionView{{Relation: "doctor-fix", Label: "Doctor fix"}}},
+	}
+	html, err := renderComponent(context.Background(), resultDialogs([]executionView{item}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{`data-next-operation="doctor-fix"`, `data-operation-subject="root-key"`, `>Doctor fix</button>`} {
+		if !strings.Contains(html, marker) {
+			t.Errorf("semantic action marker %q is missing: %s", marker, html)
+		}
+	}
+	if strings.Contains(html, "dw doctor") {
+		t.Fatalf("web result leaked CLI syntax: %s", html)
 	}
 }
 

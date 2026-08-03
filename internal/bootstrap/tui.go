@@ -49,7 +49,9 @@ var bootstrapTUIEnglishEntries = []l10n.Entry{
 	{ID: "bootstrap.tui.changelog", Text: "Changelog"},
 	{ID: "bootstrap.tui.diff", Text: "Diff"},
 	{ID: "bootstrap.tui.doctor", Text: "Doctor"},
+	{ID: "bootstrap.tui.doctor-fix", Text: "Fix issues"},
 	{ID: "bootstrap.tui.refresh", Text: "Refresh"},
+	{ID: "bootstrap.tui.refresh-work", Text: "Refresh all work"},
 	{ID: "bootstrap.tui.workspaces", Text: "Workspaces"},
 	{ID: "bootstrap.tui.prune", Text: "Prune candidates"},
 	{ID: "bootstrap.tui.sign-in", Text: "Sign in"},
@@ -207,6 +209,9 @@ func runTUI(services *services, routes *controller.Registry, grammar *spec.Comma
 				}
 				return console.Lines(output)
 			},
+			ProjectPage: func(result action.Result) (console.Page, bool, error) {
+				return cliExecution.Console.Results.ProjectPage(result.ActionID(), result)
+			},
 			ProjectExternal: projectExternal,
 			ProjectState:    projectState,
 			Localizer:       cliExecution.Localizer,
@@ -282,7 +287,8 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 			snapshot.DoctorOK = doctorReport.Passed()
 		}
 		doctorAction := cockpit.Operation{Relation: cockpit.RelationDoctor, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.doctor"), Active: true, Request: doctor.Request{Root: root}}
-		snapshot.Operations = []cockpit.Operation{doctorAction}
+		doctorFixAction := cockpit.Operation{Relation: cockpit.RelationDoctorFix, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.doctor-fix"), Active: true, Request: doctor.Request{Root: root, Fix: true}}
+		snapshot.Operations = []cockpit.Operation{doctorAction, doctorFixAction}
 		snapshot.Cockpit = []cockpit.CockpitItem{{Ref: rootRef, Section: "system", Title: doctorAction.Label, Status: strconv.FormatBool(snapshot.DoctorOK), Primary: doctorAction}}
 		configurationActions := []cockpit.Operation{
 			menuAction(cockpit.RelationViewConfiguration, "bootstrap.tui.config-show", "s", "configuration", config.ShowRequest{Root: root}, localizer),
@@ -356,7 +362,11 @@ func workLoader(services *services, localizer l10n.Localizer) cockpit.WorkLoader
 				Description: "Connect the configured work provider.", Active: true,
 				Request: workapp.AuthLoginRequest{Provider: provider, Root: snapshot.Root},
 			}
-			item := cockpit.WorkProject{Ref: reference, Operations: []cockpit.Operation{login}, Key: project, Label: project, Provider: provider}
+			refresh := cockpit.Operation{
+				Relation: cockpit.RelationRefreshWork, Subject: reference, Label: tuiLabel(localizer, "bootstrap.tui.refresh-work"), Active: true,
+				Request: workapp.AssignedRequest{Provider: provider, Root: snapshot.Root, Project: project, Top: 20, IncludeFinalStates: true},
+			}
+			item := cockpit.WorkProject{Ref: reference, Operations: []cockpit.Operation{login, refresh}, Key: project, Label: project, Provider: provider}
 			report, err := services.workapp.Assigned(withRoot(ctx, snapshot.Root), workapp.AssignedRequest{Provider: provider, Root: snapshot.Root, Project: project, Top: 20}, nil)
 			if err != nil {
 				item.Error = console.LocalizedErrorText(localizer, err)

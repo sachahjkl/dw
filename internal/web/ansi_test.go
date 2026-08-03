@@ -14,7 +14,7 @@ func TestANSIResultIsStyledAndEscaped(t *testing.T) {
 		Title: "Doctor", Status: execution.StatusSucceeded, StatusLabel: "Completed",
 		Result: ansiToSpans("\x1b[1;94mDoctor\x1b[0m\n\x1b[96mRoot\x1b[0m  <script>alert(1)</script>"),
 	}
-	html, err := renderComponent(context.Background(), executionsSection([]executionView{item}, 0))
+	html, err := renderComponent(context.Background(), resultDialogs([]executionView{item}))
 	if err != nil {
 		t.Fatal(err)
 	}

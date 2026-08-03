@@ -8,6 +8,7 @@ import (
 
 	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/cockpit"
+	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
@@ -63,6 +64,7 @@ type Action struct {
 	Hotkey              string
 	Active              bool
 	Request             action.Request
+	Subject             cockpit.ResourceRef
 	RefreshAfterSuccess bool
 	BlocksUntilDone     bool
 }
@@ -98,6 +100,7 @@ type RequestBuilder func(context.Context, action.Request) (action.Request, error
 // retaining action envelopes and concrete results as the source of truth.
 type EventProjection func(action.EventEnvelope) (LogLevel, string, string)
 type ResultProjection func(action.Result) []string
+type PageProjection func(action.Result) (console.Page, bool, error)
 type ExternalProjection func(action.Result) (ExternalProcess, bool)
 type StateEffectProjection func(action.Result) *StateEffect
 
@@ -109,6 +112,7 @@ type Dependencies struct {
 	Cockpit         *cockpit.Service
 	ProjectEvent    EventProjection
 	ProjectResult   ResultProjection
+	ProjectPage     PageProjection
 	ProjectExternal ExternalProjection
 	ProjectState    StateEffectProjection
 	Localizer       l10n.Localizer
@@ -128,7 +132,7 @@ func actionFromOperation(operation cockpit.Operation) Action {
 	}
 	return Action{
 		ID: action.ID(operation.Relation), Label: operation.Label, Description: operation.Description,
-		Risk: risk, Active: operation.Active, Request: operation.Request, RefreshAfterSuccess: true,
+		Risk: risk, Active: operation.Active, Request: operation.Request, Subject: operation.Subject, RefreshAfterSuccess: true,
 	}
 }
 

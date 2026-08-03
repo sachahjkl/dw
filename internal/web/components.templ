@@ -25,7 +25,6 @@ templ page(view pageView) {
 				@navigation()
 				@liveSections(view)
 			</main>
-			<div id="action-feedback" class="action-feedback" role="status" aria-live="polite" hidden>Starting action…</div>
 			<footer>Datastar v1.0.2 · <a href="/assets/datastar-LICENSE.md">MIT license</a></footer>
 		</body>
 	</html>
@@ -63,11 +62,13 @@ templ liveSections(view pageView) {
 		@notifications(view.Toasts)
 		@resourceSections(view)
 		@executionsSection(view.Executions, view.ActiveActionCount)
+		@resultDialogs(view.Executions)
 	</div>
 }
 
 templ resourceSections(view pageView) {
 	<div id="resource-sections">
+		<div id="semantic-operations" hidden>@operationControls(view.CSRF, view.Snapshot.Operations)</div>
 		if view.Error != "" {
 			<p class="error page-error" role="alert"><strong>Refresh failed</strong><span>{ view.Error }</span></p>
 		}
@@ -362,7 +363,7 @@ templ operationControls(csrf string, operations []cockpit.Operation) {
 	if items := operationViews(csrf, operations); len(items) != 0 {
 		<div class="operation-list">
 			for _, operation := range items {
-				<form class={ "operation operation-" + string(operation.Risk) } data-operation-relation={ string(operation.Relation) } data-on:submit={ operation.Submit }>
+				<form class={ "operation operation-" + string(operation.Risk) } data-operation-key={ operation.Key } data-operation-subject={ operation.SubjectKey } data-operation-relation={ string(operation.Relation) } data-on:submit={ operation.Submit }>
 					if operation.Description != "" {
 						<p>{ operation.Description }</p>
 					}
@@ -389,7 +390,7 @@ templ operationControls(csrf string, operations []cockpit.Operation) {
 							}
 						</div>
 					}
-					<button type="submit" disabled?={ operation.Disabled }>{ operation.Label }</button>
+					<button type="submit" class="operation-button" data-operation-label={ operation.Label } disabled?={ operation.Disabled }><span class="operation-spinner" aria-hidden="true"></span><span class="operation-button-text">{ operation.Label }</span></button>
 					if operation.DisabledReason != "" {
 						<small>{ operation.DisabledReason }</small>
 					}
@@ -410,7 +411,7 @@ templ executionsSection(executions []executionView, activeCount int) {
 		}
 		<div class="action-list">
 			for _, item := range executions {
-				<article class="execution" data-status={ string(item.Status) } data-relation={ item.Relation }>
+				<article class="execution" data-execution-id={ item.ID } data-status={ string(item.Status) } data-status-label={ item.StatusLabel } data-progress={ item.Summary } data-relation={ item.Relation } data-operation-key={ item.OperationKey } data-operation-subject={ item.SubjectKey }>
 					<header>
 						<div><p class="eyebrow">Action</p><h3>{ item.Title }</h3></div>
 						<strong class={ "status " + string(item.Status) }>{ item.StatusLabel }</strong>
@@ -422,9 +423,8 @@ templ executionsSection(executions []executionView, activeCount int) {
 					if item.Failure != "" {
 						<p class="error" role="alert">{ item.Failure }</p>
 					}
-					if item.ResultPage != nil || len(item.Result) != 0 {
+					if item.Status.Terminal() {
 						<button type="button" class="view-result" data-on:click={ fmt.Sprintf("document.getElementById(%q).showModal()", "result-"+item.ID) }>View result</button>
-						@resultDialog(item)
 					}
 					for _, event := range item.Events {
 						if event.AuthorizationURL != "" {
@@ -476,16 +476,32 @@ templ executionsSection(executions []executionView, activeCount int) {
 	</section>
 }
 
+templ resultDialogs(executions []executionView) {
+	<div id="action-results">
+		for _, item := range executions {
+			if item.Status.Terminal() {
+				@resultDialog(item)
+			}
+		}
+	</div>
+}
+
 templ resultDialog(item executionView) {
-	<dialog id={ "result-" + item.ID } class="result-dialog" aria-labelledby={ "result-title-" + item.ID }>
+	<dialog id={ "result-" + item.ID } class="result-dialog" data-operation-key={ item.OperationKey } aria-labelledby={ "result-title-" + item.ID }>
 		<form method="dialog" class="dialog-close"><button type="submit" aria-label="Close result">Close</button></form>
 		<header>
 			<p class="eyebrow">Action result</p>
 			<h2 id={ "result-title-" + item.ID }>{ item.Title }</h2>
 		</header>
+		if item.Failure != "" {
+			<p class="error result-error" role="alert">{ item.Failure }</p>
+		}
+		if item.ResultPage == nil && len(item.Result) == 0 && item.Failure == "" {
+			<p class="result-summary">{ item.StatusLabel }</p>
+		}
 		if item.ResultPage != nil {
-			@structuredResult(*item.ResultPage)
-		} else {
+			@structuredResult(*item.ResultPage, item.SubjectKey)
+		} else if len(item.Result) != 0 {
 			<div class="terminal-result" role="region" aria-label="Terminal output" tabindex="0"><pre>
 				for _, span := range item.Result {
 					if span.Class != "" {
@@ -499,7 +515,7 @@ templ resultDialog(item executionView) {
 	</dialog>
 }
 
-templ structuredResult(result resultPageView) {
+templ structuredResult(result resultPageView, subjectKey string) {
 	<div class="structured-result">
 		<header class="result-heading">
 			<h3>{ result.Title }</h3>
@@ -540,6 +556,14 @@ templ structuredResult(result resultPageView) {
 		}
 		if result.Hint != nil {
 			<aside class="result-hint">@resultFields([]resultFieldView{*result.Hint})</aside>
+		}
+		if len(result.Actions) != 0 {
+			<nav class="result-actions" aria-label="Next actions">
+				<span>Next</span>
+				for _, action := range result.Actions {
+					<button type="button" data-next-operation={ action.Relation } data-operation-subject={ subjectKey }>{ action.Label }</button>
+				}
+			</nav>
 		}
 	</div>
 }

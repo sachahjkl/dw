@@ -42,6 +42,7 @@ type Entry struct {
 // Localizer is the presentation dependency used by CLI, TUI, and console
 // packages. Text handles fixed labels; Render handles named substitutions.
 type Localizer interface {
+	Has(ID) bool
 	Text(ID) string
 	Render(Message) string
 }

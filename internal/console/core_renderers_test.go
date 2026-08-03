@@ -43,6 +43,17 @@ func TestDoctorExposesStructuredPageProjection(t *testing.T) {
 	}
 }
 
+func TestDoctorNextStepIsSemanticAndConsoleProjectsCommand(t *testing.T) {
+	page := doctorPage(doctor.Report{Root: `S:\dw`, Checks: []doctor.Check{{Kind: doctor.CheckGit, Passed: false}}})
+	if page.Hint != nil || len(page.Actions) != 1 || page.Actions[0].Relation != "doctor-fix" {
+		t.Fatalf("Doctor next action = %#v, hint = %#v", page.Actions, page.Hint)
+	}
+	rendered := RenderPage(page, NewEnglishLocalizer(), NewTheme(false))
+	if !strings.Contains(rendered, "Next: dw doctor --fix --root") || !strings.Contains(rendered, `S:\\dw`) {
+		t.Fatalf("console projection = %q", rendered)
+	}
+}
+
 func TestActionPageUsesReadableTitleWithoutInternalActionField(t *testing.T) {
 	rendered := RenderPage(actionPage(ResultWorkspaceList, Field{Label: "result.items", Value: "0"}), NewEnglishLocalizer(), NewTheme(false))
 	if !strings.HasPrefix(rendered, "Workspace List\n") {

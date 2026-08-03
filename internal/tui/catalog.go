@@ -274,6 +274,10 @@ type tuiLocalizer struct {
 	tui  *l10n.Catalog
 }
 
+func (localizer tuiLocalizer) Has(id l10n.ID) bool {
+	return localizer.tui.Has(id) || localizer.base.Has(id)
+}
+
 func (localizer tuiLocalizer) Text(id l10n.ID) string {
 	if localizer.tui.Has(id) {
 		return localizer.tui.Text(id)

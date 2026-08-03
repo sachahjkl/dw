@@ -78,6 +78,24 @@ dd { margin: .15rem 0 0; }
 .operation { display: grid; gap: .35rem; min-width: min(100%, 12rem); }
 .operation > p, .operation > small { margin: 0; color: var(--muted); }
 .operation-destructive > button { border-color: var(--danger); color: var(--danger); }
+.operation-button { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: .45rem; min-width: 8rem; overflow: hidden; }
+.operation-button-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.operation-spinner { display: none; flex: 0 0 .75rem; width: .75rem; height: .75rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; }
+.operation[data-operation-state="starting"] .operation-spinner,
+.operation[data-operation-state="queued"] .operation-spinner,
+.operation[data-operation-state="running"] .operation-spinner,
+.operation[data-operation-state="waiting-input"] .operation-spinner,
+.operation[data-operation-state="canceling"] .operation-spinner { display: block; animation: operation-spin .7s linear infinite; }
+.operation[data-operation-state="starting"] .operation-button,
+.operation[data-operation-state="queued"] .operation-button,
+.operation[data-operation-state="running"] .operation-button,
+.operation[data-operation-state="waiting-input"] .operation-button,
+.operation[data-operation-state="canceling"] .operation-button { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--background)); border-color: var(--accent); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+.operation[data-operation-state="succeeded"] .operation-button { color: var(--success); border-color: var(--success); }
+.operation[data-operation-state="failed"] .operation-button,
+.operation[data-operation-state="canceled"] .operation-button,
+.operation[data-operation-state="interrupted"] .operation-button { color: var(--danger); border-color: var(--danger); }
+@keyframes operation-spin { to { transform: rotate(1turn); } }
 .overview-grid, .overview-workflow { margin-top: .85rem; }
 .text-action { padding: 0; border: 0; text-align: left; background: transparent; }
 
@@ -105,8 +123,9 @@ button:disabled { cursor: not-allowed; color: var(--muted); }
 .view-result { justify-self: start; }
 .result-dialog { width: min(70rem, calc(100vw - 2rem)); max-width: none; max-height: calc(100vh - 2rem); padding: 1rem; color: var(--text); background: var(--background); border: 1px solid var(--text); }
 .result-dialog::backdrop { background: rgb(0 0 0 / .58); }
-.result-dialog > header { padding-right: 5rem; }
-.dialog-close { position: sticky; top: 0; z-index: 2; display: flex; justify-content: end; height: 0; }
+.result-dialog > header { padding-right: 1rem; }
+.dialog-close { position: sticky; top: 0; z-index: 2; display: flex; justify-content: end; width: 100%; margin-bottom: .5rem; pointer-events: none; }
+.dialog-close button { flex: 0 0 auto; width: auto; max-width: 100%; white-space: nowrap; pointer-events: auto; }
 .structured-result { display: grid; gap: 1rem; min-width: 0; }
 .result-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .result-heading h3, .result-section h4, .result-panel h5 { margin: 0; }
@@ -119,6 +138,9 @@ button:disabled { cursor: not-allowed; color: var(--muted); }
 .result-section { display: grid; gap: .65rem; min-width: 0; padding-top: .8rem; border-top: 1px solid var(--border); }
 .result-panel { padding: .65rem; background: var(--surface); border: 1px solid var(--border); }
 .result-panel p { margin: .35rem 0 0; white-space: pre-wrap; }
+.result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding-top: .8rem; border-top: 1px solid var(--border); }
+.result-actions > span { color: var(--muted); font-size: .8rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.result-error { margin-bottom: 1rem; }
 .result-table-wrap, .terminal-result { max-width: 100%; max-height: min(55vh, 34rem); overflow: auto; border: 1px solid var(--border); }
 .result-table { width: max-content; min-width: 100%; border-collapse: collapse; }
 .result-table th, .result-table td { max-width: 32rem; padding: .45rem .55rem; border: 1px solid var(--border); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
@@ -156,7 +178,6 @@ button:disabled { cursor: not-allowed; color: var(--muted); }
 .toast:hover { background: var(--surface-strong); }
 .toast strong, .toast span { grid-column: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toast small { grid-column: 2; grid-row: 1 / span 2; color: var(--accent); }
-.action-feedback { position: fixed; top: .6rem; left: 50%; z-index: 12; width: max-content; max-width: calc(100vw - 1.5rem); padding: .45rem .65rem; color: var(--background); background: var(--text); border: 1px solid var(--background); transform: translateX(-50%); font-weight: 700; }
 
 @media (prefers-color-scheme: dark) {
   :root { --danger: #ff8a80; --success: #70d98a; --warning: #ffc45c; }

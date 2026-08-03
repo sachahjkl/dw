@@ -22,6 +22,9 @@ func TestOperationViewSubmitsResourceRelation(t *testing.T) {
 	if len(views) != 1 {
 		t.Fatalf("operation views = %d, want 1", len(views))
 	}
+	if views[0].Key == "" || views[0].SubjectKey == "" || views[0].Key != operationKey(reference.Kind, reference.Project, reference.Key, cockpit.RelationStart) {
+		t.Fatalf("operation identity = %#v", views[0])
+	}
 	submit := views[0].Submit
 	for _, value := range []string{"/operations", `kind:"work-item"`, `project:"default"`, `key:"WI-42"`, `relation:"start"`} {
 		if !strings.Contains(submit, value) {

@@ -541,7 +541,10 @@ func (m *Model) projectExecutionEvent(event execution.Event) (RecordedEvent, err
 		kind = action.EventLog
 	}
 	raw := action.EventEnvelope{Action: event.ActionID, Kind: kind, Message: message, Data: event.TypedData}
-	level, scope, text := InfoLevel, string(raw.Action), m.l10n.Render(raw.Message)
+	level, scope, text := InfoLevel, string(raw.Action), console.HumanizeIdentifier(string(raw.Message.ID))
+	if m.l10n.Has(raw.Message.ID) {
+		text = m.l10n.Render(raw.Message)
+	}
 	if m.deps.ProjectEvent != nil && (event.Kind == execution.EventProgress || event.Kind == execution.EventWarning || event.Kind == execution.EventLog) {
 		level, scope, text = m.deps.ProjectEvent(raw)
 	}
@@ -688,13 +691,57 @@ func (m *Model) finishActionSuccess(runID execution.ExecutionID, result action.R
 			resultLines = []string{m.l10n.Text("tui.result.complete")}
 		}
 	}
-	m.detail = &detailState{title: item.Label, lines: resultLines}
+	m.detail = &detailState{title: item.Label, lines: resultLines, next: m.nextResultAction(result, item.Subject)}
 	m.pushModal(detailModal)
 	if item.RefreshAfterSuccess {
 		m.reloadAfterQueue = true
 	}
 	m.active, m.actionUpdates = nil, nil
 	return m.continueQueue()
+}
+
+func (m *Model) nextResultAction(result action.Result, subject cockpit.ResourceRef) *Action {
+	if result == nil || m.deps.ProjectPage == nil {
+		return nil
+	}
+	page, ok, err := m.deps.ProjectPage(result)
+	if err != nil || !ok || len(page.Actions) == 0 {
+		return nil
+	}
+	relation := cockpit.Relation(page.Actions[0].Relation)
+	for _, operation := range m.allOperations() {
+		if operation.Relation == relation && operation.Subject.Equal(subject) && operation.Active {
+			next := actionFromOperation(operation)
+			return &next
+		}
+	}
+	return nil
+}
+
+func (m *Model) allOperations() []cockpit.Operation {
+	operations := append([]cockpit.Operation(nil), m.snapshot.Operations...)
+	if m.snapshot.InitOperation != nil {
+		operations = append(operations, *m.snapshot.InitOperation)
+	}
+	for _, item := range m.snapshot.Cockpit {
+		operations = append(operations, item.Primary)
+	}
+	for _, project := range m.snapshot.WorkProjects {
+		operations = append(operations, project.Operations...)
+		for _, item := range project.Items {
+			operations = append(operations, item.Operations...)
+		}
+	}
+	for _, workspace := range m.snapshot.Workspaces {
+		operations = append(operations, workspace.Operations...)
+	}
+	for _, pullRequest := range m.snapshot.PullRequests {
+		operations = append(operations, pullRequest.Operations...)
+	}
+	for _, source := range m.snapshot.DataSources {
+		operations = append(operations, source.Operations...)
+	}
+	return operations
 }
 
 func (m *Model) acceptExternalFinished(msg externalFinishedMsg) tea.Cmd {

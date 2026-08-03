@@ -25,16 +25,16 @@ func TestBrowserLiveModeEndToEnd(t *testing.T) {
 	if chromium == "" {
 		t.Skip("DW_CHROMIUM is not set; Nix runs this test with Chromium")
 	}
-	if runtime.GOOS != "linux" {
-		t.Skip("the Nix Chromium integration runs on Linux")
-	}
-
 	repository, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
 	temporary := t.TempDir()
-	binary := filepath.Join(temporary, "dw")
+	binaryName := "dw"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	binary := filepath.Join(temporary, binaryName)
 	build := exec.Command("go", "build", "-o", binary, "./cmd/dw")
 	build.Dir = repository
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
@@ -48,6 +48,9 @@ func TestBrowserLiveModeEndToEnd(t *testing.T) {
 	}
 	environment := append(os.Environ(),
 		"HOME="+temporary,
+		"USERPROFILE="+temporary,
+		"APPDATA="+filepath.Join(temporary, "appdata"),
+		"LOCALAPPDATA="+filepath.Join(temporary, "localappdata"),
 		"XDG_CONFIG_HOME="+filepath.Join(temporary, "config"),
 		"XDG_STATE_HOME="+filepath.Join(temporary, "state"),
 		"XDG_RUNTIME_DIR="+runtimeDirectory,
@@ -116,18 +119,25 @@ func TestBrowserLiveModeEndToEnd(t *testing.T) {
 		chromedp.Click(`#tab-overview`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#overview`, chromedp.ByQuery),
 		chromedp.Click(`#overview form[data-operation-relation="doctor"] button[type="submit"]`, chromedp.ByQuery),
-		chromedp.WaitVisible(`#action-feedback`, chromedp.ByQuery),
+		chromedp.Poll(`(() => { const form=document.querySelector('#overview form[data-operation-relation="doctor"]'); const button=form?.querySelector('.operation-button-text'); return !!form?.dataset.operationState && button?.textContent !== 'Doctor'; })()`, nil),
 	); err != nil {
 		t.Fatalf("submit contextual doctor operation: %v\nbrowser events: %v\n%s", err, browserErrors, chromeOutput.String())
 	}
+	var closeButtonFits bool
 	if err = chromedp.Run(browserContext,
 		chromedp.Poll(`document.querySelector('#actions article[data-relation="doctor"]:is([data-status="succeeded"],[data-status="failed"],[data-status="canceled"],[data-status="interrupted"])') !== null`, nil, chromedp.WithPollingMutation()),
+		chromedp.Poll(`document.querySelector('#action-results dialog.result-dialog[open]') !== null`, nil, chromedp.WithPollingMutation()),
+		chromedp.Evaluate(`(() => { const dialog=document.querySelector('#action-results dialog.result-dialog[open]'); const form=dialog?.querySelector('.dialog-close'); const button=form?.querySelector('button'); if (!dialog || !form || !button) return false; const d=dialog.getBoundingClientRect(); const b=button.getBoundingClientRect(); return button.scrollWidth <= button.clientWidth && b.left >= d.left && b.right <= d.right; })()`, &closeButtonFits),
+		chromedp.Evaluate(`document.querySelector('#action-results dialog.result-dialog[open]').close()`, nil),
 		chromedp.Click(`#tab-actions`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#actions article[data-relation="doctor"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.querySelector('#actions article[data-relation="doctor"] .activity').open = true`, nil),
 		chromedp.Poll(`(() => { const times=[...document.querySelectorAll('#actions time')]; return times.length > 0 && times.every(item => item.textContent !== item.dateTime); })()`, nil),
 	); err != nil {
 		t.Fatalf("run contextual doctor operation: %v\nbrowser events: %v\n%s", err, browserErrors, chromeOutput.String())
+	}
+	if !closeButtonFits {
+		t.Fatal("result dialog close button overflows its container")
 	}
 	if !resourceDriven {
 		t.Fatal("web UI still exposes command catalogue elements")
@@ -196,6 +206,9 @@ func TestBrowserLiveModeEndToEnd(t *testing.T) {
 	stopWebTestService(t, repository, binary, environment)
 	serviceRunning = false
 	statePath := filepath.Join(runtimeDirectory, "devworkflow", "web", "state.json")
+	if runtime.GOOS == "windows" {
+		statePath = filepath.Join(temporary, "localappdata", "DevWorkflow", "web", "state.json")
+	}
 	if _, statErr := os.Stat(statePath); !os.IsNotExist(statErr) {
 		t.Fatalf("runtime state remains after stop: %v", statErr)
 	}
@@ -257,7 +270,11 @@ func webTestStatus(t *testing.T, directory, binary string, environment []string)
 
 func webTestTicketURL(t *testing.T, temporary, address string) string {
 	t.Helper()
-	configContent, err := os.ReadFile(filepath.Join(temporary, "config", "DevWorkflow", "web.json"))
+	configPath := filepath.Join(temporary, "config", "DevWorkflow", "web.json")
+	if runtime.GOOS == "windows" {
+		configPath = filepath.Join(temporary, "localappdata", "DevWorkflow", "web.json")
+	}
+	configContent, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/contract"
 )
 
 type ResourceKind string
 
-type Relation string
+type Relation contract.RelationID
 
 type InputKind string
 
@@ -25,7 +26,9 @@ const (
 const (
 	RelationInitialize        Relation = "initialize"
 	RelationDoctor            Relation = "doctor"
+	RelationDoctorFix         Relation = "doctor-fix"
 	RelationRefresh           Relation = "refresh"
+	RelationRefreshWork       Relation = "refresh-work"
 	RelationInspect           Relation = "inspect"
 	RelationOpenWorkspace     Relation = "open-workspace"
 	RelationAuthenticate      Relation = "authenticate"
@@ -65,7 +68,7 @@ const (
 
 func (relation Relation) Valid() bool {
 	switch relation {
-	case RelationInitialize, RelationDoctor, RelationRefresh, RelationInspect, RelationOpenWorkspace,
+	case RelationInitialize, RelationDoctor, RelationDoctorFix, RelationRefresh, RelationRefreshWork, RelationInspect, RelationOpenWorkspace,
 		RelationAuthenticate, RelationReviewStart, RelationStart, RelationShowContext, RelationChangeState, RelationPreflight,
 		RelationSync, RelationUpdateRepos, RelationValidateHandoff, RelationReviewCommit, RelationReviewFinish,
 		RelationFinish, RelationReviewRemoval, RelationRemove, RelationReviewDiff, RelationChangelog,

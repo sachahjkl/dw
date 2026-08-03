@@ -364,7 +364,11 @@ func (m *Model) renderModal(modal modalKind, width, height int) string {
 		return m.renderScrollable(m.l10n.Text(msgJournal), m.journalLines(), m.history.Scroll, m.l10n.Text("tui.keys.journal"), width, height, map[bool]int{true: 100, false: 86}[m.history.Fullscreen], map[bool]int{true: 100, false: 78}[m.history.Fullscreen])
 	case detailModal:
 		if m.detail != nil {
-			return m.renderScrollable(m.detail.title, m.detail.lines, m.detail.scroll, m.l10n.Text("tui.keys.modal"), width, height, 86, 78)
+			keys := m.l10n.Text("tui.keys.modal")
+			if m.detail.next != nil {
+				keys += "    n Next: " + m.detail.next.Label
+			}
+			return m.renderScrollable(m.detail.title, m.detail.lines, m.detail.scroll, keys, width, height, 86, 78)
 		}
 	case progressModal:
 		return m.renderScrollable(m.l10n.Text(msgProgress), m.progressLines(), 0, m.l10n.Text("tui.keys.progress"), width, height, 78, 55)

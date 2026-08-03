@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/config"
+	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/data"
 	"github.com/sachahjkl/dw/internal/dataapp"
 	"github.com/sachahjkl/dw/internal/doctor"
@@ -268,11 +269,11 @@ func initPage(r config.InitReport) Page {
 		countField(pathLabel, len(r.PlannedPaths)),
 		boolStatus("result.saved-root", !r.DryRun && !r.NoSave),
 	)
-	next := "dw doctor"
+	next := contract.ActionLink{Relation: "doctor", Arguments: []contract.ActionArgument{{Name: "root", Value: r.Root}}}
 	if r.DryRun {
-		next = "dw init --root " + strconv.Quote(r.Root)
+		next.Relation = "initialize"
 	}
-	p.Hint = &Field{Label: "result.next", Value: next, Style: ValueCommand}
+	p.Actions = []contract.ActionLink{next}
 	return p
 }
 
@@ -288,7 +289,7 @@ func configShowPage(r config.ConfigShow) Page {
 		Field{Label: "result.databases", Value: r.DatabasesPath, Style: ValuePath},
 	)
 	if !ready {
-		p.Hint = &Field{Label: "result.next", Value: "dw init --root " + strconv.Quote(r.Root), Style: ValueCommand}
+		p.Actions = []contract.ActionLink{{Relation: "initialize", Arguments: []contract.ActionArgument{{Name: "root", Value: r.Root}}}}
 	}
 	return p
 }
@@ -308,7 +309,7 @@ func configDoctorPage(r config.ConfigDoctorReport) Page {
 	)
 	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.path", "result.status", "result.detail"}, Rows: rows}}}
 	if !r.Passed {
-		p.Hint = &Field{Label: "result.next", Value: "dw init --root " + strconv.Quote(r.Root), Style: ValueCommand}
+		p.Actions = []contract.ActionLink{{Relation: "initialize", Arguments: []contract.ActionArgument{{Name: "root", Value: r.Root}}}}
 	}
 	return p
 }
@@ -334,7 +335,7 @@ func doctorPage(r doctor.Report) Page {
 	)
 	p.Sections = []Section{{Table: &Table{Columns: []MessageID{"result.check", "result.status", "result.remediation"}, Rows: rows}}}
 	if !r.Passed() {
-		p.Hint = &Field{Label: "result.next", Value: "dw doctor --fix", Style: ValueCommand}
+		p.Actions = []contract.ActionLink{{Relation: "doctor-fix", Arguments: []contract.ActionArgument{{Name: "root", Value: r.Root}}}}
 	}
 	return p
 }
@@ -420,7 +421,7 @@ func dataSourceListPage(r dataapp.DataSourceListResult) Page {
 	)
 	if len(rows) == 0 {
 		p.Summary = append(p.Summary, Field{Label: "result.status", Value: "No data sources configured", Style: ValueWarning})
-		p.Hint = &Field{Label: "result.next", Value: "dw init", Style: ValueCommand}
+		p.Actions = []contract.ActionLink{{Relation: "initialize", Arguments: []contract.ActionArgument{{Name: "root", Value: r.Root}}}}
 	} else {
 		p.Sections = append(p.Sections, Section{Table: &Table{Columns: []MessageID{"result.scope", "result.source", "result.provider", "result.connection", "result.limit"}, Rows: rows}})
 	}
@@ -512,7 +513,7 @@ func assignedItemsPage(r workapp.AssignedReport) Page {
 	p.Summary = append(p.Summary, countField("result.items", len(rows)))
 	if len(rows) == 0 {
 		p.Summary = append(p.Summary, Field{Label: "result.status", Value: "No assigned work items found", Style: ValueWarning})
-		p.Hint = &Field{Label: "result.next", Value: "dw work item list --all", Style: ValueCommand}
+		p.Actions = []contract.ActionLink{{Relation: "refresh-work"}}
 		return p
 	}
 	p.Sections = []Section{{Table: &Table{Columns: columns, Rows: rows}}}

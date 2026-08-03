@@ -124,6 +124,7 @@ type detailState struct {
 	title  string
 	lines  []string
 	scroll int
+	next   *Action
 }
 
 // Model contains all pure navigation, modal, form, queue, and history state.
@@ -778,6 +779,12 @@ func (m *Model) handleDetailKey(key Key) []Effect {
 		return nil
 	}
 	switch key.Code {
+	case "n":
+		if m.detail.next != nil {
+			next := *m.detail.next
+			m.closeTopModal()
+			return m.requestAction(next)
+		}
 	case "q", "enter":
 		m.closeTopModal()
 	case "up", "k":
