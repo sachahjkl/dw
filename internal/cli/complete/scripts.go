@@ -63,7 +63,7 @@ compdef _dw_complete dw
 	case Fish:
 		return "complete -c dw -f -a '(dw completion complete --format fish -- (commandline -opc)[2..-1])'\n", nil
 	case PowerShell:
-		return "Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock { param($wordToComplete, $commandAst, $cursorPosition) dw completion complete --format json -- @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { $_.Extent.Text }) | ConvertFrom-Json | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_.label, $_.label, 'ParameterValue', $_.description) } }\n", nil
+		return "Register-ArgumentCompleter -Native -CommandName dw -ScriptBlock { param($wordToComplete, $commandAst, $cursorPosition) $words = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { $_.Extent.Text }); dw completion complete --format json '--' @words | ConvertFrom-Json | ForEach-Object { [System.Management.Automation.CompletionResult]::new($_.label, $_.label, 'ParameterValue', $_.description) } }\n", nil
 	case Elvish:
 		return "set edit:completion:arg-completer[dw] = {|@args|\n  dw completion complete --format json -- $args[1..] | from-json | each {|item|\n    edit:complex-candidate $item[label] &display=$item[label]'  '$item[description] &code-suffix=' '\n  }\n}\n", nil
 	default:
