@@ -44,6 +44,29 @@ func TestPersistedExecutionMessageCannotCrashHistoryReplay(t *testing.T) {
 	}
 }
 
+func TestProjectedWorkEventCannotCrashHistoryReplay(t *testing.T) {
+	engine := console.NewEngine(console.NewRegistry(), console.NewEventRegistry())
+	renderContext := console.NewRenderContext(console.Policy{ShowEvents: true}, console.NewEnglishLocalizer())
+	model := NewModel(Dependencies{ProjectEvent: func(envelope action.EventEnvelope) (LogLevel, string, string) {
+		line, _, err := engine.RenderEvent(renderContext, envelope)
+		if err != nil {
+			return ErrorLevel, string(envelope.Action), err.Error()
+		}
+		return InfoLevel, string(envelope.Action), line
+	}})
+	event := execution.Event{
+		Kind: execution.EventProgress, ActionID: "workspace.start",
+		Message: execution.MessageV1{Schema: execution.MessageSchemaV1, ID: "work.event.planning-start"},
+	}
+	projected, err := model.projectExecutionEvent(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projected.Text != "Planning workspace start..." {
+		t.Fatalf("projected work event = %q", projected.Text)
+	}
+}
+
 func TestResultNextActionResolvesNativeOperationForSameSubject(t *testing.T) {
 	reference := cockpit.ResourceRef{Kind: cockpit.ResourceRoot, Root: `S:\dw`, Key: `S:\dw`}
 	model := NewModel(Dependencies{ProjectPage: func(action.Result) (console.Page, bool, error) {
@@ -56,6 +79,27 @@ func TestResultNextActionResolvesNativeOperationForSameSubject(t *testing.T) {
 	next := model.nextResultAction(semanticResult{}, reference)
 	if next == nil || next.ID != action.ID(cockpit.RelationDoctorFix) || next.Label != "Fix issues" {
 		t.Fatalf("native next action = %#v", next)
+	}
+	other := reference
+	other.Key = `S:\other`
+	if next = model.nextResultAction(semanticResult{}, other); next != nil {
+		t.Fatalf("next action crossed resource subjects: %#v", next)
+	}
+}
+
+func TestExecutionSubjectRoundTripsThroughResumedAction(t *testing.T) {
+	reference := cockpit.ResourceRef{Kind: cockpit.ResourceWorkItem, Root: `S:\dw`, Project: "default", Key: "42"}
+	subject := executionSubject(Action{ID: action.ID(cockpit.RelationStart), Subject: reference})
+	if subject == nil || subject.Kind != "work-item" || subject.Project != "default" || subject.Key != "42" || subject.Relation != "start" {
+		t.Fatalf("execution subject = %#v", subject)
+	}
+	record := execution.Record{ActionID: "workspace.start", Root: reference.Root, Subject: subject}
+	resumed := resumedAction(record)
+	if resumed.ID != action.ID(cockpit.RelationStart) || !resumed.Subject.Equal(reference) {
+		t.Fatalf("resumed action = %#v", resumed)
+	}
+	if subject = executionSubject(Action{ID: "doctor"}); subject != nil {
+		t.Fatalf("subjectless action persisted %#v", subject)
 	}
 }
 

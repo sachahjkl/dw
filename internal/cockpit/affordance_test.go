@@ -69,3 +69,14 @@ func TestResolveReloadsAndMatchesResourceRelation(t *testing.T) {
 		t.Fatalf("missing relation error = %v", err)
 	}
 }
+
+func TestGlobalDataSourceReferenceIsValidWithoutProject(t *testing.T) {
+	global := ResourceRef{Kind: ResourceDataSource, Root: "/tmp/root", Key: "people"}
+	if err := global.Validate(); err != nil {
+		t.Fatalf("global data source reference = %v", err)
+	}
+	project := ResourceRef{Kind: ResourceProject, Root: "/tmp/root", Key: "default"}
+	if err := project.Validate(); err == nil {
+		t.Fatal("project reference without project was accepted")
+	}
+}

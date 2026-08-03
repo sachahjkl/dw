@@ -6,6 +6,7 @@ import (
 
 	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/data"
+	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 type Engine struct {
@@ -55,12 +56,19 @@ func (e Engine) RenderEvent(context RenderContext, envelope action.EventEnvelope
 		if envelope.Message.ID == "" {
 			return "", false, nil
 		}
-		return context.Localizer.Render(envelope.Message), false, nil
+		return renderEventMessage(context.Localizer, envelope.Message), false, nil
 	}
 	if envelope.Message.ID != "" {
-		line = AppendEventFields(context.Localizer.Render(envelope.Message), event)
+		line = AppendEventFields(renderEventMessage(context.Localizer, envelope.Message), event)
 	}
 	return line, event.Transient, nil
+}
+
+func renderEventMessage(localizer Localizer, message l10n.Message) string {
+	if localizer == nil || !localizer.Has(message.ID) {
+		return HumanizeIdentifier(string(message.ID))
+	}
+	return localizer.Render(message)
 }
 
 func (e Engine) WriteEvent(context RenderContext, envelope action.EventEnvelope) error {

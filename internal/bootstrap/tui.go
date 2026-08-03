@@ -288,7 +288,8 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 		}
 		doctorAction := cockpit.Operation{Relation: cockpit.RelationDoctor, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.doctor"), Active: true, Request: doctor.Request{Root: root}}
 		doctorFixAction := cockpit.Operation{Relation: cockpit.RelationDoctorFix, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.doctor-fix"), Active: true, Request: doctor.Request{Root: root, Fix: true}}
-		snapshot.Operations = []cockpit.Operation{doctorAction, doctorFixAction}
+		initializeAction := cockpit.Operation{Relation: cockpit.RelationInitialize, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.initialize"), Active: true, Request: config.InitRequest{Root: root, Profile: "default"}}
+		snapshot.Operations = []cockpit.Operation{doctorAction, doctorFixAction, initializeAction}
 		snapshot.Cockpit = []cockpit.CockpitItem{{Ref: rootRef, Section: "system", Title: doctorAction.Label, Status: strconv.FormatBool(snapshot.DoctorOK), Primary: doctorAction}}
 		configurationActions := []cockpit.Operation{
 			menuAction(cockpit.RelationViewConfiguration, "bootstrap.tui.config-show", "s", "configuration", config.ShowRequest{Root: root}, localizer),
@@ -325,8 +326,7 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 			snapshot.Cockpit = append(snapshot.Cockpit, cockpit.CockpitItem{Ref: rootRef, Section: "work", Title: pruneAction.Label, Status: strconv.Itoa(snapshot.PruneCandidates), Severity: cockpit.RiskPreview, Primary: pruneAction})
 		}
 		if snapshot.NeedsInit {
-			operation := cockpit.Operation{Relation: cockpit.RelationInitialize, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.initialize"), Active: true, Request: config.InitRequest{Root: root, Profile: "default"}}
-			snapshot.InitOperation = &operation
+			snapshot.InitOperation = &initializeAction
 		}
 		snapshot.Operations = bindOperations(rootRef, snapshot.Operations)
 		return snapshot, nil

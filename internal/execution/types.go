@@ -41,7 +41,7 @@ func (status Status) Valid() bool {
 	}
 }
 
-func (status Status) Terminal() bool {
+func (status Status) Final() bool {
 	switch status {
 	case StatusCanceled, StatusSucceeded, StatusFailed, StatusInterrupted:
 		return true

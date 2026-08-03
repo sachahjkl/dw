@@ -29,7 +29,7 @@ func TestProviderListPagePresentsGroupedFeatures(t *testing.T) {
 func TestWorkspaceListPageExplainsEmptyState(t *testing.T) {
 	page := workspaceListPage(console.ResultWorkspaceList, "/tmp/root", nil)
 	rendered := console.RenderPage(page, console.NewEnglishLocalizer(), console.NewTheme(false))
-	if !strings.Contains(rendered, "No workspaces found") || !strings.Contains(rendered, "dw workspace start <work-item-id>") {
+	if !strings.Contains(rendered, "No workspaces found") || strings.Contains(rendered, "dw workspace start") || len(page.Actions) != 0 {
 		t.Fatalf("workspace empty output = %s", rendered)
 	}
 }

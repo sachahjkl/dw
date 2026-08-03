@@ -128,7 +128,7 @@ func NewServiceWithLockerConfig(dispatcher *action.Dispatcher, registry *Registr
 
 func newRuntimeExecution(item storedExecution, request action.Request, lock LockSpec) *runtimeExecution {
 	state := &runtimeExecution{stored: item, request: request, lock: lock, done: make(chan struct{}), subscribers: make(map[uint64]*eventSubscriber)}
-	if item.Record.Status.Terminal() {
+	if item.Record.Status.Final() {
 		close(state.done)
 		state.doneClosed = true
 	}
@@ -323,7 +323,7 @@ func (service *Service) Cancel(ctx context.Context, actor Actor, id ExecutionID)
 	case StatusCanceling:
 		return nil
 	default:
-		if state.stored.Record.Status.Terminal() {
+		if state.stored.Record.Status.Final() {
 			return nil
 		}
 		return fmt.Errorf("execution.invalid-status:%s", state.stored.Record.Status)
@@ -384,7 +384,7 @@ func (service *Service) Subscribe(ctx context.Context, actor Actor, id Execution
 	if err := authorize(actor, state.stored.Record); err != nil {
 		return Subscription{}, err
 	}
-	backlog, err := service.store.EventsAfter(ctx, id, after, service.settings.EventFetchLimit)
+	backlog, err := service.loadEventBacklog(ctx, id, after)
 	if err != nil {
 		return Subscription{}, err
 	}
@@ -400,8 +400,8 @@ func (service *Service) Subscribe(ctx context.Context, actor Actor, id Execution
 	}
 	events := make(chan Event, service.settings.SubscriberCapacity)
 	errorsChannel := make(chan error, 1)
-	if state.stored.Record.Status.Terminal() {
-		go sendTerminalBacklog(ctx, backlog, events, errorsChannel)
+	if state.stored.Record.Status.Final() {
+		go sendFinalBacklog(ctx, backlog, events, errorsChannel)
 		return Subscription{Events: events, Errors: errorsChannel}, nil
 	}
 	if state.stored.ExecutorID != service.executorID {
@@ -415,6 +415,22 @@ func (service *Service) Subscribe(ctx context.Context, actor Actor, id Execution
 	state.subscribers[subID] = subscriber
 	go service.feedSubscriber(subContext, id, subID, backlog, subscriber)
 	return Subscription{Events: events, Errors: errorsChannel}, nil
+}
+
+func (service *Service) loadEventBacklog(ctx context.Context, id ExecutionID, after EventSequence) ([]Event, error) {
+	limit := service.settings.EventFetchLimit
+	var backlog []Event
+	for {
+		page, err := service.store.EventsAfter(ctx, id, after, limit)
+		if err != nil {
+			return nil, err
+		}
+		backlog = append(backlog, page...)
+		if len(page) == 0 || limit == 0 || len(page) < int(limit) {
+			return backlog, nil
+		}
+		after = page[len(page)-1].Sequence
+	}
 }
 
 func (service *Service) Wait(ctx context.Context, actor Actor, id ExecutionID) (Record, error) {
@@ -432,9 +448,9 @@ func (service *Service) Wait(ctx context.Context, actor Actor, id ExecutionID) (
 			return Record{}, err
 		}
 		done := state.done
-		terminal := state.stored.Record.Status.Terminal()
+		final := state.stored.Record.Status.Final()
 		service.mu.Unlock()
-		if terminal {
+		if final {
 			return service.Get(ctx, actor, id)
 		}
 		select {
@@ -447,7 +463,7 @@ func (service *Service) Wait(ctx context.Context, actor Actor, id ExecutionID) (
 			if err := authorize(actor, item.Record); err != nil {
 				return Record{}, err
 			}
-			if item.Record.Status.Terminal() {
+			if item.Record.Status.Final() {
 				return service.hydrateRecord(item.Record)
 			}
 		case <-ctx.Done():
@@ -484,7 +500,7 @@ func (service *Service) Close(ctx context.Context) error {
 		}
 		service.queue = nil
 		if service.active != nil {
-			if state := service.executions[*service.active]; state != nil && !state.stored.Record.Status.Terminal() {
+			if state := service.executions[*service.active]; state != nil && !state.stored.Record.Status.Final() {
 				pending := state.stored.Record.PendingPrompt
 				state.stored.Record.PendingPrompt = nil
 				if err := service.transitionLocked(context.Background(), state, StatusInterrupted, EventInterrupted, "execution.event.interrupted", discardPromptUpdate(pending)); err != nil {
@@ -593,7 +609,7 @@ func (service *Service) run(id ExecutionID) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	state = service.executions[id]
-	if state == nil || state.stored.Record.Status.Terminal() {
+	if state == nil || state.stored.Record.Status.Final() {
 		service.active = nil
 		return
 	}
@@ -716,7 +732,7 @@ func (service *Service) transitionLocked(ctx context.Context, state *runtimeExec
 	if status == StatusRunning && state.stored.Record.StartedAt == nil {
 		state.stored.Record.StartedAt = &now
 	}
-	if status.Terminal() {
+	if status.Final() {
 		state.stored.Record.FinishedAt = &now
 	}
 	if err := service.appendEventLocked(ctx, state, kind, message, nil, nil, prompt); err != nil {
@@ -731,7 +747,7 @@ func (service *Service) transitionLocked(ctx context.Context, state *runtimeExec
 func (service *Service) appendEventLocked(ctx context.Context, state *runtimeExecution, kind EventKind, message MessageV1, payload *EncodedEventData, typed action.EventData, prompt *promptUpdate) error {
 	maxEvents := EventSequence(service.settings.MaxEvents)
 	if state.stored.LastSequence >= maxEvents ||
-		state.stored.LastSequence >= maxEvents-2 && !terminalEventKind(kind) && kind != EventCanceling {
+		state.stored.LastSequence >= maxEvents-2 && !finalEventKind(kind) && kind != EventCanceling {
 		return fmt.Errorf("execution.event-limit")
 	}
 	sequence := state.stored.LastSequence + 1
@@ -748,7 +764,7 @@ func (service *Service) appendEventLocked(ctx context.Context, state *runtimeExe
 	return nil
 }
 
-func terminalEventKind(kind EventKind) bool {
+func finalEventKind(kind EventKind) bool {
 	switch kind {
 	case EventCanceled, EventSucceeded, EventFailed, EventInterrupted:
 		return true
@@ -809,7 +825,7 @@ func (service *Service) feedSubscriber(ctx context.Context, executionID Executio
 	}
 }
 
-func sendTerminalBacklog(ctx context.Context, backlog []Event, events chan Event, errorsChannel chan error) {
+func sendFinalBacklog(ctx context.Context, backlog []Event, events chan Event, errorsChannel chan error) {
 	defer close(events)
 	defer close(errorsChannel)
 	for _, event := range backlog {
@@ -876,7 +892,7 @@ func (service *Service) feedPersistedSubscription(ctx context.Context, id Execut
 				}
 				return
 			}
-			if item.Record.Status.Terminal() {
+			if item.Record.Status.Final() {
 				return
 			}
 		}
@@ -910,7 +926,7 @@ func (service *Service) renewLeases(now time.Time) {
 	defer service.mu.Unlock()
 	ids := make([]ExecutionID, 0, len(service.executions))
 	for id, state := range service.executions {
-		if !state.stored.Record.Status.Terminal() && state.stored.ExecutorID == service.executorID {
+		if !state.stored.Record.Status.Final() && state.stored.ExecutorID == service.executorID {
 			ids = append(ids, id)
 		}
 	}

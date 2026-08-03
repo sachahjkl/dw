@@ -118,6 +118,13 @@ func TestBrowserLiveModeEndToEnd(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('#tab-commands, #commands, [data-command-key], [data-command-target]') === null`, &resourceDriven),
 		chromedp.Click(`#tab-overview`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#overview`, chromedp.ByQuery),
+		chromedp.Evaluate(`(() => { const form=document.querySelector('#overview form[data-operation-relation="doctor"]'); const execution=document.createElement('article'); execution.id='synthetic-active-operation'; execution.className='execution'; execution.dataset.operationKey=form.dataset.operationKey; execution.dataset.status='running'; execution.dataset.statusLabel='Running'; execution.dataset.progress='Remote action running'; document.querySelector('#actions .action-list').prepend(execution); })()`, nil),
+		chromedp.Poll(`(() => { const form=document.querySelector('#overview form[data-operation-relation="doctor"]'); return form?.dataset.operationState === 'running' && form.querySelector('.operation-button')?.disabled && form.querySelector('.operation-button-text')?.textContent === 'Remote action running'; })()`, nil, chromedp.WithPollingMutation()),
+		chromedp.Evaluate(`document.querySelector('#synthetic-active-operation').remove()`, nil),
+		chromedp.Poll(`(() => { const form=document.querySelector('#overview form[data-operation-relation="doctor"]'); return !form?.dataset.operationState && !form.querySelector('.operation-button')?.disabled && form.querySelector('.operation-button-text')?.textContent === 'Doctor'; })()`, nil, chromedp.WithPollingMutation()),
+		chromedp.Evaluate(`globalThis.dwOperationRejected(document.querySelector('#overview form[data-operation-relation="doctor"]').dataset.operationKey)`, nil),
+		chromedp.Poll(`document.querySelector('#overview form[data-operation-relation="doctor"] .operation-button-text')?.textContent === 'Could not start'`, nil, chromedp.WithPollingMutation()),
+		chromedp.Poll(`document.querySelector('#overview form[data-operation-relation="doctor"] .operation-button-text')?.textContent === 'Doctor'`, nil, chromedp.WithPollingMutation()),
 		chromedp.Click(`#overview form[data-operation-relation="doctor"] button[type="submit"]`, chromedp.ByQuery),
 		chromedp.Poll(`(() => { const form=document.querySelector('#overview form[data-operation-relation="doctor"]'); const button=form?.querySelector('.operation-button-text'); return !!form?.dataset.operationState && button?.textContent !== 'Doctor'; })()`, nil),
 	); err != nil {

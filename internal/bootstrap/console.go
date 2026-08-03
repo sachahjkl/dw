@@ -6,7 +6,6 @@ import (
 
 	"github.com/sachahjkl/dw/internal/cli/controller"
 	"github.com/sachahjkl/dw/internal/console"
-	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/providerapp"
 	"github.com/sachahjkl/dw/internal/workapp"
 	"github.com/sachahjkl/dw/internal/workspace"
@@ -243,7 +242,6 @@ func workspaceListPage(kind console.ResultKind, root string, items []workspace.L
 	page := resultPage(kind, console.Field{Label: "result.root", Value: root, Style: console.ValuePath}, countField("result.items", len(items)))
 	if len(items) == 0 {
 		page.Summary = append(page.Summary, console.Field{Label: "result.status", Value: "No workspaces found", Style: console.ValueWarning})
-		page.Actions = []contract.ActionLink{{Relation: "start"}}
 		return page
 	}
 	rows := make([][]string, len(items))

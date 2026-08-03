@@ -553,7 +553,7 @@ func (m *Model) journalLines() []string {
 	for _, event := range m.history.visibleEvents(run) {
 		lines = append(lines, fmt.Sprintf("%s | %s | %s", event.At.Format("2006-01-02 15:04:05Z"), event.Scope, event.Text))
 	}
-	if !run.Status.Terminal() && len(run.Events) == 0 {
+	if !run.Status.Final() && len(run.Events) == 0 {
 		lines = append(lines, m.l10n.Text("tui.history.waiting"))
 	}
 	if len(run.Lines) != 0 {

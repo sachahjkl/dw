@@ -153,6 +153,22 @@ var EnglishEntries = []l10n.Entry{
 	{ID: "work.event.loading-changelog-items", Text: "Loading changelog items..."},
 	{ID: "work.event.updating-work-item-state", Text: "Updating work item state..."},
 	{ID: "work.event.updated-work-item-state", Text: "Work item state updated."},
+	{ID: "work.event.planning-start", Text: "Planning workspace start..."},
+	{ID: "work.event.loading-start-work-items", Text: "Loading work items for workspace start..."},
+	{ID: "work.event.building-start-plan", Text: "Building workspace start plan..."},
+	{ID: "work.event.executing-start", Text: "Starting workspace..."},
+	{ID: "work.event.preparingWorktree", Text: "Preparing worktree..."},
+	{ID: "work.event.worktreePrepared", Text: "Worktree prepared."},
+	{ID: "work.event.workspaceCreated", Text: "Workspace created."},
+	{ID: "work.event.verifyingFinish", Text: "Verifying workspace finish..."},
+	{ID: "work.event.finishVerificationCompleted", Text: "Workspace finish verification completed."},
+	{ID: "work.event.runningGitOperation", Text: "Running Git operation..."},
+	{ID: "work.event.runningRepositoryGitOperation", Text: "Running repository Git operation..."},
+	{ID: "work.event.gitOperationCompleted", Text: "Git operation completed."},
+	{ID: "work.event.skippingPullRequestCreation", Text: "Skipping pull request creation."},
+	{ID: "work.event.checkingActivePullRequest", Text: "Checking for an active pull request..."},
+	{ID: "work.event.creatingPullRequest", Text: "Creating pull request..."},
+	{ID: "work.event.pullRequestWorkItemLinkSkipped", Text: "A work item could not be linked to the pull request."},
 }
 
 func WithConsoleMessages(localizer l10n.Localizer) l10n.Localizer {

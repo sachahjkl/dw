@@ -416,7 +416,7 @@ func operationViews(csrf string, operations []cockpit.Operation) []operationView
 				Kind: input.Kind, Required: input.Required, Options: input.Options,
 			})
 		}
-		item.Submit = operationSubmitExpression(csrf, operation, item.Inputs)
+		item.Submit = operationSubmitExpression(csrf, operation, item.Inputs, item.Key)
 		items = append(items, item)
 	}
 	return items
@@ -432,7 +432,7 @@ func operationKey(kind cockpit.ResourceKind, project, key string, relation cockp
 	return hex.EncodeToString(hash[:8])
 }
 
-func operationSubmitExpression(csrf string, operation cockpit.Operation, inputs []operationInputView) string {
+func operationSubmitExpression(csrf string, operation cockpit.Operation, inputs []operationInputView, operationKey string) string {
 	values := make([]string, 0, len(inputs))
 	for _, input := range inputs {
 		value := fmt.Sprintf("String($%s ?? '')", input.Signal)
@@ -442,9 +442,13 @@ func operationSubmitExpression(csrf string, operation cockpit.Operation, inputs 
 		values = append(values, fmt.Sprintf("{name:%q,value:%s}", input.Name, value))
 	}
 	resource := operation.Subject
+	payload := fmt.Sprintf(
+		"{schema:1,idempotencyKey:crypto.randomUUID().replaceAll('-',''),resource:{kind:%q,root:%q,project:%q,key:%q},relation:%q,inputs:[%s]}",
+		resource.Kind, resource.Root, resource.Project, resource.Key, operation.Relation, strings.Join(values, ","),
+	)
 	return fmt.Sprintf(
-		"@post('/operations', {contentType:'json', headers:{'X-DW-CSRF':%q}, payload:{schema:1,idempotencyKey:crypto.randomUUID().replaceAll('-',''),resource:{kind:%q,root:%q,project:%q,key:%q},relation:%q,inputs:[%s]}})",
-		csrf, resource.Kind, resource.Root, resource.Project, resource.Key, operation.Relation, strings.Join(values, ","),
+		"fetch('/operations', {method:'POST', headers:{'Content-Type':'application/json','X-DW-CSRF':%q}, body:JSON.stringify(%s)}).then(response => response.ok || globalThis.dwOperationRejected(%q)).catch(() => globalThis.dwOperationRejected(%q))",
+		csrf, payload, operationKey, operationKey,
 	)
 }
 
@@ -581,6 +585,7 @@ func (server *Server) executionEvents(ctx context.Context, id execution.Executio
 	}
 	timer := time.NewTimer(runtimeconfig.Milliseconds(server.deps.Settings.EventSettleMilliseconds))
 	defer timer.Stop()
+	settled := timer.C
 	events := make([]eventView, 0, 16)
 	eventChannel, errorChannel := subscription.Events, subscription.Errors
 	for {
@@ -615,7 +620,12 @@ func (server *Server) executionEvents(ctx context.Context, id execution.Executio
 			if streamErr != nil {
 				return events
 			}
-		case <-timer.C:
+		case <-settled:
+			record, getErr := server.deps.Executor.Get(ctx, server.deps.Actor, id)
+			if getErr == nil && record.Status.Final() {
+				settled = nil
+				continue
+			}
 			return events
 		case <-ctx.Done():
 			return events

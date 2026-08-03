@@ -90,7 +90,7 @@ func (h *History) find(id execution.ExecutionID) *RunRecord {
 
 func (h *History) running(id execution.ExecutionID) *RunRecord {
 	for i := len(h.Runs) - 1; i >= 0; i-- {
-		if h.Runs[i].ID == id && !h.Runs[i].Status.Terminal() {
+		if h.Runs[i].ID == id && !h.Runs[i].Status.Final() {
 			return &h.Runs[i]
 		}
 	}
@@ -99,7 +99,7 @@ func (h *History) running(id execution.ExecutionID) *RunRecord {
 
 func (h *History) active() *RunRecord {
 	for i := len(h.Runs) - 1; i >= 0; i-- {
-		if !h.Runs[i].Status.Terminal() {
+		if !h.Runs[i].Status.Final() {
 			return &h.Runs[i]
 		}
 	}

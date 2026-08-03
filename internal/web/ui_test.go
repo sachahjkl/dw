@@ -11,9 +11,34 @@ import (
 	"time"
 
 	"github.com/sachahjkl/dw/internal/cockpit"
+	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/execution"
+	"github.com/sachahjkl/dw/internal/runtimeconfig"
 	"github.com/sachahjkl/dw/internal/workapp"
 )
+
+type finalReplayExecutor struct {
+	execution.Executor
+	events []execution.Event
+}
+
+func (executor finalReplayExecutor) Subscribe(context.Context, execution.Actor, execution.ExecutionID, execution.EventSequence) (execution.Subscription, error) {
+	events := make(chan execution.Event)
+	errors := make(chan error)
+	go func() {
+		defer close(events)
+		defer close(errors)
+		for _, event := range executor.events {
+			time.Sleep(3 * time.Millisecond)
+			events <- event
+		}
+	}()
+	return execution.Subscription{Events: events, Errors: errors}, nil
+}
+
+func (executor finalReplayExecutor) Get(context.Context, execution.Actor, execution.ExecutionID) (execution.Record, error) {
+	return execution.Record{Status: execution.StatusSucceeded}, nil
+}
 
 func TestTemplRendersEveryExecutionStatus(t *testing.T) {
 	statuses := []execution.Status{
@@ -284,6 +309,34 @@ func TestStructuredResultRendersSemanticNextAction(t *testing.T) {
 	}
 	if strings.Contains(html, "dw doctor") {
 		t.Fatalf("web result leaked CLI syntax: %s", html)
+	}
+}
+
+func TestActiveExecutionDoesNotExposeResultDialog(t *testing.T) {
+	item := executionView{ID: "01J00000000000000000000000", Title: "Doctor", Status: execution.StatusRunning}
+	html, err := renderComponent(context.Background(), liveSections(pageView{Executions: []executionView{item}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(html, `class="result-dialog"`) || strings.Contains(html, `class="view-result"`) {
+		t.Fatalf("active execution exposed a result: %s", html)
+	}
+}
+
+func TestFinalExecutionReplayWaitsForCompleteBacklog(t *testing.T) {
+	events := make([]execution.Event, 5)
+	for index := range events {
+		events[index] = execution.Event{
+			Sequence: execution.EventSequence(index + 1), Kind: execution.EventProgress,
+			Message: execution.MessageV1{Schema: execution.MessageSchemaV1, ID: "execution.event.started"},
+		}
+	}
+	settings := runtimeconfig.Default().Web
+	settings.EventSettleMilliseconds = 1
+	server := &Server{deps: Dependencies{Executor: finalReplayExecutor{events: events}, Localizer: console.NewEnglishLocalizer(), Settings: settings}}
+	projected := server.executionEvents(context.Background(), execution.ExecutionID{})
+	if len(projected) != len(events) || projected[len(projected)-1].Sequence != events[len(events)-1].Sequence {
+		t.Fatalf("final replay = %d events, want %d", len(projected), len(events))
 	}
 }
 

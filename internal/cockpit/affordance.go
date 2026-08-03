@@ -100,9 +100,9 @@ func (reference ResourceRef) Validate() error {
 		return fmt.Errorf("cockpit.invalid-resource-reference")
 	}
 	switch reference.Kind {
-	case ResourceRoot, ResourceWorkspace:
+	case ResourceRoot, ResourceWorkspace, ResourceDataSource:
 		return nil
-	case ResourceProject, ResourceWorkItem, ResourcePullRequest, ResourceDataSource:
+	case ResourceProject, ResourceWorkItem, ResourcePullRequest:
 		if strings.TrimSpace(reference.Project) == "" {
 			return fmt.Errorf("cockpit.invalid-resource-reference")
 		}

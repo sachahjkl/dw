@@ -212,7 +212,7 @@ func (m *Model) loadHistory() tea.Cmd {
 				return historyLoadedMsg{err: getErr}
 			}
 			item := persistedHistory{record: record}
-			if record.Status.Terminal() {
+			if record.Status.Final() {
 				subscription, subscribeErr := executor.Subscribe(ctx, actor, record.ExecutionID, 0)
 				if subscribeErr != nil {
 					return historyLoadedMsg{err: subscribeErr}
@@ -253,7 +253,7 @@ func (m *Model) acceptHistory(msg historyLoadedMsg) tea.Cmd {
 				m.history.appendEvent(item.record.ExecutionID, recorded)
 			}
 		}
-		if !item.record.Status.Terminal() && (resume == nil || resumePriority(item.record.Status) > resumePriority(resume.Status)) {
+		if !item.record.Status.Final() && (resume == nil || resumePriority(item.record.Status) > resumePriority(resume.Status)) {
 			record := item.record
 			resume = &record
 		}
@@ -414,7 +414,7 @@ func (m *Model) startActionRun() tea.Cmd {
 				updates <- actionUpdate{generation: active.generation, err: err, status: execution.StatusFailed, done: true}
 				return
 			}
-			id, err := executor.Submit(ctx, execution.Submission{Request: request, Root: root, Actor: actor, IdempotencyKey: key})
+			id, err := executor.Submit(ctx, execution.Submission{Request: request, Root: root, Subject: executionSubject(active.action), Actor: actor, IdempotencyKey: key})
 			if err != nil {
 				updates <- actionUpdate{generation: active.generation, err: err, status: execution.StatusFailed, done: true}
 				return
@@ -437,7 +437,7 @@ func (m *Model) resumeActionRun(record execution.Record) tea.Cmd {
 	m.actionGeneration++
 	generation := m.actionGeneration
 	m.active = &activeAction{
-		id: record.ExecutionID, action: Action{ID: record.ActionID, Label: string(record.ActionID)},
+		id: record.ExecutionID, action: resumedAction(record),
 		generation: generation, started: record.CreatedAt,
 	}
 	updates := make(chan actionUpdate, 16)
@@ -454,6 +454,25 @@ func (m *Model) resumeActionRun(record execution.Record) tea.Cmd {
 		}
 		return actionUpdateMsg{update: update}
 	}
+}
+
+func executionSubject(item Action) *execution.Subject {
+	if item.Subject.Kind == "" || item.Subject.Key == "" {
+		return nil
+	}
+	return &execution.Subject{
+		Kind: string(item.Subject.Kind), Project: item.Subject.Project, Key: item.Subject.Key, Relation: string(item.ID),
+	}
+}
+
+func resumedAction(record execution.Record) Action {
+	item := Action{ID: record.ActionID, Label: console.HumanizeIdentifier(string(record.ActionID))}
+	if record.Subject != nil {
+		item.ID = action.ID(record.Subject.Relation)
+		item.Label = console.HumanizeIdentifier(record.Subject.Relation)
+		item.Subject = cockpit.ResourceRef{Kind: cockpit.ResourceKind(record.Subject.Kind), Root: record.Root, Project: record.Subject.Project, Key: record.Subject.Key}
+	}
+	return item
 }
 
 func actionUpdateSender(ctx context.Context, updates chan<- actionUpdate) func(actionUpdate) bool {
@@ -653,7 +672,7 @@ func promptPresentation(prompt action.Prompt) (action.PromptMeta, []action.Choic
 func (m *Model) finishActionFailure(runID execution.ExecutionID, result action.Result, lines []string, status execution.Status, err error) tea.Cmd {
 	label := m.active.action.Label
 	errorText := m.errorText(err)
-	if !status.Terminal() {
+	if !status.Final() {
 		status = execution.StatusFailed
 	}
 	m.history.finish(runID, status, lines, errorText, nil)

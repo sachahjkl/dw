@@ -26,7 +26,7 @@ func TestOperationViewSubmitsResourceRelation(t *testing.T) {
 		t.Fatalf("operation identity = %#v", views[0])
 	}
 	submit := views[0].Submit
-	for _, value := range []string{"/operations", `kind:"work-item"`, `project:"default"`, `key:"WI-42"`, `relation:"start"`} {
+	for _, value := range []string{"fetch('/operations'", "response.ok", `kind:"work-item"`, `project:"default"`, `key:"WI-42"`, `relation:"start"`, "dwOperationRejected"} {
 		if !strings.Contains(submit, value) {
 			t.Errorf("submit expression does not contain %q: %s", value, submit)
 		}

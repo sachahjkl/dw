@@ -27,6 +27,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 const pendingOperations = new Map();
+const observedActiveOperations = new Set();
+const settlingOperations = new Set();
 let autoOpenOperation = "";
 
 function operationForms(key) {
@@ -43,7 +45,7 @@ function setOperationState(key, state, label) {
     const text = button?.querySelector(".operation-button-text");
     if (!(button instanceof HTMLButtonElement) || !(text instanceof HTMLElement)) continue;
     form.dataset.operationState = state;
-    button.disabled = ["starting", "queued", "running", "waiting-input", "canceling"].includes(state);
+    button.disabled = button.dataset.operationDisabled === "true" || ["starting", "queued", "running", "waiting-input", "canceling"].includes(state);
     if (text.textContent !== label) text.textContent = label;
   }
 }
@@ -54,7 +56,7 @@ function resetOperation(key) {
     const text = button?.querySelector(".operation-button-text");
     if (!(button instanceof HTMLButtonElement) || !(text instanceof HTMLElement)) continue;
     delete form.dataset.operationState;
-    button.disabled = false;
+    button.disabled = button.dataset.operationDisabled === "true";
     const label = button.dataset.operationLabel || text.textContent;
     if (text.textContent !== label) text.textContent = label;
   }
@@ -68,6 +70,26 @@ function openCompletedResult(key) {
 }
 
 function syncOperations() {
+  const activeNow = new Set();
+  for (const execution of document.querySelectorAll("#actions .execution")) {
+    const key = execution.dataset.operationKey;
+    const status = execution.dataset.status || "";
+    if (!key || !["queued", "running", "waiting-input", "canceling"].includes(status)) continue;
+    activeNow.add(key);
+    const progress = execution.dataset.progress || execution.dataset.statusLabel || "Running";
+    setOperationState(key, status, progress);
+  }
+  for (const key of observedActiveOperations) {
+    if (activeNow.has(key) || pendingOperations.has(key) || settlingOperations.has(key)) continue;
+    const execution = operationExecution(key);
+    if (execution && ["succeeded", "failed", "canceled", "interrupted"].includes(execution.dataset.status || "")) {
+      openCompletedResult(key);
+    }
+    resetOperation(key);
+  }
+  observedActiveOperations.clear();
+  for (const key of activeNow) observedActiveOperations.add(key);
+
   for (const [key, pending] of pendingOperations) {
     const execution = operationExecution(key);
     if (!(execution instanceof HTMLElement)) {
@@ -77,6 +99,7 @@ function syncOperations() {
     const executionID = execution.dataset.executionId || "";
     if (executionID === pending.previousExecution && !pending.started) continue;
     pending.started = true;
+    clearTimeout(pending.timeout);
     const status = execution.dataset.status || "running";
     const progress = execution.dataset.progress || execution.dataset.statusLabel || "Running";
     const terminal = ["succeeded", "failed", "canceled", "interrupted"].includes(status);
@@ -84,7 +107,11 @@ function syncOperations() {
     if (!terminal) continue;
     openCompletedResult(key);
     pendingOperations.delete(key);
-    setTimeout(() => resetOperation(key), 1800);
+    settlingOperations.add(key);
+    setTimeout(() => {
+      settlingOperations.delete(key);
+      resetOperation(key);
+    }, 1800);
   }
   for (const next of document.querySelectorAll("[data-next-operation]")) {
     if (!(next instanceof HTMLButtonElement)) continue;
@@ -102,10 +129,23 @@ document.addEventListener("submit", (event) => {
   if (!(event.target instanceof HTMLFormElement) || !event.target.matches("form.operation")) return;
   const key = event.target.dataset.operationKey;
   if (!key) return;
+  clearTimeout(pendingOperations.get(key)?.timeout);
   const current = operationExecution(key);
-  pendingOperations.set(key, {previousExecution: current?.dataset.executionId || "", started: false});
+  const timeout = setTimeout(() => globalThis.dwOperationRejected(key), 15000);
+  pendingOperations.set(key, {previousExecution: current?.dataset.executionId || "", started: false, timeout});
   setOperationState(key, "starting", "Starting…");
 });
+
+globalThis.dwOperationRejected = (key) => {
+  clearTimeout(pendingOperations.get(key)?.timeout);
+  pendingOperations.delete(key);
+  settlingOperations.add(key);
+  setOperationState(key, "failed", "Could not start");
+  setTimeout(() => {
+    settlingOperations.delete(key);
+    resetOperation(key);
+  }, 1800);
+};
 
 document.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) return;

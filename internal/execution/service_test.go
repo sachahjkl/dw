@@ -152,7 +152,7 @@ func (store *memoryStore) Renew(_ context.Context, executor ExecutorID, ids []Ex
 	defer store.mu.Unlock()
 	for _, id := range ids {
 		item := store.records[id]
-		if item.ExecutorID != executor || item.Record.Status.Terminal() {
+		if item.ExecutorID != executor || item.Record.Status.Final() {
 			return fmt.Errorf("execution.lease-lost:%s", id)
 		}
 		item.LeaseExpiresAt = expires
@@ -263,6 +263,46 @@ func TestServiceSequencesLifecycleAndPreservesPartialResult(t *testing.T) {
 	for index, event := range events {
 		if event.Sequence != EventSequence(index+1) || event.Kind != wantKinds[index] {
 			t.Fatalf("event %d = %#v", index, event)
+		}
+	}
+}
+
+func TestFinalSubscriptionPaginatesCompleteEventBacklog(t *testing.T) {
+	service, _ := newTestService(t, "test.paged-events", func(ctx context.Context, request serviceRequest, runtime action.Runtime) (action.Result, error) {
+		for index := 0; index < 7; index++ {
+			if err := runtime.Emit(ctx, action.EventEnvelope{Action: request.ID, Kind: action.EventProgress, Message: l10n.M("test.progress"), Data: serviceEvent{Value: fmt.Sprint(index)}}); err != nil {
+				return nil, err
+			}
+		}
+		return serviceResult{ID: request.ID}, nil
+	})
+	service.settings.EventFetchLimit = 3
+	id, err := service.Submit(context.Background(), Submission{Request: serviceRequest{ID: "test.paged-events"}, Root: "/root", Actor: testActor(), IdempotencyKey: newTestIdempotencyKey(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Wait(context.Background(), testActor(), id); err != nil {
+		t.Fatal(err)
+	}
+	subscription, err := service.Subscribe(context.Background(), testActor(), id, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []Event
+	for event := range subscription.Events {
+		events = append(events, event)
+	}
+	for streamErr := range subscription.Errors {
+		if streamErr != nil {
+			t.Fatal(streamErr)
+		}
+	}
+	if len(events) != 10 {
+		t.Fatalf("replayed events = %d, want 10", len(events))
+	}
+	for index, event := range events {
+		if event.Sequence != EventSequence(index+1) {
+			t.Fatalf("event %d sequence = %d", index, event.Sequence)
 		}
 	}
 }

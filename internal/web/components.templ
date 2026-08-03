@@ -390,7 +390,7 @@ templ operationControls(csrf string, operations []cockpit.Operation) {
 							}
 						</div>
 					}
-					<button type="submit" class="operation-button" data-operation-label={ operation.Label } disabled?={ operation.Disabled }><span class="operation-spinner" aria-hidden="true"></span><span class="operation-button-text">{ operation.Label }</span></button>
+					<button type="submit" class="operation-button" data-operation-label={ operation.Label } data-operation-disabled={ fmt.Sprint(operation.Disabled) } disabled?={ operation.Disabled }><span class="operation-spinner" aria-hidden="true"></span><span class="operation-button-text">{ operation.Label }</span></button>
 					if operation.DisabledReason != "" {
 						<small>{ operation.DisabledReason }</small>
 					}
@@ -423,7 +423,7 @@ templ executionsSection(executions []executionView, activeCount int) {
 					if item.Failure != "" {
 						<p class="error" role="alert">{ item.Failure }</p>
 					}
-					if item.Status.Terminal() {
+					if item.Status.Final() {
 						<button type="button" class="view-result" data-on:click={ fmt.Sprintf("document.getElementById(%q).showModal()", "result-"+item.ID) }>View result</button>
 					}
 					for _, event := range item.Events {
@@ -479,7 +479,7 @@ templ executionsSection(executions []executionView, activeCount int) {
 templ resultDialogs(executions []executionView) {
 	<div id="action-results">
 		for _, item := range executions {
-			if item.Status.Terminal() {
+			if item.Status.Final() {
 				@resultDialog(item)
 			}
 		}
