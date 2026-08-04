@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/sachahjkl/dw/internal/action"
+	"github.com/sachahjkl/dw/internal/agent"
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/secret"
@@ -103,6 +104,8 @@ func zeroResult(id action.ID, result action.Result) action.Result {
 		return workspaceapp.ItemUpdateResult{Operation: id}
 	case workapp.ActionWorkspaceFinish:
 		return workapp.FinishReport{Execution: &workspace.FinishExecutionReport{Events: []workspace.ActionEvent{{Type: "verifyingFinish", RepositoryCount: 1}}}}
+	case workapp.ActionWorkspaceOpen:
+		return workapp.OpenReport{Workspace: "workspace", Launch: &agent.Launch{FileName: "opencode", Arguments: []string{"workspace"}, Environment: []agent.EnvironmentVariable{{Name: "OPENCODE_CONFIG", Value: "config.jsonc"}}, WorkingDirectory: "workspace"}, Events: []workapp.Event{}}
 	case update.ActionID:
 		return update.Report{Kind: "check", Check: &update.CheckReport{}}
 	default:

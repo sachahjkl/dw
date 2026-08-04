@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/cli/complete"
 	"github.com/sachahjkl/dw/internal/cli/parse"
 	"github.com/sachahjkl/dw/internal/cli/spec"
@@ -134,7 +133,7 @@ func (controller *Controller) dispatch(ctx context.Context, execution Execution,
 	output, err := execution.Console.RenderResultKind(
 		console.NewRenderContextForFormat(execution.Policy, execution.Localizer, format),
 		result,
-		action.ID(route.Key),
+		result.Result.ActionID(),
 		format,
 		projection,
 	)
