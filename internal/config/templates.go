@@ -62,6 +62,15 @@ const (
     "azure-devops": {
       "organization": "https://dev.azure.com/acme",
       "apiVersion": "7.1",
+      "contentFields": {
+        "description": "System.Description",
+        "acceptanceCriteria": "Microsoft.VSTS.Common.AcceptanceCriteria",
+        "workItemTypes": {
+          "Bug": {
+            "description": "Microsoft.VSTS.TCM.ReproSteps"
+          }
+        }
+      },
       "auth": {
         "tenantId": "organizations",
         "clientId": "04b07795-8ddb-461a-bbee-02f9e1bf7b46",

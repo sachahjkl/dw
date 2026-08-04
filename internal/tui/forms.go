@@ -76,6 +76,13 @@ func firstWorkspace(s cockpit.Snapshot) string {
 	}
 	return s.Workspaces[0].Path
 }
+func workspaceAndProject(s cockpit.Snapshot) (string, string) {
+	workspace := firstWorkspace(s)
+	if workspace != "" {
+		return workspace, ""
+	}
+	return "", first(s.Projects)
+}
 func configuredWorkProvider(s cockpit.Snapshot, project string) string {
 	if provider := s.ProjectProviders[project]; provider != "" {
 		return provider
@@ -166,10 +173,11 @@ var formTemplates = [...]FormTemplate{
 		}
 	}},
 	{ID: "workspace-teardown", Label: "tui.form.workspace-teardown", Description: "tui.form.workspace-teardown.desc", ActionID: "workspace.teardown", Fields: func(s cockpit.Snapshot) []FormField {
+		workspace, project := workspaceAndProject(s)
 		return []FormField{
-			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
+			textField("workspace", "tui.field.workspace", workspace, false, workspaceSuggestions(s)),
 			toggleField("continue", "tui.field.continue", false),
-			textField("project", "tui.field.project", first(s.Projects), false, s.Projects),
+			textField("project", "tui.field.project", project, false, s.Projects),
 			textField("workItemIds", "tui.field.work-item", "", false, workItemSuggestions(s)),
 			toggleField("execute", "tui.field.execute", false),
 		}
@@ -184,12 +192,13 @@ var formTemplates = [...]FormTemplate{
 		}
 	}},
 	{ID: "workspace-add-item", Label: "tui.form.workspace-add-item", Description: "tui.form.workspace-add-item.desc", ActionID: "workspace.item.add", Fields: func(s cockpit.Snapshot) []FormField {
+		workspace, project := workspaceAndProject(s)
 		return []FormField{
 			textField("workItemIds", "tui.field.work-items", "", false, workItemSuggestions(s)),
-			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
+			textField("workspace", "tui.field.workspace", workspace, false, workspaceSuggestions(s)),
 			toggleField("continue", "tui.field.continue", false),
 			textField("provider", "tui.field.provider", firstWorkspaceProvider(s), false, s.WorkProviders),
-			textField("project", "tui.field.project", first(s.Projects), false, s.Projects),
+			textField("project", "tui.field.project", project, false, s.Projects),
 			textField("workspaceWorkItemIds", "tui.field.workspace-work-item", "", false, workItemSuggestions(s)),
 			textField("type", "tui.field.type", "", false, []string{"feature", "bugfix", "hotfix", "chore"}),
 			textField("title", "tui.field.title", "", false, nil),
@@ -199,11 +208,12 @@ var formTemplates = [...]FormTemplate{
 		}
 	}},
 	{ID: "workspace-remove-item", Label: "tui.form.workspace-remove-item", Description: "tui.form.workspace-remove-item.desc", ActionID: "workspace.item.remove", Fields: func(s cockpit.Snapshot) []FormField {
+		workspace, project := workspaceAndProject(s)
 		return []FormField{
 			textField("workItemIds", "tui.field.work-items", "", false, workItemSuggestions(s)),
-			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
+			textField("workspace", "tui.field.workspace", workspace, false, workspaceSuggestions(s)),
 			toggleField("continue", "tui.field.continue", false),
-			textField("project", "tui.field.project", first(s.Projects), false, s.Projects),
+			textField("project", "tui.field.project", project, false, s.Projects),
 			textField("workspaceWorkItemIds", "tui.field.workspace-work-item", "", false, workItemSuggestions(s)),
 			toggleField("execute", "tui.field.execute", false),
 		}
@@ -216,11 +226,12 @@ var formTemplates = [...]FormTemplate{
 		}
 	}},
 	{ID: "workspace-rename", Label: "tui.form.workspace-rename", Description: "tui.form.workspace-rename.desc", ActionID: "workspace.rename", Fields: func(s cockpit.Snapshot) []FormField {
+		workspace, project := workspaceAndProject(s)
 		return []FormField{
 			textField("slug", "tui.field.slug", "", true, nil),
-			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
+			textField("workspace", "tui.field.workspace", workspace, false, workspaceSuggestions(s)),
 			toggleField("continue", "tui.field.continue", false),
-			textField("project", "tui.field.project", first(s.Projects), false, s.Projects),
+			textField("project", "tui.field.project", project, false, s.Projects),
 			textField("workItemIds", "tui.field.work-item", "", false, workItemSuggestions(s)),
 			toggleField("execute", "tui.field.execute", false),
 		}
@@ -256,11 +267,12 @@ var formTemplates = [...]FormTemplate{
 		return []FormField{textField("provider", "tui.field.provider", provider, false, s.DataProviders), textField("project", "tui.field.project", project, false, s.Projects), textField("source", "tui.field.data-source", source, false, dataSourceSuggestions(s)), textField("query", "tui.field.query", "", true, nil), textField("maxRows", "tui.field.max-rows", "100", false, nil)}
 	}},
 	{ID: "agent-open", Label: "tui.form.agent-open", Description: "tui.form.agent-open.desc", ActionID: "workspace.open", Fields: func(s cockpit.Snapshot) []FormField {
+		workspace, project := workspaceAndProject(s)
 		return []FormField{
-			textField("workspace", "tui.field.workspace", firstWorkspace(s), false, workspaceSuggestions(s)),
+			textField("workspace", "tui.field.workspace", workspace, false, workspaceSuggestions(s)),
 			toggleField("continue", "tui.field.continue", false),
 			textField("provider", "tui.field.provider", firstWorkspaceProvider(s), false, s.WorkProviders),
-			textField("project", "tui.field.project", first(s.Projects), false, s.Projects),
+			textField("project", "tui.field.project", project, false, s.Projects),
 			textField("workItemIds", "tui.field.work-item", "", false, workItemSuggestions(s)),
 			textField("repository", "tui.field.repository", first(s.Repositories), false, s.Repositories),
 			textField("agent", "tui.field.agent", "", false, []string{"opencode", "cursor", "claude", "codex", "codex-cli", "copilot"}),

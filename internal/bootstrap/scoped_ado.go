@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"github.com/sachahjkl/dw/internal/action"
 	"github.com/sachahjkl/dw/internal/config"
@@ -34,15 +33,15 @@ func (handler scopedHandler) Execute(ctx context.Context, request action.Request
 }
 
 type scopedADOConfiguration struct {
-	Organization string           `json:"organization"`
-	Project      string           `json:"project"`
-	APIVersion   string           `json:"apiVersion"`
-	Auth         *ado.AuthOptions `json:"auth,omitempty"`
+	Organization  string            `json:"organization"`
+	Project       string            `json:"project"`
+	APIVersion    string            `json:"apiVersion"`
+	ContentFields ado.ContentFields `json:"contentFields,omitempty"`
+	Auth          *ado.AuthOptions  `json:"auth,omitempty"`
 }
 
 type scopedADOProvider struct {
-	cache sync.Map
-	base  *ado.Provider
+	base *ado.Provider
 }
 
 func newScopedADOProvider() *scopedADOProvider {
@@ -75,7 +74,7 @@ func (provider *scopedADOProvider) resolve(ctx context.Context, reference work.P
 	options := ado.Options{}
 	var auth *ado.AuthOptions
 	if found {
-		options = ado.Options{Organization: configured.Organization, Project: configured.Project, APIVersion: configured.APIVersion}
+		options = ado.Options{Organization: configured.Organization, Project: configured.Project, APIVersion: configured.APIVersion, ContentFields: configured.ContentFields}
 		auth = configured.Auth
 	}
 	if reference.Organization == "" {
@@ -84,13 +83,7 @@ func (provider *scopedADOProvider) resolve(ctx context.Context, reference work.P
 	if reference.Project == "" {
 		reference.Project = options.Project
 	}
-	key := root + "\x00" + reference.Organization + "\x00" + reference.Project + "\x00" + options.APIVersion
-	if cached, found := provider.cache.Load(key); found {
-		return cached.(*ado.Provider), reference, nil
-	}
-	created := ado.New(options, auth)
-	actual, _ := provider.cache.LoadOrStore(key, created)
-	return actual.(*ado.Provider), reference, nil
+	return ado.New(options, auth), reference, nil
 }
 
 func (provider *scopedADOProvider) AuthStatus(ctx context.Context, project work.ProjectRef) (work.AuthStatus, error) {

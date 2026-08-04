@@ -68,6 +68,15 @@ The product name is a provider value, never a command namespace. Project `workPr
       "organization": "https://dev.azure.com/example",
       "project": "Example",
       "apiVersion": "7.1",
+      "contentFields": {
+        "description": "System.Description",
+        "acceptanceCriteria": "Microsoft.VSTS.Common.AcceptanceCriteria",
+        "workItemTypes": {
+          "Bug": {
+            "description": "Microsoft.VSTS.TCM.ReproSteps"
+          }
+        }
+      },
       "auth": {
         "tenantId": "organizations",
         "clientId": "<public-client-application-id>",
@@ -79,6 +88,14 @@ The product name is a provider value, never a command namespace. Project `workPr
   }
 }
 ```
+
+`contentFields` maps semantic content to stable Azure DevOps reference names. Root fields apply to every work item type.
+
+`workItemTypes` contains partial overrides. Type matching is case-insensitive, and missing override fields inherit root mappings.
+
+The built-in defaults use `System.Description` and `Microsoft.VSTS.Common.AcceptanceCriteria`. Bugs use `Microsoft.VSTS.TCM.ReproSteps` as their description.
+
+Project provider options recursively override workflow options. This supports custom process fields without changing the output contract.
 
 `projects.json` keeps provider selection and repository mapping in generic fields:
 

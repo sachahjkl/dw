@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -135,7 +137,7 @@ func buildRoute(key string, build Builder, project Projector) Route {
 
 func routeUsesJSONOption(key string) bool {
 	switch key {
-	case "doctor", "agent.doctor", "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "provider.list", "provider.show", "provider.capabilities":
+	case "doctor", "agent.doctor", "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "data.read", "provider.list", "provider.show", "provider.capabilities":
 		return true
 	default:
 		return false
@@ -333,7 +335,7 @@ func marshalProjection(value any) (console.OutputFormat, *console.JSONProjection
 }
 
 func buildDoctor(inv *parse.Result) (action.Request, error) {
-	return doctor.Request{Fix: inv.Values.Bool("fix")}, nil
+	return doctor.Request{Root: resolvedRoot(inv.Values), Fix: inv.Values.Bool("fix")}, nil
 }
 func buildInit(inv *parse.Result) (action.Request, error) {
 	return config.InitRequest{Root: resolvedRoot(inv.Values), Profile: inv.Values.String("profile"), DryRun: inv.Values.Bool("dry_run"), NoSave: inv.Values.Bool("no_save")}, nil
@@ -414,32 +416,46 @@ func buildWorkPullRequestList(inv *parse.Result) (action.Request, error) {
 	return workapp.PullRequestsRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, Repositories: repositories}, nil
 }
 func buildWorkItemShow(inv *parse.Result) (action.Request, error) {
-	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
-	return workapp.ItemShowRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id"))}, nil
+	root, project, ids, err := currentWorkSelection(inv.Values)
+	if err != nil {
+		return nil, err
+	}
+	return workapp.ItemShowRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: ids}, nil
 }
 func buildWorkItemStateSet(inv *parse.Result) (action.Request, error) {
 	history := inv.Values.String("history")
 	if history == "" {
 		history = "dw work item state set"
 	}
-	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
-	request := workapp.StatePlanRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id")), State: inv.Values.String("state"), History: history}
+	root, project, ids, err := currentWorkSelection(inv.Values)
+	if err != nil {
+		return nil, err
+	}
+	request := workapp.StatePlanRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: ids, State: inv.Values.String("state"), History: history}
 	return workapp.StateSetRequest{Request: request, Approved: inv.Values.Bool("yes")}, nil
 }
 func buildWorkItemDoing(inv *parse.Result) (action.Request, error) {
-	root := resolvedRoot(inv.Values)
+	root, project, ids, err := currentWorkSelection(inv.Values)
+	if err != nil {
+		return nil, err
+	}
 	states, _, _ := taskStartSettings(root)
-	project := inv.Values.String("project")
-	request := workapp.DoingRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id")), States: states}
+	request := workapp.DoingRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: ids, States: states}
 	return workapp.DoingActionRequest{Request: request, Approved: inv.Values.Bool("yes")}, nil
 }
 func buildWorkContextShow(inv *parse.Result) (action.Request, error) {
-	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
-	return workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: split(inv.Values.String("id")), Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Int("comments") > 0, Mode: workapp.ContextRaw}, nil
+	root, project, ids, err := currentWorkSelection(inv.Values)
+	if err != nil {
+		return nil, err
+	}
+	return workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: ids, Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Int("comments") > 0, Mode: workapp.ContextRaw}, nil
 }
 func buildWorkContextAI(inv *parse.Result) (action.Request, error) {
-	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
-	request := workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Organization: inv.Values.String("organization"), Project: project, IDs: split(inv.Values.String("id")), Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Bool("include_comments"), Mode: workapp.ContextRich}
+	root, project, ids, err := currentWorkSelection(inv.Values)
+	if err != nil {
+		return nil, err
+	}
+	request := workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Organization: inv.Values.String("organization"), Project: project, IDs: ids, Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Bool("include_comments"), Mode: workapp.ContextRich}
 	return workapp.AIContextRequest{Request: request}, nil
 }
 func buildWorkChangelog(inv *parse.Result) (action.Request, error) {
@@ -555,7 +571,7 @@ func buildUpgrade(inv *parse.Result) (action.Request, error) {
 		return nil, err
 	}
 	settings := update.DefaultConfig()
-	if configured := config.LoadWorkflowConfig(config.ResolveRoot("")).Updates; configured != nil {
+	if configured := config.LoadWorkflowConfig(resolvedRoot(inv.Values)).Updates; configured != nil {
 		settings = *configured
 	}
 	return update.Request{Check: inv.Values.Bool("check"), RID: inv.Values.String("rid"), Config: settings, ExecutablePath: executable}, nil
@@ -803,7 +819,17 @@ func selectRepositoryPairs(configuredLocal, configuredProvider, requested []stri
 	return local, provider
 }
 
-func resolvedRoot(values parse.Values) string { return config.ResolveRoot(values.String("root")) }
+func resolvedRoot(values parse.Values) string {
+	if values.Has("root") {
+		return config.ResolveRoot(values.String("root"))
+	}
+	if currentDirectory, err := os.Getwd(); err == nil {
+		if root, found := config.FindRoot(currentDirectory); found {
+			return root
+		}
+	}
+	return config.ResolveRoot("")
+}
 
 func selectedWorkProvider(values parse.Values, root, project string) string {
 	if provider := strings.TrimSpace(values.String("provider")); provider != "" {
@@ -839,5 +865,50 @@ func workspaceSelection(values parse.Values) (workspaceapp.Selection, error) {
 		return workspaceapp.Selection{}, err
 	}
 	project := values.String("project")
-	return workspaceapp.Selection{Root: resolvedRoot(values), Workspace: optional(values, "workspace"), Project: project, IDs: ids, Continue: values.Bool("continue") || project != "" || len(ids) != 0}, nil
+	return workspaceapp.Selection{Root: resolvedRoot(values), Workspace: optional(values, "workspace"), Project: project, IDs: ids, Continue: values.Bool("continue")}, nil
+}
+
+func currentWorkSelection(values parse.Values) (string, string, []string, error) {
+	root, project, ids := resolvedRoot(values), values.String("project"), split(values.String("id"))
+	if len(ids) != 0 {
+		return root, project, ids, nil
+	}
+	currentDirectory, err := os.Getwd()
+	if err != nil {
+		return "", "", nil, err
+	}
+	current, err := workspace.Current(currentDirectory)
+	if err != nil {
+		return "", "", nil, usage(l10n.NewError("cli.error.work-item-ids-required"))
+	}
+	currentRoot, found := config.FindRoot(current.Workspace)
+	if !found {
+		currentRoot, found = workspace.Root(current.Workspace)
+	}
+	if found && !samePath(root, currentRoot) {
+		return "", "", nil, usage(l10n.NewError("cli.error.current-workspace-root-mismatch", l10n.A("root", root)))
+	}
+	if project != "" && !strings.EqualFold(strings.TrimSpace(project), strings.TrimSpace(current.Project)) {
+		return "", "", nil, usage(l10n.NewError("cli.error.current-workspace-project-mismatch", l10n.A("project", project)))
+	}
+	if project == "" {
+		project = current.Project
+	}
+	for _, item := range current.WorkItems {
+		if id := strings.TrimSpace(item.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 && current.PrimaryWorkItemID != "" {
+		ids = append(ids, current.PrimaryWorkItemID)
+	}
+	return root, project, ids, nil
+}
+
+func samePath(left, right string) bool {
+	left, right = filepath.Clean(config.NormalizePathLossy(left)), filepath.Clean(config.NormalizePathLossy(right))
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
 }

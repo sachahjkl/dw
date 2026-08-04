@@ -32,6 +32,23 @@ func ResolveRoot(explicitRoot string) string {
 	return NormalizePathLossy(DefaultRoot())
 }
 
+func FindRoot(start string) (string, bool) {
+	path, err := filepath.Abs(start)
+	if err != nil {
+		return "", false
+	}
+	for {
+		if info, statErr := os.Stat(filepath.Join(path, "config", "workflow.json")); statErr == nil && !info.IsDir() {
+			return NormalizePathLossy(path), true
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return "", false
+		}
+		path = parent
+	}
+}
+
 // NormalizePath expands the leading Unix-style home marker and both Windows
 // and shell environment-variable syntaxes, makes the path absolute, and
 // lexically removes dot segments. It deliberately does not stat the path.

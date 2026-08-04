@@ -177,6 +177,17 @@ func FindWorkspacePath(start string) (string, bool) {
 	}
 }
 
+func Root(workspacePath string) (string, bool) {
+	workspacePath = filepath.Clean(workspacePath)
+	workspaces := filepath.Dir(workspacePath)
+	project := filepath.Dir(workspaces)
+	projects := filepath.Dir(project)
+	if !strings.EqualFold(filepath.Base(workspaces), "workspaces") || !strings.EqualFold(filepath.Base(projects), "projects") {
+		return "", false
+	}
+	return filepath.Dir(projects), true
+}
+
 func Discover(root string) []Summary {
 	projects, err := os.ReadDir(filepath.Join(root, "projects"))
 	if err != nil {
@@ -258,17 +269,22 @@ func Resolve(root, explicit, project string, ids []string, useLatest bool, curre
 	if strings.TrimSpace(explicit) != "" {
 		return filepath.Clean(explicit), nil
 	}
-	if !useLatest {
+	hasSelectors := strings.TrimSpace(project) != "" || len(ids) != 0
+	if !useLatest && !hasSelectors {
 		if path, ok := FindWorkspacePath(currentDirectory); ok {
-			return path, nil
+			if ensurePathWithin(root, path) == nil {
+				return path, nil
+			}
 		}
-		return "", ErrNoCurrentWorkspace
 	}
 	matches := Filter(Discover(root), project, ids)
 	if len(matches) == 0 {
 		return "", ErrNoWorkspace
 	}
-	return matches[0].Path, nil
+	if useLatest || len(matches) == 1 {
+		return matches[0].Path, nil
+	}
+	return "", localized("workspace.error.ambiguous-workspace")
 }
 
 func (m Manifest) ParentWorkItems() []WorkItem {

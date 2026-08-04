@@ -91,17 +91,12 @@ func workspaceGrammar(b *builder) *Command {
 		b.option("workspace.finish", "json", Bool, "Emit the deterministic JSON report."),
 	})
 	handoff := workspaceHandoffGrammar(b)
-	teardown := b.command("teardown", "workspace.teardown", "Remove worktrees and clean up a task workspace.", []Argument{
-		completion(b.option("workspace.teardown", "workspace", String, "Workspace path to remove."), CompleteWorkspace),
-		b.option("workspace.teardown", "root", String, "DevWorkflow root to use."),
-		completion(b.option("workspace.teardown", "project", String, "Configured project used to resolve the workspace."), CompleteProject),
-		completion(b.option("workspace.teardown", "work-item", String, "Work item used to resolve the workspace."), CompleteWorkItem),
-		b.option("workspace.teardown", "continue", Bool, "Resume the most recent matching task workspace."),
+	teardown := b.command("teardown", "workspace.teardown", "Remove worktrees and clean up a task workspace.", append(workspaceResolution(b, "workspace.teardown", "Workspace path to remove.", "Resume the most recent matching task workspace."),
 		b.option("workspace.teardown", "execute", Bool, "Actually remove worktrees and the workspace; without this flag, show the plan."),
 		b.option("workspace.teardown", "yes", Bool, "Confirm destructive removal with --execute."),
 		b.option("workspace.teardown", "json", Bool, "Emit the plan/result as deterministic JSON."),
 		b.positional("workspace.teardown", "positional_work_item", "WORK_ITEM", String, false, "Positional work item alias used to resolve the workspace."),
-	})
+	))
 	prune := b.command("prune", "workspace.prune", "Clean up workspaces whose work items are finished.", []Argument{
 		b.option("workspace.prune", "root", String, "DevWorkflow root to scan."),
 		completion(b.option("workspace.prune", "project", String, "Configured project to filter by."), CompleteProject),
@@ -137,17 +132,11 @@ func workspaceItemGrammar(b *builder) *Command {
 			b.option("workspace.item.add", "execute", Bool, "Actually apply the change; without this flag, show the plan."), b.option("workspace.item.add", "json", Bool, "Emit the plan/result as deterministic JSON."),
 			b.positional("workspace.item.add", "positional_work_item", "WORK_ITEM", String, false, "Positional work item alias used to resolve the workspace."),
 		)...)),
-		b.command("remove", "workspace.item.remove", "Remove work items from the current workspace.", []Argument{
-			b.positional("workspace.item.remove", "work_item_ids", "WORK_ITEM_IDS", String, false, "Work item IDs to remove, separated by commas."),
-			completion(b.option("workspace.item.remove", "workspace", String, "Workspace path to modify."), CompleteWorkspace),
-			b.option("workspace.item.remove", "root", String, "DevWorkflow root to use."),
-			completion(b.option("workspace.item.remove", "project", String, "Configured project used to resolve the workspace."), CompleteProject),
-			completion(b.option("workspace.item.remove", "work-item", String, "Work item used to resolve the workspace."), CompleteWorkItem),
-			b.option("workspace.item.remove", "continue", Bool, "Resume the most recent workspace."),
+		b.command("remove", "workspace.item.remove", "Remove work items from the current workspace.", append([]Argument{b.positional("workspace.item.remove", "work_item_ids", "WORK_ITEM_IDS", String, false, "Work item IDs to remove, separated by commas.")}, append(workspaceResolution(b, "workspace.item.remove", "Workspace path to modify.", "Resume the most recent workspace."),
 			b.option("workspace.item.remove", "execute", Bool, "Actually apply the change; without this flag, show the plan."),
 			b.option("workspace.item.remove", "json", Bool, "Emit the plan/result as deterministic JSON."),
 			b.positional("workspace.item.remove", "positional_work_item", "WORK_ITEM", String, false, "Positional work item alias used to resolve the workspace."),
-		}),
+		)...)),
 	)
 }
 

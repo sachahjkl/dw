@@ -72,6 +72,12 @@ func (p *Provider) getAIContext(ctx context.Context, options Options, id string,
 
 func mapAIContext(root map[string]any, options Options, summary bool, comments []AIContextComment) AIContextItem {
 	fields := object(root["fields"])
+	workItemType := fieldText(fields, "System.WorkItemType")
+	workItemTypeName := ""
+	if workItemType != nil {
+		workItemTypeName = *workItemType
+	}
+	contentFields := contentFieldMapping(options, workItemTypeName)
 	idValue := elementText(root["id"])
 	id := ""
 	if idValue != nil {
@@ -91,10 +97,10 @@ func mapAIContext(root map[string]any, options Options, summary bool, comments [
 	return AIContextItem{
 		SchemaVersion: AIContextVersion,
 		WorkItem: AIContextWorkItem{
-			ID: id, URL: stringPointer(WorkItemWebURL(options, id)), Title: fieldText(fields, "System.Title"), Type: fieldText(fields, "System.WorkItemType"), State: fieldText(fields, "System.State"), AssignedTo: identityText(fields["System.AssignedTo"]), AreaPath: fieldText(fields, "System.AreaPath"), IterationPath: fieldText(fields, "System.IterationPath"), Tags: splitTags(fieldText(fields, "System.Tags")),
+			ID: id, URL: stringPointer(WorkItemWebURL(options, id)), Title: fieldText(fields, "System.Title"), Type: workItemType, State: fieldText(fields, "System.State"), AssignedTo: identityText(fields["System.AssignedTo"]), AreaPath: fieldText(fields, "System.AreaPath"), IterationPath: fieldText(fields, "System.IterationPath"), Tags: splitTags(fieldText(fields, "System.Tags")),
 		},
 		Core:        AIContextCore{CreatedBy: identityText(fields["System.CreatedBy"]), CreatedDate: fieldText(fields, "System.CreatedDate"), ChangedBy: identityText(fields["System.ChangedBy"]), ChangedDate: fieldText(fields, "System.ChangedDate"), Priority: fieldText(fields, "Microsoft.VSTS.Common.Priority"), ValueArea: fieldText(fields, "Microsoft.VSTS.Common.ValueArea")},
-		Content:     AIContextContent{Description: cleanText(fieldText(fields, "System.Description")), AcceptanceCriteria: cleanText(fieldText(fields, "Microsoft.VSTS.Common.AcceptanceCriteria")), ProductContext: extractProductContext(fields)},
+		Content:     AIContextContent{Description: cleanText(fieldText(fields, contentFields.Description)), AcceptanceCriteria: cleanText(fieldText(fields, contentFields.AcceptanceCriteria)), ProductContext: extractProductContext(fields)},
 		Links:       AIContextLinks{ParentIDs: distinctRelationIDs(relationsOrRaw(root), "parent"), ChildIDs: distinctRelationIDs(relationsOrRaw(root), "child"), PredecessorIDs: distinctRelationIDs(relationsOrRaw(root), "predecessor"), SuccessorIDs: distinctRelationIDs(relationsOrRaw(root), "successor")},
 		Attachments: AIContextAttachments{DirectoryHint: attachmentDirectory, Items: attachments}, Relations: relations, Comments: comments,
 	}

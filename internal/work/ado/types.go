@@ -2,8 +2,11 @@ package ado
 
 import (
 	"encoding/json"
-	"github.com/sachahjkl/dw/internal/l10n"
+	"fmt"
 	"strconv"
+	"strings"
+
+	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 const (
@@ -17,18 +20,80 @@ const (
 )
 
 type Options struct {
-	Organization string `json:"organization"`
-	Project      string `json:"project"`
-	APIVersion   string `json:"apiVersion"`
+	Organization  string        `json:"organization"`
+	Project       string        `json:"project"`
+	APIVersion    string        `json:"apiVersion"`
+	ContentFields ContentFields `json:"contentFields,omitempty"`
+}
+
+type ContentFieldMapping struct {
+	Description        string `json:"description,omitempty"`
+	AcceptanceCriteria string `json:"acceptanceCriteria,omitempty"`
+}
+
+type ContentFields struct {
+	ContentFieldMapping
+	WorkItemTypes map[string]ContentFieldMapping `json:"workItemTypes,omitempty"`
+}
+
+func (fields *ContentFields) UnmarshalJSON(data []byte) error {
+	type contentFields ContentFields
+	var value contentFields
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return err
+	}
+	if err := validateContentReference(members, "description", value.Description); err != nil {
+		return err
+	}
+	if err := validateContentReference(members, "acceptanceCriteria", value.AcceptanceCriteria); err != nil {
+		return err
+	}
+	seen := make(map[string]string, len(value.WorkItemTypes))
+	for name, mapping := range value.WorkItemTypes {
+		normalized := strings.ToLower(strings.TrimSpace(name))
+		if normalized == "" {
+			return fmt.Errorf("azure-devops contentFields work item type cannot be empty")
+		}
+		if previous, exists := seen[normalized]; exists {
+			return fmt.Errorf("azure-devops contentFields contains duplicate work item types %q and %q", previous, name)
+		}
+		seen[normalized] = name
+		var typeMembers map[string]json.RawMessage
+		if rawTypes, ok := members["workItemTypes"]; ok {
+			var types map[string]json.RawMessage
+			_ = json.Unmarshal(rawTypes, &types)
+			_ = json.Unmarshal(types[name], &typeMembers)
+		}
+		if err := validateContentReference(typeMembers, "description", mapping.Description); err != nil {
+			return fmt.Errorf("azure-devops contentFields work item type %q: %w", name, err)
+		}
+		if err := validateContentReference(typeMembers, "acceptanceCriteria", mapping.AcceptanceCriteria); err != nil {
+			return fmt.Errorf("azure-devops contentFields work item type %q: %w", name, err)
+		}
+	}
+	*fields = ContentFields(value)
+	return nil
+}
+
+func validateContentReference(members map[string]json.RawMessage, name, value string) error {
+	if _, configured := members[name]; configured && strings.TrimSpace(value) == "" {
+		return fmt.Errorf("azure-devops contentFields %s cannot be empty", name)
+	}
+	return nil
 }
 
 // UnmarshalJSON keeps both persisted organization spellings compatible.
 func (o *Options) UnmarshalJSON(data []byte) error {
 	var value struct {
-		Organization    string `json:"organization"`
-		OrganizationURL string `json:"organizationUrl"`
-		Project         string `json:"project"`
-		APIVersion      string `json:"apiVersion"`
+		Organization    string        `json:"organization"`
+		OrganizationURL string        `json:"organizationUrl"`
+		Project         string        `json:"project"`
+		APIVersion      string        `json:"apiVersion"`
+		ContentFields   ContentFields `json:"contentFields"`
 	}
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
@@ -39,6 +104,7 @@ func (o *Options) UnmarshalJSON(data []byte) error {
 	}
 	o.Project = value.Project
 	o.APIVersion = value.APIVersion
+	o.ContentFields = value.ContentFields
 	if o.APIVersion == "" {
 		o.APIVersion = DefaultAPIVersion
 	}

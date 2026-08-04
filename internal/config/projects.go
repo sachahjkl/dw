@@ -154,20 +154,34 @@ func ResolveProviderOptions[T any](workflow WorkflowConfig, project ProjectConfi
 }
 
 func mergeProviderValues(base, override wirejson.Value) wirejson.Value {
+	return mergeProviderValuesAt(base, override, nil)
+}
+
+func mergeProviderValuesAt(base, override wirejson.Value, path []string) wirejson.Value {
 	if base.Kind() != wirejson.Object || override.Kind() != wirejson.Object {
 		return override.Clone()
 	}
 	merged := base.Clone()
 	members, _ := override.Members()
 	for _, member := range members {
-		current, exists := merged.Lookup(member.Name)
+		name := member.Name
+		if len(path) >= 2 && strings.EqualFold(path[len(path)-2], "contentFields") && strings.EqualFold(path[len(path)-1], "workItemTypes") {
+			existingMembers, _ := merged.Members()
+			for _, existing := range existingMembers {
+				if strings.EqualFold(strings.TrimSpace(existing.Name), strings.TrimSpace(name)) {
+					name = existing.Name
+					break
+				}
+			}
+		}
+		current, exists := merged.Lookup(name)
 		var value wirejson.Value
 		if exists {
-			value = mergeProviderValues(*current, member.Value)
+			value = mergeProviderValuesAt(*current, member.Value, append(path, name))
 		} else {
 			value = member.Value.Clone()
 		}
-		_ = merged.Set(member.Name, value)
+		_ = merged.Set(name, value)
 	}
 	return merged
 }

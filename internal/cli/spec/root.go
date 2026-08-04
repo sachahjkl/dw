@@ -38,6 +38,7 @@ func Root(localizer l10n.Localizer) *Command {
 		b.command("version", "version", "Show the CLI version.", nil),
 		b.command("guide", "guide", "Explain the getting-started flow.", nil),
 		b.command("doctor", "doctor", "Diagnose machine prerequisites and local configuration.", []Argument{
+			b.option("doctor", "root", String, "DevWorkflow root to diagnose."),
 			b.option("doctor", "fix", Bool, "Apply automatic fixes."),
 			b.option("doctor", "json", Bool, "Emit the deterministic JSON report."),
 		}),
@@ -57,6 +58,7 @@ func Root(localizer l10n.Localizer) *Command {
 		agentGrammar(b), completionGrammar(b), configGrammar(b),
 		workGrammar(b), workspaceGrammar(b), dataGrammar(b), providerGrammar(b), secretGrammar(b), webGrammar(b),
 		b.command("upgrade", "upgrade", "Upgrade the dw binary.", []Argument{
+			b.option("upgrade", "root", String, "DevWorkflow root containing update settings."),
 			conflict(b.option("upgrade", "check", Bool, "Check without updating."), "rid"),
 			conflict(b.option("upgrade", "rid", String, "Artifact runtime identifier."), "check"),
 		}),
