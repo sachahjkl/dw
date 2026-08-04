@@ -299,9 +299,6 @@ func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink Ev
 		return ChildReport{}, problem(msgWorkspaceParentMissing, "workspace has no parent work item")
 	}
 	parent := parents[0]
-	if !workspace.RequiresChildTasks(parent.Type) {
-		return ChildReport{}, problem(msgChildUnsupported, "this command is only available for User Story and Anomalie")
-	}
 	provider, err := s.provider(s.providerName(request.Provider, request.Root, manifest.Project))
 	if err != nil {
 		return ChildReport{}, err

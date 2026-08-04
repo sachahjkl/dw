@@ -464,9 +464,6 @@ func (e *Engine) CreateChildTask(ctx context.Context, workspace, repository, tit
 		return ChildTask{}, Manifest{}, err
 	}
 	parent := manifest.ParentWorkItems()[0]
-	if !RequiresChildTasks(parent.Type) {
-		return ChildTask{}, Manifest{}, localized("workspace.error.child-task-type")
-	}
 	task, err := e.Work.CreateChildTask(ctx, manifest.Project, parent, repository, ChildTaskTitle(repository, title))
 	if err != nil {
 		return ChildTask{}, Manifest{}, err
@@ -480,10 +477,6 @@ func (e *Engine) CreateChildTask(ctx context.Context, workspace, repository, tit
 		return ChildTask{}, Manifest{}, localizedOperation("update child task handoff", err)
 	}
 	return task, manifest, nil
-}
-func RequiresChildTasks(kind *string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(valueOrEmpty(kind)))
-	return normalized == "user story" || normalized == "anomalie"
 }
 func ChildTaskTitle(repository, title string) string {
 	prefix := strings.ToUpper(repository)
@@ -613,6 +606,9 @@ func ApplySnapshots(workspace string, snapshots []WorkItem) (Manifest, error) {
 	manifest.WorkItems = snapshots
 	if err := WriteManifest(filepath.Join(workspace, ManifestFile), manifest); err != nil {
 		return Manifest{}, localizedOperation("write synchronized manifest", err)
+	}
+	if err := WriteGeneratedFiles(workspace, manifest); err != nil {
+		return Manifest{}, localizedOperation("write synchronized workspace files", err)
 	}
 	return manifest, nil
 }

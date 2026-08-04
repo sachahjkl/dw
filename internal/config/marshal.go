@@ -26,6 +26,10 @@ func workflowWireValue(config WorkflowConfig) (wirejson.Value, error) {
 	if err != nil {
 		return wirejson.Value{}, err
 	}
+	members, err = appendJSONMember(members, "preflight", config.Preflight)
+	if err != nil {
+		return wirejson.Value{}, err
+	}
 	members, err = appendJSONMember(members, "taskStart", config.TaskStart)
 	if err != nil {
 		return wirejson.Value{}, err
@@ -267,6 +271,8 @@ func isNilJSONValue(value any) bool {
 	case *UpdateOptions:
 		return value == nil
 	case *TaskStartOptions:
+		return value == nil
+	case *PreflightOptions:
 		return value == nil
 	case *DatabaseDefaults:
 		return value == nil

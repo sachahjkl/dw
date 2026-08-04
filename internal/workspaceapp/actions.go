@@ -326,12 +326,26 @@ func requestIDs(ctx context.Context, runtime action.Runtime, ids []string) ([]st
 	return ids, nil
 }
 
-func (service Service) preflight(_ context.Context, request PreflightRequest, _ action.Runtime) (action.Result, error) {
-	_, path, err := service.resolve(request.Selection)
+func (service Service) preflight(ctx context.Context, request PreflightRequest, _ action.Runtime) (action.Result, error) {
+	root, path, err := service.resolve(request.Selection)
 	if err != nil {
 		return nil, err
 	}
-	report, err := workspace.BuildPreflight(path, request.Files)
+	workflow, err := config.LoadWorkflowConfigChecked(root)
+	if err != nil {
+		return nil, err
+	}
+	var requiredChildTaskTypes []string
+	if workflow.Preflight != nil {
+		requiredChildTaskTypes = workflow.Preflight.RequireChildTaskForWorkItemTypes
+	}
+	var loader workspace.PreflightWorkItemLoader
+	if service.workItems != nil {
+		loader = func(project string, ids []string) ([]workspace.WorkItem, error) {
+			return service.workItems.LoadWorkspaceItems(ctx, "", root, project, ids)
+		}
+	}
+	report, err := workspace.BuildPreflight(path, request.Files, requiredChildTaskTypes, loader)
 	return PreflightResult{PreflightReport: report}, err
 }
 

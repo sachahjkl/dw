@@ -2,11 +2,13 @@ package workspace
 
 import (
 	"encoding/json"
-	"github.com/sachahjkl/dw/internal/l10n"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 func ParseHandoff(text, expectedRepository string) (HandoffSummary, error) {
@@ -166,7 +168,10 @@ func DiscoverAIContextFiles(workspace string) []string {
 	sort.Strings(result)
 	return result
 }
-func BuildPreflight(workspace string, files []string) (PreflightReport, error) {
+
+type PreflightWorkItemLoader func(project string, ids []string) ([]WorkItem, error)
+
+func BuildPreflight(workspace string, files, requiredChildTaskTypes []string, loadWorkItems PreflightWorkItemLoader) (PreflightReport, error) {
 	manifest, err := ReadManifest(filepath.Join(workspace, ManifestFile))
 	if err != nil {
 		return PreflightReport{}, err
@@ -178,55 +183,131 @@ func BuildPreflight(workspace string, files []string) (PreflightReport, error) {
 		return PreflightReport{}, localized("workspace.error.preflight-no-context")
 	}
 	issues := make([]PreflightIssue, 0)
+	contexts := make(map[string]aiContext)
+	reliableTypes := make(map[string]bool)
 	for _, path := range files {
 		data, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return PreflightReport{}, localizedCause("workspace.error.preflight-context-missing", readErr, l10n.A("path", path))
 		}
-		var contextItem aiContext
-		if err = json.Unmarshal(data, &contextItem); err != nil {
-			return PreflightReport{}, localizedCause("workspace.error.preflight-context-invalid", err, l10n.A("path", path))
+		contextItems, decodeErr := decodeAIContexts(data)
+		if decodeErr != nil {
+			return PreflightReport{}, localizedCause("workspace.error.preflight-context-invalid", decodeErr, l10n.A("path", path))
 		}
-		var manifestItem *WorkItem
-		for _, item := range manifest.ParentWorkItems() {
-			if item.ID == contextItem.WorkItem.ID {
-				copy := item
-				manifestItem = &copy
+		for _, contextItem := range contextItems {
+			contexts[contextItem.WorkItem.ID] = contextItem
+			reliableTypes[contextItem.WorkItem.ID] = true
+			var manifestItem *WorkItem
+			for _, item := range manifest.ParentWorkItems() {
+				if item.ID == contextItem.WorkItem.ID {
+					copy := item
+					manifestItem = &copy
+					break
+				}
+			}
+			if manifestItem != nil {
+				reasons := make([]string, 0)
+				if !pointerEqual(manifestItem.Title, contextItem.WorkItem.Title) {
+					reasons = append(reasons, "title")
+				}
+				if !pointerEqual(manifestItem.State, contextItem.WorkItem.State) {
+					reasons = append(reasons, "state")
+				}
+				typeMismatch := !pointerEqual(manifestItem.Type, contextItem.WorkItem.Type)
+				if typeMismatch {
+					reasons = append(reasons, "kind")
+					reliableTypes[contextItem.WorkItem.ID] = false
+				}
+				if len(reasons) > 0 {
+					detail, _ := json.Marshal(struct {
+						Kind    string   `json:"kind"`
+						Reasons []string `json:"reasons"`
+					}{"workspace-provider-context-stale", reasons})
+					severity := "warning"
+					if typeMismatch && (containsTrimmedFold(requiredChildTaskTypes, valueOrEmpty(manifestItem.Type)) || containsTrimmedFold(requiredChildTaskTypes, valueOrEmpty(contextItem.WorkItem.Type))) {
+						severity = "blocking"
+					}
+					issues = append(issues, PreflightIssue{Code: "workspace.provider-context.stale", Severity: severity, WorkItemID: contextItem.WorkItem.ID, Detail: detail, RelatedIDs: []string{contextItem.WorkItem.ID}})
+				}
+			}
+			if len(contextItem.Attachments.Items) > 0 {
+				names := make([]string, 0)
+				for _, attachment := range contextItem.Attachments.Items {
+					if attachment.Name != nil {
+						names = append(names, *attachment.Name)
+					}
+				}
+				detail, _ := json.Marshal(struct {
+					Kind          string   `json:"kind"`
+					DirectoryHint string   `json:"directoryHint"`
+					Names         []string `json:"names"`
+				}{"provider-attachments-present", contextItem.Attachments.DirectoryHint, names})
+				issues = append(issues, PreflightIssue{Code: "provider.attachments.present", Severity: "warning", WorkItemID: contextItem.WorkItem.ID, Detail: detail, RelatedIDs: []string{contextItem.WorkItem.ID}})
+			}
+		}
+	}
+	childIDs := make([]string, 0)
+	for _, item := range manifest.ParentWorkItems() {
+		if !containsTrimmedFold(requiredChildTaskTypes, valueOrEmpty(item.Type)) || !reliableTypes[item.ID] {
+			continue
+		}
+		for _, id := range contexts[item.ID].Links.ChildIDs {
+			if !containsFold(childIDs, id) {
+				childIDs = append(childIDs, id)
+			}
+		}
+	}
+	childTypes := make(map[string]string, len(childIDs))
+	for _, id := range childIDs {
+		if contextItem, ok := contexts[id]; ok {
+			childTypes[id] = valueOrEmpty(contextItem.WorkItem.Type)
+		}
+	}
+	missingChildIDs := make([]string, 0)
+	for _, id := range childIDs {
+		if _, ok := childTypes[id]; !ok {
+			missingChildIDs = append(missingChildIDs, id)
+		}
+	}
+	if len(missingChildIDs) > 0 && loadWorkItems != nil {
+		loaded, loadErr := loadWorkItems(manifest.Project, missingChildIDs)
+		if loadErr != nil {
+			return PreflightReport{}, loadErr
+		}
+		for _, item := range loaded {
+			childTypes[item.ID] = valueOrEmpty(item.Type)
+		}
+	}
+	for _, item := range manifest.ParentWorkItems() {
+		contextItem, found := contexts[item.ID]
+		if !containsTrimmedFold(requiredChildTaskTypes, valueOrEmpty(item.Type)) {
+			continue
+		}
+		if !found {
+			detail, _ := json.Marshal(struct {
+				Kind         string `json:"kind"`
+				WorkItemType string `json:"workItemType"`
+			}{"provider-context-missing", valueOrEmpty(item.Type)})
+			issues = append(issues, PreflightIssue{Code: "workspace.provider-context.missing", Severity: "blocking", WorkItemID: item.ID, Detail: detail, RelatedIDs: []string{item.ID}})
+			continue
+		}
+		if !reliableTypes[item.ID] {
+			continue
+		}
+		hasTask := false
+		for _, id := range contextItem.Links.ChildIDs {
+			if strings.EqualFold(strings.TrimSpace(childTypes[id]), "Task") {
+				hasTask = true
 				break
 			}
 		}
-		if manifestItem != nil {
-			reasons := make([]string, 0)
-			if !pointerEqual(manifestItem.Title, contextItem.WorkItem.Title) {
-				reasons = append(reasons, "title")
-			}
-			if !pointerEqual(manifestItem.State, contextItem.WorkItem.State) {
-				reasons = append(reasons, "state")
-			}
-			if !pointerEqual(manifestItem.Type, contextItem.WorkItem.Type) {
-				reasons = append(reasons, "kind")
-			}
-			if len(reasons) > 0 {
-				detail, _ := json.Marshal(struct {
-					Kind    string   `json:"kind"`
-					Reasons []string `json:"reasons"`
-				}{"workspace-provider-context-stale", reasons})
-				issues = append(issues, PreflightIssue{Code: "workspace.provider-context.stale", Severity: "warning", WorkItemID: contextItem.WorkItem.ID, Detail: detail, RelatedIDs: []string{contextItem.WorkItem.ID}})
-			}
-		}
-		if len(contextItem.Attachments.Items) > 0 {
-			names := make([]string, 0)
-			for _, attachment := range contextItem.Attachments.Items {
-				if attachment.Name != nil {
-					names = append(names, *attachment.Name)
-				}
-			}
+		if !hasTask {
 			detail, _ := json.Marshal(struct {
-				Kind          string   `json:"kind"`
-				DirectoryHint string   `json:"directoryHint"`
-				Names         []string `json:"names"`
-			}{"provider-attachments-present", contextItem.Attachments.DirectoryHint, names})
-			issues = append(issues, PreflightIssue{Code: "provider.attachments.present", Severity: "warning", WorkItemID: contextItem.WorkItem.ID, Detail: detail, RelatedIDs: []string{contextItem.WorkItem.ID}})
+				Kind                   string `json:"kind"`
+				WorkItemType           string `json:"workItemType"`
+				RequiredChildTaskCount int    `json:"requiredChildTaskCount"`
+			}{"required-child-task-missing", valueOrEmpty(item.Type), 1})
+			issues = append(issues, PreflightIssue{Code: "work-item.child-task.missing", Severity: "blocking", WorkItemID: item.ID, Detail: detail, RelatedIDs: []string{item.ID}})
 		}
 	}
 	blocking := false
@@ -255,6 +336,43 @@ type aiContext struct {
 			Name *string `json:"name"`
 		} `json:"items"`
 	} `json:"attachments"`
+	Links struct {
+		ChildIDs []string `json:"childIds"`
+	} `json:"links"`
+}
+
+func decodeAIContexts(data []byte) ([]aiContext, error) {
+	var items []aiContext
+	if strings.HasPrefix(strings.TrimSpace(string(data)), "[") {
+		if err := json.Unmarshal(data, &items); err != nil {
+			return nil, err
+		}
+		return validateAIContexts(items)
+	}
+	var item aiContext
+	if err := json.Unmarshal(data, &item); err != nil {
+		return nil, err
+	}
+	return validateAIContexts([]aiContext{item})
+}
+
+func validateAIContexts(items []aiContext) ([]aiContext, error) {
+	for _, item := range items {
+		if strings.TrimSpace(item.WorkItem.ID) == "" {
+			return nil, fmt.Errorf("workspace.invalid-ai-context-work-item")
+		}
+	}
+	return items, nil
+}
+
+func containsTrimmedFold(values []string, candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func pointerEqual(left, right *string) bool {

@@ -124,6 +124,7 @@ This root is managed by DevWorkflow.
 3. Follow the local ` + "`AGENTS.md`" + ` in a task workspace.
 4. Preserve project terminology and repository conventions.
 5. Ask for clarification when requirements or supporting material are ambiguous.
+6. If a parent type is configured for child-task preflight, require a child task and refresh provider context after creation.
 
 Primary actions: provider show, work item show, work context ai, workspace current, workspace sync, workspace preflight, work item child create, workspace handoff validate, workspace commit, and workspace finish.
 `

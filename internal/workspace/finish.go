@@ -132,6 +132,7 @@ func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, optio
 	}
 	changed := changedTargets(plan.Targets)
 	unpushed := unpushedTargets(plan.Targets)
+	pushed := make([]TargetStatus, 0, len(plan.Targets))
 	if len(changed) > 0 {
 		pushEvent(&events, emit, ActionEvent{Type: "runningGitOperation", Operation: "commitAndPush", RepositoryCount: len(changed)})
 		for _, target := range changed {
@@ -144,12 +145,26 @@ func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, optio
 			}
 			gitActions = append(gitActions, GitAction{Repository: target.Target.Repository, Operation: "commitAndPush", Path: target.Target.Path})
 		}
+		pushed = append(pushed, changed...)
 		pushEvent(&events, emit, ActionEvent{Type: "gitOperationCompleted", Operation: "commitAndPush"})
 	}
 	unpushed = targetsNotIn(unpushed, changed)
 	if len(unpushed) > 0 {
 		pushEvent(&events, emit, ActionEvent{Type: "runningGitOperation", Operation: "push", RepositoryCount: len(unpushed)})
 		for _, target := range unpushed {
+			pushEvent(&events, emit, ActionEvent{Type: "runningRepositoryGitOperation", Repository: target.Target.Repository, Operation: "push"})
+			if err := e.Git.Push(ctx, target.Target.Path, plan.Manifest.BranchName, options.ForceWithLease); err != nil {
+				return FinishExecutionReport{}, pushError(err, options.ForceWithLease)
+			}
+			gitActions = append(gitActions, GitAction{Repository: target.Target.Repository, Operation: "push", Path: target.Target.Path})
+		}
+		pushed = append(pushed, unpushed...)
+		pushEvent(&events, emit, ActionEvent{Type: "gitOperationCompleted", Operation: "push"})
+	}
+	candidates := targetsNotIn(pullRequestCandidateTargets(plan.Targets, plan.PullRequestCandidates), pushed)
+	if len(candidates) > 0 {
+		pushEvent(&events, emit, ActionEvent{Type: "runningGitOperation", Operation: "push", RepositoryCount: len(candidates)})
+		for _, target := range candidates {
 			pushEvent(&events, emit, ActionEvent{Type: "runningRepositoryGitOperation", Repository: target.Target.Repository, Operation: "push"})
 			if err := e.Git.Push(ctx, target.Target.Path, plan.Manifest.BranchName, options.ForceWithLease); err != nil {
 				return FinishExecutionReport{}, pushError(err, options.ForceWithLease)
@@ -365,6 +380,18 @@ func targetsNotIn(targets, excluded []TargetStatus) []TargetStatus {
 		}
 		if !found {
 			result = append(result, target)
+		}
+	}
+	return result
+}
+func pullRequestCandidateTargets(targets []TargetStatus, candidates []PullRequestCandidate) []TargetStatus {
+	result := make([]TargetStatus, 0, len(candidates))
+	for _, target := range targets {
+		for _, candidate := range candidates {
+			if equalFold(target.Target.Repository, candidate.Repository) {
+				result = append(result, target)
+				break
+			}
 		}
 	}
 	return result

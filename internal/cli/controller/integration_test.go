@@ -133,6 +133,32 @@ func TestDataReadJSONUsesMachineMode(t *testing.T) {
 	}
 }
 
+func TestIntentionalRouteActionAliases(t *testing.T) {
+	tests := []struct {
+		arguments []string
+		route     string
+		action    string
+		build     Builder
+	}{
+		{[]string{"agent", "open", "--workspace", t.TempDir()}, "agent.open", "workspace.open", buildAgentOpen},
+		{[]string{"workspace", "open", "--workspace", t.TempDir()}, "workspace.open", "workspace.open", buildWorkspaceOpen},
+		{[]string{"upgrade", "--check"}, "upgrade", "upgrade.run", buildUpgrade},
+	}
+	for _, test := range tests {
+		invocation, problem := parse.Parse(spec.Root(nil), test.arguments)
+		if problem != nil {
+			t.Fatal(problem)
+		}
+		request, err := test.build(invocation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if invocation.Command.Key != test.route || string(request.ActionID()) != test.action {
+			t.Fatalf("%v mapped to route %q and action %q", test.arguments, invocation.Command.Key, request.ActionID())
+		}
+	}
+}
+
 func TestRootAwareUtilityCommandsAcceptRootOption(t *testing.T) {
 	root := t.TempDir()
 	for _, args := range [][]string{{"doctor", "--root", root}, {"upgrade", "--root", root, "--check"}} {

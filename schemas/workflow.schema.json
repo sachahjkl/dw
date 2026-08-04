@@ -37,6 +37,21 @@
       "type": "object",
       "additionalProperties": true
     },
+    "preflight": {
+      "type": "object",
+      "required": ["requireChildTaskForWorkItemTypes"],
+      "properties": {
+        "requireChildTaskForWorkItemTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
     "taskStart": {
       "type": "object",
       "properties": {

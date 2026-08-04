@@ -3,6 +3,7 @@ package gitrepo
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -48,4 +49,37 @@ esac
 	if !strings.Contains(string(commands), "stash pop") {
 		t.Fatalf("stash restoration was not attempted after fetch failure:\n%s", commands)
 	}
+}
+
+func TestPushRepositorySetsUpstream(t *testing.T) {
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	repository := filepath.Join(t.TempDir(), "repository")
+	runGitTestCommand(t, "", "init", "--bare", remote)
+	runGitTestCommand(t, "", "init", "--initial-branch=feat/task", repository)
+	runGitTestCommand(t, repository, "config", "user.name", "DevWorkflow Test")
+	runGitTestCommand(t, repository, "config", "user.email", "test@example.invalid")
+	if err := os.WriteFile(filepath.Join(repository, "file.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTestCommand(t, repository, "add", "file.txt")
+	runGitTestCommand(t, repository, "commit", "-m", "test")
+	runGitTestCommand(t, repository, "remote", "add", "origin", remote)
+	if err := NewClient().PushRepository(context.Background(), RepositoryPath(repository), BranchName("feat/task"), false); err != nil {
+		t.Fatal(err)
+	}
+	upstream := runGitTestCommand(t, repository, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	if strings.TrimSpace(upstream) != "origin/feat/task" {
+		t.Fatalf("upstream = %q", upstream)
+	}
+}
+
+func runGitTestCommand(t *testing.T, directory string, arguments ...string) string {
+	t.Helper()
+	command := exec.Command("git", arguments...)
+	command.Dir = directory
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", arguments, err, output)
+	}
+	return string(output)
 }

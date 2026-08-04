@@ -76,6 +76,10 @@ type TaskStartOptions struct {
 	TaskState           *string `json:"taskState,omitempty"`
 }
 
+type PreflightOptions struct {
+	RequireChildTaskForWorkItemTypes []string `json:"requireChildTaskForWorkItemTypes"`
+}
+
 type RepositoryCommands struct {
 	Repository string   `json:"repository"`
 	Commands   []string `json:"commands"`
@@ -97,6 +101,7 @@ type WorkflowConfig struct {
 	BranchPrefixes  []NamedString           `json:"branchPrefixes"`
 	WorktreeFolders []NamedString           `json:"worktreeFolders"`
 	Agent           *AgentOptions           `json:"agent,omitempty"`
+	Preflight       *PreflightOptions       `json:"preflight,omitempty"`
 	TaskStart       *TaskStartOptions       `json:"taskStart,omitempty"`
 	TaskFinish      *TaskFinishOptions      `json:"taskFinish,omitempty"`
 

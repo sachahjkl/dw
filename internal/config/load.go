@@ -102,6 +102,13 @@ func loadWorkflowPath(path string) (WorkflowConfig, error) {
 		}
 		config.Agent = &options
 	}
+	if value, ok := document.Lookup("preflight"); ok && !value.IsNull() {
+		var options PreflightOptions
+		if err = decodeValue(value, &options); err != nil {
+			return WorkflowConfig{}, err
+		}
+		config.Preflight = &options
+	}
 	if value, ok := document.Lookup("taskStart"); ok && !value.IsNull() {
 		var options TaskStartOptions
 		if err = decodeValue(value, &options); err != nil {

@@ -261,7 +261,7 @@ func (client Client) PushRepository(ctx context.Context, repositoryPath Reposito
 	}
 	destination := "refs/heads/" + string(branchName)
 	refspec := "refs/heads/" + string(branchName) + ":" + destination
-	arguments := []string{"push"}
+	arguments := []string{"push", "--set-upstream"}
 	if forceWithLease {
 		expected, resolveErr := client.referenceObjectID(ctx, repositoryPath, "refs/remotes/origin/"+string(branchName))
 		if resolveErr != nil {
