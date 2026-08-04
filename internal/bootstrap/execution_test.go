@@ -10,6 +10,8 @@ import (
 	"github.com/sachahjkl/dw/internal/execution"
 	"github.com/sachahjkl/dw/internal/secret"
 	"github.com/sachahjkl/dw/internal/update"
+	"github.com/sachahjkl/dw/internal/workapp"
+	"github.com/sachahjkl/dw/internal/workspace"
 	"github.com/sachahjkl/dw/internal/workspaceapp"
 )
 
@@ -99,6 +101,8 @@ func zeroResult(id action.ID, result action.Result) action.Result {
 	switch id {
 	case "workspace.item.add", "workspace.item.remove":
 		return workspaceapp.ItemUpdateResult{Operation: id}
+	case workapp.ActionWorkspaceFinish:
+		return workapp.FinishReport{Execution: &workspace.FinishExecutionReport{Events: []workspace.ActionEvent{{Type: "verifyingFinish", RepositoryCount: 1}}}}
 	case update.ActionID:
 		return update.Report{Kind: "check", Check: &update.CheckReport{}}
 	default:

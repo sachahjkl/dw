@@ -460,6 +460,40 @@ func (event ActionEvent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(value)
 }
 
+func (event *ActionEvent) UnmarshalJSON(data []byte) error {
+	var value struct {
+		Kind                      string `json:"kind"`
+		Repository                string `json:"repository"`
+		Operation                 string `json:"operation"`
+		RepositoryCount           int    `json:"repository_count"`
+		PullRequestCandidateCount int    `json:"pull_request_candidate_count"`
+		WorkItemID                string `json:"work_item_id"`
+		Error                     string `json:"error"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	types := map[string]string{"executing-start": "preparingWorktree", "verifying-finish": "verifyingFinish", "finish-verification-completed": "finishVerificationCompleted", "running-git-operation": "runningGitOperation", "running-repository-git-operation": "runningRepositoryGitOperation", "git-operation-completed": "gitOperationCompleted", "skipping-pull-request-creation": "skippingPullRequestCreation", "checking-active-pull-request": "checkingActivePullRequest", "creating-pull-request": "creatingPullRequest", "pull-request-work-item-link-skipped": "pullRequestWorkItemLinkSkipped"}
+	event.Type = types[value.Kind]
+	if event.Type == "" {
+		event.Type = value.Kind
+	}
+	event.Repository = value.Repository
+	event.Operation = value.Operation
+	if event.Operation == "commit-and-push" {
+		event.Operation = "commitAndPush"
+	}
+	event.RepositoryCount = value.RepositoryCount
+	if value.PullRequestCandidateCount != 0 {
+		event.RepositoryCount = value.PullRequestCandidateCount
+	}
+	event.WorkItemID = value.WorkItemID
+	event.Error = value.Error
+	return nil
+}
+
 type RenameExecutionReport struct {
 	Plan     RenamePlan `json:"plan"`
 	Manifest Manifest   `json:"manifest"`

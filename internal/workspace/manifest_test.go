@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -22,6 +24,23 @@ func TestResolveUsesCurrentOrOnlyMatchingWorkspace(t *testing.T) {
 	}
 	if path, err := Resolve(root, "", "", nil, false, root); err != nil || path != first {
 		t.Fatalf("single resolution = %q, %v", path, err)
+	}
+}
+
+func TestActionEventJSONRoundTripAcceptsProjectedFields(t *testing.T) {
+	original := ActionEvent{Type: "verifyingFinish", Repository: "back", Operation: "commitAndPush", RepositoryCount: 2, WorkItemID: "57143", Error: "failed"}
+	encoded, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	var decoded ActionEvent
+	if err = decoder.Decode(&decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Type != original.Type || decoded.Repository != original.Repository || decoded.Operation != original.Operation || decoded.RepositoryCount != original.RepositoryCount || decoded.WorkItemID != original.WorkItemID || decoded.Error != original.Error {
+		t.Fatalf("decoded event = %#v", decoded)
 	}
 }
 
