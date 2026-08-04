@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -44,6 +45,38 @@ func TestListCanonicalizesRootFilter(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].ExecutionID != id {
 		t.Fatalf("records = %#v, want execution %s", records, id)
+	}
+}
+
+func TestListKeepsExecutionWithHistoricalUnreadableResult(t *testing.T) {
+	const actionID action.ID = "test.list-historical-result"
+	service, store := newTestService(t, actionID, func(_ context.Context, request serviceRequest, _ action.Runtime) (action.Result, error) {
+		return serviceResult{ID: request.ID}, nil
+	})
+	id, err := service.Submit(context.Background(), Submission{
+		Request: serviceRequest{ID: actionID}, Root: t.TempDir(), Actor: testActor(), IdempotencyKey: newTestIdempotencyKey(t),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Wait(context.Background(), testActor(), id); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	item := store.records[id]
+	historical := Encoded{Schema: 1, JSON: json.RawMessage(`{"kind":"historical"}`)}
+	item.Record.Result = &historical
+	store.records[id] = item
+	store.mu.Unlock()
+	if _, err = service.Get(context.Background(), testActor(), id); err == nil {
+		t.Fatal("Get accepted an unreadable historical result")
+	}
+	records, err := service.List(context.Background(), testActor(), ListFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].ExecutionID != id || records[0].TypedResult != nil || records[0].Result == nil || string(records[0].Result.JSON) != string(historical.JSON) {
+		t.Fatalf("records = %#v", records)
 	}
 }
 

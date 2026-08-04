@@ -272,7 +272,8 @@ func (service *Service) List(ctx context.Context, actor Actor, filter ListFilter
 	for _, item := range items {
 		record, hydrateErr := service.hydrateRecord(item.Record)
 		if hydrateErr != nil {
-			return nil, hydrateErr
+			record = item.Record
+			record.TypedResult = nil
 		}
 		records = append(records, record)
 	}
