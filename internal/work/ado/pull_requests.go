@@ -119,9 +119,32 @@ func (p *Provider) CreateADOPullRequest(ctx context.Context, options Options, in
 }
 
 func (p *Provider) LinkWorkItemToPullRequest(ctx context.Context, options Options, repository string, pullRequestID int64, workItemID string, token Token) error {
-	_, err := p.transport().Patch(ctx, PullRequestWorkItemsURL(options, repository, pullRequestID), token, []struct {
-		ID string `json:"id"`
-	}{{ID: workItemID}}, "application/json")
+	linkedIDs, found, err := p.TryGetPullRequestWorkItemIDs(ctx, options, repository, pullRequestID, token)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return &Error{Kind: ErrorRequest, Detail: "Pull request #" + strconv.FormatInt(pullRequestID, 10) + " was not found in Azure DevOps repository " + repository}
+	}
+	for _, linkedID := range linkedIDs {
+		if linkedID == workItemID {
+			return nil
+		}
+	}
+	body, err := p.transport().Get(ctx, PullRequestURL(options, repository, pullRequestID), token)
+	if err != nil {
+		return err
+	}
+	root, err := decodeObject(body)
+	if err != nil {
+		return err
+	}
+	artifactID := elementText(root["artifactId"])
+	if artifactID == nil || strings.TrimSpace(*artifactID) == "" {
+		return &Error{Kind: ErrorJSON, Detail: "pull request response does not contain artifactId"}
+	}
+	relation := map[string]any{"rel": "ArtifactLink", "url": *artifactID, "attributes": map[string]any{"name": "Pull Request"}}
+	_, err = p.transport().Patch(ctx, WorkItemURL(options, workItemID), token, []jsonPatchOperation{patchAdd("/relations/-", relation)}, "application/json-patch+json")
 	return err
 }
 

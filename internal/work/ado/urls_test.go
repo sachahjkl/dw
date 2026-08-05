@@ -13,7 +13,7 @@ func TestADOURLsPreserveStandardOutputs(t *testing.T) {
 		want string
 	}{
 		{"expanded item", ExpandedWorkItemURL(options, "42"), "https://dev.azure.com/acme/Project/_apis/wit/workitems/42?$expand=all&api-version=7.1"},
-		{"comments", WorkItemCommentsURL(options, "42", 10), "https://dev.azure.com/acme/Project/_apis/wit/workItems/42/comments?$top=10&api-version=7.1"},
+		{"comments", WorkItemCommentsURL(options, "42", 10), "https://dev.azure.com/acme/Project/_apis/wit/workItems/42/comments?$top=10&api-version=7.1-preview.4"},
 		{"item", WorkItemURL(options, "42"), "https://dev.azure.com/acme/Project/_apis/wit/workitems/42?api-version=7.1"},
 		{"batch", WorkItemsBatchURL(options), "https://dev.azure.com/acme/Project/_apis/wit/workitemsbatch?api-version=7.1"},
 		{"wiql", WIQLURL(options, 20), "https://dev.azure.com/acme/Project/_apis/wit/wiql?$top=20&api-version=7.1"},
@@ -22,6 +22,7 @@ func TestADOURLsPreserveStandardOutputs(t *testing.T) {
 		{"create item", CreateWorkItemURL(options, "Bug"), "https://dev.azure.com/acme/Project/_apis/wit/workitems/$Bug?api-version=7.1"},
 		{"pull requests", PullRequestsURL(options, "repo"), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullrequests?api-version=7.1"},
 		{"pull request web", PullRequestWebURL(options, "repo", 12), "https://dev.azure.com/acme/Project/_git/repo/pullrequest/12"},
+		{"pull request", PullRequestURL(options, "repo", 12), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullRequests/12?api-version=7.1"},
 		{"active pull requests", ActivePullRequestsURL(options, "repo", "refs/heads/topic"), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullrequests?searchCriteria.status=active&searchCriteria.sourceRefName=refs%2Fheads%2Ftopic&api-version=7.1"},
 		{"repository pull requests", ActivePullRequestsForRepositoryURL(options, "repo", 100, 100), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullrequests?searchCriteria.status=active&$skip=100&$top=100&api-version=7.1"},
 		{"pull request items", PullRequestWorkItemsURL(options, "repo", 12), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullRequests/12/workitems?api-version=7.1"},

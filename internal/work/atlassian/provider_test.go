@@ -57,7 +57,14 @@ func TestProviderProjectsJiraAndBitbucketCapabilities(t *testing.T) {
 		case "PUT /repositories/ws/repo/pullrequests/12":
 			var body map[string]any
 			json.NewDecoder(request.Body).Decode(&body)
-			pullUpdated = strings.Contains(body["description"].(string), "APP-7")
+			source := body["source"].(map[string]any)
+			destination := body["destination"].(map[string]any)
+			reviewers := body["reviewers"].([]any)
+			pullUpdated = strings.Contains(body["description"].(string), "APP-7") &&
+				body["close_source_branch"] == true && body["draft"] == true &&
+				source["branch"].(map[string]any)["name"] == "feature" &&
+				destination["branch"].(map[string]any)["name"] == "main" &&
+				len(reviewers) == 1 && reviewers[0].(map[string]any)["uuid"] == "{reviewer}"
 			json.NewEncoder(writer).Encode(bitbucketFixture())
 		default:
 			http.Error(writer, request.Method+" "+request.URL.Path, http.StatusNotFound)
@@ -196,5 +203,5 @@ func jiraFixture() map[string]any {
 }
 
 func bitbucketFixture() map[string]any {
-	return map[string]any{"id": 12, "title": "Ship APP-7", "description": "Implements APP-7", "state": "OPEN", "source": map[string]any{"branch": map[string]any{"name": "feature"}}, "destination": map[string]any{"branch": map[string]any{"name": "main"}}, "author": map[string]any{"display_name": "Ada"}, "links": map[string]any{"html": map[string]any{"href": "https://bitbucket.test/pr/12"}, "self": map[string]any{"href": "https://api.bitbucket.test/pr/12"}}}
+	return map[string]any{"id": 12, "title": "Ship APP-7", "description": "Implements APP-7", "state": "OPEN", "draft": true, "close_source_branch": true, "reviewers": []any{map[string]any{"uuid": "{reviewer}"}}, "source": map[string]any{"branch": map[string]any{"name": "feature"}}, "destination": map[string]any{"branch": map[string]any{"name": "main"}}, "author": map[string]any{"display_name": "Ada"}, "links": map[string]any{"html": map[string]any{"href": "https://bitbucket.test/pr/12"}, "self": map[string]any{"href": "https://api.bitbucket.test/pr/12"}}}
 }

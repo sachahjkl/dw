@@ -55,7 +55,7 @@ func ExpandedWorkItemURL(options Options, id string) string {
 }
 
 func WorkItemCommentsURL(options Options, id string, top int) string {
-	return adoURL(options, []string{options.Project, "_apis", "wit", "workItems", id, "comments"}, query("$top", strconv.Itoa(top), "api-version", apiVersion(options)))
+	return adoURL(options, []string{options.Project, "_apis", "wit", "workItems", id, "comments"}, query("$top", strconv.Itoa(top), "api-version", CommentsAPIVersion))
 }
 
 func WorkItemURL(options Options, id string) string {
@@ -88,6 +88,10 @@ func PullRequestsURL(options Options, repository string) string {
 
 func PullRequestWebURL(options Options, repository string, id int64) string {
 	return adoURL(options, []string{options.Project, "_git", repository, "pullrequest", strconv.FormatInt(id, 10)}, nil)
+}
+
+func PullRequestURL(options Options, repository string, id int64) string {
+	return adoURL(options, []string{options.Project, "_apis", "git", "repositories", repository, "pullRequests", strconv.FormatInt(id, 10)}, query("api-version", apiVersion(options)))
 }
 
 func ActivePullRequestsURL(options Options, repository, sourceRef string) string {

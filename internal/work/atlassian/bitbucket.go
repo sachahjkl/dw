@@ -12,12 +12,16 @@ import (
 )
 
 type bitbucketPullRequest struct {
-	ID          int64  `json:"id"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	State       string `json:"state"`
-	Draft       bool   `json:"draft"`
-	Author      struct {
+	ID                int64  `json:"id"`
+	Title             string `json:"title"`
+	Description       string `json:"description"`
+	State             string `json:"state"`
+	Draft             bool   `json:"draft"`
+	CloseSourceBranch bool   `json:"close_source_branch"`
+	Reviewers         []struct {
+		UUID string `json:"uuid"`
+	} `json:"reviewers"`
+	Author struct {
 		DisplayName string `json:"display_name"`
 	} `json:"author"`
 	Source struct {
@@ -194,7 +198,16 @@ func (provider *Provider) linkPullRequestWorkItem(ctx context.Context, options O
 		description += "\n\n"
 	}
 	description += reference
-	_, err = provider.bitbucketRequest(ctx, options, http.MethodPut, path, nil, map[string]any{"title": source.Title, "description": description}, nil)
+	body := map[string]any{
+		"title":               source.Title,
+		"description":         description,
+		"source":              source.Source,
+		"destination":         source.Destination,
+		"reviewers":           source.Reviewers,
+		"close_source_branch": source.CloseSourceBranch,
+		"draft":               source.Draft,
+	}
+	_, err = provider.bitbucketRequest(ctx, options, http.MethodPut, path, nil, body, nil)
 	return err
 }
 

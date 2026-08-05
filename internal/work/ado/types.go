@@ -11,6 +11,7 @@ import (
 
 const (
 	DefaultAPIVersion         = "7.1"
+	CommentsAPIVersion        = "7.1-preview.4"
 	AIContextVersion          = "dw.ado.ai-context.v1"
 	AttachmentDirectoryPrefix = "attachments/ado/"
 	RelationHierarchyReverse  = "System.LinkTypes.Hierarchy-Reverse"
