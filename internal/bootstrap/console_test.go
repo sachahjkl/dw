@@ -7,6 +7,7 @@ import (
 	"github.com/sachahjkl/dw/internal/console"
 	"github.com/sachahjkl/dw/internal/doctor"
 	"github.com/sachahjkl/dw/internal/providerapp"
+	"github.com/sachahjkl/dw/internal/workapp"
 )
 
 func TestProviderListPagePresentsGroupedFeatures(t *testing.T) {
@@ -23,6 +24,19 @@ func TestProviderListPagePresentsGroupedFeatures(t *testing.T) {
 	}
 	if strings.Contains(rendered, "item-reader") || strings.Contains(rendered, "assigned-querier") {
 		t.Fatalf("provider list leaked internal capability names: %s", rendered)
+	}
+}
+
+func TestDeviceLoginEventIncludesSignInInstructions(t *testing.T) {
+	projection, err := workEventRenderer(workapp.Event{Kind: "device-login-required", VerificationURI: "https://microsoft.com/devicelogin", UserCode: "ABCD-EFGH", ExpiresInSeconds: 900, PollIntervalSeconds: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := console.AppendEventFields("Provider device sign-in is required.", projection)
+	for _, expected := range []string{"https://microsoft.com/devicelogin", "ABCD-EFGH", "expires_in_seconds=900", "poll_interval_seconds=5"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("device login output does not contain %q: %s", expected, rendered)
+		}
 	}
 }
 

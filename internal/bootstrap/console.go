@@ -289,7 +289,7 @@ func workEventRenderer(payload any) (console.EventProjection, error) {
 	if !ok {
 		return console.EventProjection{}, console.PayloadTypeError{}
 	}
-	projection := console.EventProjection{ActionID: event.ActionID()}
+	projection := console.EventProjection{ActionID: event.ActionID(), AppendFields: event.Kind == "device-login-required" || event.Kind == "browser-login-required"}
 	if event.Project != nil {
 		projection.Fields = append(projection.Fields, console.EventField{Key: "project", Value: *event.Project})
 	}
@@ -304,6 +304,12 @@ func workEventRenderer(payload any) (console.EventProjection, error) {
 	}
 	if event.UserCode != "" {
 		projection.Fields = append(projection.Fields, console.EventField{Key: "user_code", Value: event.UserCode})
+	}
+	if event.ExpiresInSeconds != 0 {
+		projection.Fields = append(projection.Fields, console.EventField{Key: "expires_in_seconds", Value: strconv.FormatUint(uint64(event.ExpiresInSeconds), 10)})
+	}
+	if event.PollIntervalSeconds != 0 {
+		projection.Fields = append(projection.Fields, console.EventField{Key: "poll_interval_seconds", Value: strconv.FormatUint(uint64(event.PollIntervalSeconds), 10)})
 	}
 	if event.Top != 0 {
 		projection.Fields = append(projection.Fields, console.EventField{Key: "top", Value: strconv.Itoa(event.Top)})

@@ -35,7 +35,7 @@ func (input *TerminalInput) Request(ctx context.Context, prompt action.Prompt) (
 	if prompt == nil {
 		return nil, fmt.Errorf("action.invalid-prompt")
 	}
-	if !input.streams.StdinTTY {
+	if !input.streams.StdinTTY || !input.streams.StderrTTY {
 		return nil, l10n.NewError("cli.error.input-requires-terminal", l10n.A("prompt", prompt.PromptID()))
 	}
 	if err := prompt.Validate(); err != nil {

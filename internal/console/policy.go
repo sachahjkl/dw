@@ -86,7 +86,7 @@ func (p Policy) WithMachine(machine bool) Policy {
 
 func (p Policy) StdoutColor() bool     { return p.colorFor(p.Streams.StdoutTTY) }
 func (p Policy) StderrColor() bool     { return p.colorFor(p.Streams.StderrTTY) }
-func (p Policy) Interactive() bool     { return p.Streams.StdinTTY }
+func (p Policy) Interactive() bool     { return p.Streams.StdinTTY && p.Streams.StderrTTY }
 func (p Policy) ProgressEnabled() bool { return !p.Machine && p.Streams.StderrTTY }
 func (p Policy) EventsEnabled() bool   { return !p.Machine && p.ShowEvents }
 
