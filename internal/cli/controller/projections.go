@@ -54,7 +54,7 @@ func contextProject(envelope action.ResultEnvelope, invocation *parse.Result) (c
 	if !ok {
 		return projectionTypeError("work.context.show", envelope)
 	}
-	return marshalProjection(report.Expanded)
+	return marshalProjection(report.Items)
 }
 
 func aiContextProject(envelope action.ResultEnvelope, _ *parse.Result) (console.OutputFormat, *console.JSONProjection, error) {

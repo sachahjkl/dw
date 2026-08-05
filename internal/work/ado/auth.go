@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -321,5 +320,3 @@ func openURL(value string) error {
 	}
 	return command.Start()
 }
-
-func uint32Value(value uint32) string { return strconv.FormatUint(uint64(value), 10) }

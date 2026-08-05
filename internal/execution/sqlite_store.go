@@ -429,9 +429,20 @@ func (store *SQLiteStore) EventsAfter(ctx context.Context, id ExecutionID, after
 		if err := json.Unmarshal(messageJSON, &message); err != nil || message.Schema != MessageSchemaV1 {
 			return nil, fmt.Errorf("execution.sqlite-message")
 		}
-		event := Event{ExecutionID: id, AttemptID: attemptID, Sequence: EventSequence(sequence), At: timeFromMilliseconds(at), Kind: EventKind(kind), ActionID: action.ID(actionID), Message: message}
+		eventSequence, err := eventSequenceFromInt64(sequence)
+		if err != nil {
+			return nil, err
+		}
+		event := Event{ExecutionID: id, AttemptID: attemptID, Sequence: eventSequence, At: timeFromMilliseconds(at), Kind: EventKind(kind), ActionID: action.ID(actionID), Message: message}
 		if payloadType.Valid {
-			event.Payload = &EncodedEventData{Type: action.EventDataType(payloadType.String), Schema: SchemaVersion(payloadSchema.Int64), JSON: append(json.RawMessage(nil), payloadJSON...)}
+			if !payloadSchema.Valid {
+				return nil, fmt.Errorf("execution.sqlite-payload-schema")
+			}
+			schema, err := schemaVersionFromInt64(payloadSchema.Int64)
+			if err != nil {
+				return nil, err
+			}
+			event.Payload = &EncodedEventData{Type: action.EventDataType(payloadType.String), Schema: schema, JSON: append(json.RawMessage(nil), payloadJSON...)}
 		}
 		events = append(events, event)
 	}
@@ -573,7 +584,11 @@ func (store *SQLiteStore) loadPendingPrompt(ctx context.Context, item *storedExe
 	if err != nil {
 		return fmt.Errorf("execution.sqlite-prompt:%w", err)
 	}
-	item.Record.PendingPrompt = &EncodedPrompt{ID: action.PromptID(promptID), Kind: action.PromptKind(kind), Schema: SchemaVersion(schema), JSON: append(json.RawMessage(nil), promptJSON...), Redacted: kind == string(action.PromptSecret)}
+	promptSchema, err := schemaVersionFromInt64(schema)
+	if err != nil {
+		return err
+	}
+	item.Record.PendingPrompt = &EncodedPrompt{ID: action.PromptID(promptID), Kind: action.PromptKind(kind), Schema: promptSchema, JSON: append(json.RawMessage(nil), promptJSON...), Redacted: kind == string(action.PromptSecret)}
 	return nil
 }
 
@@ -627,10 +642,18 @@ func decodeStored(value executionColumnsValue) (storedExecution, error) {
 	}
 	var requestHash [32]byte
 	copy(requestHash[:], value.requestHash)
+	requestSchema, err := schemaVersionFromInt64(value.requestSchema)
+	if err != nil {
+		return storedExecution{}, err
+	}
+	lastSequence, err := eventSequenceFromInt64(value.lastSequence)
+	if err != nil {
+		return storedExecution{}, err
+	}
 	record := Record{
 		ExecutionID: executionID, AttemptID: attemptID, ActionID: action.ID(value.actionID), Status: Status(value.status), Root: value.root,
 		Principal: PrincipalID(value.principal), Origin: Origin(value.origin),
-		Request:   Encoded{Schema: SchemaVersion(value.requestSchema), JSON: append(json.RawMessage(nil), value.requestJSON...), Redacted: value.requestRedacted == 1},
+		Request:   Encoded{Schema: requestSchema, JSON: append(json.RawMessage(nil), value.requestJSON...), Redacted: value.requestRedacted == 1},
 		CreatedAt: timeFromMilliseconds(value.createdAt), StartedAt: timePointer(value.startedAt), FinishedAt: timePointer(value.finishedAt),
 	}
 	if value.subjectKind.Valid {
@@ -643,7 +666,11 @@ func decodeStored(value executionColumnsValue) (storedExecution, error) {
 		}
 	}
 	if value.resultSchema.Valid {
-		record.Result = &Encoded{Schema: SchemaVersion(value.resultSchema.Int64), JSON: append(json.RawMessage(nil), value.resultJSON...), Redacted: value.resultRedacted.Int64 == 1}
+		resultSchema, err := schemaVersionFromInt64(value.resultSchema.Int64)
+		if err != nil {
+			return storedExecution{}, err
+		}
+		record.Result = &Encoded{Schema: resultSchema, JSON: append(json.RawMessage(nil), value.resultJSON...), Redacted: value.resultRedacted.Int64 == 1}
 	}
 	if value.errorCode.Valid {
 		var message MessageV1
@@ -655,8 +682,22 @@ func decodeStored(value executionColumnsValue) (storedExecution, error) {
 	return storedExecution{
 		Record: record, RequestHash: requestHash, IdempotencyKey: idempotencyKey, ExecutorID: executorID,
 		LeaseExpiresAt: timeValue(value.leaseExpiresAt), Resumable: value.resumable == 1,
-		LastSequence: EventSequence(value.lastSequence), CancelRequestedAt: timePointer(value.cancelRequestedAt),
+		LastSequence: lastSequence, CancelRequestedAt: timePointer(value.cancelRequestedAt),
 	}, nil
+}
+
+func schemaVersionFromInt64(value int64) (SchemaVersion, error) {
+	if value < 0 || value > int64(^uint16(0)) {
+		return 0, fmt.Errorf("execution.sqlite-schema-out-of-range:%d", value)
+	}
+	return SchemaVersion(value), nil
+}
+
+func eventSequenceFromInt64(value int64) (EventSequence, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("execution.sqlite-sequence-out-of-range:%d", value)
+	}
+	return EventSequence(value), nil
 }
 
 func insertEvent(ctx context.Context, transaction *sql.Tx, event Event) error {
@@ -750,7 +791,14 @@ func interruptRestart(ctx context.Context, transaction *sql.Tx, id ExecutionID, 
 	if err != nil {
 		return err
 	}
-	event := Event{ExecutionID: id, AttemptID: attemptID, Sequence: EventSequence(sequence + 1), At: now, Kind: EventInterrupted, ActionID: action.ID(actionID), Message: message}
+	if sequence == int64(^uint64(0)>>1) {
+		return fmt.Errorf("execution.sqlite-sequence-exhausted")
+	}
+	eventSequence, err := eventSequenceFromInt64(sequence + 1)
+	if err != nil {
+		return err
+	}
+	event := Event{ExecutionID: id, AttemptID: attemptID, Sequence: eventSequence, At: now, Kind: EventInterrupted, ActionID: action.ID(actionID), Message: message}
 	if err := insertEvent(ctx, transaction, event); err != nil {
 		return err
 	}

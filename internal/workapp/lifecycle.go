@@ -310,7 +310,10 @@ func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink Ev
 	title := workspace.ChildTaskTitle(request.Repository, request.Title)
 	created, err := creator.CreateChild(ctx, projectRef(request.Root, manifest.Project), work.ChildCreate{ParentID: work.ItemID(parent.ID), Type: work.ItemType("Task"), Title: title, History: "work item child create"})
 	if err != nil {
-		return ChildReport{}, err
+		if created.ID == "" {
+			return ChildReport{}, err
+		}
+		return ChildReport{Workspace: workspacePath, Repository: request.Repository, Parent: parent, RequestedTitle: title, Created: ChildCreateResult{Repository: request.Repository, ID: string(created.ID), Title: created.Title}, Manifest: manifest, Events: []Event{}}, err
 	}
 	childTitle := created.Title
 	child := workspace.ChildTask{Repository: request.Repository, ID: string(created.ID), Title: optionalString(childTitle)}

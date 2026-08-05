@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/contract"
@@ -582,7 +581,6 @@ func pushEvent(events *[]ActionEvent, emit func(ActionEvent), event ActionEvent)
 		emit(event)
 	}
 }
-func sortStrings(values []string) { sort.Strings(values) }
 
 // ApplySnapshots updates only task.json from provider-neutral work item data.
 // Provider fetching and authentication remain in the orchestration layer.

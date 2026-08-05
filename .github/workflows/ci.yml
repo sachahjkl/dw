@@ -95,12 +95,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Go 1.26
+      - name: Setup Go 1.26.5
         uses: actions/setup-go@v6
         with:
-          go-version: 1.26.x
+          go-version: 1.26.5
           cache: true
           cache-dependency-path: go.sum
+
+      - name: Run Go checks
+        shell: bash
+        run: |
+          go test ./...
+          CGO_ENABLED=1 go test -race ./...
+          go vet ./...
+          go tool staticcheck ./...
+          go tool govulncheck ./...
 
       - name: Build and package release-compatible linux-x64 artifact
         shell: bash
@@ -237,10 +246,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Go 1.26
+      - name: Setup Go 1.26.5
         uses: actions/setup-go@v6
         with:
-          go-version: 1.26.x
+          go-version: 1.26.5
           cache: true
           cache-dependency-path: go.sum
 
@@ -265,7 +274,14 @@ jobs:
         run: go test ./...
 
       - name: Run static analysis
-        run: go vet ./...
+        shell: pwsh
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw "go vet failed with exit code $LASTEXITCODE" }
+          go tool staticcheck ./...
+          if ($LASTEXITCODE -ne 0) { throw "staticcheck failed with exit code $LASTEXITCODE" }
+          go tool govulncheck ./...
+          if ($LASTEXITCODE -ne 0) { throw "govulncheck failed with exit code $LASTEXITCODE" }
 
       - name: Publish win-x64 artifact
         shell: pwsh

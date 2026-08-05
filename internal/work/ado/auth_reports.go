@@ -57,7 +57,7 @@ func (a *Authenticator) StatusReport(ctx context.Context) (AuthStatusReport, err
 	if err != nil {
 		return AuthStatusReport{}, err
 	}
-	return AuthStatusReport{Connected: status.Connected, Source: status.Source, ExpiresOn: status.ExpiresOn}, nil
+	return AuthStatusReport(status), nil
 }
 
 func (a *Authenticator) LogoutReport(ctx context.Context) (AuthLogoutReport, error) {

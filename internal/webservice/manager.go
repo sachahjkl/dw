@@ -523,7 +523,7 @@ func openBrowser(location string) error {
 	var command *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		command = exec.Command("cmd", "/c", "start", "", location)
+		command = exec.Command("rundll32", "url.dll,FileProtocolHandler", location)
 	case "darwin":
 		command = exec.Command("open", location)
 	default:

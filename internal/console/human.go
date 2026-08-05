@@ -69,13 +69,13 @@ func (t Theme) Failure(value string) string { return t.failure.Render(value) }
 func (t Theme) Badge(status Status, value string) string {
 	switch status {
 	case StatusSuccess:
-		return t.success.Copy().Padding(0, 1).Render(value)
+		return t.success.Padding(0, 1).Render(value)
 	case StatusWarning:
-		return t.warning.Copy().Padding(0, 1).Render(value)
+		return t.warning.Padding(0, 1).Render(value)
 	case StatusFailure:
-		return t.failure.Copy().Padding(0, 1).Render(value)
+		return t.failure.Padding(0, 1).Render(value)
 	default:
-		return t.label.Copy().Padding(0, 1).Render(value)
+		return t.label.Padding(0, 1).Render(value)
 	}
 }
 

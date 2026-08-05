@@ -23,7 +23,7 @@ func (p *Provider) getComments(ctx context.Context, options Options, id string, 
 	if limit <= 0 {
 		return comments, nil
 	}
-	body, err := p.transport().Get(ctx, WorkItemCommentsURL(options, id, uint32(limit)), token)
+	body, err := p.transport().Get(ctx, WorkItemCommentsURL(options, id, limit), token)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (p *Provider) getAIContext(ctx context.Context, options Options, id string,
 	}
 	comments, err := p.getComments(ctx, options, id, commentLimit, token)
 	if err != nil {
-		comments = make([]AIContextComment, 0)
+		return AIContextItem{}, err
 	}
 	return mapAIContext(root, options, summary, comments), nil
 }

@@ -59,6 +59,21 @@ func TestWorkContextAIWithoutIDOutsideWorkspaceFailsInBuilder(t *testing.T) {
 	}
 }
 
+func TestWorkContextShowBuildsRichOptions(t *testing.T) {
+	invocation, problem := parse.Parse(spec.Root(nil), []string{"work", "context", "show", "42", "--project", "project", "--summary", "--comments", "7"})
+	if problem != nil {
+		t.Fatal(problem)
+	}
+	request, err := buildWorkContextShow(invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextRequest := request.(workapp.ContextRequest)
+	if contextRequest.Mode != workapp.ContextRich || !contextRequest.Summary || !contextRequest.IncludeComments || contextRequest.Comments != 7 {
+		t.Fatalf("context request = %#v", contextRequest)
+	}
+}
+
 func TestContextFallbackRejectsExplicitRootAndProjectMismatch(t *testing.T) {
 	root := t.TempDir()
 	otherRoot := t.TempDir()

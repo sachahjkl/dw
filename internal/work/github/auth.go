@@ -21,13 +21,24 @@ func (provider *Provider) AuthStatus(ctx context.Context, reference work.Project
 	if token == "" {
 		return work.AuthStatus{}, nil
 	}
+	login, err := provider.authenticatedLogin(ctx, options)
+	if err != nil {
+		return work.AuthStatus{}, err
+	}
+	return work.AuthStatus{Authenticated: true, Source: source, Principal: login}, nil
+}
+
+func (provider *Provider) authenticatedLogin(ctx context.Context, options Options) (string, error) {
 	var user struct {
 		Login string `json:"login"`
 	}
 	if _, err := provider.request(ctx, options, http.MethodGet, "/user", nil, nil, &user); err != nil {
-		return work.AuthStatus{}, err
+		return "", err
 	}
-	return work.AuthStatus{Authenticated: true, Source: source, Principal: user.Login}, nil
+	if user.Login == "" {
+		return "", fmt.Errorf("github.user-login-missing")
+	}
+	return user.Login, nil
 }
 
 func (provider *Provider) Login(ctx context.Context, reference work.ProjectRef, mode work.AuthMode, _ func(work.LoginInstructions) error) (work.AuthStatus, error) {

@@ -128,6 +128,17 @@ func TestSQLiteStoreIdempotencyExactMatchAndConflict(t *testing.T) {
 	}
 }
 
+func TestSQLiteIntegerConversionsRejectOutOfRangeValues(t *testing.T) {
+	for _, value := range []int64{-1, int64(^uint16(0)) + 1} {
+		if _, err := schemaVersionFromInt64(value); err == nil {
+			t.Fatalf("schemaVersionFromInt64(%d) succeeded", value)
+		}
+	}
+	if _, err := eventSequenceFromInt64(-1); err == nil {
+		t.Fatal("eventSequenceFromInt64(-1) succeeded")
+	}
+}
+
 func TestSQLiteStoreRejectsCommitAndRenewAfterLeaseLoss(t *testing.T) {
 	store, _ := openTestSQLiteStore(t)
 	item, queued := testStoredExecution(t, StatusQueued, true, time.Now().Add(time.Minute))

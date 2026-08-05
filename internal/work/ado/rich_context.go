@@ -28,7 +28,7 @@ func (p *Provider) ReadRichContext(ctx context.Context, project work.ProjectRef,
 		if readOptions.IncludeComments {
 			comments, err = p.getComments(ctx, options, string(id), readOptions.CommentLimit, token)
 			if err != nil {
-				comments = make([]AIContextComment, 0)
+				return nil, err
 			}
 		}
 		mapped := mapAIContext(root, options, !readOptions.IncludeRelations, comments)

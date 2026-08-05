@@ -342,7 +342,7 @@ func TestFinalSubscriptionPaginatesCompleteEventBacklog(t *testing.T) {
 
 func TestServiceIdempotencyReturnsExistingAndRejectsConflict(t *testing.T) {
 	service, _ := newTestService(t, "test.idempotency", func(_ context.Context, request serviceRequest, _ action.Runtime) (action.Result, error) {
-		return serviceResult{ID: request.ID, Value: request.Value}, nil
+		return serviceResult(request), nil
 	})
 	key := newTestIdempotencyKey(t)
 	submission := Submission{Request: serviceRequest{ID: "test.idempotency", Value: "one"}, Root: "/root", Actor: testActor(), IdempotencyKey: key}

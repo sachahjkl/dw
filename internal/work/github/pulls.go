@@ -56,14 +56,19 @@ func (provider *Provider) ListPullRequests(ctx context.Context, reference work.P
 		if state == "" {
 			state = "open"
 		}
-		parameters := url.Values{"state": {state}, "per_page": {"100"}}
-		var pulls []pullRequest
-		if _, err := provider.request(ctx, options, http.MethodGet, base+"/pulls", parameters, nil, &pulls); err != nil {
-			return nil, err
-		}
 		_, repositoryName, _ := repositoryParts(options, repository)
-		for _, source := range pulls {
-			result = append(result, projectPullRequest(source, repositoryName))
+		for page := 1; ; page++ {
+			parameters := url.Values{"state": {state}, "per_page": {"100"}, "page": {strconv.Itoa(page)}}
+			var pulls []pullRequest
+			if _, err := provider.request(ctx, options, http.MethodGet, base+"/pulls", parameters, nil, &pulls); err != nil {
+				return nil, err
+			}
+			for _, source := range pulls {
+				result = append(result, projectPullRequest(source, repositoryName))
+			}
+			if len(pulls) < 100 {
+				break
+			}
 		}
 	}
 	return result, nil
@@ -127,12 +132,13 @@ func (provider *Provider) CreatePullRequest(ctx context.Context, reference work.
 	if _, err := provider.request(ctx, options, http.MethodPost, base+"/pulls", nil, body, &created); err != nil {
 		return work.PullRequestCreateResult{}, err
 	}
+	result := work.PullRequestCreateResult{ID: work.PullRequestID(strconv.FormatInt(created.Number, 10)), URL: created.URL, WebURL: created.HTMLURL}
 	for _, id := range request.WorkItemIDs {
-		if err := provider.linkPullRequestWorkItem(ctx, options, base, work.PullRequestID(strconv.FormatInt(created.Number, 10)), id); err != nil {
-			return work.PullRequestCreateResult{}, err
+		if err := provider.linkPullRequestWorkItem(ctx, options, base, result.ID, id); err != nil {
+			return result, fmt.Errorf("github.pull-request-created-but-not-linked:%s:%s: %w", result.ID, id, err)
 		}
 	}
-	return work.PullRequestCreateResult{ID: work.PullRequestID(strconv.FormatInt(created.Number, 10)), URL: created.URL, WebURL: created.HTMLURL}, nil
+	return result, nil
 }
 
 func (provider *Provider) LinkPullRequestWorkItem(ctx context.Context, reference work.ProjectRef, repository work.RepositoryName, pullRequestID work.PullRequestID, itemID work.ItemID) error {

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sachahjkl/dw/internal/config"
 	"github.com/sachahjkl/dw/internal/contract"
@@ -17,6 +18,7 @@ import (
 )
 
 const ProviderName work.ProviderName = "atlassian"
+const maximumResponseBodyBytes = 8 << 20
 
 type JiraOptions struct {
 	URL                      string `json:"url"`
@@ -82,7 +84,7 @@ func (provider *Provider) options(reference work.ProjectRef) (Options, error) {
 		resolved.Bitbucket.CredentialKey = "atlassian/bitbucket-token"
 	}
 	if resolved.Client == nil {
-		resolved.Client = http.DefaultClient
+		resolved.Client = &http.Client{Timeout: 30 * time.Second}
 	}
 	if resolved.Jira.Project == "" {
 		if reference.Project != "" {
@@ -209,9 +211,12 @@ func (*Provider) request(ctx context.Context, client *http.Client, endpoint, met
 		return nil, fmt.Errorf("atlassian.request: %w", err)
 	}
 	defer response.Body.Close()
-	content, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+	content, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBodyBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(content) > maximumResponseBodyBytes {
+		return nil, fmt.Errorf("atlassian.response-too-large")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("atlassian.http:%d:%s", response.StatusCode, atlassianMessage(content))

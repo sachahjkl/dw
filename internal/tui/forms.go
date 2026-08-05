@@ -424,7 +424,8 @@ func (f FormState) validation(localizer l10n.Localizer) []string {
 	}
 	for _, field := range f.Fields {
 		if (field.ID == "top" || field.ID == "maxRows") && strings.TrimSpace(field.Value) != "" {
-			if _, err := strconv.ParseUint(strings.TrimSpace(field.Value), 10, 64); err != nil {
+			value, err := strconv.ParseUint(strings.TrimSpace(field.Value), 10, 64)
+			if err != nil || value == 0 {
 				issues = append(issues, localizer.Render(l10n.M("tui.validation.integer", l10n.A("field", localizer.Text(field.Label)))))
 			}
 		}

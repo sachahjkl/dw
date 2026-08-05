@@ -58,7 +58,7 @@
           inherit src ldflags;
           tags = [ "timetzdata" ];
           subPackages = [ "cmd/dw" ];
-          vendorHash = "sha256-v30pxZ6LRbzrdxPd290Tpo5XbLLO/52n6GsDPfXRPOw=";
+          vendorHash = "sha256-AiiP8kVBHE3aHGaSl5Zcx9zJ5yhQScXBOkaGC3qrM5E=";
           env.CGO_ENABLED = "0";
         };
 
@@ -106,7 +106,10 @@
           doCheck = true;
           checkPhase = ''
             runHook preCheck
+            export XDG_CACHE_HOME="$TMPDIR/cache"
+            mkdir -p "$XDG_CACHE_HOME"
             go vet -tags=timetzdata ./...
+            go tool staticcheck ./...
             runHook postCheck
           '';
           installPhase = "touch $out";
@@ -195,6 +198,12 @@
 
             repo="$(git rev-parse --show-toplevel)"
             cd "$repo"
+
+            if [[ -n "$(git status --porcelain)" ]]; then
+              echo "Cannot release from a dirty worktree." >&2
+              exit 1
+            fi
+
             branch="$(git symbolic-ref --quiet --short HEAD)" || {
               echo "Cannot bump from a detached HEAD." >&2
               exit 1
@@ -228,7 +237,7 @@
             fi
 
             printf '%s\n' "$next" > "$version_file"
-            git add -A
+            git add -- "$version_file"
             message="''${1:-chore: release $next}"
             git commit -m "$message"
             git push origin "HEAD:$branch"

@@ -171,6 +171,9 @@ func (s *Service) Assigned(ctx context.Context, request AssignedRequest, sink Ev
 	if request.Project == "" {
 		return AssignedReport{}, projectRequired("work item list")
 	}
+	if request.Top <= 0 {
+		request.Top = 20
+	}
 	provider, err := s.provider(s.providerName(request.Provider, request.Root, request.Project))
 	if err != nil {
 		return AssignedReport{}, err
@@ -186,11 +189,7 @@ func (s *Service) Assigned(ctx context.Context, request AssignedRequest, sink Ev
 	if err := collectEvent(ctx, &report.Events, sink, Event{Kind: "loading-assigned-work-items", Project: stringPtr(request.Project), Top: request.Top}); err != nil {
 		return AssignedReport{}, err
 	}
-	top := request.Top
-	if top < 0 {
-		top = 20
-	}
-	items, err := query.QueryAssigned(ctx, projectRef(request.Root, request.Project), work.AssignedQuery{Top: top, ExcludeFinalStates: !request.IncludeFinalStates})
+	items, err := query.QueryAssigned(ctx, projectRef(request.Root, request.Project), work.AssignedQuery{Top: request.Top, ExcludeFinalStates: !request.IncludeFinalStates})
 	if err != nil {
 		return AssignedReport{}, err
 	}
@@ -386,7 +385,7 @@ func (s *Service) Context(ctx context.Context, request ContextRequest, sink Even
 	if !request.IncludeComments {
 		limit = 0
 	}
-	items, err := reader.ReadRichContext(ctx, reference, itemIDs(request.IDs), work.ReadOptions{IncludeRelations: true, IncludeComments: request.IncludeComments, CommentLimit: limit})
+	items, err := reader.ReadRichContext(ctx, reference, itemIDs(request.IDs), work.ReadOptions{IncludeRelations: !request.Summary, IncludeComments: request.IncludeComments, CommentLimit: limit})
 	if err != nil {
 		return ContextReport{}, err
 	}

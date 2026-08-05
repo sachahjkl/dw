@@ -48,9 +48,13 @@ func webRoutes(lifecycle WebLifecycle, serve func(context.Context) error) map[st
 	}
 	return map[string]Route{
 		"web.start": {Key: "web.start", Direct: func(ctx context.Context, _ Execution, invocation *parse.Result) (Outcome, error) {
+			port, err := optionalPortValue(invocation, "port")
+			if err != nil {
+				return Outcome{}, err
+			}
 			result, err := lifecycle.Start(ctx, webservice.StartOptions{
 				Root:            optionalStringValue(invocation, "root"),
-				Port:            optionalPortValue(invocation, "port"),
+				Port:            port,
 				Open:            invocation.Values.Bool("open"),
 				NoExpiry:        invocation.Values.Bool("no_expiry"),
 				Unauthenticated: invocation.Values.Bool("unauthenticated"),
@@ -99,7 +103,11 @@ func webRoutes(lifecycle WebLifecycle, serve func(context.Context) error) map[st
 			return openOutcome(result), nil
 		}},
 		"web.register": {Key: "web.register", Direct: func(ctx context.Context, _ Execution, invocation *parse.Result) (Outcome, error) {
-			status, err := lifecycle.Register(ctx, webservice.RegisterOptions{Root: optionalStringValue(invocation, "root"), Port: optionalPortValue(invocation, "port")})
+			port, err := optionalPortValue(invocation, "port")
+			if err != nil {
+				return Outcome{}, err
+			}
+			status, err := lifecycle.Register(ctx, webservice.RegisterOptions{Root: optionalStringValue(invocation, "root"), Port: port})
 			if err != nil {
 				return Outcome{}, err
 			}
@@ -122,10 +130,14 @@ func optionalStringValue(invocation *parse.Result, name string) *string {
 	return &value
 }
 
-func optionalPortValue(invocation *parse.Result, name string) *uint16 {
+func optionalPortValue(invocation *parse.Result, name string) (*uint16, error) {
 	if invocation == nil || !invocation.Values.Has(name) {
-		return nil
+		return nil, nil
 	}
-	value := uint16(invocation.Values.Int(name))
-	return &value
+	parsed := invocation.Values.Int(name)
+	if parsed < 0 || parsed > 65535 {
+		return nil, fmt.Errorf("web.invalid-port:%d", parsed)
+	}
+	value := uint16(parsed)
+	return &value, nil
 }

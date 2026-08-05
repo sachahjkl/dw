@@ -154,12 +154,13 @@ func (provider *Provider) CreatePullRequest(ctx context.Context, reference work.
 	if _, err := provider.bitbucketRequest(ctx, options, http.MethodPost, base+"/pullrequests", nil, body, &created); err != nil {
 		return work.PullRequestCreateResult{}, err
 	}
+	result := work.PullRequestCreateResult{ID: work.PullRequestID(strconv.FormatInt(created.ID, 10)), URL: created.Links.Self.Href, WebURL: created.Links.HTML.Href}
 	for _, id := range request.WorkItemIDs {
-		if err := provider.linkPullRequestWorkItem(ctx, options, base, work.PullRequestID(strconv.FormatInt(created.ID, 10)), id); err != nil {
-			return work.PullRequestCreateResult{}, err
+		if err := provider.linkPullRequestWorkItem(ctx, options, base, result.ID, id); err != nil {
+			return result, fmt.Errorf("atlassian.pull-request-created-but-not-linked:%s:%s: %w", result.ID, id, err)
 		}
 	}
-	return work.PullRequestCreateResult{ID: work.PullRequestID(strconv.FormatInt(created.ID, 10)), URL: created.Links.Self.Href, WebURL: created.Links.HTML.Href}, nil
+	return result, nil
 }
 
 func (provider *Provider) LinkPullRequestWorkItem(ctx context.Context, reference work.ProjectRef, repository work.RepositoryName, pullRequestID work.PullRequestID, itemID work.ItemID) error {

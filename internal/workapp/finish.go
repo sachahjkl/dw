@@ -103,12 +103,19 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 				return report, projectionErr
 			}
 			local.PullRequests = append(local.PullRequests, projected)
+			linkPullRequestWorkItems(ctx, prWriter, reference, candidate, existing.ID, plan.Manifest.AllKnownWorkItemIDs(), &local)
 			continue
 		}
 		local.Events = append(local.Events, workspace.ActionEvent{Type: "creatingPullRequest", Repository: candidate.Repository})
 		handoff := handoffFor(plan.HandoffSummaries, candidate.Repository)
 		created, createErr := prWriter.CreatePullRequest(ctx, reference, work.PullRequestCreate{Repository: work.RepositoryName(candidate.ProviderRepository), SourceRef: sourceRef, TargetRef: "refs/heads/" + candidate.TargetBranch, Title: finishPullRequestTitle(plan.Manifest), Description: workspace.PullRequestDescription(plan.Manifest, candidate, "", local.VerificationResults, handoff), Draft: !plan.Ready, WorkItemIDs: itemIDs(plan.Manifest.AllKnownWorkItemIDs())})
 		if createErr != nil {
+			if created.ID != "" {
+				if projected, projectionErr := finishPullRequestResult(candidate.Repository, "created", created.ID, created.URL, created.WebURL); projectionErr == nil {
+					local.PullRequests = append(local.PullRequests, projected)
+					report.Execution = &local
+				}
+			}
 			return report, createErr
 		}
 		projected, projectionErr := finishPullRequestResult(candidate.Repository, "created", created.ID, created.URL, created.WebURL)
@@ -116,11 +123,6 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 			return report, projectionErr
 		}
 		local.PullRequests = append(local.PullRequests, projected)
-		for _, id := range plan.Manifest.AllKnownWorkItemIDs() {
-			if linkErr := prWriter.LinkPullRequestWorkItem(ctx, reference, work.RepositoryName(candidate.ProviderRepository), created.ID, work.ItemID(id)); linkErr != nil {
-				local.Events = append(local.Events, workspace.ActionEvent{Type: "pullRequestWorkItemLinkSkipped", WorkItemID: id, Error: linkErr.Error()})
-			}
-		}
 	}
 	if !request.SkipWork && len(request.FinishStates) > 0 {
 		reader, requireErr := work.Require[work.ItemReader](provider, work.CapabilityItemReader)
@@ -167,6 +169,14 @@ func (s *Service) Finish(ctx context.Context, request FinishRequest, sink EventS
 		}
 	}
 	return report, nil
+}
+
+func linkPullRequestWorkItems(ctx context.Context, writer work.PullRequestWriter, reference work.ProjectRef, candidate workspace.PullRequestCandidate, pullRequestID work.PullRequestID, ids []string, report *workspace.FinishExecutionReport) {
+	for _, id := range ids {
+		if err := writer.LinkPullRequestWorkItem(ctx, reference, work.RepositoryName(candidate.ProviderRepository), pullRequestID, work.ItemID(id)); err != nil {
+			report.Events = append(report.Events, workspace.ActionEvent{Type: "pullRequestWorkItemLinkSkipped", WorkItemID: id, Error: err.Error()})
+		}
+	}
 }
 
 func finishPullRequestResult(repository, actionName string, id work.PullRequestID, url, webURL string) (workspace.PullRequestResult, error) {

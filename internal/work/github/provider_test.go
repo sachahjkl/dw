@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -95,5 +96,110 @@ func TestProviderProjectsIssuesStatesPullRequestsAndAuth(t *testing.T) {
 	}
 	if got := provider.ExtractCommitReferences("Fix #7 and #7, refs #9"); len(got) != 2 || got[0] != "7" || got[1] != "9" {
 		t.Fatalf("commit references = %#v", got)
+	}
+}
+
+func TestQueryAssignedUsesAuthenticatedLoginAndPaginates(t *testing.T) {
+	t.Setenv("DW_TEST_GITHUB_TOKEN", "test-token")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/user":
+			json.NewEncoder(writer).Encode(map[string]any{"login": "octocat"})
+		case "/repos/acme/app/issues":
+			if got := request.URL.Query().Get("assignee"); got != "octocat" {
+				t.Errorf("assignee = %q, want octocat", got)
+			}
+			switch request.URL.Query().Get("page") {
+			case "1":
+				json.NewEncoder(writer).Encode([]any{
+					map[string]any{"number": 1, "title": "PR", "pull_request": map[string]any{}},
+					map[string]any{"number": 2, "title": "Issue"},
+				})
+			case "2":
+				json.NewEncoder(writer).Encode([]any{map[string]any{"number": 3, "title": "Issue"}})
+			default:
+				t.Errorf("unexpected page %q", request.URL.Query().Get("page"))
+			}
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	provider := New(Options{Owner: "acme", Repository: "app", APIURL: server.URL, Client: server.Client(), TokenEnvironmentVariable: "DW_TEST_GITHUB_TOKEN"}, nil)
+	items, err := provider.QueryAssigned(context.Background(), work.ProjectRef{}, work.AssignedQuery{Top: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].ID != "2" || items[1].ID != "3" {
+		t.Fatalf("items = %#v", items)
+	}
+}
+
+func TestListPullRequestsPaginates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		page := request.URL.Query().Get("page")
+		count := 100
+		if page == "2" {
+			count = 1
+		}
+		items := make([]map[string]any, count)
+		for index := range items {
+			number := index + 1
+			if page == "2" {
+				number = 101
+			}
+			items[index] = map[string]any{"number": number, "title": "PR " + strconv.Itoa(number), "state": "open"}
+		}
+		json.NewEncoder(writer).Encode(items)
+	}))
+	defer server.Close()
+
+	provider := New(Options{Owner: "acme", Repository: "app", APIURL: server.URL, Client: server.Client()}, nil)
+	items, err := provider.ListPullRequests(context.Background(), work.ProjectRef{}, work.PullRequestQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 101 || items[100].ID != "101" {
+		t.Fatalf("pull requests = %d, last = %#v", len(items), items[len(items)-1])
+	}
+}
+
+func TestCreateChildValidatesParentBeforeCreatingIssue(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	defer server.Close()
+
+	provider := New(Options{Owner: "acme", Repository: "app", APIURL: server.URL, Client: server.Client()}, nil)
+	if _, err := provider.CreateChild(context.Background(), work.ProjectRef{}, work.ChildCreate{ParentID: "invalid", Title: "Child"}); err == nil {
+		t.Fatal("CreateChild succeeded with an invalid parent")
+	}
+	if requests != 0 {
+		t.Fatalf("requests = %d, want 0", requests)
+	}
+}
+
+func TestCreateChildReturnsCreatedIDWhenLinkFails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.Method + " " + request.URL.Path {
+		case "GET /repos/acme/app/issues/7":
+			json.NewEncoder(writer).Encode(map[string]any{"number": 7})
+		case "POST /repos/acme/app/issues":
+			json.NewEncoder(writer).Encode(map[string]any{"id": 9009, "number": 9, "title": "Child"})
+		case "POST /repos/acme/app/issues/7/sub_issues":
+			http.Error(writer, "link failed", http.StatusInternalServerError)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	provider := New(Options{Owner: "acme", Repository: "app", APIURL: server.URL, Client: server.Client()}, nil)
+	created, err := provider.CreateChild(context.Background(), work.ProjectRef{}, work.ChildCreate{ParentID: "7", Title: "Child"})
+	if err == nil || created.ID != "9" || !strings.Contains(err.Error(), "github.child-created-but-not-linked:9") {
+		t.Fatalf("created = %#v, err = %v", created, err)
 	}
 }

@@ -93,7 +93,7 @@ func (s Sandbox) Env(overrides map[string]string) []string {
 		"GIT_ASKPASS":         "",
 		"SSH_ASKPASS":         "",
 	}
-	for _, key := range []string{"PATH", "SystemRoot", "ComSpec", "PATHEXT", "WINDIR"} {
+	for _, key := range []string{"PATH", "SystemRoot", "ComSpec", "PATHEXT", "WINDIR", "GOCOVERDIR"} {
 		if value, ok := os.LookupEnv(key); ok {
 			values[key] = value
 		}

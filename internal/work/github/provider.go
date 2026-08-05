@@ -19,6 +19,7 @@ import (
 )
 
 const ProviderName work.ProviderName = "github"
+const maximumResponseBodyBytes = 8 << 20
 
 type Options struct {
 	Owner                    string       `json:"owner"`
@@ -69,7 +70,7 @@ func (provider *Provider) options(reference work.ProjectRef) (Options, error) {
 		resolved.CredentialKey = "github/token"
 	}
 	if resolved.Client == nil {
-		resolved.Client = http.DefaultClient
+		resolved.Client = &http.Client{Timeout: 30 * time.Second}
 	}
 	if resolved.Repository == "" && reference.Project != "" {
 		resolved.Repository = reference.Project
@@ -154,9 +155,12 @@ func (provider *Provider) request(ctx context.Context, options Options, method, 
 		return nil, fmt.Errorf("github.request: %w", err)
 	}
 	defer response.Body.Close()
-	content, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+	content, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBodyBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(content) > maximumResponseBodyBytes {
+		return nil, fmt.Errorf("github.response-too-large")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("github.http:%d:%s", response.StatusCode, responseMessage(content))

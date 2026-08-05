@@ -50,6 +50,14 @@ func TestInteractiveExecutableCommandUsesCurrentConsole(t *testing.T) {
 	}
 }
 
+func TestCommandShimIgnoresComSpecOverride(t *testing.T) {
+	t.Setenv("ComSpec", `C:\attacker\cmd.exe`)
+	command := executableCommand(context.Background(), ResolvedCommand{FileName: `C:\tool.cmd`, kind: candidateCommandScript}, true)
+	if command.Path == `C:\attacker\cmd.exe` || !filepath.IsAbs(command.Path) {
+		t.Fatalf("command interpreter = %q", command.Path)
+	}
+}
+
 func TestOutputFallsBackToCommandShim(t *testing.T) {
 	directory := t.TempDir()
 	if err := os.WriteFile(filepath.Join(directory, "tool"), []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -66,6 +74,23 @@ func TestOutputFallsBackToCommandShim(t *testing.T) {
 	}
 	if string(result.Stdout) != "1.2.3\r\n" {
 		t.Fatalf("stdout = %q, want version", result.Stdout)
+	}
+}
+
+func TestCommandShimDoesNotInterpretArgumentMetacharacters(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "tool.cmd"), []byte("@exit /b 0\r\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	injected := filepath.Join(directory, "injected.txt")
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+filepath.Join(os.Getenv("SystemRoot"), "System32"))
+
+	argument := `value"&echo injected>"` + injected
+	if _, err := Output(context.Background(), Command{FileName: "tool", Arguments: []string{argument}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(injected); !os.IsNotExist(err) {
+		t.Fatalf("argument was interpreted as a command: %v", err)
 	}
 }
 

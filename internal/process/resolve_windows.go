@@ -5,7 +5,6 @@ package process
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -80,11 +79,13 @@ func executableCommand(ctx context.Context, candidate ResolvedCommand, hidden bo
 	if candidate.kind != candidateCommandScript {
 		command = exec.CommandContext(ctx, candidate.FileName, candidate.Arguments...)
 	} else {
-		interpreter := os.Getenv("ComSpec")
-		if interpreter == "" {
-			interpreter = "cmd.exe"
+		systemDirectory, err := windows.GetSystemDirectory()
+		if err != nil {
+			command = exec.CommandContext(ctx, "cmd.exe")
+		} else {
+			command = exec.CommandContext(ctx, filepath.Join(systemDirectory, "cmd.exe"))
 		}
-		command = exec.CommandContext(ctx, interpreter)
+		interpreter := command.Path
 		attributes.CmdLine = `"` + interpreter + `" /d /s /c "` + batchCommandLine(candidate) + `"`
 	}
 	command.SysProcAttr = attributes

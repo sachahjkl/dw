@@ -17,8 +17,6 @@ const (
 	OtherLevel
 )
 
-var allLogLevels = [...]LogLevel{ErrorLevel, WarningLevel, InfoLevel, DebugLevel, OtherLevel}
-
 type RecordedEvent struct {
 	At    time.Time
 	Raw   action.EventEnvelope

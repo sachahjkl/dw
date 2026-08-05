@@ -6,7 +6,7 @@ func workGrammar(b *builder) *Command {
 			b.option("work.item.list", "root", String, "DevWorkflow root to use."),
 			completion(b.option("work.item.list", "project", String, "Configured project to query; opens an interactive picker when omitted."), CompleteProject),
 			providerOption(b, "work.item.list"),
-			defaultInt(b.option("work.item.list", "top", Int, "Maximum number of work items to load."), 20),
+			positive(defaultInt(b.option("work.item.list", "top", Int, "Maximum number of work items to load."), 20)),
 			b.option("work.item.list", "all", Bool, "Also include work items in a final state."),
 			b.option("work.item.list", "group-by-parent", Bool, "Group work items by parent."),
 			b.option("work.item.list", "json", Bool, "Emit the deterministic JSON response."),

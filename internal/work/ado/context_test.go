@@ -1,8 +1,15 @@
 package ado
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
+
+	"github.com/sachahjkl/dw/internal/work"
 )
 
 func TestAIContextContentFieldsUseDefaultsByWorkItemType(t *testing.T) {
@@ -80,6 +87,28 @@ func TestResolveOptionsMergesContentFieldOverrides(t *testing.T) {
 	incident := contentFieldMapping(resolved, "Incident")
 	if incident.Description != "Custom.Incident" || incident.AcceptanceCriteria != "Microsoft.VSTS.Common.AcceptanceCriteria" {
 		t.Fatalf("incident mapping = %#v", incident)
+	}
+}
+
+func TestReadRichContextReturnsCommentRequestError(t *testing.T) {
+	t.Setenv("DW_ADO_TOKEN", "token")
+	provider := New(Options{Organization: "https://dev.azure.com/acme", Project: "project"}, nil)
+	provider.Transport.NewClient = func() HTTPDoer {
+		return httpDoerFunc(func(request *http.Request) (*http.Response, error) {
+			status := http.StatusOK
+			body := `{"id":42,"fields":{"System.Title":"Title"}}`
+			if strings.Contains(request.URL.Path, "/comments") {
+				status = http.StatusInternalServerError
+				body = `{"message":"comment failure"}`
+			}
+			return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		})
+	}
+
+	_, err := provider.ReadRichContext(context.Background(), work.ProjectRef{}, []work.ItemID{"42"}, work.ReadOptions{IncludeComments: true, CommentLimit: 10})
+	var adoErr *Error
+	if err == nil || !errors.As(err, &adoErr) || adoErr.Status != http.StatusInternalServerError || !strings.Contains(adoErr.Body, "comment failure") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

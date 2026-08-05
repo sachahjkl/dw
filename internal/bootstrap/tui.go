@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"reflect"
 	"runtime"
@@ -104,7 +105,11 @@ func bootstrapHandlers() []action.Handler {
 			if !ok || strings.TrimSpace(value.URL) == "" {
 				return nil, fmt.Errorf("bootstrap.invalid-open-url")
 			}
-			return externalResult{URL: value.URL}, nil
+			location, err := url.Parse(value.URL)
+			if err != nil || location.Host == "" || location.Scheme != "http" && location.Scheme != "https" {
+				return nil, fmt.Errorf("bootstrap.invalid-open-url")
+			}
+			return externalResult(value), nil
 		}},
 		action.HandlerFunc{Action: actionGuide, ExecuteFunc: func(_ context.Context, request action.Request, _ action.Runtime) (action.Result, error) {
 			if _, ok := request.(guideRequest); !ok {
@@ -141,9 +146,9 @@ func (builder tuiRequestBuilder) Build(_ context.Context, request action.Request
 		if err != nil {
 			return nil, err
 		}
-		invocation, err := parse.Parse(builder.grammar, arguments)
-		if err != nil {
-			return nil, err
+		invocation, parseErr := parse.Parse(builder.grammar, arguments)
+		if parseErr != nil {
+			return nil, parseErr
 		}
 		route, found := builder.routes.Route(invocation.Command.Key)
 		if !found || route.Build == nil {
@@ -634,19 +639,11 @@ func boolParameter(values map[string]any, name string) bool {
 	return value
 }
 
-func formRequest(id action.ID, values ...string) tui.FormRequest {
-	parameters := make([]tui.Parameter, 0, len(values)/2)
-	for index := 0; index+1 < len(values); index += 2 {
-		parameters = append(parameters, tui.Parameter{Name: values[index], Value: values[index+1]})
-	}
-	return tui.FormRequest{Action: id, Parameters: parameters}
-}
-
 func projectExternal(result action.Result) (tui.ExternalProcess, bool) {
 	if external, ok := result.(externalResult); ok {
 		switch runtime.GOOS {
 		case "windows":
-			return tui.ExternalProcess{Program: "cmd", Arguments: []string{"/c", "start", "", external.URL}}, true
+			return tui.ExternalProcess{Program: "rundll32", Arguments: []string{"url.dll,FileProtocolHandler", external.URL}}, true
 		default:
 			return tui.ExternalProcess{Program: "xdg-open", Arguments: []string{external.URL}}, true
 		}

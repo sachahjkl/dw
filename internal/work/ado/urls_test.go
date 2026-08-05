@@ -23,7 +23,7 @@ func TestADOURLsPreserveStandardOutputs(t *testing.T) {
 		{"pull requests", PullRequestsURL(options, "repo"), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullrequests?api-version=7.1"},
 		{"pull request web", PullRequestWebURL(options, "repo", 12), "https://dev.azure.com/acme/Project/_git/repo/pullrequest/12"},
 		{"active pull requests", ActivePullRequestsURL(options, "repo", "refs/heads/topic"), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullrequests?searchCriteria.status=active&searchCriteria.sourceRefName=refs%2Fheads%2Ftopic&api-version=7.1"},
-		{"repository pull requests", ActivePullRequestsForRepositoryURL(options, "repo"), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullrequests?searchCriteria.status=active&api-version=7.1"},
+		{"repository pull requests", ActivePullRequestsForRepositoryURL(options, "repo", 100, 100), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullrequests?searchCriteria.status=active&$skip=100&$top=100&api-version=7.1"},
 		{"pull request items", PullRequestWorkItemsURL(options, "repo", 12), "https://dev.azure.com/acme/Project/_apis/git/repositories/repo/pullRequests/12/workitems?api-version=7.1"},
 		{"connection data", ConnectionDataURL(options), "https://dev.azure.com/acme/_apis/connectionData?connectOptions=1&lastChangeId=-1&lastChangeId64=-1"},
 	}

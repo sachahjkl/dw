@@ -54,8 +54,8 @@ func ExpandedWorkItemURL(options Options, id string) string {
 	return adoURL(options, []string{options.Project, "_apis", "wit", "workitems", id}, query("$expand", "all", "api-version", apiVersion(options)))
 }
 
-func WorkItemCommentsURL(options Options, id string, top uint32) string {
-	return adoURL(options, []string{options.Project, "_apis", "wit", "workItems", id, "comments"}, query("$top", strconv.FormatUint(uint64(top), 10), "api-version", apiVersion(options)))
+func WorkItemCommentsURL(options Options, id string, top int) string {
+	return adoURL(options, []string{options.Project, "_apis", "wit", "workItems", id, "comments"}, query("$top", strconv.Itoa(top), "api-version", apiVersion(options)))
 }
 
 func WorkItemURL(options Options, id string) string {
@@ -94,8 +94,8 @@ func ActivePullRequestsURL(options Options, repository, sourceRef string) string
 	return adoURL(options, []string{options.Project, "_apis", "git", "repositories", repository, "pullrequests"}, query("searchCriteria.status", "active", "searchCriteria.sourceRefName", sourceRef, "api-version", apiVersion(options)))
 }
 
-func ActivePullRequestsForRepositoryURL(options Options, repository string) string {
-	return adoURL(options, []string{options.Project, "_apis", "git", "repositories", repository, "pullrequests"}, query("searchCriteria.status", "active", "api-version", apiVersion(options)))
+func ActivePullRequestsForRepositoryURL(options Options, repository string, skip, top int) string {
+	return adoURL(options, []string{options.Project, "_apis", "git", "repositories", repository, "pullrequests"}, query("searchCriteria.status", "active", "$skip", strconv.Itoa(skip), "$top", strconv.Itoa(top), "api-version", apiVersion(options)))
 }
 
 func PullRequestWorkItemsURL(options Options, repository string, id int64) string {

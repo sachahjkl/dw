@@ -575,6 +575,21 @@ func contextPage(r workapp.ContextReport) Page {
 		if item.Content.AcceptanceCriteria != nil && strings.TrimSpace(*item.Content.AcceptanceCriteria) != "" {
 			section.Panels = append(section.Panels, Panel{Title: "result.acceptance-criteria", Body: *item.Content.AcceptanceCriteria})
 		}
+		if len(item.Comments) != 0 {
+			comments := make([]string, 0, len(item.Comments))
+			for _, comment := range item.Comments {
+				header := strings.TrimSpace(stringValue(comment.Author) + " " + stringValue(comment.CreatedDate))
+				body := strings.TrimSpace(stringValue(comment.Text))
+				if header != "" && body != "" {
+					comments = append(comments, header+"\n"+body)
+				} else if body != "" {
+					comments = append(comments, body)
+				}
+			}
+			if len(comments) != 0 {
+				section.Panels = append(section.Panels, Panel{Title: "result.comments", Body: strings.Join(comments, "\n\n")})
+			}
+		}
 		p.Sections = append(p.Sections, section)
 	}
 	for _, expanded := range r.Expanded {

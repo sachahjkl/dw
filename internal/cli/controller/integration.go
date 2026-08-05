@@ -299,9 +299,6 @@ func repoLatestProject(result action.ResultEnvelope, invocation *parse.Result) (
 	}
 	return marshalProjection(report.Plan)
 }
-func jsonProject(result action.ResultEnvelope, _ *parse.Result) (console.OutputFormat, *console.JSONProjection, error) {
-	return marshalProjection(result.Result)
-}
 func upgradeProject(result action.ResultEnvelope, _ *parse.Result) (console.OutputFormat, *console.JSONProjection, error) {
 	report, ok := result.Result.(update.Report)
 	if !ok {
@@ -448,7 +445,7 @@ func buildWorkContextShow(inv *parse.Result) (action.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	return workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: ids, Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Int("comments") > 0, Mode: workapp.ContextRaw}, nil
+	return workapp.ContextRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, IDs: ids, Summary: inv.Values.Bool("summary"), Comments: int(inv.Values.Int("comments")), IncludeComments: inv.Values.Int("comments") > 0, Mode: workapp.ContextRich}, nil
 }
 func buildWorkContextAI(inv *parse.Result) (action.Request, error) {
 	root, project, ids, err := currentWorkSelection(inv.Values)

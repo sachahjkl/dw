@@ -52,32 +52,39 @@ func (p *Provider) FindActivePullRequest(ctx context.Context, options Options, r
 }
 
 func (p *Provider) ListActivePullRequests(ctx context.Context, options Options, repository string, token Token) ([]PullRequestListItem, error) {
-	body, err := p.transport().Get(ctx, ActivePullRequestsForRepositoryURL(options, repository), token)
-	if err != nil {
-		return nil, err
-	}
-	root, err := decodeObject(body)
-	if err != nil {
-		return nil, err
-	}
 	result := make([]PullRequestListItem, 0)
-	for _, value := range array(root["value"]) {
-		item := object(value)
-		id, ok := int64Value(item["pullRequestId"])
-		if !ok {
-			continue
-		}
-		workItemIDs, _, err := p.TryGetPullRequestWorkItemIDs(ctx, options, repository, id, token)
+	const pageSize = 100
+	for skip := 0; ; skip += pageSize {
+		body, err := p.transport().Get(ctx, ActivePullRequestsForRepositoryURL(options, repository, skip, pageSize), token)
 		if err != nil {
 			return nil, err
 		}
-		webURL := nestedString(item, "_links", "web", "href")
-		if webURL == nil {
-			webURL = stringPointer(PullRequestWebURL(options, repository, id))
+		root, err := decodeObject(body)
+		if err != nil {
+			return nil, err
 		}
-		result = append(result, PullRequestListItem{
-			Repository: repository, PullRequestID: id, Title: fieldText(item, "title"), Status: fieldText(item, "status"), SourceRefName: fieldText(item, "sourceRefName"), TargetRefName: fieldText(item, "targetRefName"), IsDraft: boolValue(item["isDraft"]), CreatedBy: identityText(item["createdBy"]), URL: fieldText(item, "url"), WebURL: webURL, WorkItemIDs: workItemIDs,
-		})
+		values := array(root["value"])
+		for _, value := range values {
+			item := object(value)
+			id, ok := int64Value(item["pullRequestId"])
+			if !ok {
+				continue
+			}
+			workItemIDs, _, err := p.TryGetPullRequestWorkItemIDs(ctx, options, repository, id, token)
+			if err != nil {
+				return nil, err
+			}
+			webURL := nestedString(item, "_links", "web", "href")
+			if webURL == nil {
+				webURL = stringPointer(PullRequestWebURL(options, repository, id))
+			}
+			result = append(result, PullRequestListItem{
+				Repository: repository, PullRequestID: id, Title: fieldText(item, "title"), Status: fieldText(item, "status"), SourceRefName: fieldText(item, "sourceRefName"), TargetRefName: fieldText(item, "targetRefName"), IsDraft: boolValue(item["isDraft"]), CreatedBy: identityText(item["createdBy"]), URL: fieldText(item, "url"), WebURL: webURL, WorkItemIDs: workItemIDs,
+			})
+		}
+		if len(values) < pageSize {
+			break
+		}
 	}
 	return result, nil
 }

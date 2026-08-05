@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -37,6 +38,14 @@ type issue struct {
 	} `json:"parent"`
 }
 
+type issueComment struct {
+	User struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	CreatedAt string `json:"created_at"`
+	Body      string `json:"body"`
+}
+
 func (provider *Provider) ReadItems(ctx context.Context, reference work.ProjectRef, ids []work.ItemID, _ work.ReadOptions) ([]work.Item, error) {
 	options, err := provider.options(reference)
 	if err != nil {
@@ -70,24 +79,37 @@ func (provider *Provider) QueryAssigned(ctx context.Context, reference work.Proj
 	if err != nil {
 		return nil, err
 	}
-	top := query.Top
-	if top < 1 || top > 100 {
-		top = 100
-	}
-	parameters := url.Values{"assignee": {"@me"}, "per_page": {strconv.Itoa(top)}}
-	if query.ExcludeFinalStates {
-		parameters.Set("state", "open")
-	} else {
-		parameters.Set("state", "all")
-	}
-	var source []issue
-	if _, err := provider.request(ctx, options, http.MethodGet, base+"/issues", parameters, nil, &source); err != nil {
+	login, err := provider.authenticatedLogin(ctx, options)
+	if err != nil {
 		return nil, err
 	}
-	items := make([]work.Item, 0, len(source))
-	for _, candidate := range source {
-		if candidate.PullRequest == nil {
-			items = append(items, issueItem(candidate))
+	limit := query.Top
+	if limit < 1 {
+		limit = 100
+	}
+	pageSize := min(limit, 100)
+	items := make([]work.Item, 0, limit)
+	for page := 1; len(items) < limit; page++ {
+		parameters := url.Values{"assignee": {login}, "per_page": {strconv.Itoa(pageSize)}, "page": {strconv.Itoa(page)}}
+		if query.ExcludeFinalStates {
+			parameters.Set("state", "open")
+		} else {
+			parameters.Set("state", "all")
+		}
+		var source []issue
+		if _, err := provider.request(ctx, options, http.MethodGet, base+"/issues", parameters, nil, &source); err != nil {
+			return nil, err
+		}
+		for _, candidate := range source {
+			if candidate.PullRequest == nil {
+				items = append(items, issueItem(candidate))
+				if len(items) == limit {
+					break
+				}
+			}
+		}
+		if len(source) < pageSize {
+			break
 		}
 	}
 	return items, nil
@@ -108,12 +130,18 @@ func (provider *Provider) ReadRelations(ctx context.Context, reference work.Proj
 		if parseErr != nil {
 			return nil, parseErr
 		}
-		var children []issue
-		if _, err := provider.request(ctx, options, http.MethodGet, base+"/issues/"+strconv.FormatInt(number, 10)+"/sub_issues", nil, nil, &children); err != nil {
-			return nil, err
-		}
-		for _, child := range children {
-			relations = append(relations, work.Relation{SourceID: id, Kind: work.RelationChild, TargetID: contract.Some(work.ItemID(strconv.FormatInt(child.Number, 10))), Name: child.Title, URL: child.HTMLURL})
+		for page := 1; ; page++ {
+			parameters := url.Values{"per_page": {"100"}, "page": {strconv.Itoa(page)}}
+			var children []issue
+			if _, err := provider.request(ctx, options, http.MethodGet, base+"/issues/"+strconv.FormatInt(number, 10)+"/sub_issues", parameters, nil, &children); err != nil {
+				return nil, err
+			}
+			for _, child := range children {
+				relations = append(relations, work.Relation{SourceID: id, Kind: work.RelationChild, TargetID: contract.Some(work.ItemID(strconv.FormatInt(child.Number, 10))), Name: child.Title, URL: child.HTMLURL})
+			}
+			if len(children) < 100 {
+				break
+			}
 		}
 	}
 	return relations, nil
@@ -177,6 +205,14 @@ func (provider *Provider) CreateChild(ctx context.Context, reference work.Projec
 	if err != nil {
 		return work.ChildCreateResult{}, err
 	}
+	parent, err := parseID(request.ParentID)
+	if err != nil {
+		return work.ChildCreateResult{}, err
+	}
+	var parentIssue issue
+	if _, err := provider.request(ctx, options, http.MethodGet, base+"/issues/"+strconv.FormatInt(parent, 10), nil, nil, &parentIssue); err != nil {
+		return work.ChildCreateResult{}, err
+	}
 	body := map[string]any{"title": request.Title}
 	if strings.TrimSpace(request.History) != "" {
 		body["body"] = request.History
@@ -185,14 +221,11 @@ func (provider *Provider) CreateChild(ctx context.Context, reference work.Projec
 	if _, err := provider.request(ctx, options, http.MethodPost, base+"/issues", nil, body, &created); err != nil {
 		return work.ChildCreateResult{}, err
 	}
-	parent, err := parseID(request.ParentID)
-	if err != nil {
-		return work.ChildCreateResult{}, err
-	}
+	result := work.ChildCreateResult{ID: work.ItemID(strconv.FormatInt(created.Number, 10)), Title: created.Title, URL: created.HTMLURL}
 	if _, err := provider.request(ctx, options, http.MethodPost, base+"/issues/"+strconv.FormatInt(parent, 10)+"/sub_issues", nil, map[string]any{"sub_issue_id": created.ID}, nil); err != nil {
-		return work.ChildCreateResult{}, err
+		return result, fmt.Errorf("github.child-created-but-not-linked:%s: %w", result.ID, err)
 	}
-	return work.ChildCreateResult{ID: work.ItemID(strconv.FormatInt(created.Number, 10)), Title: created.Title, URL: created.HTMLURL}, nil
+	return result, nil
 }
 
 func (provider *Provider) ReadRichContext(ctx context.Context, reference work.ProjectRef, ids []work.ItemID, options work.ReadOptions) ([]work.RichContext, error) {
@@ -221,23 +254,23 @@ func (provider *Provider) ReadRichContext(ctx context.Context, reference work.Pr
 				return nil, err
 			}
 		}
-		if options.IncludeComments {
-			parameters := url.Values{}
-			if options.CommentLimit > 0 {
-				parameters.Set("per_page", strconv.Itoa(options.CommentLimit))
-			}
-			var comments []struct {
-				User struct {
-					Login string `json:"login"`
-				} `json:"user"`
-				CreatedAt string `json:"created_at"`
-				Body      string `json:"body"`
-			}
-			if _, err := provider.request(ctx, providerOptions, http.MethodGet, base+"/issues/"+strconv.FormatInt(number, 10)+"/comments", parameters, nil, &comments); err != nil {
-				return nil, err
-			}
-			for _, comment := range comments {
-				rich.Comments = append(rich.Comments, work.Comment{Author: comment.User.Login, CreatedAt: timestamp(comment.CreatedAt), Text: comment.Body})
+		if options.IncludeComments && options.CommentLimit > 0 {
+			pageSize := min(options.CommentLimit, 100)
+			for page := 1; len(rich.Comments) < options.CommentLimit; page++ {
+				parameters := url.Values{"per_page": {strconv.Itoa(pageSize)}, "page": {strconv.Itoa(page)}}
+				var comments []issueComment
+				if _, err := provider.request(ctx, providerOptions, http.MethodGet, base+"/issues/"+strconv.FormatInt(number, 10)+"/comments", parameters, nil, &comments); err != nil {
+					return nil, err
+				}
+				for _, comment := range comments {
+					rich.Comments = append(rich.Comments, work.Comment{Author: comment.User.Login, CreatedAt: timestamp(comment.CreatedAt), Text: comment.Body})
+					if len(rich.Comments) == options.CommentLimit {
+						break
+					}
+				}
+				if len(comments) < pageSize {
+					break
+				}
 			}
 		}
 		result = append(result, rich)

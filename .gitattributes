@@ -1,4 +1,6 @@
 *.go text eol=lf
+*.nix text eol=lf
+flake.lock text eol=lf
 
 internal/web/assets/datastar.js text eol=lf
 internal/web/assets/datastar.js.sha256 text eol=lf

@@ -138,6 +138,7 @@ var EnglishEntries = []l10n.Entry{
 	{ID: "result.saved-root", Text: "Saved root"},
 	{ID: "result.description-content", Text: "Description"},
 	{ID: "result.acceptance-criteria", Text: "Acceptance criteria"},
+	{ID: "result.comments", Text: "Comments"},
 	{ID: "work.event.authenticating", Text: "Authenticating with the work provider..."},
 	{ID: "work.event.device-login-required", Text: "Provider device sign-in is required."},
 	{ID: "work.event.browser-login-required", Text: "Provider browser sign-in is waiting for its callback."},

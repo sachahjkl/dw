@@ -20,7 +20,10 @@ func (finishTestLookup) Resolve(context.Context, string, *string, string, []stri
 	return "/workspace", nil
 }
 
-type finishSequenceProvider struct{ order *[]string }
+type finishSequenceProvider struct {
+	order    *[]string
+	existing bool
+}
 
 func (finishSequenceProvider) Name() work.ProviderName { return "sequence" }
 func (provider finishSequenceProvider) ListPullRequests(context.Context, work.ProjectRef, work.PullRequestQuery) ([]work.PullRequest, error) {
@@ -28,6 +31,9 @@ func (provider finishSequenceProvider) ListPullRequests(context.Context, work.Pr
 }
 func (provider finishSequenceProvider) ActivePullRequest(context.Context, work.ProjectRef, work.RepositoryName, string) (*work.PullRequest, error) {
 	*provider.order = append(*provider.order, "find-pr")
+	if provider.existing {
+		return &work.PullRequest{ID: "1", URL: "https://example.invalid/pr/1"}, nil
+	}
 	return nil, nil
 }
 func (finishSequenceProvider) PullRequestWorkItemIDs(context.Context, work.ProjectRef, work.RepositoryName, work.PullRequestID) ([]work.ItemID, error) {
@@ -37,7 +43,8 @@ func (provider finishSequenceProvider) CreatePullRequest(context.Context, work.P
 	*provider.order = append(*provider.order, "create-pr")
 	return work.PullRequestCreateResult{ID: "1", URL: "https://example.invalid/pr/1"}, nil
 }
-func (finishSequenceProvider) LinkPullRequestWorkItem(context.Context, work.ProjectRef, work.RepositoryName, work.PullRequestID, work.ItemID) error {
+func (provider finishSequenceProvider) LinkPullRequestWorkItem(context.Context, work.ProjectRef, work.RepositoryName, work.PullRequestID, work.ItemID) error {
+	*provider.order = append(*provider.order, "link-pr")
 	return nil
 }
 
@@ -48,7 +55,7 @@ type finishSequenceFinisher struct {
 
 func (*finishSequenceFinisher) PlanFinish(context.Context, string, string, string, bool, bool) (workspace.FinishPlanReport, error) {
 	return workspace.FinishPlanReport{
-		Manifest:              workspace.Manifest{Project: "project", BranchName: "feat/task"},
+		Manifest:              workspace.Manifest{Project: "project", WorkItemID: "42", BranchName: "feat/task"},
 		Handoff:               workspace.HandoffValidationReport{IsValid: true},
 		PullRequestCandidates: []workspace.PullRequestCandidate{{Repository: "repo", ProviderRepository: "org/repo", TargetBranch: "main"}},
 	}, nil
@@ -121,6 +128,21 @@ func TestFinishPushesBeforePullRequestCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if want := []string{"push", "find-pr", "create-pr"}; !reflect.DeepEqual(order, want) {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+}
+
+func TestFinishLinksWorkItemsToExistingPullRequest(t *testing.T) {
+	order := []string{}
+	registry := work.NewRegistry()
+	if err := registry.Register(finishSequenceProvider{order: &order, existing: true}); err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{Providers: registry, Lookup: finishTestLookup{}, Finisher: &finishSequenceFinisher{order: &order}}
+	if _, err := service.Finish(context.Background(), FinishRequest{Provider: "sequence", Execute: true, CreatePR: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"push", "find-pr", "link-pr"}; !reflect.DeepEqual(order, want) {
 		t.Fatalf("order = %v, want %v", order, want)
 	}
 }

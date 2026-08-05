@@ -15,6 +15,7 @@ type HTTPDoer interface {
 }
 
 const DefaultHTTPTimeout = 30 * time.Second
+const maximumResponseBodyBytes = 8 << 20
 
 func newDefaultHTTPClient() HTTPDoer { return &http.Client{Timeout: DefaultHTTPTimeout} }
 
@@ -91,15 +92,21 @@ func (t *Transport) request(ctx context.Context, method, url string, token Token
 		return nil, &Error{Kind: ErrorRequest, Detail: err.Error(), Cause: err}
 	}
 	defer response.Body.Close()
-	responseBody, err := io.ReadAll(response.Body)
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBodyBytes+1))
 	if err != nil {
 		return nil, &Error{Kind: ErrorRequest, Detail: err.Error(), Cause: err}
+	}
+	if len(responseBody) > maximumResponseBodyBytes {
+		return nil, &Error{Kind: ErrorRequest, Detail: "response body exceeds 8 MiB"}
 	}
 	if optional404 && response.StatusCode == http.StatusNotFound {
 		return nil, nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, &Error{Kind: ErrorHTTP, Status: response.StatusCode, Body: string(responseBody)}
+	}
+	if len(responseBody) == 0 {
+		return nil, nil
 	}
 	if !json.Valid(responseBody) {
 		var value any
