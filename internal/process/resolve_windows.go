@@ -70,9 +70,13 @@ func lookPath(fileName string) (string, error) {
 	return "", err
 }
 
-func executableCommand(ctx context.Context, candidate ResolvedCommand) *exec.Cmd {
+func executableCommand(ctx context.Context, candidate ResolvedCommand, hidden bool) *exec.Cmd {
 	var command *exec.Cmd
-	attributes := &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW, HideWindow: true}
+	attributes := &syscall.SysProcAttr{}
+	if hidden {
+		attributes.CreationFlags = windows.CREATE_NO_WINDOW
+		attributes.HideWindow = true
+	}
 	if candidate.kind != candidateCommandScript {
 		command = exec.CommandContext(ctx, candidate.FileName, candidate.Arguments...)
 	} else {

@@ -13,7 +13,7 @@ func appendPlatformCandidates(candidates []ResolvedCommand, _ string, _ []string
 
 func prepareCandidate(candidate ResolvedCommand) (ResolvedCommand, error) { return candidate, nil }
 
-func executableCommand(ctx context.Context, candidate ResolvedCommand) *exec.Cmd {
+func executableCommand(ctx context.Context, candidate ResolvedCommand, _ bool) *exec.Cmd {
 	return exec.CommandContext(ctx, candidate.FileName, candidate.Arguments...)
 }
 

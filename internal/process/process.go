@@ -103,7 +103,7 @@ func Output(ctx context.Context, command Command) (Result, error) {
 			return Result{ExitCode: -1}, &StartError{FileName: command.FileName, cause: prepareErr}
 		}
 		var stdout, stderr bytes.Buffer
-		cmd := executableCommand(ctx, prepared)
+		cmd := executableCommand(ctx, prepared, true)
 		var stdin io.Reader
 		if len(command.Input) != 0 {
 			stdin = bytes.NewReader(command.Input)
@@ -147,7 +147,7 @@ func Run(ctx context.Context, command Command, stdin io.Reader, stdout, stderr i
 			}
 			return &StartError{FileName: command.FileName, cause: prepareErr}
 		}
-		cmd := executableCommand(ctx, prepared)
+		cmd := executableCommand(ctx, prepared, false)
 		configure(cmd, command, stdout, stderr, stdin)
 		err := cmd.Run()
 		if err == nil {

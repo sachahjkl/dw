@@ -37,9 +37,16 @@ func TestPrepareCandidateSkipsExtensionlessWindowsShim(t *testing.T) {
 }
 
 func TestExecutableCommandDoesNotCreateWindow(t *testing.T) {
-	command := executableCommand(context.Background(), ResolvedCommand{FileName: "tool.exe"})
+	command := executableCommand(context.Background(), ResolvedCommand{FileName: "tool.exe"}, true)
 	if command.SysProcAttr == nil || command.SysProcAttr.CreationFlags&windows.CREATE_NO_WINDOW == 0 || !command.SysProcAttr.HideWindow {
 		t.Fatalf("Windows process attributes = %#v, want hidden process without console", command.SysProcAttr)
+	}
+}
+
+func TestInteractiveExecutableCommandUsesCurrentConsole(t *testing.T) {
+	command := executableCommand(context.Background(), ResolvedCommand{FileName: "tool.exe"}, false)
+	if command.SysProcAttr == nil || command.SysProcAttr.CreationFlags&windows.CREATE_NO_WINDOW != 0 || command.SysProcAttr.HideWindow {
+		t.Fatalf("Windows process attributes = %#v, want current console", command.SysProcAttr)
 	}
 }
 
