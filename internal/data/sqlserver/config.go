@@ -2,11 +2,9 @@ package sqlserver
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"os"
 	"strings"
-	"unicode/utf16"
 
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/l10n"
@@ -139,49 +137,9 @@ func ResolveConnectionString(ctx context.Context, config ConnectionConfig, store
 		if !found || strings.TrimSpace(secret.Reveal()) == "" {
 			return contract.SecretValue{}, &ProviderError{Kind: ErrorMissingSecret, Key: key}
 		}
-		return contract.NewSecretValue(decodePersistedConnectionString(secret.Reveal())), nil
+		return secret, nil
 	}
 	return contract.SecretValue{}, &ProviderError{Kind: ErrorMissingConnection}
-}
-
-func decodePersistedConnectionString(value string) string {
-	encoded := []byte(value)
-	if len(encoded) < 4 || len(encoded)%2 != 0 {
-		return value
-	}
-	order := binary.ByteOrder(nil)
-	start := 0
-	if encoded[0] == 0xff && encoded[1] == 0xfe {
-		order, start = binary.LittleEndian, 2
-	} else if encoded[0] == 0xfe && encoded[1] == 0xff {
-		order, start = binary.BigEndian, 2
-	} else {
-		var evenZeros, oddZeros int
-		for index, current := range encoded {
-			if current != 0 {
-				continue
-			}
-			if index%2 == 0 {
-				evenZeros++
-			} else {
-				oddZeros++
-			}
-		}
-		minimum := len(encoded) / 4
-		switch {
-		case oddZeros >= minimum && oddZeros > evenZeros:
-			order = binary.LittleEndian
-		case evenZeros >= minimum && evenZeros > oddZeros:
-			order = binary.BigEndian
-		default:
-			return value
-		}
-	}
-	units := make([]uint16, 0, (len(encoded)-start)/2)
-	for index := start; index < len(encoded); index += 2 {
-		units = append(units, order.Uint16(encoded[index:index+2]))
-	}
-	return strings.TrimRight(string(utf16.Decode(units)), "\x00")
 }
 
 // EqualSecrets is used only for conservative keyring conflict checks.

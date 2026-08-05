@@ -30,17 +30,3 @@ func TestProviderErrorExposesLocalizedSQLDetail(t *testing.T) {
 		t.Fatalf("localized error = %q", got)
 	}
 }
-
-func TestDecodePersistedConnectionString(t *testing.T) {
-	plain := "Server=db;Database=app;User Id=user;Password=secret"
-	littleEndian := make([]byte, 0, len(plain)*2)
-	for _, current := range []byte(plain) {
-		littleEndian = append(littleEndian, current, 0)
-	}
-	if got := decodePersistedConnectionString(string(littleEndian)); got != plain {
-		t.Fatalf("decoded connection string = %q", got)
-	}
-	if got := decodePersistedConnectionString(plain); got != plain {
-		t.Fatalf("UTF-8 connection string changed to %q", got)
-	}
-}

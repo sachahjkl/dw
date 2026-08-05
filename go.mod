@@ -9,7 +9,6 @@ require (
 	github.com/a-h/templ v0.3.1020
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc
 	github.com/chromedp/chromedp v0.15.1
-	github.com/danieljoos/wincred v1.2.3
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/starfederation/datastar-go v1.2.2
 	github.com/xuri/excelize/v2 v2.11.0
@@ -35,6 +34,7 @@ require (
 	github.com/cli/browser v1.3.0 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect

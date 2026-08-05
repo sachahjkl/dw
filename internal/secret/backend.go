@@ -1,5 +1,3 @@
-//go:build linux
-
 package secret
 
 import keyring "github.com/zalando/go-keyring"
