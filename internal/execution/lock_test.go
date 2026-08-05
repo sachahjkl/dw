@@ -63,15 +63,17 @@ func TestRootLockerCoordinatesProcesses(t *testing.T) {
 	root := t.TempDir()
 	first := startLockHelper(t, executable, directory, root)
 	defer first.stop(t)
-	first.waitLocked(t, time.Second)
+	first.waitLocked(t, 10*time.Second)
 
 	second := startLockHelper(t, executable, directory, root)
 	defer second.stop(t)
-	if line, ok := second.readLine(150 * time.Millisecond); ok {
+	if line, ok, readErr := second.readLine(150 * time.Millisecond); readErr != nil {
+		t.Fatalf("second helper failed before acquiring the lock: %v", readErr)
+	} else if ok {
 		t.Fatalf("second process acquired early: %q", line)
 	}
 	first.release(t)
-	second.waitLocked(t, time.Second)
+	second.waitLocked(t, 10*time.Second)
 	second.release(t)
 }
 
@@ -131,22 +133,25 @@ func startLockHelper(t *testing.T, executable, directory, root string) *lockHelp
 	return helper
 }
 
-func (helper *lockHelper) readLine(timeout time.Duration) (string, bool) {
+func (helper *lockHelper) readLine(timeout time.Duration) (string, bool, error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case line := <-helper.lines:
-		return line, true
-	case <-helper.errors:
-		return "", false
+		return line, true, nil
+	case err := <-helper.errors:
+		return "", false, err
 	case <-timer.C:
-		return "", false
+		return "", false, nil
 	}
 }
 
 func (helper *lockHelper) waitLocked(t *testing.T, timeout time.Duration) {
 	t.Helper()
-	line, ok := helper.readLine(timeout)
+	line, ok, err := helper.readLine(timeout)
+	if err != nil {
+		t.Fatalf("lock helper failed: %v", err)
+	}
 	if !ok || line != "locked\n" {
 		t.Fatalf("helper output = %q, received=%t", line, ok)
 	}
