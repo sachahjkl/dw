@@ -83,7 +83,7 @@
         testCheck = buildGoModule (commonArgs // {
           pname = "dw-tests";
           doCheck = true;
-          nativeBuildInputs = [ pkgs.chromium pkgs.fontconfig pkgs.dejavu_fonts ];
+          nativeBuildInputs = [ pkgs.chromium pkgs.fontconfig pkgs.dejavu_fonts pkgs.git ];
           env = commonArgs.env // {
             DW_CHROMIUM = "${pkgs.chromium}/bin/chromium";
             FONTCONFIG_FILE = pkgs.makeFontsConf {
@@ -127,9 +127,16 @@
           go fmt ./...
         '';
 
-        testScript = goScript "dw-test" ''
-          go test "$@" ./...
-        '';
+        testScript = pkgs.writeShellApplication {
+          name = "dw-test";
+          runtimeInputs = [ go pkgs.git ];
+          text = ''
+            export CGO_ENABLED=0
+            export GOTOOLCHAIN=local
+            export GOFLAGS="-tags=timetzdata"
+            go test "$@" ./...
+          '';
+        };
 
         staticAnalysisScript = goScript "dw-static-analysis" ''
           go vet "$@" ./...
