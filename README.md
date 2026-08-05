@@ -6,7 +6,7 @@ The CLI is the deterministic rail. AI agents still do the reasoning and editing,
 
 ## Build
 
-Source builds require Go 1.26.5 or later and Git on `PATH`:
+Source builds require Go 1.26.2 or later and Git on `PATH`:
 
 ```bash
 go run ./cmd/dw version
@@ -101,7 +101,7 @@ For release-binary installs, `dw upgrade --check` can inspect the latest release
 
 ### Local Build
 
-Build and run the binary from source with Go 1.26.5 or later:
+Build and run the binary from source with Go 1.26.2 or later:
 
 ```bash
 go build -o ./dw ./cmd/dw
