@@ -51,7 +51,10 @@ func workspaceGrammar(b *builder) *Command {
 		}),
 	)
 	preflight := b.command("preflight", "workspace.preflight", "Validate blockers and warnings before implementation.", append(workspaceResolution(b, "workspace.preflight", "Workspace path to audit.", "Resume the most recent matching task workspace."),
-		repeat(b.option("workspace.preflight", "ai-context-file", String, "Additional AI context file to verify; repeatable option.")),
+		providerOption(b, "workspace.preflight"),
+		repeat(b.option("workspace.preflight", "context-file", String, "Additional provider context file to verify; repeatable option.")),
+		repeat(b.option("workspace.preflight", "ai-context-file", String, "Legacy alias for --context-file; repeatable option.")),
+		b.option("workspace.preflight", "no-provider", Bool, "Use existing context files without refreshing from the provider."),
 		b.option("workspace.preflight", "json", Bool, "Emit the deterministic preflight report JSON."),
 		b.positional("workspace.preflight", "positional_work_item", "WORK_ITEM", String, false, "Positional work item alias used to resolve the workspace."),
 	))
@@ -60,6 +63,13 @@ func workspaceGrammar(b *builder) *Command {
 		b.option("workspace.sync", "json", Bool, "Emit the deterministic result JSON."),
 		b.positional("workspace.sync", "positional_work_item", "WORK_ITEM", String, false, "Positional work item alias used to resolve the workspace."),
 	))
+	context := b.command("context", "workspace.context", "Manage the canonical provider context for a workspace.", nil,
+		b.command("refresh", "workspace.context.refresh", "Refresh .dw/work-item-context.json from the configured provider.", append(workspaceResolution(b, "workspace.context.refresh", "Workspace whose context to refresh.", "Resume the most recent matching task workspace."),
+			providerOption(b, "workspace.context.refresh"),
+			b.option("workspace.context.refresh", "json", Bool, "Emit the deterministic result JSON."),
+			b.positional("workspace.context.refresh", "positional_work_item", "WORK_ITEM", String, false, "Positional work item alias used to resolve the workspace."),
+		)),
+	)
 	rename := b.command("rename", "workspace.rename", "Rename a task workspace and its branch using a new slug.", append([]Argument{b.positional("workspace.rename", "slug", "SLUG", String, true, "New slug for the workspace and branch.")}, append(workspaceResolution(b, "workspace.rename", "Workspace path to rename.", "Resume the most recent matching task workspace."),
 		b.option("workspace.rename", "json", Bool, "Emit the plan/result as deterministic JSON."),
 		b.option("workspace.rename", "execute", Bool, "Actually apply the rename; without this flag, show the plan."),
@@ -108,13 +118,13 @@ func workspaceGrammar(b *builder) *Command {
 		b.option("workspace.prune", "json", Bool, "Emit the plan/result as deterministic JSON."),
 	})
 	return b.command("workspace", "workspace", "Manage local workspaces, worktrees, repositories, commits, and pull requests.", nil,
-		status, list, current, open, start, pr, preflight, sync, rename, repo, item, commit, finish, handoff, teardown, prune,
+		status, list, current, open, start, pr, preflight, sync, context, rename, repo, item, commit, finish, handoff, teardown, prune,
 	)
 }
 
 func workspaceResolution(b *builder, key, workspaceHelp, continueHelp string) []Argument {
 	return []Argument{
-		completion(conflict(b.option(key, "workspace", String, workspaceHelp), "project", "work_item", "continue"), CompleteWorkspace),
+		completion(conflict(b.option(key, "workspace", String, workspaceHelp+" Cannot be combined with --project, --work-item, or --continue."), "project", "work_item", "continue"), CompleteWorkspace),
 		b.option(key, "root", String, "DevWorkflow root to use."),
 		completion(conflict(b.option(key, "project", String, "Configured project used to resolve the workspace."), "workspace"), CompleteProject),
 		completion(b.option(key, "work-item", String, "Work item used to resolve the workspace."), CompleteWorkItem),

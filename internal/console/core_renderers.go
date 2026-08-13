@@ -207,8 +207,13 @@ func RegisterCoreRenderers(results *Registry) error {
 			})
 		},
 		func() error {
+			return RegisterPageResult(results, workapp.ActionWorkspaceContextRefresh, func(r workapp.ContextRefreshReport) Page {
+				return actionPage(r.ActionID(), Field{Label: "result.workspace", Value: r.Workspace, Style: ValuePath}, Field{Label: "result.path", Value: r.ContextFile, Style: ValuePath}, countField("result.items", r.ItemCount))
+			})
+		},
+		func() error {
 			return RegisterPageResult(results, workapp.ActionWorkItemChildCreate, func(r workapp.ChildReport) Page {
-				return actionPage(r.ActionID(), Field{Label: "result.workspace", Value: r.Workspace, Style: ValuePath}, Field{Label: "result.repository", Value: r.Repository}, Field{Label: "result.item", Value: r.Created.ID, Style: ValueSuccess})
+				return actionPage(r.ActionID(), Field{Label: "result.workspace", Value: r.Workspace, Style: ValuePath}, Field{Label: "result.repository", Value: r.Repository}, Field{Label: "result.requested-title", Value: r.RequestedTitle}, Field{Label: "result.created-title", Value: r.Created.Title}, Field{Label: "result.item", Value: r.Created.ID, Style: ValueSuccess})
 			})
 		},
 		func() error {

@@ -68,6 +68,7 @@ const (
 	ResultWorkspaceStartPR         ResultKind = "workspace.pr.start"
 	ResultWorkspacePreflight       ResultKind = "workspace.preflight"
 	ResultWorkspaceSync            ResultKind = "workspace.sync"
+	ResultWorkspaceContextRefresh  ResultKind = "workspace.context.refresh"
 	ResultWorkspaceRename          ResultKind = "workspace.rename"
 	ResultWorkspaceAddRepo         ResultKind = "workspace.repo.add"
 	ResultWorkspaceRepoLatest      ResultKind = "workspace.repo.latest"
@@ -85,7 +86,7 @@ var RequiredResultKinds = []ResultKind{
 	"work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create",
 	"work.pr.list", "work.context.show", "work.context.ai", "work.changelog",
 	"workspace.status", "workspace.list", "workspace.current", "workspace.open", "workspace.start", "workspace.pr.start",
-	"workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest",
+	"workspace.preflight", "workspace.sync", "workspace.context.refresh", "workspace.rename", "workspace.repo.add", "workspace.repo.latest",
 	"workspace.item.add", "workspace.item.remove", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune",
 	"data.source.list", "data.source.collect", "data.guard", "data.catalog", "data.describe", "data.query", "data.read",
 	"provider.list", "provider.show", "provider.capabilities", "provider.auth.login", "provider.auth.status", "provider.auth.logout",

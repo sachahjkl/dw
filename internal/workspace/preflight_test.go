@@ -126,6 +126,22 @@ func TestDecodeAIContextsRejectsMissingWorkItem(t *testing.T) {
 	}
 }
 
+func TestDiscoverAIContextFilesPrefersCanonicalProviderContext(t *testing.T) {
+	workspace := t.TempDir()
+	canonical, err := WriteProviderContext(workspace, []any{map[string]any{"workItem": map[string]any{"id": "42"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(workspace, "ai-context-42.json")
+	if err := os.WriteFile(legacy, []byte(`[]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := DiscoverAIContextFiles(workspace)
+	if len(files) != 2 || files[0] != canonical || files[1] != legacy {
+		t.Fatalf("context files = %#v", files)
+	}
+}
+
 func writePreflightFixture(t *testing.T, kind string, childIDs []string, array bool) (string, string) {
 	t.Helper()
 	workspace := t.TempDir()

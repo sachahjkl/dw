@@ -10,6 +10,7 @@ import (
 	"github.com/sachahjkl/dw/internal/cli/spec"
 	"github.com/sachahjkl/dw/internal/workapp"
 	"github.com/sachahjkl/dw/internal/workspace"
+	"github.com/sachahjkl/dw/internal/workspaceapp"
 )
 
 func TestSelectRepositoryPairsMapsExplicitLocalNames(t *testing.T) {
@@ -139,6 +140,35 @@ func TestCommandValidationRejectsUnsafeAndConflictingOptions(t *testing.T) {
 		if _, problem := parse.Parse(spec.Root(nil), args); problem == nil {
 			t.Fatalf("invalid command was accepted: %v", args)
 		}
+	}
+}
+
+func TestWorkspacePreflightAcceptsNeutralAndLegacyContextOptions(t *testing.T) {
+	invocation, problem := parse.Parse(spec.Root(nil), []string{"workspace", "preflight", "--workspace", "task", "--context-file", "new.json", "--ai-context-file", "legacy.json", "--no-provider"})
+	if problem != nil {
+		t.Fatal(problem)
+	}
+	request, err := buildWorkspacePreflight(invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight := request.(workspaceapp.PreflightRequest)
+	if !preflight.NoProvider || !reflect.DeepEqual(preflight.Files, []string{"new.json", "legacy.json"}) {
+		t.Fatalf("preflight request = %#v", preflight)
+	}
+}
+
+func TestChildCreateBuildsExactTitleRequest(t *testing.T) {
+	invocation, problem := parse.Parse(spec.Root(nil), []string{"work", "item", "child", "create", "--repo", "front", "--title", "Exact", "--exact-title", "--workspace", "task"})
+	if problem != nil {
+		t.Fatal(problem)
+	}
+	request, err := buildWorkItemChildCreate(invocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child := request.(workapp.ChildRequest); !child.ExactTitle || child.Title != "Exact" {
+		t.Fatalf("child request = %#v", child)
 	}
 }
 

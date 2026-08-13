@@ -29,6 +29,7 @@ const (
 	ActionWorkspacePullRequestStart action.ID = "workspace.pr.start"
 	ActionWorkspaceOpen             action.ID = "workspace.open"
 	ActionWorkspaceSync             action.ID = "workspace.sync"
+	ActionWorkspaceContextRefresh   action.ID = "workspace.context.refresh"
 	ActionWorkItemChildCreate       action.ID = "work.item.child.create"
 	ActionWorkspacePrune            action.ID = "workspace.prune"
 	ActionWorkspaceFinish           action.ID = "workspace.finish"
@@ -74,6 +75,7 @@ func (StartRequest) ActionID() action.ID            { return ActionWorkspaceStar
 func (StartPullRequestRequest) ActionID() action.ID { return ActionWorkspacePullRequestStart }
 func (OpenRequest) ActionID() action.ID             { return ActionWorkspaceOpen }
 func (SyncRequest) ActionID() action.ID             { return ActionWorkspaceSync }
+func (ContextRefreshRequest) ActionID() action.ID   { return ActionWorkspaceContextRefresh }
 func (ChildRequest) ActionID() action.ID            { return ActionWorkItemChildCreate }
 func (PruneRequest) ActionID() action.ID            { return ActionWorkspacePrune }
 func (FinishRequest) ActionID() action.ID           { return ActionWorkspaceFinish }
@@ -121,6 +123,7 @@ type StartPullRequestResult struct {
 func (StartPullRequestResult) ActionID() action.ID { return ActionWorkspacePullRequestStart }
 func (OpenReport) ActionID() action.ID             { return ActionWorkspaceOpen }
 func (SyncReport) ActionID() action.ID             { return ActionWorkspaceSync }
+func (ContextRefreshReport) ActionID() action.ID   { return ActionWorkspaceContextRefresh }
 func (ChildReport) ActionID() action.ID            { return ActionWorkItemChildCreate }
 func (PruneReport) ActionID() action.ID            { return ActionWorkspacePrune }
 func (FinishReport) ActionID() action.ID           { return ActionWorkspaceFinish }
@@ -190,6 +193,9 @@ func Handlers(service *Service) []action.Handler {
 		}),
 		handler[SyncRequest](ActionWorkspaceSync, func(ctx context.Context, r SyncRequest, rt action.Runtime) (action.Result, error) {
 			return service.Sync(ctx, r, eventSink(ActionWorkspaceSync, rt))
+		}),
+		handler[ContextRefreshRequest](ActionWorkspaceContextRefresh, func(ctx context.Context, r ContextRefreshRequest, rt action.Runtime) (action.Result, error) {
+			return service.RefreshWorkspaceContext(ctx, r, eventSink(ActionWorkspaceContextRefresh, rt))
 		}),
 		handler[ChildRequest](ActionWorkItemChildCreate, func(ctx context.Context, r ChildRequest, rt action.Runtime) (action.Result, error) {
 			return service.CreateChild(ctx, r, eventSink(ActionWorkItemChildCreate, rt))

@@ -269,22 +269,23 @@ type DoingActionResult struct {
 }
 
 type StartRequest struct {
-	Provider           string            `json:"provider,omitempty"`
-	Root               string            `json:"root,omitempty"`
-	Project            string            `json:"project"`
-	WorkItemIDs        []string          `json:"work_item_ids"`
-	TaskID             *string           `json:"task_id,omitempty"`
-	Type               string            `json:"type"`
-	Repositories       []string          `json:"repositories"`
-	Slug               string            `json:"slug"`
-	SkipWork           bool              `json:"skip_work"`
-	WithActiveChildren bool              `json:"with_active_children"`
-	CreateChildTasks   bool              `json:"create_child_tasks"`
-	Execute            bool              `json:"execute"`
-	Approved           bool              `json:"approved"`
-	PromptToExecute    bool              `json:"prompt_to_execute"`
-	PromptToOpen       bool              `json:"prompt_to_open"`
-	States             map[string]string `json:"states"`
+	Provider               string            `json:"provider,omitempty"`
+	Root                   string            `json:"root,omitempty"`
+	Project                string            `json:"project"`
+	WorkItemIDs            []string          `json:"work_item_ids"`
+	TaskID                 *string           `json:"task_id,omitempty"`
+	Type                   string            `json:"type"`
+	Repositories           []string          `json:"repositories"`
+	Slug                   string            `json:"slug"`
+	SkipWork               bool              `json:"skip_work"`
+	WithActiveChildren     bool              `json:"with_active_children"`
+	CreateChildTasks       bool              `json:"create_child_tasks"`
+	RequiredChildTaskTypes []string          `json:"required_child_task_types"`
+	Execute                bool              `json:"execute"`
+	Approved               bool              `json:"approved"`
+	PromptToExecute        bool              `json:"prompt_to_execute"`
+	PromptToOpen           bool              `json:"prompt_to_open"`
+	States                 map[string]string `json:"states"`
 }
 type StartPlanReport struct {
 	Root       string                `json:"root"`
@@ -361,6 +362,20 @@ type SyncReport struct {
 	Events       []Event              `json:"events"`
 }
 
+type ContextRefreshRequest struct {
+	Provider    string   `json:"provider,omitempty"`
+	Root        string   `json:"root,omitempty"`
+	Project     string   `json:"project"`
+	Workspace   *string  `json:"workspace,omitempty"`
+	WorkItemIDs []string `json:"work_item_ids"`
+	Continue    bool     `json:"continue"`
+}
+type ContextRefreshReport struct {
+	Workspace   string `json:"workspace"`
+	ContextFile string `json:"contextFile"`
+	ItemCount   int    `json:"itemCount"`
+}
+
 type ChildRequest struct {
 	Provider    string   `json:"provider,omitempty"`
 	Root        string   `json:"root,omitempty"`
@@ -370,6 +385,7 @@ type ChildRequest struct {
 	Continue    bool     `json:"continue"`
 	Repository  string   `json:"repository"`
 	Title       string   `json:"title"`
+	ExactTitle  bool     `json:"exact_title"`
 }
 type ChildReport struct {
 	Workspace      string             `json:"workspace"`

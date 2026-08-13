@@ -19,7 +19,7 @@ func TestGreenfieldCommandTreeHasExactNamespaceLeavesAndActionKeys(t *testing.T)
 			"item list", "item show", "item state set", "pr list",
 		},
 		"workspace": {
-			"commit", "current", "finish", "handoff validate", "item add", "item remove", "list",
+			"commit", "context refresh", "current", "finish", "handoff validate", "item add", "item remove", "list",
 			"open", "pr start", "preflight", "prune", "rename", "repo add", "repo latest", "start",
 			"status", "sync", "teardown",
 		},
@@ -313,7 +313,7 @@ func TestCompletionAdvertisesExactGenericNamespaces(t *testing.T) {
 		want      []string
 	}{
 		{namespace: "work", want: []string{"changelog", "context", "item", "pr"}},
-		{namespace: "workspace", want: []string{"commit", "current", "finish", "handoff", "item", "list", "open", "pr", "preflight", "prune", "rename", "repo", "start", "status", "sync", "teardown"}},
+		{namespace: "workspace", want: []string{"commit", "context", "current", "finish", "handoff", "item", "list", "open", "pr", "preflight", "prune", "rename", "repo", "start", "status", "sync", "teardown"}},
 		{namespace: "data", want: []string{"catalog", "describe", "guard", "query", "read", "source"}},
 		{namespace: "provider", want: []string{"auth", "capabilities", "list", "show"}},
 	}

@@ -83,6 +83,7 @@ func RegisterRoutes(registry *Registry, integration Integration) error {
 		buildRoute("workspace.pr.start", buildWorkspacePRStart, workspacePhaseProject),
 		buildRoute("workspace.preflight", buildWorkspacePreflight, jsonOptionProject),
 		buildRoute("workspace.sync", buildWorkspaceSync, jsonOptionProject),
+		buildRoute("workspace.context.refresh", buildWorkspaceContextRefresh, jsonOptionProject),
 		buildRoute("workspace.rename", buildWorkspaceRename, workspacePhaseProject),
 		buildRoute("workspace.repo.add", buildWorkspaceRepoAdd, workspacePhaseProject),
 		buildRoute("workspace.repo.latest", buildWorkspaceRepoLatest, repoLatestProject),
@@ -137,7 +138,7 @@ func buildRoute(key string, build Builder, project Projector) Route {
 
 func routeUsesJSONOption(key string) bool {
 	switch key {
-	case "doctor", "agent.doctor", "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "data.read", "provider.list", "provider.show", "provider.capabilities":
+	case "doctor", "agent.doctor", "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.context.refresh", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "data.read", "provider.list", "provider.show", "provider.capabilities":
 		return true
 	default:
 		return false
@@ -610,7 +611,7 @@ func buildWorkItemChildCreate(inv *parse.Result) (action.Request, error) {
 	if err != nil {
 		return nil, usage(err)
 	}
-	return workapp.ChildRequest{Provider: selectedWorkProvider(inv.Values, selection.Root, selection.Project), Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue, Repository: inv.Values.String("repo"), Title: inv.Values.String("title")}, nil
+	return workapp.ChildRequest{Provider: selectedWorkProvider(inv.Values, selection.Root, selection.Project), Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue, Repository: inv.Values.String("repo"), Title: inv.Values.String("title"), ExactTitle: inv.Values.Bool("exact_title")}, nil
 }
 func buildWorkspaceOpen(inv *parse.Result) (action.Request, error) {
 	return openRequest(inv, inv.Values.Bool("json"))
@@ -637,13 +638,14 @@ func buildWorkspaceStart(inv *parse.Result) (action.Request, error) {
 		return nil, usage(l10n.NewError("cli.error.work-item-ids-required"))
 	}
 	states, createChildren, updateState := taskStartSettings(root)
+	requiredChildTypes := requiredChildTaskTypes(root)
 	if !updateState {
 		states = nil
 	}
 	project := inv.Values.String("project")
 	execute := inv.Values.Bool("execute")
 	prompt := !execute && !inv.Values.Bool("json")
-	return workapp.StartRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, WorkItemIDs: ids, TaskID: optional(inv.Values, "task"), Type: inv.Values.String("type"), Repositories: split(inv.Values.String("only")), Slug: inv.Values.String("slug"), SkipWork: inv.Values.Bool("skip_provider"), WithActiveChildren: inv.Values.Bool("with_active_children"), CreateChildTasks: inv.Values.Bool("create_child_tasks") || createChildren, Execute: execute, Approved: execute, PromptToExecute: prompt, PromptToOpen: prompt, States: states}, nil
+	return workapp.StartRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, WorkItemIDs: ids, TaskID: optional(inv.Values, "task"), Type: inv.Values.String("type"), Repositories: split(inv.Values.String("only")), Slug: inv.Values.String("slug"), SkipWork: inv.Values.Bool("skip_provider"), WithActiveChildren: inv.Values.Bool("with_active_children"), CreateChildTasks: inv.Values.Bool("create_child_tasks") || createChildren, RequiredChildTaskTypes: requiredChildTypes, Execute: execute, Approved: execute, PromptToExecute: prompt, PromptToOpen: prompt, States: states}, nil
 }
 func buildWorkspacePRStart(inv *parse.Result) (action.Request, error) {
 	id, err := strconv.ParseInt(inv.Values.String("pull_request_id"), 10, 64)
@@ -664,7 +666,8 @@ func buildWorkspacePreflight(inv *parse.Result) (action.Request, error) {
 	if err != nil {
 		return nil, usage(err)
 	}
-	return workspaceapp.PreflightRequest{Selection: selection, Files: inv.Values.Strings("ai_context_file")}, nil
+	files := append(inv.Values.Strings("context_file"), inv.Values.Strings("ai_context_file")...)
+	return workspaceapp.PreflightRequest{Selection: selection, Files: files, Provider: selectedWorkProvider(inv.Values, selection.Root, selection.Project), NoProvider: inv.Values.Bool("no_provider")}, nil
 }
 func buildWorkspaceSync(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
@@ -672,6 +675,13 @@ func buildWorkspaceSync(inv *parse.Result) (action.Request, error) {
 		return nil, usage(err)
 	}
 	return workapp.SyncRequest{Provider: selectedWorkProvider(inv.Values, selection.Root, selection.Project), Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue}, nil
+}
+func buildWorkspaceContextRefresh(inv *parse.Result) (action.Request, error) {
+	selection, err := workspaceSelection(inv.Values)
+	if err != nil {
+		return nil, usage(err)
+	}
+	return workapp.ContextRefreshRequest{Provider: selectedWorkProvider(inv.Values, selection.Root, selection.Project), Root: selection.Root, Project: selection.Project, Workspace: selection.Workspace, WorkItemIDs: selection.IDs, Continue: selection.Continue}, nil
 }
 func buildWorkspaceRename(inv *parse.Result) (action.Request, error) {
 	selection, err := workspaceSelection(inv.Values)
@@ -746,6 +756,14 @@ func taskStartSettings(root string) (map[string]string, bool, bool) {
 		}
 	}
 	return states, createChildren, updateState
+}
+
+func requiredChildTaskTypes(root string) []string {
+	preflight := config.LoadWorkflowConfig(config.ResolveRoot(root)).Preflight
+	if preflight == nil {
+		return nil
+	}
+	return append([]string(nil), preflight.RequireChildTaskForWorkItemTypes...)
 }
 
 func taskFinishStates(root string) map[string]string {

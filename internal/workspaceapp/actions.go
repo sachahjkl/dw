@@ -67,8 +67,10 @@ type ItemRemoveRequest struct {
 	Execute   bool      `json:"execute"`
 }
 type PreflightRequest struct {
-	Selection Selection `json:"selection"`
-	Files     []string  `json:"files"`
+	Selection  Selection `json:"selection"`
+	Files      []string  `json:"files"`
+	Provider   string    `json:"provider,omitempty"`
+	NoProvider bool      `json:"noProvider"`
 }
 type RenameRequest struct {
 	Selection Selection `json:"selection"`
@@ -161,14 +163,22 @@ type WorkItemLoader interface {
 	LoadWorkspaceItems(context.Context, string, string, string, []string) ([]workspace.WorkItem, error)
 }
 
+type ContextRefresher interface {
+	RefreshProviderContext(context.Context, string, string, string) (string, error)
+}
+
 type Service struct {
 	engine           *workspace.Engine
 	workItems        WorkItemLoader
+	contexts         ContextRefresher
 	currentDirectory string
 }
 
 func Handlers(engine *workspace.Engine, workItems WorkItemLoader, currentDirectory string) []action.Handler {
 	service := Service{engine: engine, workItems: workItems, currentDirectory: currentDirectory}
+	if refresher, ok := workItems.(ContextRefresher); ok {
+		service.contexts = refresher
+	}
 	return []action.Handler{
 		handler[StatusRequest](ActionStatus, service.status),
 		handler[ListRequest](ActionList, service.list),
@@ -330,6 +340,13 @@ func (service Service) preflight(ctx context.Context, request PreflightRequest, 
 	root, path, err := service.resolve(request.Selection)
 	if err != nil {
 		return nil, err
+	}
+	if !request.NoProvider && service.contexts != nil {
+		contextPath, refreshErr := service.contexts.RefreshProviderContext(ctx, request.Provider, root, path)
+		if refreshErr != nil {
+			return nil, refreshErr
+		}
+		request.Files = append([]string{contextPath}, request.Files...)
 	}
 	workflow, err := config.LoadWorkflowConfigChecked(root)
 	if err != nil {

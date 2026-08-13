@@ -68,6 +68,11 @@ func (s *Service) LoadWorkspaceItems(ctx context.Context, selected, root, projec
 	return workItemsToWorkspace(items), nil
 }
 
+func (s *Service) RefreshProviderContext(ctx context.Context, selected, root, workspacePath string) (string, error) {
+	report, err := s.refreshWorkspaceContext(ctx, selected, root, workspacePath, nil)
+	return report.ContextFile, err
+}
+
 func projectRef(root, key string) work.ProjectRef {
 	return work.ProjectRef{Key: contract.ProjectKey(key), Root: root}
 }

@@ -70,6 +70,7 @@ func TestGreenfieldActionIDsAreExact(t *testing.T) {
 		{string(workapp.ActionWorkspacePullRequestStart), "workspace.pr.start"},
 		{string(workapp.ActionWorkspaceOpen), "workspace.open"},
 		{string(workapp.ActionWorkspaceSync), "workspace.sync"},
+		{string(workapp.ActionWorkspaceContextRefresh), "workspace.context.refresh"},
 		{string(workapp.ActionWorkspacePrune), "workspace.prune"},
 		{string(workapp.ActionWorkspaceFinish), "workspace.finish"},
 		{string(dataapp.ActionDataSourceList), "data.source.list"},

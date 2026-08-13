@@ -41,7 +41,8 @@ func workGrammar(b *builder) *Command {
 		b.command("child", "work.item.child", "Manage child work items.", nil,
 			b.command("create", "work.item.child.create", "Create a child work item and add it to the repository handoff.", []Argument{
 				mandatory(completion(b.option("work.item.child.create", "repo", String, "Workspace repository that will carry the task handoff."), CompleteRepository)),
-				mandatory(b.option("work.item.child.create", "title", String, "Title of the child work item to create.")),
+				mandatory(b.option("work.item.child.create", "title", String, "Child title; the repository prefix is added automatically.")),
+				b.option("work.item.child.create", "exact-title", Bool, "Use --title exactly without adding a repository prefix."),
 				completion(conflict(b.option("work.item.child.create", "workspace", String, "Workspace path to modify."), "project", "work_item", "continue"), CompleteWorkspace),
 				b.option("work.item.child.create", "root", String, "DevWorkflow root to use."),
 				completion(conflict(b.option("work.item.child.create", "project", String, "Configured project used to resolve the workspace."), "workspace"), CompleteProject),

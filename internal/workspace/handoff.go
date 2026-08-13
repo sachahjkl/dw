@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,20 @@ import (
 
 	"github.com/sachahjkl/dw/internal/l10n"
 )
+
+const ProviderContextFile = ".dw/work-item-context.json"
+
+func WriteProviderContext(workspace string, value any) (string, error) {
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(workspace, filepath.FromSlash(ProviderContextFile))
+	if err := writeFileAtomic(path, append(bytes.TrimRight(data, "\n"), '\n'), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
 
 func ParseHandoff(text, expectedRepository string) (HandoffSummary, error) {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
@@ -156,11 +171,15 @@ func ValidateHandoffs(workspace string) (HandoffValidationReport, error) {
 
 func DiscoverAIContextFiles(workspace string) []string {
 	result := make([]string, 0)
+	canonical := filepath.Join(workspace, filepath.FromSlash(ProviderContextFile))
+	if info, err := os.Stat(canonical); err == nil && !info.IsDir() {
+		result = append(result, canonical)
+	}
 	_ = filepath.WalkDir(workspace, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), "ai-context") && strings.HasSuffix(entry.Name(), ".json") {
+		if path != canonical && !entry.IsDir() && strings.HasPrefix(entry.Name(), "ai-context") && strings.HasSuffix(entry.Name(), ".json") {
 			result = append(result, path)
 		}
 		return nil

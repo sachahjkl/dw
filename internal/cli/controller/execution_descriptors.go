@@ -35,8 +35,8 @@ func noWorkspaceListLock(workspaceapp.ListRequest) (execution.LockSpec, error) {
 func noWorkspaceCurrentLock(workspaceapp.CurrentRequest) (execution.LockSpec, error) {
 	return execution.LockSpec{Mode: execution.LockNone}, nil
 }
-func noWorkspacePreflightLock(workspaceapp.PreflightRequest) (execution.LockSpec, error) {
-	return execution.LockSpec{Mode: execution.LockNone}, nil
+func noWorkspacePreflightLock(request workspaceapp.PreflightRequest) (execution.LockSpec, error) {
+	return execution.LockSpec{Mode: execution.LockExclusive, Key: request.Selection.Root}, nil
 }
 func noWorkspaceHandoffLock(workspaceapp.HandoffRequest) (execution.LockSpec, error) {
 	return execution.LockSpec{Mode: execution.LockNone}, nil

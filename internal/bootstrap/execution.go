@@ -167,6 +167,7 @@ func workExecutionDescriptors() []execution.Descriptor {
 		}),
 		execution.NewJSONDescriptor[workapp.OpenRequest, workapp.OpenReport](workapp.ActionWorkspaceOpen, noLock[workapp.OpenRequest]),
 		execution.NewJSONDescriptor[workapp.SyncRequest, workapp.SyncReport](workapp.ActionWorkspaceSync, exclusiveRoot(func(request workapp.SyncRequest) string { return request.Root })),
+		execution.NewJSONDescriptor[workapp.ContextRefreshRequest, workapp.ContextRefreshReport](workapp.ActionWorkspaceContextRefresh, exclusiveRoot(func(request workapp.ContextRefreshRequest) string { return request.Root })),
 		execution.NewJSONDescriptor[workapp.ChildRequest, workapp.ChildReport](workapp.ActionWorkItemChildCreate, exclusiveRoot(func(request workapp.ChildRequest) string { return request.Root })),
 		execution.NewJSONDescriptor[workapp.PruneRequest, workapp.PruneReport](workapp.ActionWorkspacePrune, func(request workapp.PruneRequest) (execution.LockSpec, error) {
 			return conditionalExecutionLock(request.Root, request.Execute), nil

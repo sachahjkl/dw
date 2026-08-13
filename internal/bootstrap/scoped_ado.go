@@ -235,6 +235,8 @@ func requestRoot(request action.Request) string {
 		return value.Root
 	case workapp.SyncRequest:
 		return value.Root
+	case workapp.ContextRefreshRequest:
+		return value.Root
 	case workapp.ChildRequest:
 		return value.Root
 	case workapp.PruneRequest:

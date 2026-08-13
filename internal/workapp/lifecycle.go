@@ -26,7 +26,7 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 	var provider work.Provider
 	var normalized []work.Item
 	var err error
-	needsRead := !request.SkipWork && (request.WithActiveChildren || request.Execute || strings.TrimSpace(request.Slug) == "")
+	needsRead := !request.SkipWork && (request.WithActiveChildren || request.Execute || strings.TrimSpace(request.Slug) == "" || len(request.RequiredChildTaskTypes) > 0)
 	if !request.SkipWork {
 		provider, err = s.provider(s.providerName(request.Provider, request.Root, project))
 		if err != nil {
@@ -48,6 +48,9 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 		for _, item := range normalized {
 			plannedIDs = append(plannedIDs, string(item.ID))
 		}
+	}
+	if len(normalized) > 0 && containsTrimmedFold(request.RequiredChildTaskTypes, string(normalized[0].Type)) {
+		request.CreateChildTasks = true
 	}
 	slug := request.Slug
 	if strings.TrimSpace(slug) == "" && len(normalized) > 0 {
@@ -145,6 +148,16 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 	}
 	execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: local.ChildTasks, StateUpdates: stateUpdates, Events: events}
 	return report, &execution, nil
+}
+
+func containsTrimmedFold(values []string, candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) StartPullRequest(ctx context.Context, request StartPullRequestRequest, sink EventSink) (StartPullRequestPlanReport, *StartExecutionReport, error) {
@@ -285,6 +298,34 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest, sink EventSink)
 	return SyncReport{Workspace: workspacePath, RequestedIDs: ids, Snapshots: snapshots, Manifest: updated, Events: events}, nil
 }
 
+func (s *Service) RefreshWorkspaceContext(ctx context.Context, request ContextRefreshRequest, sink EventSink) (ContextRefreshReport, error) {
+	if s.Lookup == nil {
+		return ContextRefreshReport{}, capabilityUnavailable("workspace context refresh")
+	}
+	workspacePath, err := s.Lookup.Resolve(ctx, request.Root, request.Workspace, request.Project, request.WorkItemIDs, request.Continue)
+	if err != nil {
+		return ContextRefreshReport{}, err
+	}
+	return s.refreshWorkspaceContext(ctx, request.Provider, request.Root, workspacePath, sink)
+}
+
+func (s *Service) refreshWorkspaceContext(ctx context.Context, providerName, root, workspacePath string, sink EventSink) (ContextRefreshReport, error) {
+	manifest, err := s.Lookup.Manifest(ctx, workspacePath)
+	if err != nil {
+		return ContextRefreshReport{}, err
+	}
+	ids := parentWorkItemIDs(manifest)
+	report, err := s.Context(ctx, ContextRequest{Provider: providerName, Root: root, Project: manifest.Project, IDs: ids, Comments: 200, Mode: ContextRich}, sink)
+	if err != nil {
+		return ContextRefreshReport{}, err
+	}
+	path, err := workspace.WriteProviderContext(workspacePath, report.Items)
+	if err != nil {
+		return ContextRefreshReport{}, err
+	}
+	return ContextRefreshReport{Workspace: workspacePath, ContextFile: path, ItemCount: len(report.Items)}, nil
+}
+
 func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink EventSink) (ChildReport, error) {
 	if s.Lookup == nil || s.Children == nil {
 		return ChildReport{}, capabilityUnavailable("workspace child")
@@ -310,13 +351,16 @@ func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink Ev
 	if err != nil {
 		return ChildReport{}, err
 	}
-	title := workspace.ChildTaskTitle(request.Repository, request.Title)
+	title := request.Title
+	if !request.ExactTitle {
+		title = workspace.ChildTaskTitle(request.Repository, title)
+	}
 	created, err := creator.CreateChild(ctx, projectRef(request.Root, manifest.Project), work.ChildCreate{ParentID: work.ItemID(parent.ID), Type: work.ItemType("Task"), Title: title, History: "work item child create"})
 	if err != nil {
 		if created.ID == "" {
 			return ChildReport{}, err
 		}
-		return ChildReport{Workspace: workspacePath, Repository: request.Repository, Parent: parent, RequestedTitle: title, Created: ChildCreateResult{Repository: request.Repository, ID: string(created.ID), Title: created.Title}, Manifest: manifest, Events: []Event{}}, err
+		return ChildReport{Workspace: workspacePath, Repository: request.Repository, Parent: parent, RequestedTitle: request.Title, Created: ChildCreateResult{Repository: request.Repository, ID: string(created.ID), Title: created.Title}, Manifest: manifest, Events: []Event{}}, err
 	}
 	childTitle := created.Title
 	child := workspace.ChildTask{Repository: request.Repository, ID: string(created.ID), Title: optionalString(childTitle)}
@@ -324,7 +368,7 @@ func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink Ev
 	if err != nil {
 		return ChildReport{}, err
 	}
-	return ChildReport{Workspace: workspacePath, Repository: request.Repository, Parent: parent, RequestedTitle: title, Created: ChildCreateResult{Repository: request.Repository, ID: string(created.ID), Title: created.Title}, Manifest: updated, Events: []Event{}}, nil
+	return ChildReport{Workspace: workspacePath, Repository: request.Repository, Parent: parent, RequestedTitle: request.Title, Created: ChildCreateResult{Repository: request.Repository, ID: string(created.ID), Title: created.Title}, Manifest: updated, Events: []Event{}}, nil
 }
 
 func (s *Service) Prune(ctx context.Context, request PruneRequest, sink EventSink) (PruneReport, error) {

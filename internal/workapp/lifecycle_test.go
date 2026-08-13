@@ -15,6 +15,17 @@ func (startPartialProvider) Name() work.ProviderName { return "start-partial" }
 func (startPartialProvider) ReadItems(context.Context, work.ProjectRef, []work.ItemID, work.ReadOptions) ([]work.Item, error) {
 	return []work.Item{{ID: "7", Title: "Parent"}}, nil
 }
+
+type policyChildProvider struct{ created bool }
+
+func (*policyChildProvider) Name() work.ProviderName { return "policy-child" }
+func (*policyChildProvider) ReadItems(context.Context, work.ProjectRef, []work.ItemID, work.ReadOptions) ([]work.Item, error) {
+	return []work.Item{{ID: "7", Title: "Parent", Type: "User Story"}}, nil
+}
+func (provider *policyChildProvider) CreateChild(_ context.Context, _ work.ProjectRef, request work.ChildCreate) (work.ChildCreateResult, error) {
+	provider.created = true
+	return work.ChildCreateResult{ID: "9", Title: request.Title}, nil
+}
 func (startPartialProvider) CreateChild(context.Context, work.ProjectRef, work.ChildCreate) (work.ChildCreateResult, error) {
 	return work.ChildCreateResult{ID: "9", Title: "Child"}, errors.New("link failed")
 }
@@ -44,5 +55,21 @@ func TestStartReportsRemoteChildWhenLinkFails(t *testing.T) {
 	}
 	if writer.called {
 		t.Fatal("partial child was persisted after provider failure")
+	}
+}
+
+func TestStartCreatesChildWhenPreflightPolicyRequiresIt(t *testing.T) {
+	provider := &policyChildProvider{}
+	registry := work.NewRegistry()
+	if err := registry.Register(provider); err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{Providers: registry, Starter: startPartialStarter{}, Children: &childWriter{}}
+	_, execution, err := service.Start(context.Background(), StartRequest{Provider: "policy-child", Project: "project", WorkItemIDs: []string{"7"}, Repositories: []string{"repo"}, Slug: "parent", RequiredChildTaskTypes: []string{" user story "}, Execute: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !provider.created || execution == nil || len(execution.ChildTasks) != 1 {
+		t.Fatalf("created = %t, execution = %#v", provider.created, execution)
 	}
 }
