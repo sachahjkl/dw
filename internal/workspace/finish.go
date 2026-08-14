@@ -248,7 +248,7 @@ func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, optio
 }
 
 func scratchFinishError(workspace string) error {
-	return fmt.Errorf("A scratch workspace must be promoted before creating a pull request.\nRun:\n  dw workspace scratch promote <WORK_ITEM_ID> --workspace %s --execute", workspace)
+	return fmt.Errorf("a scratch workspace must be promoted before creating a pull request.\nRun:\n  dw workspace scratch promote <WORK_ITEM_ID> --workspace %s --execute", workspace)
 }
 
 func RunVerification(ctx context.Context, runner VerificationPort, configured []RepositoryCommands, candidates []PullRequestCandidate) []VerificationResult {
