@@ -7,6 +7,7 @@ import (
 	"github.com/sachahjkl/dw/internal/agent"
 	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/workspace"
+	"time"
 )
 
 var (
@@ -308,6 +309,32 @@ type StartExecutionReport struct {
 	StateUpdates []StartStateUpdate    `json:"stateUpdates"`
 	Events       []Event               `json:"events"`
 }
+type ScratchStartRequest struct {
+	Root         string   `json:"root,omitempty"`
+	Project      string   `json:"project"`
+	Title        string   `json:"title"`
+	Slug         string   `json:"slug,omitempty"`
+	Repositories []string `json:"repositories"`
+	Execute      bool     `json:"execute"`
+}
+type ScratchStartResult struct {
+	Plan      workspace.ScratchStartPlan             `json:"plan"`
+	Execution *workspace.ScratchStartExecutionReport `json:"execution,omitempty"`
+}
+type ScratchPromoteRequest struct {
+	Provider               string            `json:"provider,omitempty"`
+	Root                   string            `json:"root,omitempty"`
+	Workspace              *string           `json:"workspace,omitempty"`
+	WorkItemID             string            `json:"workItemId"`
+	Execute                bool              `json:"execute"`
+	CreateChildTasks       bool              `json:"createChildTasks"`
+	RequiredChildTaskTypes []string          `json:"requiredChildTaskTypes"`
+	States                 map[string]string `json:"states"`
+}
+type ScratchPromoteResult struct {
+	Plan      workspace.ScratchPromotionPlan             `json:"plan"`
+	Execution *workspace.ScratchPromotionExecutionReport `json:"execution,omitempty"`
+}
 type StartPullRequestRequest struct {
 	Provider             string            `json:"provider,omitempty"`
 	Root                 string            `json:"root,omitempty"`
@@ -398,14 +425,16 @@ type ChildReport struct {
 }
 
 type PruneRequest struct {
-	Provider           string   `json:"provider,omitempty"`
-	Root               string   `json:"root,omitempty"`
-	Project            *string  `json:"project,omitempty"`
-	WorkItemIDs        []string `json:"work_item_ids"`
-	SelectedWorkspaces []string `json:"selected_workspaces"`
-	Execute            bool     `json:"execute"`
-	Approved           bool     `json:"approved"`
-	NoSync             bool     `json:"no_sync"`
+	Provider           string          `json:"provider,omitempty"`
+	Root               string          `json:"root,omitempty"`
+	Project            *string         `json:"project,omitempty"`
+	WorkItemIDs        []string        `json:"work_item_ids"`
+	SelectedWorkspaces []string        `json:"selected_workspaces"`
+	Execute            bool            `json:"execute"`
+	Approved           bool            `json:"approved"`
+	NoSync             bool            `json:"no_sync"`
+	Kind               *workspace.Kind `json:"kind,omitempty"`
+	OlderThan          string          `json:"older_than,omitempty"`
 }
 type PruneReport struct {
 	Plan      workspace.PrunePlanReport       `json:"plan"`
@@ -453,6 +482,12 @@ type WorkspaceStarter interface {
 	PlanStart(context.Context, workspace.StartRequest) (workspace.StartPlan, error)
 	ExecuteStart(context.Context, workspace.StartPlan, []workspace.WorkItem, []workspace.ChildTask, func(workspace.ActionEvent)) (workspace.StartExecutionReport, error)
 }
+type WorkspaceScratchManager interface {
+	PlanScratchStart(context.Context, workspace.ScratchStartRequest) (workspace.ScratchStartPlan, error)
+	ExecuteScratchStart(context.Context, workspace.ScratchStartPlan, func(workspace.ActionEvent)) (workspace.ScratchStartExecutionReport, error)
+	PlanScratchPromotion(context.Context, string, workspace.WorkItem, string, string, bool, []string) (workspace.Manifest, workspace.ScratchPromotionPlan, error)
+	ExecuteScratchPromotionLocal(context.Context, workspace.Manifest, workspace.ScratchPromotionPlan) (workspace.ScratchPromotionExecutionReport, error)
+}
 type WorkspaceSyncer interface {
 	ApplySnapshots(context.Context, string, []workspace.WorkItem) (workspace.Manifest, error)
 }
@@ -466,6 +501,9 @@ type WorkspacePruner interface {
 	Find(context.Context, string, *string, []string) ([]workspace.Summary, error)
 	PlanPrune(context.Context, string, *string, []string) ([]workspace.Summary, error)
 	ExecutePrune(context.Context, string, []workspace.Summary) (workspace.PruneExecutionReport, error)
+}
+type WorkspaceScratchPruner interface {
+	PlanScratchPrune(context.Context, string, *string, time.Time) ([]workspace.Summary, error)
 }
 type WorkspaceFinisher interface {
 	PlanFinish(context.Context, string, string, string, bool, bool) (workspace.FinishPlanReport, error)

@@ -93,9 +93,12 @@ func BuildStatusReport(root string) StatusReport {
 	return StatusReport{Root: root, Items: List(root, "", nil)}
 }
 func BuildListReport(root string, project *string, workItemIDs []string) ListReport {
+	return BuildListReportKind(root, project, workItemIDs, nil)
+}
+func BuildListReportKind(root string, project *string, workItemIDs []string, kind *Kind) ListReport {
 	filter := ""
 	if project != nil {
 		filter = *project
 	}
-	return ListReport{Root: root, Project: project, WorkItemIDs: append([]string(nil), workItemIDs...), Items: List(root, filter, workItemIDs)}
+	return ListReport{Root: root, Project: project, WorkItemIDs: append([]string(nil), workItemIDs...), Kind: kind, Items: ListKind(root, filter, workItemIDs, kind)}
 }

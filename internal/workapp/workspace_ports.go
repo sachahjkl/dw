@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sachahjkl/dw/internal/agent"
 	"github.com/sachahjkl/dw/internal/workspace"
@@ -39,6 +40,18 @@ func (p *WorkspacePorts) PlanStart(ctx context.Context, request workspace.StartR
 func (p *WorkspacePorts) ExecuteStart(ctx context.Context, plan workspace.StartPlan, items []workspace.WorkItem, children []workspace.ChildTask, emit func(workspace.ActionEvent)) (workspace.StartExecutionReport, error) {
 	return p.Engine.ExecuteStart(ctx, plan, items, children, emit)
 }
+func (p *WorkspacePorts) PlanScratchStart(ctx context.Context, request workspace.ScratchStartRequest) (workspace.ScratchStartPlan, error) {
+	return p.Engine.PlanScratchStart(ctx, request)
+}
+func (p *WorkspacePorts) ExecuteScratchStart(ctx context.Context, plan workspace.ScratchStartPlan, emit func(workspace.ActionEvent)) (workspace.ScratchStartExecutionReport, error) {
+	return p.Engine.ExecuteScratchStart(ctx, plan, emit)
+}
+func (p *WorkspacePorts) PlanScratchPromotion(ctx context.Context, path string, target workspace.WorkItem, kind, slug string, createChildren bool, states []string) (workspace.Manifest, workspace.ScratchPromotionPlan, error) {
+	return p.Engine.PlanScratchPromotion(ctx, path, target, kind, slug, createChildren, states)
+}
+func (p *WorkspacePorts) ExecuteScratchPromotionLocal(ctx context.Context, manifest workspace.Manifest, plan workspace.ScratchPromotionPlan) (workspace.ScratchPromotionExecutionReport, error) {
+	return p.Engine.ExecuteScratchPromotionLocal(ctx, manifest, plan)
+}
 func (*WorkspacePorts) ApplySnapshots(_ context.Context, path string, items []workspace.WorkItem) (workspace.Manifest, error) {
 	return workspace.ApplySnapshots(path, items)
 }
@@ -72,6 +85,13 @@ func (p *WorkspacePorts) ExecutePrune(ctx context.Context, root string, candidat
 	}
 	plan := workspace.PrunePlanReport{Root: root, Candidates: candidates}
 	return p.Engine.ExecutePrune(ctx, plan, paths, true)
+}
+func (p *WorkspacePorts) PlanScratchPrune(ctx context.Context, root string, project *string, cutoff time.Time) ([]workspace.Summary, error) {
+	key := ""
+	if project != nil {
+		key = *project
+	}
+	return p.Engine.ScratchPruneCandidates(ctx, root, key, cutoff)
 }
 func (p *WorkspacePorts) PlanFinish(ctx context.Context, root, path, message string, createPR, ready bool) (workspace.FinishPlanReport, error) {
 	return p.Engine.PlanFinish(ctx, root, path, message, createPR, ready)

@@ -80,6 +80,8 @@ func RegisterRoutes(registry *Registry, integration Integration) error {
 		buildRoute("workspace.current", buildWorkspaceCurrent, jsonOptionProject),
 		buildRoute("workspace.open", buildWorkspaceOpen, jsonOptionProject),
 		startRoute(),
+		buildRoute("workspace.scratch.start", buildWorkspaceScratchStart, workspacePhaseProject),
+		buildRoute("workspace.scratch.promote", buildWorkspaceScratchPromote, workspacePhaseProject),
 		buildRoute("workspace.pr.start", buildWorkspacePRStart, workspacePhaseProject),
 		buildRoute("workspace.preflight", buildWorkspacePreflight, jsonOptionProject),
 		buildRoute("workspace.sync", buildWorkspaceSync, jsonOptionProject),
@@ -138,7 +140,7 @@ func buildRoute(key string, build Builder, project Projector) Route {
 
 func routeUsesJSONOption(key string) bool {
 	switch key {
-	case "doctor", "agent.doctor", "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.context.refresh", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "data.read", "provider.list", "provider.show", "provider.capabilities":
+	case "doctor", "agent.doctor", "agent.open", "config.show", "config.doctor", "secret.list", "work.item.list", "work.item.show", "work.item.doing", "work.item.state.set", "work.item.child.create", "work.pr.list", "work.context.show", "workspace.list", "workspace.current", "workspace.item.add", "workspace.item.remove", "workspace.open", "workspace.start", "workspace.scratch.start", "workspace.scratch.promote", "workspace.pr.start", "workspace.preflight", "workspace.sync", "workspace.context.refresh", "workspace.rename", "workspace.repo.add", "workspace.repo.latest", "workspace.commit", "workspace.finish", "workspace.handoff.validate", "workspace.teardown", "workspace.prune", "data.source.list", "data.source.collect", "data.catalog", "data.describe", "data.query", "data.read", "provider.list", "provider.show", "provider.capabilities":
 		return true
 	default:
 		return false
@@ -579,7 +581,15 @@ func buildWorkspaceStatus(inv *parse.Result) (action.Request, error) {
 	return workspaceapp.StatusRequest{Root: resolvedRoot(inv.Values)}, nil
 }
 func buildWorkspaceList(inv *parse.Result) (action.Request, error) {
-	return workspaceapp.ListRequest{Root: resolvedRoot(inv.Values), Project: optional(inv.Values, "project"), WorkItemIDs: split(inv.Values.String("work_item"))}, nil
+	var kind *workspace.Kind
+	if value := strings.TrimSpace(inv.Values.String("kind")); value != "" {
+		parsed := workspace.Kind(value)
+		if parsed != workspace.KindTracked && parsed != workspace.KindScratch {
+			return nil, usage(fmt.Errorf("invalid workspace kind: %s", value))
+		}
+		kind = &parsed
+	}
+	return workspaceapp.ListRequest{Root: resolvedRoot(inv.Values), Project: optional(inv.Values, "project"), WorkItemIDs: split(inv.Values.String("work_item")), Kind: kind}, nil
 }
 func buildWorkspaceCurrent(_ *parse.Result) (action.Request, error) {
 	return workspaceapp.CurrentRequest{}, nil
@@ -646,6 +656,17 @@ func buildWorkspaceStart(inv *parse.Result) (action.Request, error) {
 	execute := inv.Values.Bool("execute")
 	prompt := !execute && !inv.Values.Bool("json")
 	return workapp.StartRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, WorkItemIDs: ids, TaskID: optional(inv.Values, "task"), Type: inv.Values.String("type"), Repositories: split(inv.Values.String("only")), Slug: inv.Values.String("slug"), SkipWork: inv.Values.Bool("skip_provider"), WithActiveChildren: inv.Values.Bool("with_active_children"), CreateChildTasks: inv.Values.Bool("create_child_tasks") || createChildren, RequiredChildTaskTypes: requiredChildTypes, Execute: execute, Approved: execute, PromptToExecute: prompt, PromptToOpen: prompt, States: states}, nil
+}
+func buildWorkspaceScratchStart(inv *parse.Result) (action.Request, error) {
+	return workapp.ScratchStartRequest{Root: resolvedRoot(inv.Values), Project: inv.Values.String("project"), Title: inv.Values.String("title"), Slug: inv.Values.String("slug"), Repositories: split(inv.Values.String("only")), Execute: inv.Values.Bool("execute")}, nil
+}
+func buildWorkspaceScratchPromote(inv *parse.Result) (action.Request, error) {
+	root := resolvedRoot(inv.Values)
+	states, createChildren, updateState := taskStartSettings(root)
+	if !updateState {
+		states = nil
+	}
+	return workapp.ScratchPromoteRequest{Provider: strings.TrimSpace(inv.Values.String("provider")), Root: root, Workspace: optional(inv.Values, "workspace"), WorkItemID: inv.Values.String("work_item_id"), Execute: inv.Values.Bool("execute"), CreateChildTasks: createChildren, RequiredChildTaskTypes: requiredChildTaskTypes(root), States: states}, nil
 }
 func buildWorkspacePRStart(inv *parse.Result) (action.Request, error) {
 	id, err := strconv.ParseInt(inv.Values.String("pull_request_id"), 10, 64)
@@ -729,7 +750,15 @@ func buildWorkspacePrune(inv *parse.Result) (action.Request, error) {
 	if project != nil {
 		projectName = *project
 	}
-	return workapp.PruneRequest{Provider: selectedWorkProvider(inv.Values, root, projectName), Root: root, Project: project, WorkItemIDs: split(inv.Values.String("work_item")), Execute: inv.Values.Bool("execute"), Approved: inv.Values.Bool("yes"), NoSync: inv.Values.Bool("no_sync")}, nil
+	var kind *workspace.Kind
+	if value := strings.TrimSpace(inv.Values.String("kind")); value != "" {
+		parsed := workspace.Kind(value)
+		if parsed != workspace.KindTracked && parsed != workspace.KindScratch {
+			return nil, usage(fmt.Errorf("invalid workspace kind: %s", value))
+		}
+		kind = &parsed
+	}
+	return workapp.PruneRequest{Provider: selectedWorkProvider(inv.Values, root, projectName), Root: root, Project: project, WorkItemIDs: split(inv.Values.String("work_item")), Execute: inv.Values.Bool("execute"), Approved: inv.Values.Bool("yes"), NoSync: inv.Values.Bool("no_sync"), Kind: kind, OlderThan: inv.Values.String("older_than")}, nil
 }
 
 func taskStartSettings(root string) (map[string]string, bool, bool) {

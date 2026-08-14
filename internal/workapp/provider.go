@@ -22,6 +22,7 @@ type Service struct {
 	Choices         InteractiveCatalog
 	Lookup          WorkspaceLookup
 	Starter         WorkspaceStarter
+	Scratch         WorkspaceScratchManager
 	Syncer          WorkspaceSyncer
 	Children        WorkspaceChildWriter
 	Opener          WorkspaceOpener

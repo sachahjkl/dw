@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -340,6 +341,67 @@ func BuildPreflight(workspace string, files, requiredChildTaskTypes []string, lo
 		ids = append(ids, item.ID)
 	}
 	return PreflightReport{SchemaVersion: PreflightVersion, Workspace: workspace, Project: manifest.Project, WorkItemIDs: ids, Issues: issues, HasBlockingIssues: blocking}, nil
+}
+
+func (e *Engine) BuildScratchPreflight(ctx context.Context, root, workspace string) (PreflightReport, error) {
+	manifest, err := ReadManifest(filepath.Join(workspace, ManifestFile))
+	if err != nil {
+		return PreflightReport{}, err
+	}
+	if manifest.Kind != KindScratch {
+		return PreflightReport{}, fmt.Errorf("not a scratch workspace")
+	}
+	issues := make([]PreflightIssue, 0)
+	add := func(code, detail string) {
+		raw, _ := json.Marshal(map[string]string{"kind": detail})
+		issues = append(issues, PreflightIssue{Code: code, Severity: "blocking", Detail: raw})
+	}
+	plan, readErr := os.ReadFile(filepath.Join(workspace, PlanFile))
+	if readErr != nil {
+		add("workspace.scratch.plan.missing", "missing-plan")
+	} else {
+		position := -1
+		for _, heading := range []string{"## Hypothesis", "## Experiment", "## Expected result", "## Decision"} {
+			next := strings.Index(string(plan), heading)
+			if next < 0 || next <= position {
+				add("workspace.scratch.plan.invalid", "invalid-plan-structure")
+				break
+			}
+			position = next
+		}
+	}
+	project, _, projectErr := e.project(ctx, root, manifest.Project)
+	if projectErr != nil {
+		return PreflightReport{}, projectErr
+	}
+	for _, name := range manifest.Repositories {
+		repository, ok := project.Repository(name)
+		if !ok {
+			add("workspace.repository.missing", name)
+			continue
+		}
+		normalizeRepositoryConfig(&repository, name)
+		path := filepath.Join(workspace, repository.Folder)
+		if _, statErr := os.Stat(path); statErr != nil {
+			add("workspace.repository.missing", name)
+			continue
+		}
+		if e.Git != nil {
+			status, statusErr := e.Git.Status(ctx, path)
+			if statusErr != nil || !status.IsGitRepository {
+				add("workspace.repository.git.invalid", name)
+			}
+		}
+		handoff, handoffErr := os.ReadFile(filepath.Join(workspace, HandoffPrefix+name+".md"))
+		if handoffErr != nil {
+			add("workspace.handoff.missing", name)
+			continue
+		}
+		if _, parseErr := ParseHandoff(string(handoff), name); parseErr != nil {
+			add("workspace.handoff.invalid", name)
+		}
+	}
+	return PreflightReport{SchemaVersion: PreflightVersion, Workspace: workspace, Project: manifest.Project, WorkItemIDs: []string{}, Issues: issues, HasBlockingIssues: len(issues) > 0}, nil
 }
 
 type aiContext struct {

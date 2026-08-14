@@ -268,7 +268,7 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 		snapshot.ProjectCount = len(snapshot.Projects)
 		snapshot.RepositoryCount = len(snapshot.Repositories)
 		for _, summary := range workspace.Discover(root) {
-			item := cockpit.Workspace{Ref: cockpit.ResourceRef{Kind: cockpit.ResourceWorkspace, Root: root, Project: summary.Manifest.Project, Key: summary.Path}, Path: summary.Path, Project: summary.Manifest.Project, Type: summary.Manifest.Type, Slug: summary.Manifest.Slug, Branch: summary.Manifest.BranchName, Repositories: append([]string(nil), summary.Manifest.Repositories...)}
+			item := cockpit.Workspace{Ref: cockpit.ResourceRef{Kind: cockpit.ResourceWorkspace, Root: root, Project: summary.Manifest.Project, Key: summary.Path}, Path: summary.Path, Project: summary.Manifest.Project, Kind: string(summary.Manifest.Kind), WorkspaceID: workspace.ShortWorkspaceID(summary.Manifest.WorkspaceID), Title: summary.Manifest.Title, Type: summary.Manifest.Type, Slug: summary.Manifest.Slug, Branch: summary.Manifest.BranchName, Repositories: append([]string(nil), summary.Manifest.Repositories...)}
 			item.WorkItems = summary.Manifest.AllKnownWorkItemIDs()
 			item.Operations = bindOperations(item.Ref, workspaceActions(localizer, root, config.ResolveWorkProvider(root, item.Project), item))
 			snapshot.Workspaces = append(snapshot.Workspaces, item)
@@ -323,6 +323,21 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 			refreshAction := cockpit.Operation{Relation: cockpit.RelationRefresh, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.refresh"), Active: true, Request: config.RefreshRequest{Root: root}}
 			workspaceAction := cockpit.Operation{Relation: cockpit.RelationInspect, Subject: rootRef, Label: tuiLabel(localizer, "bootstrap.tui.workspaces"), Active: true, Request: workspaceapp.StatusRequest{Root: root}}
 			snapshot.Operations = append(snapshot.Operations, refreshAction, workspaceAction)
+			projectOptions := make([]cockpit.InputOption, 0, len(snapshot.Projects))
+			for _, project := range snapshot.Projects {
+				projectOptions = append(projectOptions, cockpit.InputOption{Value: project, Label: project})
+			}
+			for _, execute := range []bool{false, true} {
+				relation, risk, label := cockpit.RelationReviewScratchStart, cockpit.RiskPreview, "Review scratch workspace"
+				if execute {
+					relation, risk, label = cockpit.RelationScratchStart, cockpit.RiskDestructive, "Create scratch workspace"
+				}
+				executeValue := execute
+				snapshot.Operations = append(snapshot.Operations, cockpit.Operation{Relation: relation, Subject: rootRef, Label: label, Active: true, Risk: risk, Request: workapp.ScratchStartRequest{Root: root, Execute: execute}, Inputs: []cockpit.OperationInput{{Name: "project", Label: "Project", Kind: cockpit.InputSelect, Required: true, Options: projectOptions}, {Name: "title", Label: "Title", Kind: cockpit.InputText, Required: true}, {Name: "slug", Label: "Slug", Kind: cockpit.InputText}, {Name: "repositories", Label: "Repositories (comma separated)", Kind: cockpit.InputText}}, Build: func(values []cockpit.InputValue) (action.Request, error) {
+					input := cockpitInputMap(values)
+					return workapp.ScratchStartRequest{Root: root, Project: input["project"], Title: input["title"], Slug: input["slug"], Repositories: splitInput(input["repositories"]), Execute: executeValue}, nil
+				}})
+			}
 			snapshot.Cockpit = append(snapshot.Cockpit, cockpit.CockpitItem{Ref: rootRef, Section: "work", Title: workspaceAction.Label, Status: strconv.Itoa(len(snapshot.Workspaces)), Primary: workspaceAction})
 		}
 		if snapshot.PruneCandidates > 0 {
@@ -341,18 +356,53 @@ func snapshotLoader(services *services, localizer l10n.Localizer) cockpit.Snapsh
 func workspaceActions(localizer l10n.Localizer, root, provider string, item cockpit.Workspace) []cockpit.Operation {
 	selection := workspaceapp.Selection{Root: root, Workspace: stringPointer(item.Path)}
 	finishStates := tuiFinishStates(root)
-	return []cockpit.Operation{
+	actions := []cockpit.Operation{
 		{Relation: cockpit.Relation(tui.WorkspaceOpenSlot), Label: tuiLabel(localizer, "bootstrap.tui.open"), Active: true, Risk: cockpit.RiskExternal, Request: workapp.OpenRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
 		{Relation: cockpit.Relation(tui.WorkspacePreflightSlot), Label: tuiLabel(localizer, "bootstrap.tui.preflight"), Active: true, Request: workspaceapp.PreflightRequest{Selection: selection}},
-		{Relation: cockpit.Relation(tui.WorkspaceSyncSlot), Label: tuiLabel(localizer, "bootstrap.tui.sync"), Active: true, Request: workapp.SyncRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
 		{Relation: cockpit.Relation(tui.WorkspaceLatestSlot), Label: tuiLabel(localizer, "bootstrap.tui.latest"), Active: true, Request: workspaceapp.RepoLatestRequest{Selection: selection, Execute: true}},
 		{Relation: cockpit.Relation(tui.WorkspaceHandoffSlot), Label: tuiLabel(localizer, "bootstrap.tui.handoff"), Active: true, Request: workspaceapp.HandoffRequest{Selection: selection}},
 		{Relation: cockpit.Relation(tui.WorkspaceCommitSlot), Label: tuiLabel(localizer, "bootstrap.tui.commit"), Active: true, Risk: cockpit.RiskPreview, Request: workspaceapp.CommitRequest{Selection: selection}},
-		{Relation: cockpit.Relation(tui.WorkspaceFinishPlanSlot), Label: tuiLabel(localizer, "bootstrap.tui.finish-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.FinishRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), FinishStates: finishStates}},
-		{Relation: cockpit.Relation(tui.WorkspaceFinishSlot), Label: tuiLabel(localizer, "bootstrap.tui.finish"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.FinishRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), Execute: true, FinishStates: finishStates}},
 		{Relation: cockpit.Relation(tui.WorkspaceRemovePlanSlot), Label: tuiLabel(localizer, "bootstrap.tui.teardown-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workspaceapp.TeardownRequest{Selection: selection}},
 		{Relation: cockpit.Relation(tui.WorkspaceRemoveSlot), Label: tuiLabel(localizer, "bootstrap.tui.teardown"), Active: true, Risk: cockpit.RiskDestructive, Request: workspaceapp.TeardownRequest{Selection: selection, Execute: true, Approved: true}},
 	}
+	if item.Kind == string(workspace.KindScratch) {
+		states, createChildren, _ := tuiStartSettings(root)
+		for _, execute := range []bool{false, true} {
+			relation, risk, label := cockpit.RelationReviewPromote, cockpit.RiskPreview, "Review promotion"
+			if execute {
+				relation, risk, label = cockpit.RelationPromote, cockpit.RiskDestructive, "Promote scratch workspace"
+			}
+			executeValue := execute
+			actions = append(actions, cockpit.Operation{Relation: relation, Label: label, Active: true, Risk: risk, Request: workapp.ScratchPromoteRequest{Root: root, Workspace: stringPointer(item.Path), Execute: execute}, Inputs: []cockpit.OperationInput{{Name: "workItemId", Label: "Work item ID", Kind: cockpit.InputText, Required: true}}, Build: func(values []cockpit.InputValue) (action.Request, error) {
+				input := cockpitInputMap(values)
+				return workapp.ScratchPromoteRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), WorkItemID: input["workItemId"], Execute: executeValue, CreateChildTasks: createChildren, States: states}, nil
+			}})
+		}
+		return actions
+	}
+	return append(actions,
+		cockpit.Operation{Relation: cockpit.Relation(tui.WorkspaceSyncSlot), Label: tuiLabel(localizer, "bootstrap.tui.sync"), Active: true, Request: workapp.SyncRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path)}},
+		cockpit.Operation{Relation: cockpit.Relation(tui.WorkspaceFinishPlanSlot), Label: tuiLabel(localizer, "bootstrap.tui.finish-preview"), Active: true, Risk: cockpit.RiskPreview, Request: workapp.FinishRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), FinishStates: finishStates}},
+		cockpit.Operation{Relation: cockpit.Relation(tui.WorkspaceFinishSlot), Label: tuiLabel(localizer, "bootstrap.tui.finish"), Active: true, Risk: cockpit.RiskDestructive, Request: workapp.FinishRequest{Provider: provider, Root: root, Workspace: stringPointer(item.Path), Execute: true, FinishStates: finishStates}},
+	)
+}
+
+func cockpitInputMap(values []cockpit.InputValue) map[string]string {
+	result := make(map[string]string, len(values))
+	for _, value := range values {
+		result[value.Name] = value.Value
+	}
+	return result
+}
+func splitInput(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 func workLoader(services *services, localizer l10n.Localizer) cockpit.WorkLoader {

@@ -2,6 +2,11 @@ package workspace
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
 
 	"github.com/sachahjkl/dw/internal/config"
 	"github.com/sachahjkl/dw/internal/gitrepo"
@@ -126,4 +131,39 @@ func (p NativeGitPort) WorktreeRemove(ctx context.Context, gitDirectory, worktre
 }
 func (p NativeGitPort) WorktreePrune(ctx context.Context, gitDirectory string) error {
 	return p.Client.WorktreePrune(ctx, gitrepo.RepositoryPath(gitDirectory))
+}
+func (NativeGitPort) RenameBranch(ctx context.Context, path, oldName, newName string) error {
+	command := exec.CommandContext(ctx, "git", "-C", path, "branch", "-m", oldName, newName)
+	if output, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("rename branch %s to %s: %w: %s", oldName, newName, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+func (NativeGitPort) BranchExists(ctx context.Context, path, name string) (bool, error) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false, nil
+	}
+	command := exec.CommandContext(ctx, "git", "-C", path, "show-ref", "--verify", "--quiet", "refs/heads/"+name)
+	err := command.Run()
+	if err == nil {
+		return true, nil
+	}
+	if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
+}
+func (NativeGitPort) CurrentBranch(ctx context.Context, path string) (string, error) {
+	command := exec.CommandContext(ctx, "git", "-C", path, "branch", "--show-current")
+	output, err := command.Output()
+	return strings.TrimSpace(string(output)), err
+}
+func (NativeGitPort) LastCommitTime(ctx context.Context, path string) (time.Time, bool, error) {
+	command := exec.CommandContext(ctx, "git", "-C", path, "log", "-1", "--format=%cI")
+	output, err := command.Output()
+	if err != nil {
+		return time.Time{}, false, nil
+	}
+	value, err := time.Parse(time.RFC3339, strings.TrimSpace(string(output)))
+	return value, err == nil, err
 }

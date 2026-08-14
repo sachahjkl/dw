@@ -93,6 +93,7 @@ func newServices() (*services, error) {
 	workService.Choices = interactiveCatalog{}
 	workService.Lookup = workspacePorts
 	workService.Starter = workspacePorts
+	workService.Scratch = workspacePorts
 	workService.Syncer = workspacePorts
 	workService.Children = workspacePorts
 	workService.Opener = workspacePorts

@@ -21,8 +21,18 @@ const (
 	PreflightVersion         = "dw.task.preflight.v1"
 )
 
+type Kind string
+
+const (
+	KindTracked Kind = "tracked"
+	KindScratch Kind = "scratch"
+)
+
 type Manifest struct {
 	Schema        int64                      `json:"schema"`
+	Kind          Kind                       `json:"kind"`
+	WorkspaceID   string                     `json:"workspaceId"`
+	Title         string                     `json:"title"`
 	WorkItemID    string                     `json:"workItemId"`
 	TaskID        *string                    `json:"taskId"`
 	Project       string                     `json:"project"`
@@ -56,12 +66,16 @@ type ChildTask struct {
 }
 
 type Summary struct {
-	Path     string   `json:"path"`
-	Manifest Manifest `json:"manifest"`
+	Path       string   `json:"path"`
+	Manifest   Manifest `json:"manifest"`
+	ActivityAt string   `json:"activityAt,omitempty"`
 }
 
 type ListItem struct {
 	Path                string     `json:"path"`
+	Kind                Kind       `json:"kind"`
+	WorkspaceID         string     `json:"workspaceId,omitempty"`
+	Title               string     `json:"title,omitempty"`
 	Project             string     `json:"project"`
 	WorkItemID          string     `json:"workItemId"`
 	WorkItems           []WorkItem `json:"workItems"`
@@ -79,6 +93,9 @@ type ListItem struct {
 
 type CurrentItem struct {
 	Workspace         string            `json:"workspace"`
+	Kind              Kind              `json:"kind"`
+	WorkspaceID       string            `json:"workspaceId,omitempty"`
+	Title             string            `json:"title,omitempty"`
 	Project           string            `json:"project"`
 	PrimaryWorkItemID string            `json:"primaryWorkItemId"`
 	WorkItems         []WorkItem        `json:"workItems"`
@@ -164,6 +181,50 @@ type StartPlan struct {
 	Repositories        []string              `json:"repositories"`
 	RepositoryFolders   []RepositoryFolder    `json:"repositoryFolders"`
 	RepositoryWorktrees []StartRepositoryPlan `json:"repositoryWorktrees"`
+}
+
+type ScratchStartRequest struct {
+	Root, Project, Title, Slug string
+	Repositories               []string
+}
+type ScratchStartPlan struct {
+	WorkspaceID         string                `json:"workspaceId"`
+	Project             string                `json:"project"`
+	Title               string                `json:"title"`
+	Type                string                `json:"type"`
+	Slug                string                `json:"slug"`
+	BranchName          string                `json:"branchName"`
+	SubjectName         string                `json:"subjectName"`
+	Workspace           string                `json:"workspace"`
+	Repositories        []string              `json:"repositories"`
+	RepositoryFolders   []RepositoryFolder    `json:"repositoryFolders"`
+	RepositoryWorktrees []StartRepositoryPlan `json:"repositoryWorktrees"`
+}
+type ScratchStartExecutionReport struct {
+	Plan     ScratchStartPlan `json:"plan"`
+	Manifest Manifest         `json:"manifest"`
+	Events   []ActionEvent    `json:"events"`
+}
+
+type ScratchPromotionPlan struct {
+	WorkspaceID      string   `json:"workspaceId"`
+	Workspace        string   `json:"workspace"`
+	NewWorkspace     string   `json:"newWorkspace"`
+	Target           WorkItem `json:"target"`
+	Type             string   `json:"type"`
+	Slug             string   `json:"slug"`
+	OldBranch        string   `json:"oldBranch"`
+	NewBranch        string   `json:"newBranch"`
+	Repositories     []string `json:"repositories"`
+	CreateChildTasks bool     `json:"createChildTasks"`
+	StateUpdates     []string `json:"stateUpdates"`
+}
+type ScratchPromotionExecutionReport struct {
+	Plan            ScratchPromotionPlan `json:"plan"`
+	Manifest        Manifest             `json:"manifest"`
+	LocalEffects    []string             `json:"localEffects"`
+	ProviderEffects []string             `json:"providerEffects"`
+	ContextFile     string               `json:"contextFile,omitempty"`
 }
 
 type RepositoryFolder struct {
@@ -606,6 +667,8 @@ type PrunePlanReport struct {
 	WorkItemIDs []string          `json:"workItemIds"`
 	Sync        []PruneSyncReport `json:"sync"`
 	Candidates  []Summary         `json:"candidates"`
+	Kind        *Kind             `json:"kind,omitempty"`
+	OlderThan   string            `json:"olderThan,omitempty"`
 }
 type PruneExecutionReport struct {
 	Root    string   `json:"root"`
@@ -652,6 +715,9 @@ type WorktreeResult struct {
 }
 
 type Clock interface{ Now() time.Time }
+type IDGenerator interface {
+	NewID(time.Time) (string, error)
+}
 type realClock struct{}
 
 func (realClock) Now() time.Time { return time.Now() }
@@ -663,6 +729,7 @@ type Engine struct {
 	Work    WorkPort
 	Verify  VerificationPort
 	Clock   Clock
+	IDs     IDGenerator
 }
 
 func NewEngine(config ConfigPort, git GitPort, secrets contract.SecretStore, work WorkPort) *Engine {
@@ -744,6 +811,7 @@ type ListReport struct {
 	Root        string     `json:"root"`
 	Project     *string    `json:"project"`
 	WorkItemIDs []string   `json:"workItemIds"`
+	Kind        *Kind      `json:"kind,omitempty"`
 	Items       []ListItem `json:"items"`
 }
 type StartPlanReport struct {

@@ -60,6 +60,9 @@ type Workspace struct {
 	Ref          ResourceRef
 	Path         string
 	Project      string
+	Kind         string
+	WorkspaceID  string
+	Title        string
 	WorkItems    []string
 	Type         string
 	Slug         string

@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,7 +166,7 @@ func (e *Engine) ExecuteStart(ctx context.Context, plan StartPlan, workItems []W
 	if now == nil {
 		now = realClock{}
 	}
-	manifest := Manifest{Schema: 1, WorkItemID: plan.PrimaryWorkItemID, TaskID: plan.TaskID, Project: plan.Project, Type: plan.Type, Slug: plan.Slug, BranchName: plan.BranchName, CreatedAt: now.Now().UTC().Format("2006-01-02T15:04:05Z07:00"), Repositories: append([]string(nil), plan.Repositories...), Status: "created", WorkItemType: cloneString(first.Type), WorkItemTitle: cloneString(first.Title), WorkItemState: cloneString(first.State), WorkItems: workItems}
+	manifest := Manifest{Schema: 2, Kind: KindTracked, WorkItemID: plan.PrimaryWorkItemID, TaskID: plan.TaskID, Project: plan.Project, Type: plan.Type, Slug: plan.Slug, BranchName: plan.BranchName, CreatedAt: now.Now().UTC().Format("2006-01-02T15:04:05Z07:00"), Repositories: append([]string(nil), plan.Repositories...), Status: "created", WorkItemType: cloneString(first.Type), WorkItemTitle: cloneString(first.Title), WorkItemState: cloneString(first.State), WorkItems: workItems}
 	if len(childTasks) > 0 {
 		manifest.ChildTasks = distinctChildTasks(childTasks)
 	}
@@ -283,14 +284,21 @@ func (e *Engine) PlanRename(_ context.Context, root, workspace, slug string) (Ma
 	}
 	newSlug := SlugOrFallback(slug, manifest.Slug)
 	newBranch := BuildBranchName(manifest.Type, manifest.AllKnownWorkItemIDs(), newSlug)
+	if manifest.Kind == KindScratch {
+		newBranch = "spike/" + newSlug
+	}
 	parentIDs := make([]string, 0)
 	for _, item := range manifest.ParentWorkItems() {
 		parentIDs = append(parentIDs, item.ID)
 	}
-	newWorkspace := filepath.Join(filepath.Dir(workspace), BuildSubjectName(manifest.Type, parentIDs, newSlug))
+	newSubject := BuildSubjectName(manifest.Type, parentIDs, newSlug)
+	if manifest.Kind == KindScratch {
+		newSubject = "scratch-spike-" + newSlug
+	}
+	newWorkspace := filepath.Join(filepath.Dir(workspace), newSubject)
 	return manifest, RenamePlan{Workspace: workspace, NewWorkspace: newWorkspace, OldSlug: manifest.Slug, NewSlug: newSlug, OldBranch: manifest.BranchName, NewBranch: newBranch}, nil
 }
-func (e *Engine) ExecuteRename(_ context.Context, manifest Manifest, plan RenamePlan) (RenameExecutionReport, error) {
+func (e *Engine) ExecuteRename(ctx context.Context, manifest Manifest, plan RenamePlan) (RenameExecutionReport, error) {
 	updated := manifest
 	updated.Slug = plan.NewSlug
 	updated.BranchName = plan.NewBranch
@@ -299,11 +307,43 @@ func (e *Engine) ExecuteRename(_ context.Context, manifest Manifest, plan Rename
 			return RenameExecutionReport{}, localizedCause("workspace.error.workspace-conflict", ErrWorkspaceConflict, l10n.A("detail", plan.NewWorkspace))
 		}
 	}
+	brancher, ok := e.Git.(interface {
+		RenameBranch(context.Context, string, string, string) error
+	})
+	root, validRoot := Root(plan.Workspace)
+	project, found, projectErr := e.project(ctx, root, manifest.Project)
+	if !validRoot || projectErr != nil || !found || !ok {
+		if plan.OldBranch != plan.NewBranch && len(manifest.Repositories) > 0 {
+			return RenameExecutionReport{}, fmt.Errorf("git branch rename capability is required")
+		}
+	}
+	renamed := make([]string, 0)
+	rollback := func() {
+		for i := len(renamed) - 1; i >= 0; i-- {
+			repository, _ := project.Repository(renamed[i])
+			normalizeRepositoryConfig(&repository, renamed[i])
+			_ = brancher.RenameBranch(ctx, filepath.Join(plan.Workspace, repository.Folder), plan.NewBranch, plan.OldBranch)
+		}
+	}
+	if plan.OldBranch != plan.NewBranch {
+		for _, name := range manifest.Repositories {
+			repository, _ := project.Repository(name)
+			normalizeRepositoryConfig(&repository, name)
+			if err := brancher.RenameBranch(ctx, filepath.Join(plan.Workspace, repository.Folder), plan.OldBranch, plan.NewBranch); err != nil {
+				rollback()
+				return RenameExecutionReport{}, err
+			}
+			renamed = append(renamed, name)
+		}
+	}
 	if err := WriteManifest(filepath.Join(plan.Workspace, ManifestFile), updated); err != nil {
+		rollback()
 		return RenameExecutionReport{}, localizedOperation("write renamed manifest", err)
 	}
 	if plan.Workspace != plan.NewWorkspace {
 		if err := os.Rename(plan.Workspace, plan.NewWorkspace); err != nil {
+			_ = WriteManifest(filepath.Join(plan.Workspace, ManifestFile), manifest)
+			rollback()
 			return RenameExecutionReport{}, localizedOperation("rename workspace", err)
 		}
 	}
@@ -314,6 +354,9 @@ func PlanSync(workspace string) (SyncPlanReport, error) {
 	manifest, err := ReadManifest(filepath.Join(workspace, ManifestFile))
 	if err != nil {
 		return SyncPlanReport{}, err
+	}
+	if manifest.Kind == KindScratch {
+		return SyncPlanReport{}, ScratchNotApplicable("workspace sync", workspace)
 	}
 	ids := make([]string, 0)
 	for _, item := range manifest.ParentWorkItems() {
@@ -462,6 +505,9 @@ func (e *Engine) CreateChildTask(ctx context.Context, workspace, repository, tit
 	if err != nil {
 		return ChildTask{}, Manifest{}, err
 	}
+	if manifest.Kind == KindScratch {
+		return ChildTask{}, Manifest{}, ScratchNotApplicable("work item child create", workspace)
+	}
 	parent := manifest.ParentWorkItems()[0]
 	task, err := e.Work.CreateChildTask(ctx, manifest.Project, parent, repository, ChildTaskTitle(repository, title))
 	if err != nil {
@@ -589,6 +635,9 @@ func ApplySnapshots(workspace string, snapshots []WorkItem) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
+	if manifest.Kind == KindScratch {
+		return Manifest{}, ScratchNotApplicable("workspace sync", workspace)
+	}
 	if len(snapshots) == 0 {
 		return manifest, nil
 	}
@@ -616,6 +665,9 @@ func AddChild(workspace string, task ChildTask) (Manifest, error) {
 	manifest, err := ReadManifest(filepath.Join(workspace, ManifestFile))
 	if err != nil {
 		return Manifest{}, err
+	}
+	if manifest.Kind == KindScratch {
+		return Manifest{}, ScratchNotApplicable("work item child create", workspace)
 	}
 	manifest.ChildTasks = append(manifest.NormalizedChildTasks(), task)
 	manifest.ChildTasks = distinctChildTasks(manifest.ChildTasks)

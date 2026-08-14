@@ -13,7 +13,7 @@ import (
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
-var manifestKeys = []string{"schema", "workItemId", "taskId", "project", "type", "slug", "branchName", "createdAt", "repositories", "status", "workItemType", "workItemTitle", "workItemState", "childTaskIds", "childTasks", "workItems"}
+var manifestKeys = []string{"schema", "kind", "workspaceId", "title", "workItemId", "taskId", "project", "type", "slug", "branchName", "createdAt", "repositories", "status", "workItemType", "workItemTitle", "workItemState", "childTaskIds", "childTasks", "workItems"}
 
 func (m *Manifest) UnmarshalJSON(data []byte) error {
 	type plain Manifest
@@ -34,7 +34,7 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 }
 
 func (m Manifest) MarshalJSON() ([]byte, error) {
-	values := []any{m.Schema, m.WorkItemID, m.TaskID, m.Project, m.Type, m.Slug, m.BranchName, m.CreatedAt, m.Repositories, m.Status, m.WorkItemType, m.WorkItemTitle, m.WorkItemState, m.ChildTaskIDs, m.ChildTasks, m.WorkItems}
+	values := []any{m.Schema, m.Kind, m.WorkspaceID, m.Title, m.WorkItemID, m.TaskID, m.Project, m.Type, m.Slug, m.BranchName, m.CreatedAt, m.Repositories, m.Status, m.WorkItemType, m.WorkItemTitle, m.WorkItemState, m.ChildTaskIDs, m.ChildTasks, m.WorkItems}
 	var b bytes.Buffer
 	b.WriteByte('{')
 	first := true
@@ -79,10 +79,10 @@ func ReadManifest(path string) (Manifest, error) {
 	if err = json.Unmarshal(data, &manifest); err != nil {
 		return Manifest{}, localizedCause("workspace.error.invalid-manifest", errors.Join(ErrInvalidManifest, err), l10n.A("path", path))
 	}
-	if strings.TrimSpace(manifest.WorkItemID) == "" || strings.TrimSpace(manifest.Project) == "" {
+	manifest.Normalize()
+	if strings.TrimSpace(manifest.Project) == "" || manifest.Kind != KindTracked && manifest.Kind != KindScratch || manifest.Kind == KindTracked && strings.TrimSpace(manifest.WorkItemID) == "" || manifest.Kind == KindScratch && (strings.TrimSpace(manifest.WorkspaceID) == "" || strings.TrimSpace(manifest.Title) == "") {
 		return Manifest{}, localizedCause("workspace.error.invalid-manifest", ErrInvalidManifest, l10n.A("path", path))
 	}
-	manifest.Normalize()
 	return manifest, nil
 }
 
@@ -90,6 +90,9 @@ func (m *Manifest) Normalize() {
 	m.Repositories = distinctCSV(m.Repositories)
 	if m.Schema == 0 {
 		m.Schema = 1
+	}
+	if m.Kind == "" {
+		m.Kind = KindTracked
 	}
 	if strings.TrimSpace(m.Status) == "" {
 		m.Status = "created"
@@ -107,6 +110,7 @@ func (m *Manifest) Normalize() {
 
 func WriteManifest(path string, manifest Manifest) error {
 	manifest.Normalize()
+	manifest.Schema = 2
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return localizedCause("workspace.error.invalid-manifest", errors.Join(ErrInvalidManifest, err), l10n.A("path", path))
@@ -223,9 +227,15 @@ func Discover(root string) []Summary {
 }
 
 func Filter(workspaces []Summary, project string, requestedIDs []string) []Summary {
+	return FilterKind(workspaces, project, requestedIDs, nil)
+}
+func FilterKind(workspaces []Summary, project string, requestedIDs []string, kind *Kind) []Summary {
 	ids := distinctCSV(requestedIDs)
 	result := make([]Summary, 0, len(workspaces))
 	for _, workspace := range workspaces {
+		if kind != nil && workspace.Manifest.Kind != *kind {
+			continue
+		}
 		if project != "" && !equalFold(workspace.Manifest.Project, project) {
 			continue
 		}
@@ -244,11 +254,14 @@ func Filter(workspaces []Summary, project string, requestedIDs []string) []Summa
 }
 
 func List(root, project string, workItemIDs []string) []ListItem {
-	workspaces := Filter(Discover(root), project, workItemIDs)
+	return ListKind(root, project, workItemIDs, nil)
+}
+func ListKind(root, project string, workItemIDs []string, kind *Kind) []ListItem {
+	workspaces := FilterKind(Discover(root), project, workItemIDs, kind)
 	result := make([]ListItem, 0, len(workspaces))
 	for _, workspace := range workspaces {
 		manifest := workspace.Manifest
-		result = append(result, ListItem{Path: workspace.Path, Project: manifest.Project, WorkItemID: manifest.PrimaryWorkItemID(), WorkItems: manifest.ParentWorkItems(), TaskID: manifest.TaskID, AllKnownWorkItemIDs: manifest.AllKnownWorkItemIDs(), Type: manifest.Type, Slug: manifest.Slug, BranchName: manifest.BranchName, CreatedAt: manifest.CreatedAt, WorkItemType: manifest.WorkItemType, WorkItemTitle: manifest.WorkItemTitle, WorkItemState: manifest.WorkItemState, Repositories: append([]string(nil), manifest.Repositories...)})
+		result = append(result, ListItem{Path: workspace.Path, Kind: manifest.Kind, WorkspaceID: manifest.WorkspaceID, Title: manifest.Title, Project: manifest.Project, WorkItemID: manifest.PrimaryWorkItemID(), WorkItems: manifest.ParentWorkItems(), TaskID: manifest.TaskID, AllKnownWorkItemIDs: manifest.AllKnownWorkItemIDs(), Type: manifest.Type, Slug: manifest.Slug, BranchName: manifest.BranchName, CreatedAt: manifest.CreatedAt, WorkItemType: manifest.WorkItemType, WorkItemTitle: manifest.WorkItemTitle, WorkItemState: manifest.WorkItemState, Repositories: append([]string(nil), manifest.Repositories...)})
 	}
 	return result
 }
@@ -262,7 +275,7 @@ func Current(start string) (CurrentItem, error) {
 	if err != nil {
 		return CurrentItem{}, err
 	}
-	return CurrentItem{Workspace: path, Project: manifest.Project, PrimaryWorkItemID: manifest.PrimaryWorkItemID(), WorkItems: manifest.ParentWorkItems(), TaskID: manifest.TaskID, ChildTaskIDs: manifest.ChildTaskIDsByRepository(), ChildTasks: manifest.NormalizedChildTasks(), Branch: manifest.BranchName, Repositories: append([]string(nil), manifest.Repositories...)}, nil
+	return CurrentItem{Workspace: path, Kind: manifest.Kind, WorkspaceID: manifest.WorkspaceID, Title: manifest.Title, Project: manifest.Project, PrimaryWorkItemID: manifest.PrimaryWorkItemID(), WorkItems: manifest.ParentWorkItems(), TaskID: manifest.TaskID, ChildTaskIDs: manifest.ChildTaskIDsByRepository(), ChildTasks: manifest.NormalizedChildTasks(), Branch: manifest.BranchName, Repositories: append([]string(nil), manifest.Repositories...)}, nil
 }
 
 func Resolve(root, explicit, project string, ids []string, useLatest bool, currentDirectory string) (string, error) {
@@ -288,6 +301,9 @@ func Resolve(root, explicit, project string, ids []string, useLatest bool, curre
 }
 
 func (m Manifest) ParentWorkItems() []WorkItem {
+	if m.Kind == KindScratch {
+		return []WorkItem{}
+	}
 	items := distinctWorkItems(m.WorkItems)
 	if len(items) == 0 {
 		return []WorkItem{{ID: m.WorkItemID, Type: cloneString(m.WorkItemType), Title: cloneString(m.WorkItemTitle), State: cloneString(m.WorkItemState)}}
@@ -404,7 +420,8 @@ func IsFinalState(itemType, state *string) bool {
 	return final
 }
 func PruneCandidates(root, project string, ids []string) []Summary {
-	items := Filter(Discover(root), project, ids)
+	kind := KindTracked
+	items := FilterKind(Discover(root), project, ids, &kind)
 	result := make([]Summary, 0)
 	for _, item := range items {
 		final := true

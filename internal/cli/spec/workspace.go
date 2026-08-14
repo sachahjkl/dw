@@ -6,6 +6,7 @@ func workspaceGrammar(b *builder) *Command {
 		b.option("workspace.list", "root", String, "DevWorkflow root to scan."),
 		completion(b.option("workspace.list", "project", String, "Configured project to filter by."), CompleteProject),
 		completion(b.option("workspace.list", "work-item", String, "Work item to filter by."), CompleteWorkItem),
+		completion(b.option("workspace.list", "kind", String, "Workspace kind to filter by."), CompleteNone, "tracked", "scratch"),
 		b.option("workspace.list", "json", Bool, "Emit the deterministic JSON list."),
 	})
 	current := b.command("current", "workspace.current", "Show the current task workspace from the current directory.", []Argument{b.option("workspace.current", "json", Bool, "Emit the current workspace as deterministic JSON.")})
@@ -37,6 +38,25 @@ func workspaceGrammar(b *builder) *Command {
 		b.option("workspace.start", "json", Bool, "Emit the plan or result as deterministic JSON."),
 		b.option("workspace.start", "execute", Bool, "Actually create the workspace; without this flag, show the plan."),
 	})
+	scratch := b.command("scratch", "workspace.scratch", "Manage local experimental workspaces.", nil,
+		b.command("start", "workspace.scratch.start", "Preview or create a local experimental workspace.", []Argument{
+			b.option("workspace.scratch.start", "root", String, "DevWorkflow root to use."),
+			mandatory(completion(b.option("workspace.scratch.start", "project", String, "Configured project to use."), CompleteProject)),
+			mandatory(b.option("workspace.scratch.start", "title", String, "Human title for the experiment.")),
+			b.option("workspace.scratch.start", "slug", String, "Explicit slug; derived from the title when omitted."),
+			completion(b.option("workspace.scratch.start", "only", String, "Repositories to include, separated by commas."), CompleteRepository),
+			b.option("workspace.scratch.start", "execute", Bool, "Actually create the workspace; without this flag, show the plan."),
+			b.option("workspace.scratch.start", "json", Bool, "Emit deterministic JSON."),
+		}),
+		b.command("promote", "workspace.scratch.promote", "Promote an experiment to provider-tracked work.", []Argument{
+			b.positional("workspace.scratch.promote", "work_item_id", "WORK_ITEM_ID", String, true, "Target provider work item ID."),
+			b.option("workspace.scratch.promote", "root", String, "DevWorkflow root to use."),
+			mandatory(completion(b.option("workspace.scratch.promote", "workspace", String, "Scratch workspace path."), CompleteWorkspace)),
+			providerOption(b, "workspace.scratch.promote"),
+			b.option("workspace.scratch.promote", "execute", Bool, "Actually promote; without this flag, show the plan."),
+			b.option("workspace.scratch.promote", "json", Bool, "Emit deterministic JSON."),
+		}),
+	)
 	pr := b.command("pr", "workspace.pr", "Manage pull-request-based workspaces.", nil,
 		b.command("start", "workspace.pr.start", "Prepare or create a workspace from work items linked to a pull request.", []Argument{
 			b.positional("workspace.pr.start", "pull_request_id", "PULL_REQUEST_ID", String, true, "Provider pull request ID."),
@@ -115,10 +135,12 @@ func workspaceGrammar(b *builder) *Command {
 		b.option("workspace.prune", "execute", Bool, "Actually remove eligible workspaces; without this flag, show the plan."),
 		b.option("workspace.prune", "yes", Bool, "Confirm destructive removal with --execute."),
 		b.option("workspace.prune", "no-sync", Bool, "Do not synchronize provider states before determining eligibility."),
+		completion(b.option("workspace.prune", "kind", String, "Workspace kind to prune."), CompleteNone, "tracked", "scratch"),
+		b.option("workspace.prune", "older-than", String, "Minimum inactivity age for scratch workspaces, for example 30d."),
 		b.option("workspace.prune", "json", Bool, "Emit the plan/result as deterministic JSON."),
 	})
 	return b.command("workspace", "workspace", "Manage local workspaces, worktrees, repositories, commits, and pull requests.", nil,
-		status, list, current, open, start, pr, preflight, sync, context, rename, repo, item, commit, finish, handoff, teardown, prune,
+		status, list, current, open, start, scratch, pr, preflight, sync, context, rename, repo, item, commit, finish, handoff, teardown, prune,
 	)
 }
 

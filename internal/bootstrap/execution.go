@@ -162,6 +162,12 @@ func workExecutionDescriptors() []execution.Descriptor {
 		execution.NewJSONDescriptor[workapp.StartRequest, workapp.StartResult](workapp.ActionWorkspaceStart, func(request workapp.StartRequest) (execution.LockSpec, error) {
 			return conditionalExecutionLock(request.Root, request.Execute || request.PromptToExecute), nil
 		}),
+		execution.NewJSONDescriptor[workapp.ScratchStartRequest, workapp.ScratchStartResult](workapp.ActionWorkspaceScratchStart, func(request workapp.ScratchStartRequest) (execution.LockSpec, error) {
+			return conditionalExecutionLock(request.Root, request.Execute), nil
+		}),
+		execution.NewJSONDescriptor[workapp.ScratchPromoteRequest, workapp.ScratchPromoteResult](workapp.ActionWorkspaceScratchPromote, func(request workapp.ScratchPromoteRequest) (execution.LockSpec, error) {
+			return conditionalExecutionLock(request.Root, request.Execute), nil
+		}),
 		execution.NewJSONDescriptor[workapp.StartPullRequestRequest, workapp.StartPullRequestResult](workapp.ActionWorkspacePullRequestStart, func(request workapp.StartPullRequestRequest) (execution.LockSpec, error) {
 			return conditionalExecutionLock(request.Root, request.Execute), nil
 		}),

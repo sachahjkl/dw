@@ -46,9 +46,10 @@ type StatusRequest struct {
 	Root string `json:"root,omitempty"`
 }
 type ListRequest struct {
-	Root        string   `json:"root,omitempty"`
-	Project     *string  `json:"project,omitempty"`
-	WorkItemIDs []string `json:"workItemIds"`
+	Root        string          `json:"root,omitempty"`
+	Project     *string         `json:"project,omitempty"`
+	WorkItemIDs []string        `json:"workItemIds"`
+	Kind        *workspace.Kind `json:"kind,omitempty"`
 }
 type CurrentRequest struct{}
 type ItemAddRequest struct {
@@ -234,7 +235,7 @@ func (service Service) status(_ context.Context, request StatusRequest, _ action
 
 func (service Service) list(_ context.Context, request ListRequest, _ action.Runtime) (action.Result, error) {
 	root := service.root(request.Root)
-	return ListResult{ListReport: workspace.BuildListReport(root, request.Project, request.WorkItemIDs)}, nil
+	return ListResult{ListReport: workspace.BuildListReportKind(root, request.Project, request.WorkItemIDs, request.Kind)}, nil
 }
 
 func (service Service) current(_ context.Context, _ CurrentRequest, _ action.Runtime) (action.Result, error) {
@@ -254,6 +255,9 @@ func (service Service) itemAdd(ctx context.Context, request ItemAddRequest, runt
 	manifest, err := workspace.ReadManifest(filepath.Join(path, workspace.ManifestFile))
 	if err != nil {
 		return nil, err
+	}
+	if manifest.Kind == workspace.KindScratch {
+		return nil, workspace.ScratchNotApplicable("workspace item add", path)
 	}
 	items := make([]workspace.WorkItem, 0, len(request.IDs))
 	if request.SkipWork {
@@ -340,6 +344,14 @@ func (service Service) preflight(ctx context.Context, request PreflightRequest, 
 	root, path, err := service.resolve(request.Selection)
 	if err != nil {
 		return nil, err
+	}
+	manifest, err := workspace.ReadManifest(filepath.Join(path, workspace.ManifestFile))
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Kind == workspace.KindScratch {
+		report, scratchErr := service.engine.BuildScratchPreflight(ctx, root, path)
+		return PreflightResult{PreflightReport: report}, scratchErr
 	}
 	if !request.NoProvider && service.contexts != nil {
 		contextPath, refreshErr := service.contexts.RefreshProviderContext(ctx, request.Provider, root, path)

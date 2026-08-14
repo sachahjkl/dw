@@ -246,7 +246,22 @@ templ workspacesSection(view pageView) {
 			<div class="project-list">
 				for _, workspace := range view.Snapshot.Workspaces {
 					<article class="project-card">
-						<header><div><p class="eyebrow">{ workspace.Project }</p><h3>{ workspace.Slug }</h3></div><code>{ workspace.Branch }</code></header>
+						<header>
+							<div>
+								<p class="eyebrow">
+									{ workspace.Project } / { workspace.Kind }
+									if workspace.WorkspaceID != "" {
+										<span> / { workspace.WorkspaceID }</span>
+									}
+								</p>
+								if workspace.Title != "" {
+									<h3>{ workspace.Title }</h3>
+								} else {
+									<h3>{ workspace.Slug }</h3>
+								}
+							</div>
+							<code>{ workspace.Branch }</code>
+						</header>
 						<p><code>{ workspace.Path }</code></p>
 						<p>{ strings.Join(workspace.WorkItems, ", ") }</p>
 						if current := executionForResource(view.Executions, workspace.Ref); current != nil {

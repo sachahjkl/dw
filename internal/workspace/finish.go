@@ -15,6 +15,9 @@ func (e *Engine) PlanFinish(ctx context.Context, root, workspace, message string
 	if err != nil {
 		return FinishPlanReport{}, err
 	}
+	if manifest.Kind == KindScratch && createPR {
+		return FinishPlanReport{}, scratchFinishError(workspace)
+	}
 	handoff, err := ValidateHandoffs(workspace)
 	if err != nil {
 		return FinishPlanReport{}, err
@@ -43,6 +46,9 @@ func (e *Engine) PlanFinish(ctx context.Context, root, workspace, message string
 		}
 	}
 	actionable := actionableRepositories(statuses)
+	if manifest.Kind == KindScratch && len(actionable) > 0 {
+		return FinishPlanReport{}, scratchFinishError(workspace)
+	}
 	summaries := make([]HandoffSummary, 0)
 	for _, target := range targets {
 		data, readErr := os.ReadFile(filepath.Join(workspace, HandoffPrefix+target.Repository+".md"))
@@ -101,6 +107,9 @@ func candidateFor(name string, targets []RepositoryTarget, project ProjectConfig
 	return PullRequestCandidate{Repository: name, Path: target.Path, ProviderRepository: providerRepository, TargetBranch: targetBranch}, true
 }
 func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, options FinishExecuteOptions, emit func(ActionEvent)) (FinishExecutionReport, error) {
+	if plan.Manifest.Kind == KindScratch && (plan.CreatePR || len(plan.ActionableRepositories) > 0 || len(plan.PullRequestCandidates) > 0) {
+		return FinishExecutionReport{}, scratchFinishError(plan.Workspace)
+	}
 	if !plan.Handoff.IsValid {
 		return FinishExecutionReport{}, ErrInvalidHandoff
 	}
@@ -236,6 +245,10 @@ func (e *Engine) ExecuteFinish(ctx context.Context, plan FinishPlanReport, optio
 		}
 	}
 	return FinishExecutionReport{Plan: plan, Events: events, VerificationResults: verification, GitActions: gitActions, PullRequests: pullRequests, WorkItemUpdates: stateUpdates}, nil
+}
+
+func scratchFinishError(workspace string) error {
+	return fmt.Errorf("A scratch workspace must be promoted before creating a pull request.\nRun:\n  dw workspace scratch promote <WORK_ITEM_ID> --workspace %s --execute", workspace)
 }
 
 func RunVerification(ctx context.Context, runner VerificationPort, configured []RepositoryCommands, candidates []PullRequestCandidate) []VerificationResult {

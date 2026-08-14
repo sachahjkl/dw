@@ -111,6 +111,9 @@ func foldRune(r rune) rune {
 }
 
 func PlanMarkdown(manifest Manifest) string {
+	if manifest.Kind == KindScratch {
+		return "## Hypothesis\n\n## Experiment\n\n## Expected result\n\n## Decision\n"
+	}
 	ids := make([]string, 0)
 	for _, item := range manifest.ParentWorkItems() {
 		ids = append(ids, "#"+item.ID)
@@ -126,7 +129,11 @@ func HandoffMarkdown(manifest Manifest, repository string) string {
 	for _, item := range manifest.ParentWorkItems() {
 		ids = append(ids, "`#"+item.ID+"`")
 	}
-	return fmt.Sprintf("# Handoff %s\n\n## Context\n\n- Project: `%s`\n- Repository: `%s`\n- Branch: `%s`\n- Parent work items: %s\n- Known child tasks: (none)\n\n## Deterministic Inputs\n\n1. `task.json`\n2. `plan.md`\n3. `AGENTS.md`\n4. Work-provider AI context for every parent work item\n5. Workspace preflight report\n\n## Scope\n\nDescribe in `plan.md` what belongs to `%s` and what this handoff must deliver.\n\n## Constraints\n\n- Preserve exact domain terminology\n- Treat screenshots, mockups, and attachments as factual sources\n- Ask the user instead of guessing when context is missing\n- Verify API impacts and front/back contracts when relevant\n\n## Expected Work\n\n- Limit work to `%s`\n- List affected files and areas clearly\n- Report dependencies on other domains\n- Update the structured summary below\n\n## Required Structured Summary\n\nFill this block without changing its keys.\n\n```yaml\nstatus: todo\nrepository: %s\nsummary:\n  done: []\n  decisions: []\n  risks: []\n  blockers: []\n  follow_up: []\nverification:\n  commands: []\n  manual_checks: []\nartifacts:\n  files: []\n  screenshots: []\n  attachments: []\n```\n", repository, manifest.Project, repository, manifest.BranchName, strings.Join(ids, ", "), repository, repository, repository)
+	providerInput := "4. Workspace preflight report"
+	if manifest.Kind != KindScratch {
+		providerInput = "4. Work-provider AI context for every parent work item\n5. Workspace preflight report"
+	}
+	return fmt.Sprintf("# Handoff %s\n\n## Context\n\n- Project: `%s`\n- Repository: `%s`\n- Branch: `%s`\n- Parent work items: %s\n- Known child tasks: (none)\n\n## Deterministic Inputs\n\n1. `task.json`\n2. `plan.md`\n3. `AGENTS.md`\n%s\n\n## Scope\n\nDescribe in `plan.md` what belongs to `%s` and what this handoff must deliver.\n\n## Constraints\n\n- Preserve exact domain terminology\n- Ask the user instead of guessing when context is missing\n- Verify API impacts and front/back contracts when relevant\n\n## Expected Work\n\n- Limit work to `%s`\n- List affected files and areas clearly\n- Report dependencies on other domains\n- Update the structured summary below\n\n## Required Structured Summary\n\nFill this block without changing its keys.\n\n```yaml\nstatus: todo\nrepository: %s\nsummary:\n  done: []\n  decisions: []\n  risks: []\n  blockers: []\n  follow_up: []\nverification:\n  commands: []\n  manual_checks: []\nartifacts:\n  files: []\n  screenshots: []\n  attachments: []\n```\n", repository, manifest.Project, repository, manifest.BranchName, strings.Join(ids, ", "), providerInput, repository, repository, repository)
 }
 
 func AgentFiles(manifest Manifest) []agent.WorkspaceConfigFile {

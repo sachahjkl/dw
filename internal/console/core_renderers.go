@@ -192,6 +192,16 @@ func RegisterCoreRenderers(results *Registry) error {
 			})
 		},
 		func() error {
+			return RegisterPageResult(results, workapp.ActionWorkspaceScratchStart, func(r workapp.ScratchStartResult) Page {
+				return actionPage(r.ActionID(), Field{Label: "result.workspace", Value: r.Plan.Workspace, Style: ValuePath}, Field{Label: "result.project", Value: r.Plan.Project}, Field{Label: "result.title", Value: r.Plan.Title}, boolStatus("result.executed", r.Execution != nil))
+			})
+		},
+		func() error {
+			return RegisterPageResult(results, workapp.ActionWorkspaceScratchPromote, func(r workapp.ScratchPromoteResult) Page {
+				return actionPage(r.ActionID(), Field{Label: "result.workspace", Value: r.Plan.NewWorkspace, Style: ValuePath}, Field{Label: "result.item", Value: r.Plan.Target.ID}, boolStatus("result.executed", r.Execution != nil))
+			})
+		},
+		func() error {
 			return RegisterPageResult(results, workapp.ActionWorkspacePullRequestStart, func(r workapp.StartPullRequestResult) Page {
 				return actionPage(r.ActionID(), Field{Label: "result.pull-request", Value: strconv.FormatInt(r.Plan.PullRequestID, 10)}, countField("result.repositories", len(r.Plan.Repositories)), boolStatus("result.executed", r.Execution != nil))
 			})

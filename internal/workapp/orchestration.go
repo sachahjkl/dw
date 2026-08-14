@@ -112,6 +112,9 @@ func (s *Service) runStartAction(ctx context.Context, request StartRequest, runt
 }
 
 func (s *Service) runPruneAction(ctx context.Context, request PruneRequest, runtime action.Runtime) (PruneReport, error) {
+	if request.Kind != nil && *request.Kind == "scratch" && request.Execute && !request.Approved {
+		return PruneReport{}, problem("workspace.approval-required", "scratch pruning requires --execute --yes")
+	}
 	execute := request.Execute
 	request.Execute = false
 	report, err := s.Prune(ctx, request, eventSink(ActionWorkspacePrune, runtime))

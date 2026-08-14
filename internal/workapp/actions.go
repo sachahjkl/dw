@@ -26,6 +26,8 @@ const (
 	ActionWorkItemDoingPlan         action.ID = "work.item.doing.plan"
 	ActionWorkItemDoingExecute      action.ID = "work.item.doing.execute"
 	ActionWorkspaceStart            action.ID = "workspace.start"
+	ActionWorkspaceScratchStart     action.ID = "workspace.scratch.start"
+	ActionWorkspaceScratchPromote   action.ID = "workspace.scratch.promote"
 	ActionWorkspacePullRequestStart action.ID = "workspace.pr.start"
 	ActionWorkspaceOpen             action.ID = "workspace.open"
 	ActionWorkspaceSync             action.ID = "workspace.sync"
@@ -72,6 +74,8 @@ type DoingExecuteRequest struct {
 
 func (DoingExecuteRequest) ActionID() action.ID     { return ActionWorkItemDoingExecute }
 func (StartRequest) ActionID() action.ID            { return ActionWorkspaceStart }
+func (ScratchStartRequest) ActionID() action.ID     { return ActionWorkspaceScratchStart }
+func (ScratchPromoteRequest) ActionID() action.ID   { return ActionWorkspaceScratchPromote }
 func (StartPullRequestRequest) ActionID() action.ID { return ActionWorkspacePullRequestStart }
 func (OpenRequest) ActionID() action.ID             { return ActionWorkspaceOpen }
 func (SyncRequest) ActionID() action.ID             { return ActionWorkspaceSync }
@@ -113,7 +117,9 @@ type StartResult struct {
 	Open      *OpenReport           `json:"open,omitempty"`
 }
 
-func (StartResult) ActionID() action.ID { return ActionWorkspaceStart }
+func (StartResult) ActionID() action.ID          { return ActionWorkspaceStart }
+func (ScratchStartResult) ActionID() action.ID   { return ActionWorkspaceScratchStart }
+func (ScratchPromoteResult) ActionID() action.ID { return ActionWorkspaceScratchPromote }
 
 type StartPullRequestResult struct {
 	Plan      StartPullRequestPlanReport `json:"plan"`
@@ -183,6 +189,12 @@ func Handlers(service *Service) []action.Handler {
 		}),
 		handler[StartRequest](ActionWorkspaceStart, func(ctx context.Context, r StartRequest, rt action.Runtime) (action.Result, error) {
 			return service.runStartAction(ctx, r, rt)
+		}),
+		handler[ScratchStartRequest](ActionWorkspaceScratchStart, func(ctx context.Context, r ScratchStartRequest, rt action.Runtime) (action.Result, error) {
+			return service.ScratchStart(ctx, r, eventSink(ActionWorkspaceScratchStart, rt))
+		}),
+		handler[ScratchPromoteRequest](ActionWorkspaceScratchPromote, func(ctx context.Context, r ScratchPromoteRequest, rt action.Runtime) (action.Result, error) {
+			return service.ScratchPromote(ctx, r, eventSink(ActionWorkspaceScratchPromote, rt))
 		}),
 		handler[StartPullRequestRequest](ActionWorkspacePullRequestStart, func(ctx context.Context, r StartPullRequestRequest, rt action.Runtime) (action.Result, error) {
 			plan, execution, err := service.StartPullRequest(ctx, r, eventSink(ActionWorkspacePullRequestStart, rt))

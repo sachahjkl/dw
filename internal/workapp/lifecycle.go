@@ -2,7 +2,10 @@ package workapp
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sachahjkl/dw/internal/work"
 	"github.com/sachahjkl/dw/internal/workspace"
@@ -273,6 +276,9 @@ func (s *Service) Sync(ctx context.Context, request SyncRequest, sink EventSink)
 	if err != nil {
 		return SyncReport{}, err
 	}
+	if manifest.Kind == workspace.KindScratch {
+		return SyncReport{}, workspace.ScratchNotApplicable("workspace sync", workspacePath)
+	}
 	ids := parentWorkItemIDs(manifest)
 	provider, err := s.provider(s.providerName(request.Provider, request.Root, manifest.Project))
 	if err != nil {
@@ -314,6 +320,9 @@ func (s *Service) refreshWorkspaceContext(ctx context.Context, providerName, roo
 	if err != nil {
 		return ContextRefreshReport{}, err
 	}
+	if manifest.Kind == workspace.KindScratch {
+		return ContextRefreshReport{}, workspace.ScratchNotApplicable("workspace context refresh", workspacePath)
+	}
 	ids := parentWorkItemIDs(manifest)
 	report, err := s.Context(ctx, ContextRequest{Provider: providerName, Root: root, Project: manifest.Project, IDs: ids, Comments: 200, Mode: ContextRich}, sink)
 	if err != nil {
@@ -337,6 +346,9 @@ func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink Ev
 	manifest, err := s.Lookup.Manifest(ctx, workspacePath)
 	if err != nil {
 		return ChildReport{}, err
+	}
+	if manifest.Kind == workspace.KindScratch {
+		return ChildReport{}, workspace.ScratchNotApplicable("work item child create", workspacePath)
 	}
 	parents := manifest.ParentWorkItems()
 	if len(parents) == 0 {
@@ -374,6 +386,37 @@ func (s *Service) CreateChild(ctx context.Context, request ChildRequest, sink Ev
 func (s *Service) Prune(ctx context.Context, request PruneRequest, sink EventSink) (PruneReport, error) {
 	if s.Pruner == nil {
 		return PruneReport{}, capabilityUnavailable("workspace prune")
+	}
+	if request.Kind != nil && *request.Kind == workspace.KindScratch {
+		pruner, ok := s.Pruner.(WorkspaceScratchPruner)
+		if !ok {
+			return PruneReport{}, capabilityUnavailable("scratch workspace prune")
+		}
+		duration, parseErr := parseWorkspaceAge(request.OlderThan)
+		if parseErr != nil {
+			return PruneReport{}, parseErr
+		}
+		candidates, planErr := pruner.PlanScratchPrune(ctx, request.Root, request.Project, time.Now().Add(-duration))
+		if planErr != nil {
+			return PruneReport{}, planErr
+		}
+		plan := workspace.PrunePlanReport{Root: request.Root, Project: request.Project, Kind: request.Kind, OlderThan: request.OlderThan, Candidates: candidates}
+		report := PruneReport{Plan: plan, Events: []Event{}}
+		if !request.Execute {
+			return report, nil
+		}
+		selected := candidates
+		if request.SelectedWorkspaces != nil {
+			selected = selected[:0]
+			for _, candidate := range candidates {
+				if containsString(request.SelectedWorkspaces, candidate.Path) {
+					selected = append(selected, candidate)
+				}
+			}
+		}
+		execution, executeErr := s.Pruner.ExecutePrune(ctx, request.Root, selected)
+		report.Execution = &execution
+		return report, executeErr
 	}
 	syncReports := make([]workspace.PruneSyncReport, 0)
 	if !request.NoSync {
@@ -438,6 +481,21 @@ func (s *Service) Prune(ctx context.Context, request PruneRequest, sink EventSin
 	}
 	report.Execution = &execution
 	return report, nil
+}
+
+func parseWorkspaceAge(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if strings.HasSuffix(value, "d") {
+		days, err := strconv.ParseInt(strings.TrimSuffix(value, "d"), 10, 64)
+		if err == nil && days > 0 {
+			return time.Duration(days) * 24 * time.Hour, nil
+		}
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration <= 0 {
+		return 0, fmt.Errorf("--older-than must be a positive duration such as 30d")
+	}
+	return duration, nil
 }
 
 func (s *Service) loadStartItems(ctx context.Context, provider work.Provider, root, project string, selected []string, withChildren bool) ([]work.Item, error) {
