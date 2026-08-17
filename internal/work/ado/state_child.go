@@ -135,7 +135,7 @@ func ChildTaskTitle(repository, title string) string {
 
 func (p *Provider) CreateChildTask(ctx context.Context, options Options, parent WorkItemSnapshot, repository, title, source string, token Token) (ChildTaskCreateResult, error) {
 	history := fmt.Sprintf("Créé automatiquement par Dev Workflow via %s. Parent #%s. Repository: %s.", source, parent.ID, repository)
-	return p.createChild(ctx, options, parent.ID, "Task", title, history, "creation "+source, repository, token)
+	return p.createChild(ctx, options, parent.ID, "Task", title, work.State("En développement"), history, "creation "+source, repository, token)
 }
 
 func (p *Provider) CreateChild(ctx context.Context, project work.ProjectRef, create work.ChildCreate) (work.ChildCreateResult, error) {
@@ -147,14 +147,19 @@ func (p *Provider) CreateChild(ctx context.Context, project work.ProjectRef, cre
 	if itemType == "" {
 		itemType = "Task"
 	}
-	result, err := p.createChild(ctx, adoOptions, string(create.ParentID), itemType, create.Title, create.History, "", "", token)
+	if create.State == "" {
+		if state, ok := DefaultStartState(itemType); ok {
+			create.State = work.State(state)
+		}
+	}
+	result, err := p.createChild(ctx, adoOptions, string(create.ParentID), itemType, create.Title, create.State, create.History, "", "", token)
 	if err != nil {
 		return work.ChildCreateResult{}, err
 	}
 	return work.ChildCreateResult{ID: work.ItemID(result.ID), Title: result.Title, URL: WorkItemWebURL(adoOptions, result.ID)}, nil
 }
 
-func (p *Provider) createChild(ctx context.Context, options Options, parentID, itemType, title, history, relationComment, repository string, token Token) (ChildTaskCreateResult, error) {
+func (p *Provider) createChild(ctx context.Context, options Options, parentID, itemType, title string, state work.State, history, relationComment, repository string, token Token) (ChildTaskCreateResult, error) {
 	assignedTo := ""
 	if body, err := p.transport().Get(ctx, ConnectionDataURL(options), token); err == nil {
 		if root, decodeErr := decodeObject(body); decodeErr == nil {
@@ -164,6 +169,9 @@ func (p *Provider) createChild(ctx context.Context, options Options, parentID, i
 	patch := []jsonPatchOperation{patchAdd("/fields/System.Title", title)}
 	if strings.TrimSpace(assignedTo) != "" {
 		patch = append(patch, patchAdd("/fields/System.AssignedTo", assignedTo))
+	}
+	if strings.TrimSpace(string(state)) != "" {
+		patch = append(patch, patchAdd("/fields/System.State", string(state)))
 	}
 	patch = append(patch, patchAdd("/fields/System.History", history))
 	relation := map[string]any{"rel": RelationHierarchyReverse, "url": WorkItemAPIURL(options, parentID), "attributes": map[string]any{"comment": relationComment}}

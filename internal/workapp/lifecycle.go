@@ -121,25 +121,27 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 		return StartPlanReport{}, nil, err
 	}
 	if creator != nil && len(items) > 0 {
-		for _, repository := range plan.Repositories {
-			title := workspace.ChildTaskTitle(repository, firstNonEmpty(items[0].Title, string(items[0].ID)))
-			created, createErr := creator.CreateChild(ctx, projectRef(request.Root, project), work.ChildCreate{ParentID: items[0].ID, Type: work.ItemType("Task"), Title: title, History: "workspace start"})
-			childTitle := created.Title
-			child := workspace.ChildTask{Repository: repository, ID: string(created.ID), Title: optionalString(childTitle)}
-			if createErr != nil {
-				if created.ID != "" {
-					children = append(children, child)
+		for _, item := range items {
+			for _, repository := range plan.Repositories {
+				title := workspace.ChildTaskTitle(repository, firstNonEmpty(item.Title, string(item.ID)))
+				created, createErr := creator.CreateChild(ctx, projectRef(request.Root, project), work.ChildCreate{ParentID: item.ID, Type: work.ItemType("Task"), Title: title, History: "workspace start"})
+				childTitle := created.Title
+				child := workspace.ChildTask{Repository: repository, ID: string(created.ID), Title: optionalString(childTitle)}
+				if createErr != nil {
+					if created.ID != "" {
+						children = append(children, child)
+					}
+					execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: children, Events: events}
+					return report, &execution, createErr
 				}
-				execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: children, Events: events}
-				return report, &execution, createErr
+				children = append(children, child)
+				manifest, persistErr := s.Children.AddChild(ctx, plan.Workspace, child)
+				if persistErr != nil {
+					execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: children, Events: events}
+					return report, &execution, persistErr
+				}
+				local.Manifest = manifest
 			}
-			children = append(children, child)
-			manifest, persistErr := s.Children.AddChild(ctx, plan.Workspace, child)
-			if persistErr != nil {
-				execution := StartExecutionReport{Plan: local.Plan, Manifest: local.Manifest, WorkItems: local.WorkItems, ChildTasks: children, Events: events}
-				return report, &execution, persistErr
-			}
-			local.Manifest = manifest
 		}
 		local.ChildTasks = append([]workspace.ChildTask(nil), children...)
 	}
