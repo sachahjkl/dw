@@ -1,3 +1,5 @@
+[English](README.md) | [Français](README.fr.md)
+
 # dw
 
 `dw` is the Dev Workflow CLI for AI-assisted work across external work providers, local Git workspaces, multi-repository projects, agent context, and guarded data-source inspection.
