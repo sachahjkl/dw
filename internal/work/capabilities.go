@@ -15,6 +15,7 @@ const (
 	CapabilityAuthenticator            Capability = "authenticator"
 	CapabilityItemReader               Capability = "item-reader"
 	CapabilityAssignedQuerier          Capability = "assigned-querier"
+	CapabilityCurrentUserAssigner      Capability = "current-user-assigner"
 	CapabilityRelationReader           Capability = "relation-reader"
 	CapabilityStateWriter              Capability = "state-writer"
 	CapabilityStateClassifier          Capability = "state-classifier"
@@ -41,6 +42,11 @@ type ItemReader interface {
 type AssignedQuerier interface {
 	Provider
 	QueryAssigned(context.Context, ProjectRef, AssignedQuery) ([]Item, error)
+}
+
+type CurrentUserAssigner interface {
+	Provider
+	AssignToCurrentUser(context.Context, ProjectRef, []ItemID) error
 }
 
 type RelationReader interface {

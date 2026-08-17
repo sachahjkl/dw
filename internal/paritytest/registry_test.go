@@ -185,7 +185,7 @@ func TestProviderCapabilitiesAreDerivedFromInterfacesAndSorted(t *testing.T) {
 			Name:  string(ado.ProviderName),
 			Kinds: []providerapp.Kind{providerapp.KindWork},
 			Capabilities: []string{
-				"assigned-querier", "authenticator", "child-creator", "commit-reference-extractor", "item-reader",
+				"assigned-querier", "authenticator", "child-creator", "commit-reference-extractor", "current-user-assigner", "item-reader",
 				"pull-request-reader", "pull-request-writer", "raw-item-reader", "relation-reader",
 				"rich-context-reader", "state-classifier", "state-writer",
 			},

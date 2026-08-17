@@ -121,6 +121,13 @@ func (provider *scopedADOProvider) QueryAssigned(ctx context.Context, project wo
 	}
 	return delegate.QueryAssigned(ctx, project, query)
 }
+func (provider *scopedADOProvider) AssignToCurrentUser(ctx context.Context, project work.ProjectRef, ids []work.ItemID) error {
+	delegate, project, err := provider.resolve(ctx, project)
+	if err != nil {
+		return err
+	}
+	return delegate.AssignToCurrentUser(ctx, project, ids)
+}
 func (provider *scopedADOProvider) ReadRelations(ctx context.Context, project work.ProjectRef, ids []work.ItemID) ([]work.Relation, error) {
 	delegate, project, err := provider.resolve(ctx, project)
 	if err != nil {

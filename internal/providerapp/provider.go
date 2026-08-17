@@ -165,6 +165,8 @@ func workCapabilities(provider work.Provider) []string {
 	appendCapability(work.CapabilityItemReader, itemReader)
 	_, assignedQuerier := provider.(work.AssignedQuerier)
 	appendCapability(work.CapabilityAssignedQuerier, assignedQuerier)
+	_, currentUserAssigner := provider.(work.CurrentUserAssigner)
+	appendCapability(work.CapabilityCurrentUserAssigner, currentUserAssigner)
 	_, relationReader := provider.(work.RelationReader)
 	appendCapability(work.CapabilityRelationReader, relationReader)
 	_, stateWriter := provider.(work.StateWriter)

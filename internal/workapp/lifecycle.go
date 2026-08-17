@@ -104,6 +104,18 @@ func (s *Service) Start(ctx context.Context, request StartRequest, sink EventSin
 			return StartPlanReport{}, nil, requireErr
 		}
 	}
+	if !request.SkipWork && len(items) > 0 {
+		assigner, supported := provider.(work.CurrentUserAssigner)
+		if supported {
+			ids := make([]work.ItemID, 0, len(items))
+			for _, item := range items {
+				ids = append(ids, item.ID)
+			}
+			if err := assigner.AssignToCurrentUser(ctx, projectRef(request.Root, project), ids); err != nil {
+				return StartPlanReport{}, nil, err
+			}
+		}
+	}
 	local, err := s.Starter.ExecuteStart(ctx, plan, workItemsToWorkspace(items), nil, nil)
 	if err != nil {
 		return StartPlanReport{}, nil, err

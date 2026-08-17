@@ -156,7 +156,7 @@ func capabilityFeature(capability string) string {
 	switch capability {
 	case "authenticator":
 		return "Authentication"
-	case "item-reader", "assigned-querier", "raw-item-reader":
+	case "item-reader", "assigned-querier", "current-user-assigner", "raw-item-reader":
 		return "Work items"
 	case "relation-reader", "rich-context-reader":
 		return "Relationships and context"
@@ -197,6 +197,8 @@ func capabilityDescription(capability string) string {
 		return "Read work item details."
 	case "assigned-querier":
 		return "List work assigned to the current user."
+	case "current-user-assigner":
+		return "Assign work items to the current user."
 	case "relation-reader":
 		return "Load parent and child relationships."
 	case "state-writer":

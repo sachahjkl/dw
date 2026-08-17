@@ -43,6 +43,34 @@ func (p *Provider) UpdateStates(ctx context.Context, project work.ProjectRef, ch
 	return result, nil
 }
 
+func (p *Provider) AssignToCurrentUser(ctx context.Context, project work.ProjectRef, ids []work.ItemID) error {
+	options, token, err := p.session(ctx, project)
+	if err != nil {
+		return err
+	}
+	body, err := p.transport().Get(ctx, ConnectionDataURL(options), token)
+	if err != nil {
+		return err
+	}
+	root, err := decodeObject(body)
+	if err != nil {
+		return err
+	}
+	identity := authenticatedIdentity(root)
+	if strings.TrimSpace(identity) == "" {
+		return fmt.Errorf("azure devops authenticated user identity is unavailable")
+	}
+	for _, id := range ids {
+		if _, err := p.transport().Patch(ctx, WorkItemURL(options, string(id)), token, []jsonPatchOperation{
+			patchAdd("/fields/System.AssignedTo", identity),
+			patchAdd("/fields/System.History", "workspace start"),
+		}, "application/json-patch+json"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func IsFinalState(itemType, state string) bool {
 	normalizedState := normalizeStateOrType(state)
 	if normalizedState == "" {
