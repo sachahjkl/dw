@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -174,5 +175,122 @@ func TestSecurityHeadersAndRequestLimit(t *testing.T) {
 	var value TextResponseV1
 	if err := decodeRequest(httptest.NewRecorder(), request, &value, runtimeconfig.Default().Web.MaxRequestBodyBytes); err == nil {
 		t.Fatal("oversized request was accepted")
+	}
+}
+
+func TestSecurityHeadersRejectForeignHost(t *testing.T) {
+	server := &Server{origin: "http://127.0.0.1:7331"}
+	handler := server.securityHeaders(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(http.StatusNoContent) }))
+	for host, want := range map[string]int{
+		"127.0.0.1:7331":    http.StatusNoContent,
+		"localhost:7331":    http.StatusNoContent,
+		"[::1]:7331":        http.StatusNoContent,
+		"evil.example:7331": http.StatusMisdirectedRequest,
+		"127.0.0.1:7332":    http.StatusMisdirectedRequest,
+		"127.0.0.1":         http.StatusMisdirectedRequest,
+	} {
+		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:7331/", nil)
+		request.Host = host
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != want {
+			t.Errorf("host %q status = %d, want %d", host, recorder.Code, want)
+		}
+	}
+}
+
+func TestSessionsAreCappedAndCookieIsPortScoped(t *testing.T) {
+	secret, err := webservice.NewServiceSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := newAuthState(secret, runtimeconfig.Default().Web, webservice.AuthNone, "")
+	now := time.Date(2026, 8, 2, 10, 0, 0, 0, time.UTC)
+	state.now = func() time.Time { now = now.Add(time.Second); return now }
+	first, _, _ := state.createSession()
+	for range maxSessions {
+		if _, _, ok := state.createSession(); !ok {
+			t.Fatal("session creation failed")
+		}
+	}
+	if len(state.sessions) != maxSessions {
+		t.Fatalf("sessions = %d", len(state.sessions))
+	}
+	if _, exists := state.sessions[first]; exists {
+		t.Fatal("oldest session was not evicted")
+	}
+	state.cookieName = sessionCookieName + "_7331"
+	server := &Server{auth: state}
+	recorder := httptest.NewRecorder()
+	server.setSessionCookie(recorder, "value")
+	if cookies := recorder.Result().Cookies(); len(cookies) != 1 || cookies[0].Name != "dw_session_7331" {
+		t.Fatalf("cookies = %#v", cookies)
+	}
+}
+
+func TestNonExpiringTicketsAreCapped(t *testing.T) {
+	secret, err := webservice.NewServiceSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := newAuthState(secret, runtimeconfig.Default().Web, webservice.AuthTicket, "")
+	for range maxTickets * 2 {
+		if _, err := state.createTicket(true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(state.tickets) != maxTickets {
+		t.Fatalf("tickets = %d", len(state.tickets))
+	}
+}
+
+func TestLoginAcceptsPostedTokenAndLogoutRevokesSession(t *testing.T) {
+	secret, err := webservice.NewServiceSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := webservice.HashAccessToken("chosen-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin := "http://127.0.0.1:7331"
+	server := &Server{auth: newAuthState(secret, runtimeconfig.Default().Web, webservice.AuthToken, digest), origin: origin}
+	login := func(token string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, origin+"/login", strings.NewReader(url.Values{"token": {token}}.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		recorder := httptest.NewRecorder()
+		server.handleLogin(recorder, request)
+		return recorder
+	}
+	if recorder := login("wrong"); recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token status = %d", recorder.Code)
+	}
+	recorder := login("chosen-token")
+	cookies := recorder.Result().Cookies()
+	if recorder.Code != http.StatusSeeOther || recorder.Header().Get("Location") != "/" || len(cookies) != 1 {
+		t.Fatalf("login = %d, cookies = %d", recorder.Code, len(cookies))
+	}
+	sessionValue, ok := server.auth.sessions[cookies[0].Value]
+	if !ok {
+		t.Fatal("login did not create a session")
+	}
+	logout := httptest.NewRequest(http.MethodPost, origin+"/logout", nil)
+	logout.AddCookie(cookies[0])
+	logout.Header.Set("Origin", origin)
+	logout.Header.Set("X-DW-CSRF", encodeToken(sessionValue.csrf))
+	logoutRecorder := httptest.NewRecorder()
+	server.handleLogout(logoutRecorder, logout)
+	if logoutRecorder.Code != http.StatusNoContent {
+		t.Fatalf("logout status = %d", logoutRecorder.Code)
+	}
+	if _, exists := server.auth.sessions[cookies[0].Value]; exists {
+		t.Fatal("logout did not revoke the session")
+	}
+	forged := httptest.NewRequest(http.MethodPost, origin+"/logout", nil)
+	forged.AddCookie(cookies[0])
+	forgedRecorder := httptest.NewRecorder()
+	server.handleLogout(forgedRecorder, forged)
+	if forgedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("logout without CSRF status = %d", forgedRecorder.Code)
 	}
 }

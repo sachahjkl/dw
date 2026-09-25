@@ -9,6 +9,8 @@ import (
 var forbiddenTokens = [...]string{
 	"insert", "update", "delete", "merge", "drop", "alter", "truncate", "exec", "execute",
 	"create", "grant", "revoke", "into", "openquery", "openrowset", "opendatasource",
+	"shutdown", "kill", "dbcc", "backup", "restore", "use", "set", "declare", "deny", "reconfigure",
+	"waitfor", "bulk", "receive", "send",
 }
 
 // GuardResult is the stable, machine-readable result of the SQL Server read-only guard.
@@ -116,11 +118,11 @@ func hasMultipleTopLevelStatements(statement string) bool {
 		if word == "select" {
 			setContinuation := lastTopWord == "union" || lastTopWord == "except" || lastTopWord == "intersect" ||
 				(lastTopWord == "all" && (previousTopWord == "union" || previousTopWord == "except" || previousTopWord == "intersect"))
-			if lineStart && seenMainSelect && !setContinuation {
+			if seenMainSelect && !setContinuation {
 				return true
 			}
 			seenMainSelect = true
-		} else if lineStart && seenMainSelect && isStatementStartWord(word) {
+		} else if seenMainSelect && (isReservedStatementStartWord(word) || lineStart && isStatementStartWord(word)) {
 			return true
 		}
 		previousTopWord, lastTopWord = lastTopWord, word
@@ -137,6 +139,22 @@ func isStatementStartWord(word string) bool {
 		"raiserror", "readtext", "receive", "reconfigure", "restore", "return", "revert", "revoke", "rollback",
 		"save", "send", "set", "setuser", "shutdown", "throw", "truncate", "unbind", "update", "updatetext", "use", "waitfor",
 		"while", "with", "writetext":
+		return true
+	default:
+		return false
+	}
+}
+
+// isReservedStatementStartWord lists reserved T-SQL keywords that can only begin a new statement
+// outside parentheses, so they reveal a batch even on the same line. WITH is excluded because
+// table hints and WITH TIES/ROLLUP are valid inside a SELECT.
+func isReservedStatementStartWord(word string) bool {
+	return word != "with" && isStatementStartWord(word) && !isNonReservedStatementStartWord(word)
+}
+
+func isNonReservedStatementStartWord(word string) bool {
+	switch word {
+	case "bind", "disable", "enable", "move", "receive", "send", "throw", "unbind":
 		return true
 	default:
 		return false

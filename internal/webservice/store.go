@@ -11,19 +11,26 @@ import (
 	"runtime"
 
 	"github.com/sachahjkl/dw/internal/config"
+	"github.com/sachahjkl/dw/internal/fsutil"
 )
 
 type Paths struct {
-	ConfigFile string
-	StateFile  string
+	ConfigFile       string
+	LegacyConfigFile string
+	StateFile        string
 }
 
 type Store struct{ paths Paths }
 
 func ResolvePaths(dirs config.PlatformBaseDirs) Paths {
 	configFile := filepath.Join(dirs.UserConfigDirectory(), "web.json")
-	var runtimeDirectory string
+	var runtimeDirectory, legacyConfigFile string
 	if runtime.GOOS == "windows" {
+		if dirs.ConfigDir != "" {
+			if legacy := filepath.Join(dirs.ConfigDir, "DevWorkflow", "web.json"); legacy != configFile {
+				legacyConfigFile = legacy
+			}
+		}
 		base := dirs.DataLocalDir
 		if base == "" {
 			base = dirs.HomeDir
@@ -38,13 +45,37 @@ func ResolvePaths(dirs config.PlatformBaseDirs) Paths {
 		}
 		runtimeDirectory = filepath.Join(base, "DevWorkflow", "web")
 	}
-	return Paths{ConfigFile: configFile, StateFile: filepath.Join(runtimeDirectory, "state.json")}
+	return Paths{ConfigFile: configFile, LegacyConfigFile: legacyConfigFile, StateFile: filepath.Join(runtimeDirectory, "state.json")}
+}
+
+func (store *Store) migrateLegacyConfig() error {
+	legacy := store.paths.LegacyConfigFile
+	if legacy == "" {
+		return nil
+	}
+	if _, err := os.Stat(store.paths.ConfigFile); !errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	content, err := os.ReadFile(legacy)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err = writeAtomic(store.paths.ConfigFile, content); err != nil {
+		return err
+	}
+	return os.Remove(legacy)
 }
 
 func NewStore(dirs config.PlatformBaseDirs) *Store { return &Store{paths: ResolvePaths(dirs)} }
 func (store *Store) Paths() Paths                  { return store.paths }
 
 func (store *Store) LoadConfig() (WebConfigV1, error) {
+	if err := store.migrateLegacyConfig(); err != nil {
+		return WebConfigV1{}, err
+	}
 	content, err := os.ReadFile(store.paths.ConfigFile)
 	if err != nil {
 		return WebConfigV1{}, err
@@ -131,35 +162,7 @@ func writeAtomic(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".dw-web-*")
-	if err != nil {
-		return err
-	}
-	name := file.Name()
-	keep := false
-	defer func() {
-		_ = file.Close()
-		if !keep {
-			_ = os.Remove(name)
-		}
-	}()
-	if err = file.Chmod(0o600); err != nil {
-		return err
-	}
-	if _, err = file.Write(content); err != nil {
-		return err
-	}
-	if err = file.Sync(); err != nil {
-		return err
-	}
-	if err = file.Close(); err != nil {
-		return err
-	}
-	if err = os.Rename(name, path); err != nil {
-		return err
-	}
-	keep = true
-	return nil
+	return fsutil.WriteFileAtomic(path, content, 0o600)
 }
 
 func decodeStrict[T persistedJSON](content []byte, target *T) error {

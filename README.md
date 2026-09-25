@@ -146,6 +146,14 @@ Linux uses `$XDG_CONFIG_HOME/DevWorkflow/runtime.json`, with `~/.config` as the 
 
 The file uses schema `1`. DevWorkflow rejects unknown fields and invalid values instead of applying partial settings.
 
+## Windows Console Encoding
+
+`dw` writes UTF-8. On Windows it switches the console code page to 65001 at startup and restores it on exit. When Windows PowerShell 5.1 captures the output (`$out = dw ...` or a pipe), it decodes it with `[Console]::OutputEncoding`; if that is not UTF-8, accented characters are garbled. Run this first:
+
+```powershell
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new()
+```
+
 ## Release Artifacts
 
 Build local release artifacts:
@@ -172,7 +180,7 @@ The Windows artifact is written to:
 artifacts/win-x64/dw-win-x64.zip
 ```
 
-Release workflows also produce `release.json`, consumed by `dw upgrade --check` and `dw upgrade`.
+Release workflows also produce `release.json` and its minisign signature `release.json.minisig`, consumed by `dw upgrade --check` and `dw upgrade`. Unsigned or badly signed manifests are rejected.
 
 ## CI and Releases
 

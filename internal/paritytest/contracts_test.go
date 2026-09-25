@@ -213,12 +213,12 @@ func TestSQLServerSafetyOptionsOverrideDuplicates(t *testing.T) {
 		{
 			name:  "URL query duplicates",
 			input: "sqlserver://user:pass@localhost/app?application+intent=ReadWrite&ApplicationIntent=ReadWrite&trust_server_certificate=false&TrustServerCertificate=false&encrypt=true",
-			want:  "sqlserver://user:pass@localhost/app?ApplicationIntent=ReadOnly&TrustServerCertificate=true&encrypt=true",
+			want:  "sqlserver://user:pass@localhost/app?ApplicationIntent=ReadOnly&TrustServerCertificate=false&encrypt=true",
 		},
 		{
 			name:  "semicolon duplicates with protected delimiters",
 			input: `Server=localhost;Password="a;b";Application Intent=ReadWrite;application_intent=ReadWrite;Trust Server Certificate=false;TRUST-SERVER-CERTIFICATE=false;Extra={x;y};Database=app`,
-			want:  `Server=localhost;Password="a;b";Extra={x;y};Database=app;ApplicationIntent=ReadOnly;TrustServerCertificate=true`,
+			want:  `Server=localhost;Password="a;b";Extra={x;y};Database=app;ApplicationIntent=ReadOnly;TrustServerCertificate=false`,
 		},
 	}
 	for _, test := range tests {

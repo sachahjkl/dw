@@ -77,6 +77,35 @@ func TestStateRejectsNonLoopbackAddress(t *testing.T) {
 	}
 }
 
+func TestStoreMigratesLegacyConfig(t *testing.T) {
+	base := t.TempDir()
+	store := &Store{paths: Paths{
+		ConfigFile:       filepath.Join(base, "local", "DevWorkflow", "web.json"),
+		LegacyConfigFile: filepath.Join(base, "roaming", "DevWorkflow", "web.json"),
+		StateFile:        filepath.Join(base, "local", "state.json"),
+	}}
+	source := NewStore(config.PlatformBaseDirs{HomeDir: base, ConfigDir: filepath.Join(base, "source"), DataLocalDir: filepath.Join(base, "source")})
+	if _, err := source.EnsureConfig(filepath.Join(base, "root"), 7331, filepath.Join(base, "dw")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(store.paths.LegacyConfigFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(source.Paths().ConfigFile, store.paths.LegacyConfigFile); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.LoadConfig()
+	if err != nil || loaded.Port != 7331 {
+		t.Fatalf("loaded = %#v, err = %v", loaded, err)
+	}
+	if _, err = os.Stat(store.paths.LegacyConfigFile); !os.IsNotExist(err) {
+		t.Fatalf("legacy config still present: %v", err)
+	}
+	if _, err = os.Stat(store.paths.ConfigFile); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStoreRejectsUnknownConfigurationFields(t *testing.T) {
 	base := t.TempDir()
 	store := NewStore(config.PlatformBaseDirs{HomeDir: base, ConfigDir: base, StateDir: base})

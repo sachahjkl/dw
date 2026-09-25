@@ -15,7 +15,11 @@ import (
 	"github.com/sachahjkl/dw/internal/webservice"
 )
 
-const sessionCookieName = "dw_session"
+const (
+	sessionCookieName = "dw_session"
+	maxSessions       = 32
+	maxTickets        = 64
+)
 
 type ticket struct {
 	value     [32]byte
@@ -24,6 +28,7 @@ type ticket struct {
 
 type session struct {
 	csrf      [32]byte
+	createdAt time.Time
 	expiresAt time.Time
 }
 
@@ -35,7 +40,15 @@ type authState struct {
 	accessTokenDigest string
 	tickets           []ticket
 	sessions          map[string]session
+	cookieName        string
 	now               func() time.Time
+}
+
+func (state *authState) sessionCookie() string {
+	if state.cookieName == "" {
+		return sessionCookieName
+	}
+	return state.cookieName
 }
 
 func newAuthState(secret webservice.ServiceSecret, settings runtimeconfig.Web, mode webservice.AuthMode, accessTokenDigest string) *authState {
@@ -82,6 +95,9 @@ func (state *authState) createTicket(noExpiry bool) (ticket, error) {
 	if !noExpiry {
 		created.expiresAt = now.Add(runtimeconfig.Seconds(state.settings.TicketTTLSeconds))
 	}
+	if len(state.tickets) >= maxTickets {
+		state.tickets = append(state.tickets[:0], state.tickets[len(state.tickets)-maxTickets+1:]...)
+	}
 	state.tickets = append(state.tickets, created)
 	return created, nil
 }
@@ -122,8 +138,17 @@ func (state *authState) createSessionLocked(now time.Time) (string, string, bool
 	if err != nil {
 		return "", "", false
 	}
+	for len(state.sessions) >= maxSessions {
+		oldestKey, oldest := "", time.Time{}
+		for key, value := range state.sessions {
+			if oldestKey == "" || value.createdAt.Before(oldest) {
+				oldestKey, oldest = key, value.createdAt
+			}
+		}
+		delete(state.sessions, oldestKey)
+	}
 	key := encodeToken(sessionToken)
-	state.sessions[key] = session{csrf: csrf, expiresAt: now.Add(runtimeconfig.Seconds(state.settings.SessionTTLSeconds))}
+	state.sessions[key] = session{csrf: csrf, createdAt: now, expiresAt: now.Add(runtimeconfig.Seconds(state.settings.SessionTTLSeconds))}
 	return key, encodeToken(csrf), true
 }
 
@@ -132,7 +157,7 @@ func (state *authState) authenticateAccessToken(token string) bool {
 }
 
 func (state *authState) authenticate(request *http.Request) (session, bool) {
-	cookie, err := request.Cookie(sessionCookieName)
+	cookie, err := request.Cookie(state.sessionCookie())
 	if err != nil {
 		return session{}, false
 	}
@@ -142,6 +167,16 @@ func (state *authState) authenticate(request *http.Request) (session, bool) {
 	state.pruneLocked(now)
 	value, ok := state.sessions[cookie.Value]
 	return value, ok
+}
+
+func (state *authState) revoke(request *http.Request) {
+	cookie, err := request.Cookie(state.sessionCookie())
+	if err != nil {
+		return
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	delete(state.sessions, cookie.Value)
 }
 
 func (state *authState) authorizeMutation(request *http.Request, origin string) bool {

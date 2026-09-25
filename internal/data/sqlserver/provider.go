@@ -52,17 +52,11 @@ func New(secrets SecretStore) *Provider {
 
 func (provider *Provider) Name() data.ProviderName { return data.ProviderName(ProviderName) }
 
-func DescribeStatement(table string) string {
-	schema, name := "dbo", table
-	if before, after, found := strings.Cut(table, "."); found {
-		schema, name = before, after
-	}
-	return "select COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH\n" +
-		"from INFORMATION_SCHEMA.COLUMNS\n" +
-		"where TABLE_SCHEMA = '" + escapeSQLLiteral(schema) + "'\n" +
-		"  and TABLE_NAME = '" + escapeSQLLiteral(name) + "'\n" +
-		"order by ORDINAL_POSITION"
-}
+const describeParameterizedStatement = "select COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH\n" +
+	"from INFORMATION_SCHEMA.COLUMNS\n" +
+	"where TABLE_SCHEMA = @p1\n" +
+	"  and TABLE_NAME = @p2\n" +
+	"order by ORDINAL_POSITION"
 
 func (provider *Provider) CatalogNative(ctx context.Context, connection ResolvedConnection) (NativeQueryReport, error) {
 	unlimited := 0
@@ -71,12 +65,21 @@ func (provider *Provider) CatalogNative(ctx context.Context, connection Resolved
 
 func (provider *Provider) DescribeNative(ctx context.Context, connection ResolvedConnection, table string) (NativeQueryReport, error) {
 	unlimited := 0
-	return provider.Query(ctx, connection, DescribeStatement(table), &unlimited)
+	schema, name := "dbo", table
+	if before, after, found := strings.Cut(table, "."); found {
+		schema, name = before, after
+	}
+	return provider.query(ctx, connection, describeParameterizedStatement, &unlimited, schema, name)
 }
 
 // Query executes only guarded SQL, asks SQL Server for a read-only connection, consumes the first
-// result set completely, and exposes every non-null database value as text.
+// result set up to the row limit inside a transaction that is always rolled back, and exposes every
+// non-null database value as text.
 func (provider *Provider) Query(ctx context.Context, connection ResolvedConnection, statement string, maxRowsOverride *int) (NativeQueryReport, error) {
+	return provider.query(ctx, connection, statement, maxRowsOverride)
+}
+
+func (provider *Provider) query(ctx context.Context, connection ResolvedConnection, statement string, maxRowsOverride *int, arguments ...any) (NativeQueryReport, error) {
 	if !IsProviderName(connection.Config.Provider) {
 		return NativeQueryReport{}, &ProviderError{Kind: ErrorUnsupportedProvider, Provider: strings.TrimSpace(connection.Config.Provider)}
 	}
@@ -119,7 +122,7 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 	defer cancel()
 
 	plainConnectionString := connectionString.Reveal()
-	database, err := sql.Open("sqlserver", EnforceReadOnlyConnectionString(plainConnectionString))
+	database, err := sql.Open("sqlserver", ReadOnlyConnectionString(plainConnectionString, connection.Config.TrustServerCertificate))
 	if err != nil {
 		return NativeQueryReport{}, sqlProblem(err, plainConnectionString)
 	}
@@ -127,7 +130,13 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 	database.SetMaxIdleConns(0)
 	defer database.Close()
 
-	rows, err := database.QueryContext(queryContext, statement)
+	transaction, err := database.BeginTx(queryContext, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return NativeQueryReport{}, queryProblem(queryContext, timeoutSeconds, err, plainConnectionString)
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	rows, err := transaction.QueryContext(queryContext, statement, arguments...)
 	if err != nil {
 		return NativeQueryReport{}, queryProblem(queryContext, timeoutSeconds, err, plainConnectionString)
 	}
@@ -153,7 +162,7 @@ func (provider *Provider) Query(ctx context.Context, connection ResolvedConnecti
 		}
 		if maxRows > 0 && len(result.Rows) >= maxRows {
 			result.Truncated = true
-			continue
+			break
 		}
 		row := make([]Cell, len(values))
 		for index, value := range values {
@@ -214,7 +223,7 @@ func cellFromDriverValue(value any, nativeType string) (Cell, error) {
 	case float32:
 		return StringCell(strconv.FormatFloat(float64(typed), 'g', -1, 32)), nil
 	case time.Time:
-		return StringCell(typed.String()), nil
+		return StringCell(typed.Format(time.RFC3339Nano)), nil
 	case fmt.Stringer:
 		return StringCell(typed.String()), nil
 	default:
@@ -230,19 +239,32 @@ func isBinaryNativeType(nativeType string) bool {
 	}
 }
 
-// EnforceReadOnlyConnectionString returns a driver DSN whose safety options override every
-// case-insensitive duplicate supplied by configuration.
+// EnforceReadOnlyConnectionString forces ApplicationIntent=ReadOnly over every case-insensitive
+// duplicate and defaults TrustServerCertificate to true when the connection string omits it.
 func EnforceReadOnlyConnectionString(connectionString string) string {
+	return ReadOnlyConnectionString(connectionString, nil)
+}
+
+// ReadOnlyConnectionString is EnforceReadOnlyConnectionString with a configured
+// TrustServerCertificate value that takes precedence over the connection string.
+func ReadOnlyConnectionString(connectionString string, trustServerCertificate *bool) string {
+	trust := trustServerCertificate
 	trimmed := strings.TrimSpace(connectionString)
 	if parsed, err := url.Parse(trimmed); err == nil && strings.EqualFold(parsed.Scheme, "sqlserver") {
 		query := parsed.Query()
-		for key := range query {
-			if isSafetyOption(key) {
+		for key, values := range query {
+			switch normalizeOptionKey(key) {
+			case "applicationintent":
+				query.Del(key)
+			case "trustservercertificate":
+				for _, value := range values {
+					trust = mergeExplicitTrust(trust, trustServerCertificate != nil, value)
+				}
 				query.Del(key)
 			}
 		}
 		query.Set("ApplicationIntent", "ReadOnly")
-		query.Set("TrustServerCertificate", "true")
+		query.Set("TrustServerCertificate", trustValue(trust))
 		parsed.RawQuery = query.Encode()
 		return parsed.String()
 	}
@@ -250,21 +272,46 @@ func EnforceReadOnlyConnectionString(connectionString string) string {
 	segments := splitConnectionString(trimmed)
 	kept := segments[:0]
 	for _, segment := range segments {
-		key, _, found := strings.Cut(segment, "=")
-		if found && isSafetyOption(key) {
-			continue
+		key, value, found := strings.Cut(segment, "=")
+		if found {
+			switch normalizeOptionKey(key) {
+			case "applicationintent":
+				continue
+			case "trustservercertificate":
+				trust = mergeExplicitTrust(trust, trustServerCertificate != nil, unquoteConnectionValue(strings.TrimSpace(value)))
+				continue
+			}
 		}
 		if strings.TrimSpace(segment) != "" {
 			kept = append(kept, segment)
 		}
 	}
-	kept = append(kept, "ApplicationIntent=ReadOnly", "TrustServerCertificate=true")
+	kept = append(kept, "ApplicationIntent=ReadOnly", "TrustServerCertificate="+trustValue(trust))
 	return strings.Join(kept, ";")
 }
 
-func isSafetyOption(key string) bool {
-	normalized := strings.NewReplacer(" ", "", "-", "", "_", "").Replace(strings.ToLower(strings.TrimSpace(key)))
-	return normalized == "applicationintent" || normalized == "trustservercertificate"
+// mergeExplicitTrust lets a configured value win; otherwise any explicit false among duplicate
+// connection string keys disables TrustServerCertificate.
+func mergeExplicitTrust(current *bool, configured bool, value string) *bool {
+	if configured {
+		return current
+	}
+	enabled := strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
+	if current != nil && !*current {
+		return current
+	}
+	return &enabled
+}
+
+func trustValue(value *bool) string {
+	if value != nil && !*value {
+		return "false"
+	}
+	return "true"
+}
+
+func normalizeOptionKey(key string) string {
+	return strings.NewReplacer(" ", "", "-", "", "_", "").Replace(strings.ToLower(strings.TrimSpace(key)))
 }
 
 func splitConnectionString(value string) []string {
@@ -395,5 +442,3 @@ func unquoteConnectionValue(value string) string {
 	}
 	return value
 }
-
-func escapeSQLLiteral(value string) string { return strings.ReplaceAll(value, "'", "''") }

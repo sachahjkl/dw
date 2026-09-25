@@ -82,3 +82,59 @@ func TestProviderReadsCommittedWALData(t *testing.T) {
 		t.Fatalf("value = %q, text=%v", value, ok)
 	}
 }
+
+func TestValidateReadLexesStatementsAndRestrictsPragmas(t *testing.T) {
+	connection := data.Connection{Source: data.Source{Provider: ProviderName, Options: wirejson.ObjectValue(
+		wirejson.Member{Name: "path", Value: wirejson.StringValue("unused.sqlite")},
+	)}}
+	provider := New()
+	for _, statement := range []string{
+		"select ';' as separator;",
+		"select 1 -- ; comment\n",
+		"select 1 /* ; */",
+		`select "a;b" from [x;y]`,
+		"pragma table_info(people)",
+		"PRAGMA main.index_list('people');",
+		"/* lead */ select 1",
+	} {
+		if err := provider.ValidateRead(context.Background(), connection, data.NativeQuery{Statement: statement}); err != nil {
+			t.Errorf("valid statement %q rejected: %v", statement, err)
+		}
+	}
+	for _, statement := range []string{
+		"select 1; delete from people",
+		"select ';'; drop table people",
+		"pragma query_only = off",
+		"pragma writable_schema",
+		"pragma main.journal_mode",
+		"attach database 'x' as y",
+	} {
+		if err := provider.ValidateRead(context.Background(), connection, data.NativeQuery{Statement: statement}); err == nil {
+			t.Errorf("statement %q accepted", statement)
+		}
+	}
+}
+
+func TestOpenReadOnlyAppliesQueryOnlyToEveryConnection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ro.sqlite")
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(`create table t (v int)`); err != nil {
+		t.Fatal(err)
+	}
+	_ = database.Close()
+	connection := data.Connection{Source: data.Source{Provider: ProviderName, Options: wirejson.ObjectValue(
+		wirejson.Member{Name: "path", Value: wirejson.StringValue(path)},
+	)}}
+	readOnly, err := openReadOnly(connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readOnly.Close()
+	var enabled int
+	if err := readOnly.QueryRow("pragma query_only").Scan(&enabled); err != nil || enabled != 1 {
+		t.Fatalf("query_only = %d, err = %v", enabled, err)
+	}
+}

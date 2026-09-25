@@ -48,7 +48,19 @@ func (*Provider) ReadTable(ctx context.Context, connection data.Connection, requ
 		return data.Table{}, fmt.Errorf("csv.open: %w", err)
 	}
 	defer file.Close()
-	reader := csv.NewReader(file)
+	encoding := ""
+	if value, found := connection.Source.Options.Lookup("encoding"); found {
+		text, ok := value.AsString()
+		if !ok {
+			return data.Table{}, fmt.Errorf("csv.unsupported-encoding")
+		}
+		encoding = text
+	}
+	decoded, err := decodingReader(file, encoding)
+	if err != nil {
+		return data.Table{}, err
+	}
+	reader := csv.NewReader(decoded)
 	reader.FieldsPerRecord = -1
 	reader.ReuseRecord = true
 	reader.TrimLeadingSpace = optionBool(connection.Source.Options, "trimSpace", false)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/data"
+	"github.com/sachahjkl/dw/internal/fsutil"
 	"github.com/sachahjkl/dw/internal/l10n"
 )
 
@@ -191,7 +192,7 @@ func saveCandidates(ctx context.Context, root string, candidates []candidate, st
 			return err
 		}
 		encoded = append(encoded, '\n')
-		if err := atomicWriteFile(path, encoded); err != nil {
+		if err := fsutil.WriteFileAtomic(path, encoded, 0); err != nil {
 			rollback()
 			return err
 		}
@@ -250,39 +251,6 @@ func objectEntry(object map[string]any, key string) (map[string]any, error) {
 		return nil, localized("data.error.config_section_object", l10n.A("section", key))
 	}
 	return entry, nil
-}
-
-func atomicWriteFile(path string, content []byte) error {
-	parent := filepath.Dir(path)
-	temporary, err := os.CreateTemp(parent, ".databases-*.json")
-	if err != nil {
-		return err
-	}
-	temporaryPath := temporary.Name()
-	keep := false
-	defer func() {
-		_ = temporary.Close()
-		if !keep {
-			_ = os.Remove(temporaryPath)
-		}
-	}()
-	if info, statErr := os.Stat(path); statErr == nil {
-		_ = temporary.Chmod(info.Mode().Perm())
-	}
-	if _, err := temporary.Write(content); err != nil {
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	if err := replaceFileAtomic(temporaryPath, path); err != nil {
-		return err
-	}
-	keep = true
-	return nil
 }
 
 func detail(value string) *string  { return &value }

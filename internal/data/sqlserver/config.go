@@ -49,6 +49,7 @@ type ConnectionConfig struct {
 	ReadOnly                            *bool                `json:"readonly,omitempty"`
 	MaxRows                             *int                 `json:"maxRows,omitempty"`
 	TimeoutSeconds                      *int                 `json:"timeoutSeconds,omitempty"`
+	TrustServerCertificate              *bool                `json:"trustServerCertificate,omitempty"`
 }
 
 type ResolvedConnection struct {

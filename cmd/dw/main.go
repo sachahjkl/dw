@@ -12,9 +12,11 @@ import (
 func main() {
 	code, cleanup := platform.CleanupExitCode()
 	if !cleanup {
+		restoreConsole := configureConsole()
 		ctx, stop := signal.NotifyContext(context.Background(), terminationSignals()...)
-		defer stop()
 		code = bootstrap.Run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+		stop()
+		restoreConsole()
 	}
 	os.Exit(code)
 }

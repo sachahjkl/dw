@@ -56,3 +56,35 @@ func TestProviderInfersTabDelimiterAndSyntheticHeaders(t *testing.T) {
 		t.Fatalf("table = %#v", table)
 	}
 }
+
+func TestProviderDecodesWindows1252AndLatin1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.csv")
+	if err := os.WriteFile(path, []byte("nom,prix\nCaf\xe9,\x805\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ encoding, name, price string }{
+		{"windows-1252", "Café", "€5"},
+		{"latin1", "Café", "\u00805"},
+	} {
+		connection := data.Connection{Source: data.Source{Options: wirejson.ObjectValue(
+			wirejson.Member{Name: "path", Value: wirejson.StringValue(path)},
+			wirejson.Member{Name: "encoding", Value: wirejson.StringValue(test.encoding)},
+		)}}
+		table, err := New().ReadTable(context.Background(), connection, data.TabularRead{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, _ := table.Rows[0][0].Text()
+		price, _ := table.Rows[0][1].Text()
+		if name != test.name || price != test.price {
+			t.Fatalf("%s: row = %q, %q", test.encoding, name, price)
+		}
+	}
+	connection := data.Connection{Source: data.Source{Options: wirejson.ObjectValue(
+		wirejson.Member{Name: "path", Value: wirejson.StringValue(path)},
+		wirejson.Member{Name: "encoding", Value: wirejson.StringValue("ebcdic")},
+	)}}
+	if _, err := New().ReadTable(context.Background(), connection, data.TabularRead{}); err == nil {
+		t.Fatal("unsupported encoding was accepted")
+	}
+}

@@ -10,3 +10,5 @@ import (
 func terminationSignals() []os.Signal {
 	return []os.Signal{os.Interrupt, syscall.SIGTERM}
 }
+
+func configureConsole() func() { return func() {} }

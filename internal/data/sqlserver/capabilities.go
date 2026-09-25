@@ -174,6 +174,9 @@ func (provider *Provider) resolveGeneric(connection data.Connection) (ResolvedCo
 	if value, found := optionInt(&options, "timeoutSeconds"); found {
 		config.TimeoutSeconds = intPointer(value)
 	}
+	if value, found := optionBool(&options, "trustServerCertificate"); found {
+		config.TrustServerCertificate = boolPointer(value)
+	}
 	defaults := DefaultSettings()
 	if value, found := optionBool(&options, "defaultReadonly"); found {
 		defaults.ReadOnly = value

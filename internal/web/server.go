@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -195,10 +196,13 @@ func (server *Server) Serve(ctx context.Context) error {
 	address := net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", server.deps.Config.Port))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		return fmt.Errorf("web.port-unavailable:%s", address)
+		return fmt.Errorf("web.port-unavailable:%s: %w", address, err)
 	}
 	actualAddress := listener.Addr().String()
 	server.origin = "http://" + actualAddress
+	if _, port, splitErr := net.SplitHostPort(actualAddress); splitErr == nil {
+		server.auth.cookieName = sessionCookieName + "_" + port
+	}
 	state := webservice.WebStateV1{
 		Schema: webservice.SchemaV1, ServerID: server.serverID, PID: os.Getpid(), Address: actualAddress,
 		StartedAt: time.Now().UTC(), Executable: server.deps.Config.Executable,
@@ -207,7 +211,11 @@ func (server *Server) Serve(ctx context.Context) error {
 		_ = listener.Close()
 		return err
 	}
-	defer server.deps.Store.RemoveState()
+	defer func() {
+		if removeErr := server.deps.Store.RemoveState(); removeErr != nil {
+			fmt.Fprintf(os.Stderr, "dw web: %v\n", removeErr)
+		}
+	}()
 
 	server.httpServer = &http.Server{
 		Handler:           server.securityHeaders(server.routes()),
@@ -245,6 +253,8 @@ func (server *Server) routes() http.Handler {
 	mux.HandleFunc("POST /admin/tickets", server.handleCreateTicket)
 	mux.HandleFunc("POST /admin/shutdown", server.handleShutdown)
 	mux.HandleFunc("GET /", server.handleIndex)
+	mux.HandleFunc("POST /login", server.handleLogin)
+	mux.HandleFunc("POST /logout", server.handleLogout)
 	mux.HandleFunc("GET /assets/{name}", server.handleAsset)
 	mux.HandleFunc("GET /events", server.handlePageEvents)
 	mux.HandleFunc("POST /operations", server.handleSubmit)
@@ -255,8 +265,37 @@ func (server *Server) routes() http.Handler {
 	return mux
 }
 
+const postReadTimeout = 30 * time.Second
+
+func (server *Server) allowedHost(host string) bool {
+	if server.origin == "" {
+		return true
+	}
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(server.origin, "http://"))
+	if err != nil {
+		return false
+	}
+	for _, name := range []string{"127.0.0.1", "localhost", "::1"} {
+		if host == net.JoinHostPort(name, port) {
+			return true
+		}
+	}
+	return false
+}
+
 func (server *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !server.allowedHost(request.Host) {
+			http.Error(writer, "misdirected request", http.StatusMisdirectedRequest)
+			return
+		}
+		if request.Method == http.MethodPost {
+			_ = http.NewResponseController(writer).SetReadDeadline(time.Now().Add(postReadTimeout))
+			if server.deps.Settings.MaxRequestBodyBytes > 0 {
+				request.Body = http.MaxBytesReader(writer, request.Body, server.deps.Settings.MaxRequestBodyBytes)
+			}
+		}
+		// Datastar evaluates data-* expressions through Function(), which requires 'unsafe-eval'.
 		writer.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		writer.Header().Set("Referrer-Policy", "no-referrer")
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
@@ -333,7 +372,7 @@ func (server *Server) handleIndex(writer http.ResponseWriter, request *http.Requ
 				http.Error(writer, "invalid ticket", http.StatusUnauthorized)
 				return
 			}
-			setSessionCookie(writer, sessionToken)
+			server.setSessionCookie(writer, sessionToken)
 			http.Redirect(writer, request, "/", http.StatusSeeOther)
 			return
 		}
@@ -348,7 +387,7 @@ func (server *Server) handleIndex(writer http.ResponseWriter, request *http.Requ
 				http.Error(writer, "session generation failed", http.StatusInternalServerError)
 				return
 			}
-			setSessionCookie(writer, sessionToken)
+			server.setSessionCookie(writer, sessionToken)
 			http.Redirect(writer, request, "/", http.StatusSeeOther)
 			return
 		}
@@ -359,7 +398,7 @@ func (server *Server) handleIndex(writer http.ResponseWriter, request *http.Requ
 				http.Error(writer, "session generation failed", http.StatusInternalServerError)
 				return
 			}
-			setSessionCookie(writer, sessionToken)
+			server.setSessionCookie(writer, sessionToken)
 			http.Redirect(writer, request, "/", http.StatusSeeOther)
 			return
 		}
@@ -375,9 +414,44 @@ func (server *Server) handleIndex(writer http.ResponseWriter, request *http.Requ
 	server.renderIndex(writer, request, encodeToken(value.csrf))
 }
 
-func setSessionCookie(writer http.ResponseWriter, sessionToken string) {
+func (server *Server) handleLogin(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Cache-Control", "no-store")
+	if server.auth.mode != webservice.AuthToken {
+		http.Error(writer, "token authentication disabled", http.StatusConflict)
+		return
+	}
+	if origin := request.Header.Get("Origin"); origin != "" && origin != server.origin {
+		http.Error(writer, "forbidden", http.StatusForbidden)
+		return
+	}
+	if !server.auth.authenticateAccessToken(request.PostFormValue("token")) {
+		http.Error(writer, "invalid access token", http.StatusUnauthorized)
+		return
+	}
+	sessionToken, _, ok := server.auth.createSession()
+	if !ok {
+		http.Error(writer, "session generation failed", http.StatusInternalServerError)
+		return
+	}
+	server.setSessionCookie(writer, sessionToken)
+	http.Redirect(writer, request, "/", http.StatusSeeOther)
+}
+
+func (server *Server) handleLogout(writer http.ResponseWriter, request *http.Request) {
+	if !server.requireMutation(writer, request) {
+		return
+	}
+	server.auth.revoke(request)
 	http.SetCookie(writer, &http.Cookie{
-		Name: sessionCookieName, Value: sessionToken, Path: "/",
+		Name: server.auth.sessionCookie(), Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, SameSite: http.SameSiteStrictMode,
+	})
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) setSessionCookie(writer http.ResponseWriter, sessionToken string) {
+	http.SetCookie(writer, &http.Cookie{
+		Name: server.auth.sessionCookie(), Value: sessionToken, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: false,
 	})
 }

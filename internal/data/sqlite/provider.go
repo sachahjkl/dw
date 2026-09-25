@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/sachahjkl/dw/internal/data"
 	"github.com/sachahjkl/dw/internal/wirejson"
@@ -31,16 +32,105 @@ func (*Provider) ValidateRead(_ context.Context, connection data.Connection, que
 	if statement == "" {
 		return fmt.Errorf("sqlite.empty-query")
 	}
-	if strings.Contains(strings.TrimSuffix(statement, ";"), ";") {
+	cleaned, multiple := lexStatement(statement)
+	if multiple {
 		return fmt.Errorf("sqlite.multiple-statements")
 	}
-	verb := strings.ToLower(strings.Fields(statement)[0])
+	fields := strings.Fields(cleaned)
+	if len(fields) == 0 {
+		return fmt.Errorf("sqlite.empty-query")
+	}
+	verb := strings.ToLower(fields[0])
 	switch verb {
-	case "select", "with", "pragma", "explain":
+	case "select", "with", "explain":
 		return nil
+	case "pragma":
+		return validatePragma(cleaned)
 	default:
 		return fmt.Errorf("sqlite.read-only-query-required:%s", verb)
 	}
+}
+
+var allowedPragmas = map[string]struct{}{
+	"table_info": {}, "table_xinfo": {}, "index_list": {}, "index_info": {}, "index_xinfo": {},
+	"foreign_key_list": {}, "database_list": {}, "table_list": {}, "collation_list": {},
+}
+
+func validatePragma(cleaned string) error {
+	if strings.Contains(cleaned, "=") {
+		return fmt.Errorf("sqlite.pragma-assignment")
+	}
+	rest := strings.TrimSpace(cleaned[len("pragma"):])
+	end := strings.IndexFunc(rest, func(r rune) bool { return r != '_' && r != '.' && !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	if end < 0 {
+		end = len(rest)
+	}
+	name := strings.ToLower(rest[:end])
+	if dot := strings.LastIndexByte(name, '.'); dot >= 0 {
+		name = name[dot+1:]
+	}
+	if _, ok := allowedPragmas[name]; !ok {
+		return fmt.Errorf("sqlite.pragma-not-allowed:%s", name)
+	}
+	return nil
+}
+
+// lexStatement blanks out string literals, quoted identifiers and comments, and reports whether a
+// top-level ';' is followed by another statement.
+func lexStatement(statement string) (string, bool) {
+	var output strings.Builder
+	output.Grow(len(statement))
+	terminated := false
+	for index := 0; index < len(statement); {
+		current := statement[index]
+		switch {
+		case current == '\'' || current == '"' || current == '`' || current == '[':
+			closing := current
+			if current == '[' {
+				closing = ']'
+			}
+			index++
+			for index < len(statement) {
+				if statement[index] == closing {
+					if closing != ']' && index+1 < len(statement) && statement[index+1] == closing {
+						index += 2
+						continue
+					}
+					index++
+					break
+				}
+				index++
+			}
+			output.WriteByte(' ')
+			if terminated {
+				return output.String(), true
+			}
+		case current == '-' && index+1 < len(statement) && statement[index+1] == '-':
+			for index < len(statement) && statement[index] != '\n' {
+				index++
+			}
+			output.WriteByte(' ')
+		case current == '/' && index+1 < len(statement) && statement[index+1] == '*':
+			end := strings.Index(statement[index+2:], "*/")
+			if end < 0 {
+				index = len(statement)
+			} else {
+				index += end + 4
+			}
+			output.WriteByte(' ')
+		case current == ';':
+			terminated = true
+			output.WriteByte(' ')
+			index++
+		default:
+			if terminated && !unicode.IsSpace(rune(current)) {
+				return output.String(), true
+			}
+			output.WriteByte(current)
+			index++
+		}
+	}
+	return output.String(), false
 }
 
 func (provider *Provider) QueryNative(ctx context.Context, connection data.Connection, query data.NativeQuery) (data.Table, error) {
@@ -151,16 +241,12 @@ func openReadOnly(connection data.Connection) (*sql.DB, error) {
 	if runtime.GOOS == "windows" {
 		uriPath = "/" + uriPath
 	}
-	dsn := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "mode=ro"}).String()
+	dsn := (&url.URL{Scheme: "file", Path: uriPath, RawQuery: "mode=ro&_pragma=query_only(1)"}).String()
 	database, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite.open: %w", err)
 	}
 	database.SetMaxOpenConns(1)
-	if _, err := database.Exec("pragma query_only = on"); err != nil {
-		database.Close()
-		return nil, fmt.Errorf("sqlite.read-only: %w", err)
-	}
 	return database, nil
 }
 

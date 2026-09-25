@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -55,7 +56,7 @@ func (server *Server) handleSubmit(writer http.ResponseWriter, request *http.Req
 	subject := &execution.Subject{
 		Kind: string(reference.Kind), Project: reference.Project, Key: reference.Key, Relation: string(operation.Relation),
 	}
-	executionID, err := server.deps.Executor.Submit(request.Context(), execution.Submission{
+	executionID, err := server.deps.Executor.Submit(context.WithoutCancel(request.Context()), execution.Submission{
 		Request: typedRequest, Root: reference.Root, Subject: subject, Actor: server.deps.Actor, IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
@@ -64,12 +65,11 @@ func (server *Server) handleSubmit(writer http.ResponseWriter, request *http.Req
 	}
 	server.rememberExecution(executionID)
 	server.watchExecution(executionID)
-	record, err := server.deps.Executor.Get(request.Context(), server.deps.Actor, executionID)
-	if err != nil {
-		http.Error(writer, "execution unavailable", http.StatusInternalServerError)
-		return
+	executionRef := ExecutionRefV1{Schema: schemaV1, ExecutionID: executionID.String()}
+	if record, getErr := server.deps.Executor.Get(request.Context(), server.deps.Actor, executionID); getErr == nil {
+		executionRef.AttemptID = record.AttemptID.String()
 	}
-	writeJSON(writer, http.StatusAccepted, ExecutionRefV1{Schema: schemaV1, ExecutionID: executionID.String(), AttemptID: record.AttemptID.String()})
+	writeJSON(writer, http.StatusAccepted, executionRef)
 }
 
 func (server *Server) handleGetExecution(writer http.ResponseWriter, request *http.Request) {
@@ -137,6 +137,7 @@ func (server *Server) handleExecutionEvents(writer http.ResponseWriter, request 
 				continue
 			}
 			if streamErr != nil {
+				_ = sse.Send(datastar.EventType("dw-error"), []string{`{"schema":1}`})
 				return
 			}
 		case <-heartbeat.C:

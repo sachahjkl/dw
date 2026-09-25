@@ -13,6 +13,9 @@ SQL Server sources default to:
 - `timeoutSeconds: 600`
 - destructive statements blocked
 - a read-only account when available
+- `trustServerCertificate: true` unless the source sets `trustServerCertificate` or the connection string sets `TrustServerCertificate`
+
+`ApplicationIntent=ReadOnly` only routes connections to readable replicas; it does not prevent writes. Queries also run inside a transaction that is always rolled back, but some statements are not transactional. Use an account that is only a member of `db_datareader` for every SQL Server source.
 
 Blocked SQL statements include `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `DROP`, `ALTER`, `TRUNCATE`, and `EXEC`. `dw data guard --query <query> [--provider <provider>]` requests the selected provider's read-policy capability; generic command orchestration does not instantiate SQL Server directly.
 
