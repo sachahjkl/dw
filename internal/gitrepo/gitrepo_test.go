@@ -2,6 +2,7 @@ package gitrepo
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +74,20 @@ func TestPushRepositorySetsUpstream(t *testing.T) {
 	}
 }
 
+func TestConfigureRemotesExcludesSSHFallbackFromFetchAll(t *testing.T) {
+	repository := filepath.Join(t.TempDir(), "repository")
+	runGitTestCommand(t, "", "init", repository)
+	origin := RemoteURL("https://example.invalid/repository.git")
+	ssh := RemoteURL("ssh://git@example.invalid/repository.git")
+	if err := NewClient().ConfigureRemotes(context.Background(), RepositoryPath(repository), origin, &ssh); err != nil {
+		t.Fatal(err)
+	}
+	value := runGitTestCommand(t, repository, "config", "--get", "remote."+fallbackSSHRemote+".skipFetchAll")
+	if strings.TrimSpace(value) != "true" {
+		t.Fatalf("remote.%s.skipFetchAll = %q, want true", fallbackSSHRemote, value)
+	}
+}
+
 func runGitTestCommand(t *testing.T, directory string, arguments ...string) string {
 	t.Helper()
 	command := exec.Command("git", arguments...)
@@ -82,4 +97,31 @@ func runGitTestCommand(t *testing.T, directory string, arguments ...string) stri
 		t.Fatalf("git %v: %v\n%s", arguments, err, output)
 	}
 	return string(output)
+}
+
+func TestConfigCountAppendsAfterExistingEntries(t *testing.T) {
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	if got := configCount(nil); got != 2 {
+		t.Fatalf("inherited count = %d, want 2", got)
+	}
+	environment := []dwprocess.EnvironmentVariable{{Name: "GIT_CONFIG_COUNT", Value: "3"}}
+	if got := configCount(environment); got != 3 {
+		t.Fatalf("client count = %d, want 3", got)
+	}
+}
+
+func TestOperationErrorRedactsDetailAndCause(t *testing.T) {
+	cause := &dwprocess.ExitError{FileName: "git", Code: 128, Stderr: "fatal: https://user:pat@example.invalid/repo.git"}
+	err := Client{}.operationError(OperationFetch, "", dwprocess.Result{Stderr: []byte(cause.Stderr)}, cause, false, nil, "")
+	var problem *Error
+	if !errors.As(err, &problem) || strings.Contains(problem.Detail, "pat") {
+		t.Fatalf("detail = %v", err)
+	}
+	var exitError *dwprocess.ExitError
+	if !errors.As(err, &exitError) || strings.Contains(exitError.Stderr, "pat") || strings.Contains(exitError.Error(), "pat") || !strings.Contains(exitError.Stderr, "://***@") {
+		t.Fatalf("cause stderr = %q", exitError.Stderr)
+	}
+	if cause.Stderr == exitError.Stderr {
+		t.Fatal("cause was not replaced")
+	}
 }

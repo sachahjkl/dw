@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 
 	"github.com/sachahjkl/dw/internal/l10n"
 )
@@ -92,6 +93,9 @@ func CommandCandidates(fileName string, arguments []string) []ResolvedCommand {
 
 // Output executes a direct program and captures stdout and stderr.
 func Output(ctx context.Context, command Command) (Result, error) {
+	if err := checkWorkingDirectory(command); err != nil {
+		return Result{ExitCode: -1}, err
+	}
 	var lastNotFound error
 	for _, candidate := range CommandCandidates(command.FileName, command.Arguments) {
 		prepared, prepareErr := prepareCandidate(candidate)
@@ -137,6 +141,9 @@ func Output(ctx context.Context, command Command) (Result, error) {
 
 // Run executes a direct program with inherited or caller-supplied streams.
 func Run(ctx context.Context, command Command, stdin io.Reader, stdout, stderr io.Writer) error {
+	if err := checkWorkingDirectory(command); err != nil {
+		return err
+	}
 	var lastNotFound error
 	for _, candidate := range CommandCandidates(command.FileName, command.Arguments) {
 		prepared, prepareErr := prepareCandidate(candidate)
@@ -209,6 +216,22 @@ func configure(cmd *exec.Cmd, command Command, stdout, stderr io.Writer, stdin i
 	}
 }
 
+func checkWorkingDirectory(command Command) error {
+	if command.WorkingDirectory == "" {
+		return nil
+	}
+	information, err := os.Stat(command.WorkingDirectory)
+	if err == nil && !information.IsDir() {
+		err = syscall.ENOTDIR
+	}
+	if err != nil {
+		return &StartError{FileName: command.FileName, cause: l10n.WrapError(err, "process.working-directory-invalid", l10n.A("path", command.WorkingDirectory), l10n.A("cause", err))}
+	}
+	return nil
+}
+
+// isNotFound is only consulted after the working directory was validated, so a missing file
+// here means the candidate executable is absent.
 func isNotFound(err error) bool {
 	return errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist)
 }
@@ -225,4 +248,5 @@ type candidateKind uint8
 const (
 	candidateDirect candidateKind = iota
 	candidateCommandScript
+	candidatePowerShellScript
 )

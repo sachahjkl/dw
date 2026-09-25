@@ -2,7 +2,6 @@ package secret
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/sachahjkl/dw/internal/action"
@@ -104,13 +103,13 @@ func (handler Handler) Execute(ctx context.Context, request action.Request, runt
 		}
 		return handler.service.Delete(ctx, typed.Key)
 	default:
-		return nil, fmt.Errorf("secret.unknown-action:%s", handler.action)
+		return nil, newLocalizedError("secret.unknown-action", l10n.M("secret.unknown-action", l10n.A("action", handler.action)), nil)
 	}
 }
 
 func resolveSetValue(ctx context.Context, request SetRequest, runtime action.Runtime) (contract.SecretValue, error) {
 	if request.Value != nil && request.Environment != nil {
-		return contract.SecretValue{}, errors.New("secret.conflicting-value-sources")
+		return contract.SecretValue{}, newLocalizedError("secret.conflicting-value-sources", l10n.M("secret.conflicting-value-sources"), nil)
 	}
 	if request.Value != nil {
 		return *request.Value, nil
@@ -129,7 +128,11 @@ func resolveSetValue(ctx context.Context, request SetRequest, runtime action.Run
 	if err != nil {
 		return contract.SecretValue{}, err
 	}
-	return response.(action.SecretResponse).Value, nil
+	secret, ok := response.(action.SecretResponse)
+	if !ok {
+		return contract.SecretValue{}, unexpectedResponse(response)
+	}
+	return secret.Value, nil
 }
 
 func confirmDelete(ctx context.Context, key contract.SecretKey, runtime action.Runtime) error {
@@ -144,10 +147,22 @@ func confirmDelete(ctx context.Context, key contract.SecretKey, runtime action.R
 	if err != nil {
 		return err
 	}
-	if !response.(action.ConfirmResponse).Accepted {
+	confirmation, ok := response.(action.ConfirmResponse)
+	if !ok {
+		return unexpectedResponse(response)
+	}
+	if !confirmation.Accepted {
 		return newLocalizedError("secret.delete-canceled", l10n.M("secret.delete-canceled"), nil)
 	}
 	return nil
+}
+
+func invalidRequest(request action.Request) error {
+	return newLocalizedError("secret.invalid-request", l10n.M("secret.invalid-request", l10n.A("type", fmt.Sprintf("%T", request))), nil)
+}
+
+func unexpectedResponse(response any) error {
+	return newLocalizedError("secret.unexpected-response", l10n.M("secret.unexpected-response", l10n.A("type", fmt.Sprintf("%T", response))), nil)
 }
 
 func messagePointer(message l10n.Message) *l10n.Message { return &message }
@@ -155,28 +170,28 @@ func messagePointer(message l10n.Message) *l10n.Message { return &message }
 func listRequest(request action.Request) (ListRequest, error) {
 	value, ok := request.(ListRequest)
 	if !ok {
-		return ListRequest{}, fmt.Errorf("secret.invalid-list-request:%T", request)
+		return ListRequest{}, invalidRequest(request)
 	}
 	return value, nil
 }
 func setRequest(request action.Request) (SetRequest, error) {
 	value, ok := request.(SetRequest)
 	if !ok {
-		return SetRequest{}, fmt.Errorf("secret.invalid-set-request:%T", request)
+		return SetRequest{}, invalidRequest(request)
 	}
 	return value, nil
 }
 func getRequest(request action.Request) (GetRequest, error) {
 	value, ok := request.(GetRequest)
 	if !ok {
-		return GetRequest{}, fmt.Errorf("secret.invalid-get-request:%T", request)
+		return GetRequest{}, invalidRequest(request)
 	}
 	return value, nil
 }
 func deleteRequest(request action.Request) (DeleteRequest, error) {
 	value, ok := request.(DeleteRequest)
 	if !ok {
-		return DeleteRequest{}, fmt.Errorf("secret.invalid-delete-request:%T", request)
+		return DeleteRequest{}, invalidRequest(request)
 	}
 	return value, nil
 }

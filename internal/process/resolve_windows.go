@@ -4,7 +4,6 @@ package process
 
 import (
 	"context"
-	"errors"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -13,8 +12,17 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// systemExecutables never fall back to .cmd or .ps1 scripts found on PATH.
+var systemExecutables = map[string]bool{
+	"git":        true,
+	"ssh":        true,
+	"cmd":        true,
+	"powershell": true,
+	"pwsh":       true,
+}
+
 func appendPlatformCandidates(candidates []ResolvedCommand, fileName string, arguments []string) []ResolvedCommand {
-	if strings.ContainsAny(fileName, `/\\`) || filepath.Ext(fileName) != "" {
+	if strings.ContainsAny(fileName, `/\\`) || filepath.Ext(fileName) != "" || systemExecutables[strings.ToLower(fileName)] {
 		return candidates
 	}
 	candidates = append(candidates, ResolvedCommand{
@@ -24,11 +32,19 @@ func appendPlatformCandidates(candidates []ResolvedCommand, fileName string, arg
 	})
 	powershellArguments := []string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", fileName + ".ps1"}
 	powershellArguments = append(powershellArguments, arguments...)
-	return append(candidates, ResolvedCommand{FileName: "powershell", Arguments: powershellArguments})
+	return append(candidates, ResolvedCommand{FileName: powerShellPath(), Arguments: powershellArguments, kind: candidatePowerShellScript})
+}
+
+func powerShellPath() string {
+	systemDirectory, err := windows.GetSystemDirectory()
+	if err != nil {
+		return "powershell"
+	}
+	return filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
 }
 
 func prepareCandidate(candidate ResolvedCommand) (ResolvedCommand, error) {
-	if strings.EqualFold(filepath.Base(candidate.FileName), "powershell") && len(candidate.Arguments) >= 5 && candidate.Arguments[3] == "-File" {
+	if candidate.kind == candidatePowerShellScript && len(candidate.Arguments) >= 5 && candidate.Arguments[3] == "-File" {
 		script, err := lookPath(candidate.Arguments[4])
 		if err != nil {
 			return ResolvedCommand{}, err
@@ -61,12 +77,13 @@ func prepareCandidate(candidate ResolvedCommand) (ResolvedCommand, error) {
 	return candidate, nil
 }
 
+// lookPath refuses executables resolved relative to the current directory (exec.ErrDot).
 func lookPath(fileName string) (string, error) {
 	resolved, err := exec.LookPath(fileName)
-	if err == nil || errors.Is(err, exec.ErrDot) && resolved != "" {
-		return resolved, nil
+	if err != nil {
+		return "", err
 	}
-	return "", err
+	return resolved, nil
 }
 
 func executableCommand(ctx context.Context, candidate ResolvedCommand, hidden bool) *exec.Cmd {
@@ -92,9 +109,9 @@ func executableCommand(ctx context.Context, candidate ResolvedCommand, hidden bo
 	return command
 }
 
-// batchCommandLine keeps metacharacters inside double quotes, disables percent expansion, and does
-// not use CALL (which would perform a dangerous second expansion). Delayed expansion is disabled by
-// default because /v is not supplied.
+// batchCommandLine keeps metacharacters inside double quotes, neutralises percent expansion, and
+// does not use CALL (which would perform a dangerous second expansion). Delayed expansion is
+// disabled by default because /v is not supplied.
 func batchCommandLine(candidate ResolvedCommand) string {
 	var command strings.Builder
 	appendBatchArgument(&command, candidate.FileName)
@@ -105,6 +122,9 @@ func batchCommandLine(candidate ResolvedCommand) string {
 	return command.String()
 }
 
+// appendBatchArgument writes a quoted argument. On a cmd /c command line "%%" is not an escape;
+// "%%cd:~,%" yields a literal percent followed by an always-empty substring expansion, so no
+// %NAME% sequence can reach the environment.
 func appendBatchArgument(command *strings.Builder, value string) {
 	command.WriteByte('"')
 	for _, character := range value {
@@ -112,7 +132,7 @@ func appendBatchArgument(command *strings.Builder, value string) {
 		case '"':
 			command.WriteString(`""`)
 		case '%':
-			command.WriteString("%%")
+			command.WriteString("%%cd:~,%")
 		case '\r', '\n':
 			command.WriteByte(' ')
 		default:

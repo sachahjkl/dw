@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -111,5 +112,66 @@ func TestOutputFallsBackToPowerShellShim(t *testing.T) {
 	}
 	if string(result.Stdout) != "4.5.6\r\n" {
 		t.Fatalf("stdout = %q, want version", result.Stdout)
+	}
+}
+
+func TestLookPathRefusesCurrentDirectoryExecutable(t *testing.T) {
+	directory := t.TempDir()
+	source, err := exec.LookPath("where.exe")
+	if err != nil {
+		t.Skip(err)
+	}
+	content, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "dwlocaltool.exe"), content, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(directory)
+	t.Setenv("PATH", filepath.Join(os.Getenv("SystemRoot"), "System32"))
+
+	if _, err := lookPath("dwlocaltool.exe"); !errors.Is(err, exec.ErrDot) {
+		t.Fatalf("lookPath error = %v, want exec.ErrDot", err)
+	}
+	if _, err := Output(context.Background(), Command{FileName: "dwlocaltool"}); err == nil {
+		t.Fatal("Output ran an executable from the current directory")
+	}
+}
+
+func TestSystemExecutablesHaveNoScriptFallbacks(t *testing.T) {
+	for _, name := range []string{"git", "GIT", "powershell"} {
+		if candidates := CommandCandidates(name, nil); len(candidates) != 1 {
+			t.Fatalf("%s candidates = %#v, want direct executable only", name, candidates)
+		}
+	}
+	candidates := CommandCandidates("tool", nil)
+	if len(candidates) != 3 || !filepath.IsAbs(candidates[2].FileName) {
+		t.Fatalf("tool candidates = %#v, want absolute PowerShell interpreter", candidates)
+	}
+}
+
+func TestAppendBatchArgumentNeutralisesPercentExpansion(t *testing.T) {
+	var command strings.Builder
+	appendBatchArgument(&command, `a%PATH%"b`)
+	if got, want := command.String(), `"a%%cd:~,%PATH%%cd:~,%""b"`; got != want {
+		t.Fatalf("argument = %q, want %q", got, want)
+	}
+}
+
+func TestCommandShimDoesNotExpandEnvironmentVariables(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "tool.cmd"), []byte("@echo(%~1\r\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+filepath.Join(os.Getenv("SystemRoot"), "System32"))
+	t.Setenv("DW_PROCESS_SECRET", "expanded")
+
+	result, err := Output(context.Background(), Command{FileName: "tool", Arguments: []string{"%DW_PROCESS_SECRET%"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(result.Stdout)); got != "%DW_PROCESS_SECRET%" {
+		t.Fatalf("stdout = %q, want literal percent sequence", got)
 	}
 }

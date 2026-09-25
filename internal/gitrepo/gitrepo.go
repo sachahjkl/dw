@@ -3,7 +3,6 @@ package gitrepo
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -130,13 +129,28 @@ func (client Client) UpdateRepository(ctx context.Context, repositoryPath Reposi
 	if err != nil {
 		return err
 	}
+	rebaseStuck := false
 	if changed {
 		_, err = client.run(ctx, OperationCommit, repositoryPath, nil, nil, "stash", "push", "--include-untracked", "--message", l10n.Text("git.autostash-message"))
 		if err != nil {
 			return err
 		}
+		stashRef := "stash@{0}"
+		if result, refErr := client.run(ctx, OperationCommit, repositoryPath, nil, nil, "rev-parse", "--verify", "--quiet", "refs/stash"); refErr == nil {
+			if oid := strings.TrimSpace(string(result.Stdout)); oid != "" {
+				stashRef = oid
+			}
+		}
 		defer func() {
-			_, restoreErr := client.run(context.WithoutCancel(ctx), OperationRebase, repositoryPath, nil, nil, "stash", "pop")
+			restoreCtx := context.WithoutCancel(ctx)
+			if rebaseStuck || client.rebaseInProgress(restoreCtx, repositoryPath) {
+				err = errors.Join(err, l10n.NewError("git.autostash-kept",
+					l10n.A("repository", repositoryPath),
+					l10n.A("stash", stashRef),
+				))
+				return
+			}
+			_, restoreErr := client.run(restoreCtx, OperationRebase, repositoryPath, nil, nil, "stash", "pop")
 			err = errors.Join(err, restoreErr)
 		}()
 	}
@@ -146,14 +160,36 @@ func (client Client) UpdateRepository(ctx context.Context, repositoryPath Reposi
 	source := ResolveRemoteSourceBranch(defaultBranch)
 	_, err = client.run(ctx, OperationRebase, repositoryPath, nil, nil, "rebase", "--quiet", source)
 	if err != nil {
-		_, _ = client.run(ctx, OperationRebase, repositoryPath, nil, nil, "rebase", "--abort")
-		return fmt.Errorf("%s: %w", l10n.Render(l10n.M("git.rebase-conflict",
+		if _, abortErr := client.run(context.WithoutCancel(ctx), OperationRebase, repositoryPath, nil, nil, "rebase", "--abort"); abortErr != nil {
+			rebaseStuck = true
+		}
+		return l10n.WrapError(err, "git.rebase-conflict",
 			l10n.A("repository", repositoryPath),
 			l10n.A("source", source),
-			l10n.A("cause", err),
-		)), err)
+			l10n.A("cause", errorDetail(err)),
+		)
 	}
 	return nil
+}
+
+func (client Client) rebaseInProgress(ctx context.Context, repositoryPath RepositoryPath) bool {
+	for _, name := range []string{"rebase-merge", "rebase-apply"} {
+		result, err := client.run(ctx, OperationRebase, repositoryPath, nil, nil, "rev-parse", "--git-path", name)
+		if err != nil {
+			return true
+		}
+		path := strings.TrimSpace(string(result.Stdout))
+		if path == "" {
+			continue
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(string(repositoryPath), path)
+		}
+		if _, statErr := os.Stat(path); statErr == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func InspectRepositoryStatus(repositoryPath RepositoryPath) RepositoryStatus {

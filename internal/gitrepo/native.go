@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/sachahjkl/dw/internal/contract"
@@ -62,10 +64,12 @@ func (client Client) runCommand(ctx context.Context, operation Operation, reposi
 	if resolvedCredential != nil && !resolvedCredential.empty() {
 		token := resolvedCredential.token.Reveal()
 		authorization := base64.StdEncoding.EncodeToString([]byte("dw:" + token))
+		index := configCount(environment)
+		suffix := strconv.Itoa(index)
 		environment = append(environment,
-			dwprocess.EnvironmentVariable{Name: "GIT_CONFIG_COUNT", Value: "1"},
-			dwprocess.EnvironmentVariable{Name: "GIT_CONFIG_KEY_0", Value: "http.extraHeader"},
-			dwprocess.EnvironmentVariable{Name: "GIT_CONFIG_VALUE_0", Value: "Authorization: Basic " + authorization},
+			dwprocess.EnvironmentVariable{Name: "GIT_CONFIG_COUNT", Value: strconv.Itoa(index + 1)},
+			dwprocess.EnvironmentVariable{Name: "GIT_CONFIG_KEY_" + suffix, Value: "http.extraHeader"},
+			dwprocess.EnvironmentVariable{Name: "GIT_CONFIG_VALUE_" + suffix, Value: "Authorization: Basic " + authorization},
 			dwprocess.EnvironmentVariable{Name: "GIT_TRACE", Value: "0"},
 			dwprocess.EnvironmentVariable{Name: "GIT_TRACE_CURL", Value: "0"},
 			dwprocess.EnvironmentVariable{Name: "GIT_CURL_VERBOSE", Value: "0"},
@@ -84,16 +88,19 @@ func (client Client) runCommand(ctx context.Context, operation Operation, reposi
 }
 
 func (client Client) operationError(operation Operation, repositoryPath RepositoryPath, result dwprocess.Result, cause error, credentialAvailable bool, credential *Credential, remoteURL string) error {
-	detail := strings.TrimSpace(string(result.Stderr))
+	redact := func(value string) string {
+		if credential != nil && !credential.token.Empty() {
+			token := credential.token.Reveal()
+			value = strings.ReplaceAll(value, token, "***")
+			value = strings.ReplaceAll(value, base64.StdEncoding.EncodeToString([]byte("dw:"+token)), "***")
+		}
+		return redactURLUserinfo(redactRemoteCredentials(value, remoteURL))
+	}
+	cause = redactedCause(cause, redact)
+	detail := redact(strings.TrimSpace(string(result.Stderr)))
 	if detail == "" {
-		detail = cause.Error()
+		detail = redact(cause.Error())
 	}
-	if credential != nil && !credential.token.Empty() {
-		token := credential.token.Reveal()
-		detail = strings.ReplaceAll(detail, token, "***")
-		detail = strings.ReplaceAll(detail, base64.StdEncoding.EncodeToString([]byte("dw:"+token)), "***")
-	}
-	detail = redactRemoteCredentials(detail, remoteURL)
 	path := repositoryPath
 	invocation := Invocation{Operation: operation}
 	if path != "" {
@@ -254,6 +261,12 @@ func (client Client) configureRemotes(ctx context.Context, repositoryPath Reposi
 		if err := client.setRemoteURL(ctx, repositoryPath, fallbackSSHRemote, normalized); err != nil {
 			return err
 		}
+		// The SSH remote is only a fallback; keep `git fetch --all` (or fetch.all=true) from hitting it,
+		// since SSH is commonly blocked on corporate networks.
+		if _, err := client.run(ctx, OperationConfigureRemote, repositoryPath, nil, nil,
+			"config", "remote."+fallbackSSHRemote+".skipFetchAll", "true"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -392,6 +405,42 @@ func redactRemoteCredentials(detail, remoteURL string) string {
 		return detail
 	}
 	return strings.ReplaceAll(detail, userinfo, "***")
+}
+
+var urlUserinfoPattern = regexp.MustCompile(`(://)[^@/\s]+@`)
+
+func redactURLUserinfo(detail string) string {
+	return urlUserinfoPattern.ReplaceAllString(detail, "${1}***@")
+}
+
+// redactedCause drops raw process stderr from the wrapped cause so Unwrap cannot expose secrets.
+func redactedCause(cause error, redact func(string) string) error {
+	exitError, ok := cause.(*dwprocess.ExitError)
+	if !ok {
+		return cause
+	}
+	redacted := *exitError
+	redacted.Stderr = redact(redacted.Stderr)
+	return &redacted
+}
+
+// configCount returns the GIT_CONFIG_COUNT already present in the environment, or in the parent
+// process environment when not overridden, so appended GIT_CONFIG_* entries do not replace them.
+func configCount(environment []dwprocess.EnvironmentVariable) int {
+	value, found := os.LookupEnv("GIT_CONFIG_COUNT")
+	for _, variable := range environment {
+		if strings.EqualFold(variable.Name, "GIT_CONFIG_COUNT") {
+			value, found = variable.Value, true
+		}
+	}
+	if !found {
+		return 0
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || count < 0 {
+		return 0
+	}
+	return count
 }
 
 func transliterate(character rune) string {
