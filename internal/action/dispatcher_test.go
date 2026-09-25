@@ -64,3 +64,22 @@ func TestDispatcherReturnsErrorWithoutNilPartialResult(t *testing.T) {
 		t.Fatalf("Dispatch = (%#v, %v), want empty envelope and handler failure", envelope, err)
 	}
 }
+
+type dispatcherPointerResult struct{ id ID }
+
+func (r *dispatcherPointerResult) ActionID() ID { return r.id }
+
+func TestDispatcherRejectsTypedNilResult(t *testing.T) {
+	dispatcher := NewDispatcher()
+	err := dispatcher.Register(HandlerFunc{Action: "test.run", ExecuteFunc: func(context.Context, Request, Runtime) (Result, error) {
+		var result *dispatcherPointerResult
+		return result, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := dispatcher.Dispatch(context.Background(), dispatcherTestRequest{id: "test.run"}, Runtime{})
+	if envelope.Result != nil || err == nil || !strings.HasPrefix(err.Error(), "action.nil-result:") {
+		t.Fatalf("Dispatch = (%#v, %v), want nil-result error", envelope, err)
+	}
+}

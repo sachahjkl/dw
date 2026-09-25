@@ -156,14 +156,16 @@ func resolveExistingLinks(path string) (string, error) {
 	current := path
 	tail := make([]string, 0)
 	for {
-		resolved, err := filepath.EvalSymlinks(current)
-		if err == nil {
+		if _, err := os.Lstat(current); err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				return "", err
+			}
 			for index := len(tail) - 1; index >= 0; index-- {
 				resolved = filepath.Join(resolved, tail[index])
 			}
 			return resolved, nil
-		}
-		if !os.IsNotExist(err) {
+		} else if !os.IsNotExist(err) {
 			return "", err
 		}
 		parent := filepath.Dir(current)

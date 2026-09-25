@@ -5,9 +5,9 @@ package execution
 import (
 	"errors"
 	"os"
+	"strings"
 
 	"golang.org/x/sys/windows"
-	"strings"
 )
 
 func normalizePlatformRoot(root string) string { return strings.ToLower(root) }

@@ -141,6 +141,7 @@ const (
 	EventWarning       EventKind = "warning"
 	EventLog           EventKind = "log"
 	EventInputRequired EventKind = "input-required"
+	EventInputReceived EventKind = "input-received"
 	EventCanceling     EventKind = "canceling"
 	EventCanceled      EventKind = "canceled"
 	EventSucceeded     EventKind = "succeeded"

@@ -5,11 +5,19 @@ package execution
 import (
 	"errors"
 	"os"
+	"runtime"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
-func normalizePlatformRoot(root string) string { return root }
+// normalizePlatformRoot folds case on darwin, whose default file systems are case-insensitive.
+func normalizePlatformRoot(root string) string {
+	if runtime.GOOS == "darwin" {
+		return strings.ToLower(root)
+	}
+	return root
+}
 
 func openPlatformLock(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)

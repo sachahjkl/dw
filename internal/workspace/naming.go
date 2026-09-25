@@ -1,7 +1,10 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -10,11 +13,34 @@ import (
 )
 
 func validatePathComponent(field, value string) error {
+	trailingSpace := strings.TrimRight(value, " ") != value
 	value = strings.TrimSpace(value)
-	if value == "" || value == "." || value == ".." || filepath.IsAbs(value) || filepath.VolumeName(value) != "" || strings.ContainsAny(value, `/\`) {
+	if trailingSpace || value == "" || value == "." || value == ".." || filepath.IsAbs(value) || filepath.VolumeName(value) != "" || strings.ContainsAny(value, `/\:<>"|?*`) || strings.HasSuffix(value, ".") || reservedWindowsName(value) || containsControl(value) {
 		return fmt.Errorf("workspace: invalid %s %q", field, value)
 	}
 	return nil
+}
+
+func reservedWindowsName(value string) bool {
+	base, _, _ := strings.Cut(value, ".")
+	base = strings.ToUpper(strings.TrimRight(base, " "))
+	switch base {
+	case "CON", "PRN", "AUX", "NUL":
+		return true
+	}
+	if len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) {
+		return base[3] >= '1' && base[3] <= '9'
+	}
+	return false
+}
+
+func containsControl(value string) bool {
+	for _, r := range value {
+		if r < 0x20 {
+			return true
+		}
+	}
+	return false
 }
 
 func validateRelativePath(field, value string) error {
@@ -39,9 +65,65 @@ func ensurePathWithin(root, path string) error {
 	if err != nil {
 		return err
 	}
-	relative, err := filepath.Rel(root, path)
-	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+	if !lexicallyWithin(root, path) {
 		return fmt.Errorf("workspace: path %q escapes root %q", path, root)
+	}
+	resolvedRoot, err := resolveExisting(root)
+	if err != nil {
+		return err
+	}
+	resolvedPath, err := resolveExisting(path)
+	if err != nil {
+		return err
+	}
+	if !lexicallyWithin(resolvedRoot, resolvedPath) {
+		return fmt.Errorf("workspace: path %q escapes root %q", path, root)
+	}
+	return nil
+}
+
+func lexicallyWithin(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+// resolveExisting resolves links in the deepest existing ancestor of path and appends the
+// remaining, not yet existing components.
+func resolveExisting(path string) (string, error) {
+	remaining := make([]string, 0)
+	current := path
+	for {
+		if _, err := os.Lstat(current); err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				return "", err
+			}
+			for i := len(remaining) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, remaining[i])
+			}
+			return resolved, nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return path, nil
+		}
+		remaining = append(remaining, filepath.Base(current))
+		current = parent
+	}
+}
+
+func ensureNotLink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		return fmt.Errorf("workspace: refusing to remove link or reparse point %q", path)
 	}
 	return nil
 }
@@ -78,14 +160,26 @@ func BuildBranchName(kind string, ids []string, slug string) string {
 	if kind == "" {
 		kind = "feat"
 	}
-	return fmt.Sprintf("%s/%s-%s", kind, strings.Join(distinctCSV(ids), "-"), NormalizeSlug(slug))
+	return kind + "/" + joinNameParts(distinctCSV(ids), NormalizeSlug(slug))
 }
 func BuildSubjectName(kind string, ids []string, slug string) string {
 	kind = strings.ToLower(strings.TrimSpace(kind))
 	if kind == "" {
 		kind = "feat"
 	}
-	return fmt.Sprintf("%s-%s-%s", kind, strings.Join(distinctCSV(ids), "-"), NormalizeSlug(slug))
+	return joinNameParts([]string{kind}, joinNameParts(distinctCSV(ids), NormalizeSlug(slug)))
+}
+func joinNameParts(ids []string, slug string) string {
+	parts := make([]string, 0, len(ids)+1)
+	for _, id := range ids {
+		if id != "" {
+			parts = append(parts, id)
+		}
+	}
+	if slug != "" {
+		parts = append(parts, slug)
+	}
+	return strings.Join(parts, "-")
 }
 func foldRune(r rune) rune {
 	switch r {
@@ -145,7 +239,12 @@ func AgentFiles(manifest Manifest) []agent.WorkspaceConfigFile {
 }
 func WriteGeneratedFiles(workspace string, manifest Manifest) error {
 	for _, file := range AgentFiles(manifest) {
-		if err := writeFileAtomic(filepath.Join(workspace, file.RelativePath), []byte(file.Content), 0o644); err != nil {
+		path := filepath.Join(workspace, filepath.FromSlash(file.RelativePath))
+		existing, err := os.ReadFile(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		if err := writeFileAtomic(path, file.Merge(existing, err == nil), 0o644); err != nil {
 			return err
 		}
 	}

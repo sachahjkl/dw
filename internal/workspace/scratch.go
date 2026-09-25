@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,12 +93,24 @@ func (e *Engine) PlanScratchStart(ctx context.Context, request ScratchStartReque
 	folders := make([]RepositoryFolder, 0, len(repositories))
 	worktrees := make([]StartRepositoryPlan, 0, len(repositories))
 	for _, name := range repositories {
+		if err := validatePathComponent("repository", name); err != nil {
+			return ScratchStartPlan{}, err
+		}
 		repository, ok := configured.Repository(name)
 		if !ok {
 			return ScratchStartPlan{}, localizedCause("workspace.error.missing-repository", ErrMissingRepository, l10n.A("repository", name))
 		}
 		normalizeRepositoryConfig(&repository, name)
+		if err := validateRelativePath("repository folder", repository.Folder); err != nil {
+			return ScratchStartPlan{}, err
+		}
+		if err := validatePathComponent("repository anchor", repository.AnchorName); err != nil {
+			return ScratchStartPlan{}, err
+		}
 		path := filepath.Join(workspace, repository.Folder)
+		if err := ensurePathWithin(workspace, path); err != nil {
+			return ScratchStartPlan{}, err
+		}
 		folders = append(folders, RepositoryFolder{Repository: name, Path: repository.Folder})
 		worktrees = append(worktrees, StartRepositoryPlan{Repository: name, ProjectRoot: projectRoot, WorktreePath: path, HTTPURL: repository.HTTPURL, SSHURL: repository.SSHURL, DefaultBranch: repository.DefaultBranch, AnchorName: repository.AnchorName, GitCredentialSecret: repository.GitCredentialSecret, BranchName: branch})
 	}
@@ -125,21 +139,14 @@ func (e *Engine) PlanScratchStart(ctx context.Context, request ScratchStartReque
 
 func (e *Engine) ExecuteScratchStart(ctx context.Context, plan ScratchStartPlan, emit func(ActionEvent)) (ScratchStartExecutionReport, error) {
 	start := StartPlan{Project: plan.Project, Type: plan.Type, Slug: plan.Slug, BranchName: plan.BranchName, SubjectName: plan.SubjectName, Workspace: plan.Workspace, Repositories: plan.Repositories, RepositoryFolders: plan.RepositoryFolders, RepositoryWorktrees: plan.RepositoryWorktrees}
-	if _, err := os.Stat(plan.Workspace); err == nil {
-		return ScratchStartExecutionReport{}, localizedCause("workspace.error.workspace-conflict", ErrWorkspaceConflict, l10n.A("detail", plan.Workspace))
-	}
 	if e.Git == nil {
 		return ScratchStartExecutionReport{}, ErrGitCapabilityRequired
 	}
-	prepared := make([]WorktreeResult, 0, len(start.RepositoryWorktrees))
-	rollback := func() {
-		for i := len(prepared) - 1; i >= 0; i-- {
-			if prepared[i].Created && prepared[i].GitDir != "" {
-				_ = e.Git.WorktreeRemove(ctx, prepared[i].GitDir, prepared[i].WorktreePath)
-			}
-		}
-		_ = os.RemoveAll(plan.Workspace)
+	if err := createWorkspaceDir(plan.Workspace); err != nil {
+		return ScratchStartExecutionReport{}, err
 	}
+	prepared := make([]WorktreeResult, 0, len(start.RepositoryWorktrees))
+	rollback := func() { e.rollbackStart(ctx, prepared, plan.Workspace) }
 	events := make([]ActionEvent, 0)
 	for _, target := range start.RepositoryWorktrees {
 		credential, err := e.gitCredential(ctx, target.GitCredentialSecret)
@@ -254,33 +261,40 @@ func (e *Engine) ExecuteScratchPromotionLocal(ctx context.Context, manifest Mani
 			backups[relative] = data
 		}
 	}
-	rollback := func() {
+	rollback := func(cause error) error {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+		defer cancel()
+		errs := []error{cause}
 		base := plan.Workspace
 		if _, err := os.Stat(plan.NewWorkspace); err == nil && plan.NewWorkspace != plan.Workspace {
-			_ = os.Rename(plan.NewWorkspace, plan.Workspace)
+			errs = append(errs, os.Rename(plan.NewWorkspace, plan.Workspace))
 		}
 		for i := len(renamed) - 1; i >= 0; i-- {
 			repository, _ := project.Repository(renamed[i])
 			normalizeRepositoryConfig(&repository, renamed[i])
-			_ = brancher.RenameBranch(ctx, filepath.Join(base, repository.Folder), plan.NewBranch, plan.OldBranch)
+			errs = append(errs, brancher.RenameBranch(ctx, filepath.Join(base, repository.Folder), plan.NewBranch, plan.OldBranch))
 		}
-		for relative, data := range backups {
-			_ = writeFileAtomic(filepath.Join(plan.Workspace, relative), data, 0o644)
+		for _, relative := range paths {
+			target := filepath.Join(plan.Workspace, relative)
+			if data, ok := backups[relative]; ok {
+				errs = append(errs, writeFileAtomic(target, data, 0o644))
+			} else if err := os.Remove(target); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
 		}
+		return errors.Join(errs...)
 	}
 	for _, name := range plan.Repositories {
 		repository, _ := project.Repository(name)
 		normalizeRepositoryConfig(&repository, name)
 		if err := brancher.RenameBranch(ctx, filepath.Join(plan.Workspace, repository.Folder), plan.OldBranch, plan.NewBranch); err != nil {
-			rollback()
-			return ScratchPromotionExecutionReport{Plan: plan, LocalEffects: renamed}, err
+			return ScratchPromotionExecutionReport{Plan: plan, LocalEffects: renamed}, rollback(err)
 		}
 		renamed = append(renamed, name)
 	}
 	if plan.NewWorkspace != plan.Workspace {
 		if err := os.Rename(plan.Workspace, plan.NewWorkspace); err != nil {
-			rollback()
-			return ScratchPromotionExecutionReport{Plan: plan, LocalEffects: renamed}, err
+			return ScratchPromotionExecutionReport{Plan: plan, LocalEffects: renamed}, rollback(err)
 		}
 	}
 	updated := manifest
@@ -288,8 +302,7 @@ func (e *Engine) ExecuteScratchPromotionLocal(ctx context.Context, manifest Mani
 	updated.WorkItemType, updated.WorkItemTitle, updated.WorkItemState = cloneString(plan.Target.Type), cloneString(plan.Target.Title), cloneString(plan.Target.State)
 	updated.WorkItems = []WorkItem{plan.Target}
 	if err := writeWorkspaceFiles(plan.NewWorkspace, updated, true); err != nil {
-		rollback()
-		return ScratchPromotionExecutionReport{Plan: plan, LocalEffects: renamed}, err
+		return ScratchPromotionExecutionReport{Plan: plan, LocalEffects: renamed}, rollback(err)
 	}
 	effects := append([]string(nil), renamed...)
 	effects = append(effects, "workspace", "manifest", "generated-files")
@@ -308,17 +321,31 @@ func (e *Engine) ScratchPruneCandidates(ctx context.Context, root, project strin
 		latest := time.Time{}
 		err := filepath.WalkDir(item.Path, func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
+				if errors.Is(err, fs.ErrPermission) {
+					if entry != nil && entry.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
 				return err
 			}
-			if entry.IsDir() && entry.Name() == ".git" {
-				return filepath.SkipDir
-			}
 			if entry.IsDir() {
+				if entry.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				if path != item.Path {
+					if _, statErr := os.Lstat(filepath.Join(path, ".git")); statErr == nil {
+						return filepath.SkipDir
+					}
+				}
 				return nil
 			}
 			info, err := entry.Info()
 			if err == nil && info.ModTime().After(latest) {
 				latest = info.ModTime()
+			}
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
+				return nil
 			}
 			return err
 		})
@@ -342,6 +369,11 @@ func (e *Engine) ScratchPruneCandidates(ctx context.Context, root, project strin
 				if found && value.After(latest) {
 					latest = value
 				}
+			}
+		}
+		if latest.IsZero() {
+			if info, statErr := os.Stat(item.Path); statErr == nil {
+				latest = info.ModTime()
 			}
 		}
 		item.ActivityAt = latest.UTC().Format(time.RFC3339)

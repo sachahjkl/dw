@@ -2,10 +2,13 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/gitrepo"
@@ -102,7 +105,7 @@ func (e *Engine) PlanStartWithItems(ctx context.Context, request StartRequest, i
 		request.Slug = *items[0].Title
 	}
 	if len(items) > 0 {
-		request.WorkItemIDs = request.WorkItemIDs[:0]
+		request.WorkItemIDs = make([]string, 0, len(items))
 		for _, item := range items {
 			request.WorkItemIDs = append(request.WorkItemIDs, item.ID)
 		}
@@ -111,13 +114,11 @@ func (e *Engine) PlanStartWithItems(ctx context.Context, request StartRequest, i
 }
 
 func (e *Engine) ExecuteStart(ctx context.Context, plan StartPlan, workItems []WorkItem, childTasks []ChildTask, emit func(ActionEvent)) (StartExecutionReport, error) {
-	if _, err := os.Stat(plan.Workspace); err == nil {
-		return StartExecutionReport{}, localizedCause("workspace.error.workspace-conflict", ErrWorkspaceConflict, l10n.A("detail", plan.Workspace))
-	} else if !os.IsNotExist(err) {
-		return StartExecutionReport{}, localizedOperation("inspect workspace", err)
-	}
 	if e.Git == nil && len(plan.RepositoryWorktrees) > 0 {
 		return StartExecutionReport{}, ErrGitCapabilityRequired
+	}
+	if err := createWorkspaceDir(plan.Workspace); err != nil {
+		return StartExecutionReport{}, err
 	}
 	events := make([]ActionEvent, 0)
 	pushEvent := func(event ActionEvent) {
@@ -127,15 +128,7 @@ func (e *Engine) ExecuteStart(ctx context.Context, plan StartPlan, workItems []W
 		}
 	}
 	prepared := make([]WorktreeResult, 0, len(plan.RepositoryWorktrees))
-	rollback := func() {
-		for index := len(prepared) - 1; index >= 0; index-- {
-			item := prepared[index]
-			if item.Created && item.GitDir != "" {
-				_ = e.Git.WorktreeRemove(ctx, item.GitDir, item.WorktreePath)
-			}
-		}
-		_ = os.RemoveAll(plan.Workspace)
-	}
+	rollback := func() { e.rollbackStart(ctx, prepared, plan.Workspace) }
 	for _, target := range plan.RepositoryWorktrees {
 		credential, err := e.gitCredential(ctx, target.GitCredentialSecret)
 		if err != nil {
@@ -166,7 +159,7 @@ func (e *Engine) ExecuteStart(ctx context.Context, plan StartPlan, workItems []W
 	if now == nil {
 		now = realClock{}
 	}
-	manifest := Manifest{Schema: 2, Kind: KindTracked, WorkItemID: plan.PrimaryWorkItemID, TaskID: plan.TaskID, Project: plan.Project, Type: plan.Type, Slug: plan.Slug, BranchName: plan.BranchName, CreatedAt: now.Now().UTC().Format("2006-01-02T15:04:05Z07:00"), Repositories: append([]string(nil), plan.Repositories...), Status: "created", WorkItemType: cloneString(first.Type), WorkItemTitle: cloneString(first.Title), WorkItemState: cloneString(first.State), WorkItems: workItems}
+	manifest := Manifest{Schema: 2, Kind: KindTracked, WorkItemID: plan.PrimaryWorkItemID, TaskID: plan.TaskID, Project: plan.Project, Type: plan.Type, Slug: plan.Slug, BranchName: plan.BranchName, CreatedAt: now.Now().UTC().Format(time.RFC3339), Repositories: append([]string(nil), plan.Repositories...), Status: "created", WorkItemType: cloneString(first.Type), WorkItemTitle: cloneString(first.Title), WorkItemState: cloneString(first.State), WorkItems: workItems}
 	if len(childTasks) > 0 {
 		manifest.ChildTasks = distinctChildTasks(childTasks)
 	}
@@ -534,6 +527,33 @@ func ChildTaskTitle(repository, title string) string {
 		prefix = "SQL"
 	}
 	return "[" + prefix + "] " + title
+}
+
+const rollbackTimeout = 2 * time.Minute
+
+func createWorkspaceDir(workspace string) error {
+	if err := os.MkdirAll(filepath.Dir(workspace), 0o755); err != nil {
+		return localizedOperation("inspect workspace", err)
+	}
+	if err := os.Mkdir(workspace, 0o755); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return localizedCause("workspace.error.workspace-conflict", ErrWorkspaceConflict, l10n.A("detail", workspace))
+		}
+		return localizedOperation("inspect workspace", err)
+	}
+	return nil
+}
+
+func (e *Engine) rollbackStart(ctx context.Context, prepared []WorktreeResult, workspace string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
+	for index := len(prepared) - 1; index >= 0; index-- {
+		item := prepared[index]
+		if item.Created && item.GitDir != "" {
+			_ = e.Git.WorktreeRemove(ctx, item.GitDir, item.WorktreePath)
+		}
+	}
+	_ = os.RemoveAll(workspace)
 }
 
 func writeWorkspaceFiles(workspace string, manifest Manifest, agents bool) error {

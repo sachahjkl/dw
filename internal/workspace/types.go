@@ -291,6 +291,7 @@ type AddRepositoryPlan struct {
 	SSHURL                                                     *string
 	DefaultBranch, AnchorName, GitCredentialSecret, BranchName string
 	Repositories                                               []string
+	AlreadyPresent                                             bool
 }
 
 func (p AddRepositoryPlan) MarshalJSON() ([]byte, error) {
@@ -311,7 +312,8 @@ func (p AddRepositoryPlan) MarshalJSON() ([]byte, error) {
 		GitCredentialSecret *string  `json:"gitCredentialSecret"`
 		BranchName          string   `json:"branchName"`
 		Repositories        []string `json:"repositories"`
-	}{p.Workspace, p.Repository, p.ProjectRoot, p.WorktreePath, p.HTTPURL, p.SSHURL, p.DefaultBranch, p.AnchorName, secret, p.BranchName, p.Repositories})
+		AlreadyPresent      bool     `json:"alreadyPresent,omitempty"`
+	}{p.Workspace, p.Repository, p.ProjectRoot, p.WorktreePath, p.HTTPURL, p.SSHURL, p.DefaultBranch, p.AnchorName, secret, p.BranchName, p.Repositories, p.AlreadyPresent})
 }
 
 type RepositoryTarget struct {

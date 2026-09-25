@@ -2,10 +2,14 @@ package workspace
 
 import (
 	"context"
-	"github.com/sachahjkl/dw/internal/l10n"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 func (e *Engine) PlanAddRepository(ctx context.Context, root, workspace, name string) (Manifest, AddRepositoryPlan, error) {
@@ -19,8 +23,11 @@ func (e *Engine) PlanAddRepository(ctx context.Context, root, workspace, name st
 	}
 	for _, existing := range manifest.Repositories {
 		if equalFold(existing, name) {
-			return manifest, AddRepositoryPlan{Workspace: workspace, Repository: name, ProjectRoot: filepath.Join(root, "projects", manifest.Project), WorktreePath: filepath.Join(workspace, name), DefaultBranch: "main", AnchorName: name + ".git", BranchName: manifest.BranchName, Repositories: append([]string(nil), manifest.Repositories...)}, nil
+			return manifest, AddRepositoryPlan{Workspace: workspace, Repository: existing, BranchName: manifest.BranchName, Repositories: append([]string(nil), manifest.Repositories...), AlreadyPresent: true}, nil
 		}
+	}
+	if err := validatePathComponent("project", manifest.Project); err != nil {
+		return Manifest{}, AddRepositoryPlan{}, err
 	}
 	project, found, err := e.project(ctx, root, manifest.Project)
 	if err != nil {
@@ -47,8 +54,14 @@ func (e *Engine) PlanAddRepository(ctx context.Context, root, workspace, name st
 	return manifest, AddRepositoryPlan{Workspace: workspace, Repository: name, ProjectRoot: filepath.Join(root, "projects", manifest.Project), WorktreePath: filepath.Join(workspace, repository.Folder), HTTPURL: repository.HTTPURL, SSHURL: repository.SSHURL, DefaultBranch: repository.DefaultBranch, AnchorName: repository.AnchorName, GitCredentialSecret: repository.GitCredentialSecret, BranchName: manifest.BranchName, Repositories: repositories}, nil
 }
 func (e *Engine) ExecuteAddRepository(ctx context.Context, manifest Manifest, plan AddRepositoryPlan) (AddRepositoryReport, error) {
+	if plan.AlreadyPresent {
+		return AddRepositoryReport{Plan: plan, Manifest: manifest}, nil
+	}
 	if e.Git == nil {
 		return AddRepositoryReport{}, ErrGitCapabilityRequired
+	}
+	if err := ensurePathWithin(plan.Workspace, plan.WorktreePath); err != nil {
+		return AddRepositoryReport{}, err
 	}
 	credential, err := e.gitCredential(ctx, plan.GitCredentialSecret)
 	if err != nil {
@@ -58,16 +71,37 @@ func (e *Engine) ExecuteAddRepository(ctx context.Context, manifest Manifest, pl
 	if err != nil {
 		return AddRepositoryReport{}, localizedOperation("prepare repository worktree", err)
 	}
+	manifestPath := filepath.Join(plan.Workspace, ManifestFile)
+	originalManifest, manifestErr := os.ReadFile(manifestPath)
+	handoffPath := filepath.Join(plan.Workspace, HandoffPrefix+plan.Repository+".md")
+	_, handoffErr := os.Stat(handoffPath)
+	fail := func(cause error) (AddRepositoryReport, error) {
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+		defer cancel()
+		errs := []error{cause}
+		if manifestErr == nil {
+			errs = append(errs, writeFileAtomic(manifestPath, originalManifest, 0o644))
+		}
+		if errors.Is(handoffErr, fs.ErrNotExist) {
+			if err := os.Remove(handoffPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
+		}
+		if worktree.Created && worktree.GitDir != "" {
+			errs = append(errs, e.Git.WorktreeRemove(rollbackCtx, worktree.GitDir, worktree.WorktreePath))
+		}
+		return AddRepositoryReport{}, errors.Join(errs...)
+	}
 	updated := manifest
 	updated.Repositories = append([]string(nil), plan.Repositories...)
-	if err = WriteManifest(filepath.Join(plan.Workspace, ManifestFile), updated); err != nil {
-		return AddRepositoryReport{}, localizedOperation("write repository manifest", err)
+	if err = WriteManifest(manifestPath, updated); err != nil {
+		return fail(localizedOperation("write repository manifest", err))
 	}
-	if err = writeFileAtomic(filepath.Join(plan.Workspace, HandoffPrefix+plan.Repository+".md"), []byte(HandoffMarkdown(updated, plan.Repository)), 0o644); err != nil {
-		return AddRepositoryReport{}, localizedOperation("write repository handoff", err)
+	if err = writeFileAtomic(handoffPath, []byte(HandoffMarkdown(updated, plan.Repository)), 0o644); err != nil {
+		return fail(localizedOperation("write repository handoff", err))
 	}
 	if err = WriteGeneratedFiles(plan.Workspace, updated); err != nil {
-		return AddRepositoryReport{}, localizedOperation("write generated agent files", err)
+		return fail(localizedOperation("write generated agent files", err))
 	}
 	return AddRepositoryReport{Plan: plan, Worktree: worktree, Manifest: updated}, nil
 }
@@ -168,6 +202,11 @@ func (e *Engine) ExecuteCommit(ctx context.Context, plan CommitPlanReport) (Comm
 	}
 	committed := make([]string, 0)
 	for _, item := range plan.Targets {
+		if err := ensurePathWithin(plan.Workspace, item.Target.Path); err != nil {
+			return CommitExecutionReport{}, err
+		}
+	}
+	for _, item := range plan.Targets {
 		if !item.Status.IsGitRepository || !item.Status.HasChanges {
 			continue
 		}
@@ -228,7 +267,7 @@ func EnsureWorkItemReference(message string, manifest Manifest) string {
 		ids = appendDistinct(ids, task.ID)
 	}
 	for _, id := range ids {
-		if strings.Contains(message, "#"+id) {
+		if id != "" && containsReference(message, "#"+id) {
 			return message
 		}
 	}
@@ -238,17 +277,35 @@ func EnsureWorkItemReference(message string, manifest Manifest) string {
 	return message
 }
 
+func containsReference(message, reference string) bool {
+	for offset := 0; ; {
+		index := strings.Index(message[offset:], reference)
+		if index < 0 {
+			return false
+		}
+		end := offset + index + len(reference)
+		if end == len(message) || !isReferenceRune(rune(message[end])) {
+			return true
+		}
+		offset = end
+	}
+}
+
+func isReferenceRune(r rune) bool {
+	return r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '_' || r == '-'
+}
+
 func (e *Engine) PlanTeardown(ctx context.Context, root, workspace string) (Manifest, TeardownPlanReport, error) {
 	manifest, err := ReadManifest(filepath.Join(workspace, ManifestFile))
 	if err != nil {
 		return Manifest{}, TeardownPlanReport{}, err
 	}
+	if err := validatePathComponent("project", manifest.Project); err != nil {
+		return Manifest{}, TeardownPlanReport{}, err
+	}
 	project, _, err := e.project(ctx, root, manifest.Project)
 	if err != nil {
 		return Manifest{}, TeardownPlanReport{}, localizedOperation("load project configuration", err)
-	}
-	if err := validatePathComponent("project", manifest.Project); err != nil {
-		return Manifest{}, TeardownPlanReport{}, err
 	}
 	workspacesRoot := filepath.Join(root, "projects", manifest.Project, "workspaces")
 	if err := ensurePathWithin(workspacesRoot, workspace); err != nil {
@@ -293,10 +350,11 @@ func (e *Engine) ExecuteTeardown(ctx context.Context, plan TeardownPlanReport, a
 	if strings.TrimSpace(plan.Root) == "" {
 		return TeardownExecutionReport{}, ErrNoWorkspace
 	}
-	if err := ensurePathWithin(filepath.Join(plan.Root, "projects"), workspace); err != nil {
+	manifest, err := ReadManifest(filepath.Join(workspace, ManifestFile))
+	if err != nil {
 		return TeardownExecutionReport{}, err
 	}
-	if _, err := ReadManifest(filepath.Join(workspace, ManifestFile)); err != nil {
+	if err := validateTeardownPaths(plan, workspace, manifest.Project); err != nil {
 		return TeardownExecutionReport{}, err
 	}
 	if e.Git == nil {
@@ -327,10 +385,79 @@ func (e *Engine) ExecuteTeardown(ctx context.Context, plan TeardownPlanReport, a
 			return TeardownExecutionReport{}, localizedDetail("workspace.error.teardown-operation", err, l10n.A("repository", step.Subject.Repository))
 		}
 	}
+	if err := ensureNotLink(workspace); err != nil {
+		return TeardownExecutionReport{}, err
+	}
 	if err := os.RemoveAll(workspace); err != nil {
 		return TeardownExecutionReport{}, localizedOperation("delete workspace", err)
 	}
 	return TeardownExecutionReport{Workspace: workspace, Steps: append([]TeardownStep(nil), plan.Steps...)}, nil
+}
+
+// validateTeardownPaths requires the workspace to be exactly projects/<project>/workspaces/<name>
+// and every planned worktree and git directory to stay inside its expected root.
+func validateTeardownPaths(plan TeardownPlanReport, workspace, project string) error {
+	if err := validatePathComponent("project", project); err != nil {
+		return err
+	}
+	projectRoot := filepath.Join(plan.Root, "projects", project)
+	workspacesRoot := filepath.Join(projectRoot, "workspaces")
+	absoluteRoot, err := filepath.Abs(workspacesRoot)
+	if err != nil {
+		return err
+	}
+	absoluteWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(absoluteRoot, absoluteWorkspace)
+	if err != nil {
+		return err
+	}
+	if err := validatePathComponent("workspace", relative); err != nil {
+		return err
+	}
+	if err := ensurePathWithin(workspacesRoot, workspace); err != nil {
+		return err
+	}
+	if err := ensureNotLink(workspace); err != nil {
+		return err
+	}
+	repositoriesRoot := filepath.Join(projectRoot, "repositories")
+	for _, step := range plan.Steps {
+		switch step.Action.Type {
+		case "worktreeRemove":
+			if err := ensureStrictlyWithin(workspace, step.Action.WorktreePath); err != nil {
+				return err
+			}
+			if strings.TrimSpace(step.Action.GitDir) == "" {
+				continue
+			}
+			fallthrough
+		case "worktreePrune":
+			if err := ensureStrictlyWithin(repositoriesRoot, step.Action.GitDir); err != nil {
+				return err
+			}
+		case "deleteWorkspace":
+			if !samePath(step.Action.Workspace, workspace) {
+				return fmt.Errorf("workspace: teardown step targets %q instead of %q", step.Action.Workspace, workspace)
+			}
+		}
+	}
+	return nil
+}
+
+func ensureStrictlyWithin(root, path string) error {
+	if strings.TrimSpace(path) == "" || samePath(root, path) {
+		return fmt.Errorf("workspace: path %q must be inside %q", path, root)
+	}
+	return ensurePathWithin(root, path)
+}
+
+func samePath(left, right string) bool {
+	left, leftErr := filepath.Abs(left)
+	right, rightErr := filepath.Abs(right)
+	return leftErr == nil && rightErr == nil && equalFold(left, right)
 }
 
 func (e *Engine) PlanPrune(ctx context.Context, root string, project *string, ids []string, sync bool) (PrunePlanReport, error) {
@@ -415,6 +542,9 @@ func (e *Engine) PlanRepositoryLatestReport(ctx context.Context, root, workspace
 func (e *Engine) ExecuteRepositoryLatestReport(ctx context.Context, plan RepositoryLatestPlanReport) (RepositoryLatestExecutionReport, error) {
 	targets := make([]RepositoryTarget, 0, len(plan.Targets))
 	for _, target := range plan.Targets {
+		if err := ensurePathWithin(plan.Workspace, target.RepositoryPath); err != nil {
+			return RepositoryLatestExecutionReport{}, err
+		}
 		secret := ""
 		if target.GitCredentialSecret != nil {
 			secret = *target.GitCredentialSecret

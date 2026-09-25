@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -157,7 +159,7 @@ func BuildOpenLaunch(selected *Agent, request OpenRequest) Launch {
 	launch := Launch{Arguments: []string{}, WorkingDirectory: workspace}
 	switch choice {
 	case Cursor:
-		launch.FileName = "agent"
+		launch.FileName = cursorCommand()
 		launch.Arguments = []string{"--workspace", workspace}
 		if request.Continue {
 			launch.Arguments = append(launch.Arguments, "--continue")
@@ -188,10 +190,32 @@ func BuildOpenLaunch(selected *Agent, request OpenRequest) Launch {
 		}
 		launch.Environment = []EnvironmentVariable{{
 			Name:  "OPENCODE_CONFIG",
-			Value: request.Root + "/config/opencode/opencode.jsonc",
+			Value: filepath.Join(request.Root, "config", "opencode", "opencode.jsonc"),
 		}}
 	}
 	return launch
+}
+
+var lookPath = func(name string) (string, error) {
+	path, err := exec.LookPath(name)
+	if err != nil && runtime.GOOS == "windows" {
+		if script, scriptErr := exec.LookPath(name + ".ps1"); scriptErr == nil {
+			return script, nil
+		}
+	}
+	return path, err
+}
+
+// cursorCommand prefers the unambiguous cursor-agent binary and accepts the generic "agent"
+// binary only when it resolves inside a Cursor installation.
+func cursorCommand() string {
+	if _, err := lookPath("cursor-agent"); err == nil {
+		return "cursor-agent"
+	}
+	if path, err := lookPath("agent"); err == nil && strings.Contains(strings.ToLower(path), "cursor") {
+		return "agent"
+	}
+	return "cursor-agent"
 }
 
 // RunLaunch executes the launch directly through the typed process resolver, including Windows
@@ -217,21 +241,60 @@ type WorkspaceConfigRequest struct {
 	Project   string
 }
 
+const (
+	BlockBegin = "<!-- dw:begin -->"
+	BlockEnd   = "<!-- dw:end -->"
+)
+
+// WorkspaceConfigFile describes one generated agent file. When Block is set, dw owns only the
+// marked block and Merge preserves user content outside it; Legacy is the unmarked content older
+// dw versions generated, which is replaced wholesale.
 type WorkspaceConfigFile struct {
 	RelativePath string `json:"relativePath"`
 	Content      string `json:"content"`
+	Block        string `json:"-"`
+	Legacy       string `json:"-"`
+}
+
+func markedFile(path, prefix, instructions string) WorkspaceConfigFile {
+	block := BlockBegin + "\n" + strings.TrimRight(instructions, "\n") + "\n" + BlockEnd + "\n"
+	return WorkspaceConfigFile{RelativePath: path, Content: prefix + block, Block: block, Legacy: prefix + instructions}
 }
 
 func WorkspaceConfigFiles(request WorkspaceConfigRequest) []WorkspaceConfigFile {
 	instructions := workspaceInstructions(request.WorkItems, request.Project)
 	return []WorkspaceConfigFile{
-		{RelativePath: "AGENTS.md", Content: instructions},
-		{RelativePath: "CLAUDE.md", Content: instructions},
-		{RelativePath: ".claude/CLAUDE.md", Content: instructions},
-		{RelativePath: ".cursor/rules/devworkflow.mdc", Content: "---\nalwaysApply: true\n---\n\n" + instructions},
+		markedFile("AGENTS.md", "", instructions),
+		markedFile("CLAUDE.md", "", instructions),
+		markedFile(".claude/CLAUDE.md", "", instructions),
+		markedFile(".cursor/rules/devworkflow.mdc", "---\nalwaysApply: true\n---\n\n", instructions),
 		{RelativePath: ".codex/config.toml", Content: l10n.Text("agent.codex-config")},
-		{RelativePath: ".github/copilot-instructions.md", Content: instructions},
+		markedFile(".github/copilot-instructions.md", "", instructions),
 	}
+}
+
+// Merge returns the content to write given the current file content.
+func (file WorkspaceConfigFile) Merge(existing []byte, exists bool) []byte {
+	if !exists || file.Block == "" {
+		return []byte(file.Content)
+	}
+	current := string(existing)
+	if strings.ReplaceAll(current, "\r\n", "\n") == file.Legacy {
+		return []byte(file.Content)
+	}
+	if begin := strings.Index(current, BlockBegin); begin >= 0 {
+		if end := strings.Index(current[begin:], BlockEnd); end >= 0 {
+			end += begin + len(BlockEnd)
+			return []byte(current[:begin] + strings.TrimSuffix(file.Block, "\n") + current[end:])
+		}
+	}
+	if current != "" && !strings.HasSuffix(current, "\n") {
+		current += "\n"
+	}
+	if current != "" {
+		current += "\n"
+	}
+	return []byte(current + file.Block)
 }
 
 type ConfigWriteError struct {
@@ -253,7 +316,11 @@ func WriteWorkspaceConfigFiles(request WorkspaceConfigRequest) error {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return &ConfigWriteError{Path: path, cause: err}
 		}
-		if err := os.WriteFile(path, []byte(file.Content), 0o644); err != nil {
+		existing, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			return &ConfigWriteError{Path: path, cause: err}
+		}
+		if err := os.WriteFile(path, file.Merge(existing, err == nil), 0o644); err != nil {
 			return &ConfigWriteError{Path: path, cause: err}
 		}
 	}
@@ -297,10 +364,11 @@ func Doctor(ctx context.Context, requested *Agent) DoctorReport {
 	checks := make([]DoctorCheck, 0, len(agents))
 	for _, selected := range agents {
 		launch := BuildOpenLaunch(&selected, OpenRequest{Root: ".", Workspace: "."})
+		_, lookErr := lookPath(launch.FileName)
 		checks = append(checks, DoctorCheck{
 			Agent:     selected,
 			Command:   launch.FileName,
-			Available: dwprocess.Available(ctx, launch.FileName, "--help"),
+			Available: lookErr == nil,
 		})
 	}
 	return DoctorReport{Checks: checks}

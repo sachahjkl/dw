@@ -148,7 +148,7 @@ func MigrateProjectURLs(root string) error {
 		return err
 	}
 	content = append(content, '\n')
-	return os.WriteFile(path, content, 0o644)
+	return writeFileAtomic(path, content, 0o644)
 }
 
 func SyncBareRepositoryRemotes(root string) error {
@@ -230,7 +230,7 @@ func writeFile(path, content string, overwrite bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	return writeFileAtomic(path, []byte(content), 0o644)
 }
 
 func joinRoot(root string, parts ...string) string {

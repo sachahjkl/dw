@@ -77,7 +77,7 @@ func expandHome(value string) string {
 	if value == "~" {
 		return home
 	}
-	if strings.HasPrefix(value, "~/") {
+	if strings.HasPrefix(value, "~/") || runtime.GOOS == "windows" && strings.HasPrefix(value, `~\`) {
 		return appendPath(home, value[2:])
 	}
 	return value
@@ -133,10 +133,13 @@ func expandDollarEnvironmentVariables(value string) string {
 			for index < len(value) && value[index] != '}' {
 				index++
 			}
-			key := value[start:index]
-			if index < len(value) {
-				index++
+			if index == len(value) {
+				output.WriteString("${")
+				output.WriteString(value[start:])
+				continue
 			}
+			key := value[start:index]
+			index++
 			if replacement, ok := os.LookupEnv(key); ok {
 				output.WriteString(replacement)
 			} else {
@@ -197,7 +200,7 @@ func normalizePathComponents(path string) string {
 		case "..":
 			if len(normalized) != 0 && normalized[len(normalized)-1] != ".." {
 				normalized = normalized[:len(normalized)-1]
-			} else {
+			} else if !rooted {
 				normalized = append(normalized, part)
 			}
 		default:

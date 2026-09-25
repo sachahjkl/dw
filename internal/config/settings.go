@@ -66,7 +66,7 @@ func SaveUserSettings(settings UserSettings) error {
 	if err = os.MkdirAll(UserConfigDirectory(), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(UserSettingsPath(), content, 0o644)
+	return writeFileAtomic(UserSettingsPath(), content, 0o644)
 }
 
 func SetUserRoot(root string) (string, error) {
@@ -186,7 +186,7 @@ func SetDefaultAgent(root string, agent Agent) (Agent, error) {
 	if err != nil {
 		return "", err
 	}
-	if err = os.WriteFile(path, content, 0o644); err != nil {
+	if err = writeFileAtomic(path, content, 0o644); err != nil {
 		return "", err
 	}
 	return agent, nil

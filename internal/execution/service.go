@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -78,6 +79,7 @@ func NewServiceWithLockerConfig(dispatcher *action.Dispatcher, registry *Registr
 	if dispatcher == nil || registry == nil || events == nil || store == nil || locker == nil {
 		return nil, fmt.Errorf("execution.invalid-service-dependency")
 	}
+	store = &closableStore{inner: store}
 	if err := registry.ValidateDispatcher(dispatcher); err != nil {
 		return nil, err
 	}
@@ -189,8 +191,9 @@ func (service *Service) Submit(ctx context.Context, submission Submission) (Exec
 	queued := Event{ExecutionID: executionID, AttemptID: attemptID, Sequence: 1, At: now, Kind: EventQueued, ActionID: record.ActionID, Message: message}
 
 	service.mu.Lock()
-	defer service.mu.Unlock()
-	if !service.accepting {
+	accepting := service.accepting
+	service.mu.Unlock()
+	if !accepting {
 		return ExecutionID{}, fmt.Errorf("execution.closed")
 	}
 	created, existing, err := service.store.Create(ctx, stored, queued)
@@ -200,7 +203,16 @@ func (service *Service) Submit(ctx context.Context, submission Submission) (Exec
 	if existing {
 		return created.Record.ExecutionID, nil
 	}
-	service.executions[executionID] = newRuntimeExecution(stored, submission.Request, lock)
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	state := newRuntimeExecution(stored, submission.Request, lock)
+	service.executions[executionID] = state
+	if !service.accepting {
+		if err := service.transitionLocked(context.Background(), state, StatusInterrupted, EventInterrupted, "execution.event.interrupted", nil); err == nil {
+			service.finishLocked(state)
+		}
+		return ExecutionID{}, fmt.Errorf("execution.closed")
+	}
 	service.queue = append(service.queue, executionID)
 	service.signalWorker()
 	return executionID, nil
@@ -284,26 +296,33 @@ func (service *Service) Cancel(ctx context.Context, actor Actor, id ExecutionID)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	service.mu.Lock()
-	defer service.mu.Unlock()
-	state, err := service.stateLocked(ctx, id)
+	state, err := service.lockState(ctx, id)
 	if err != nil {
 		return err
 	}
+	defer service.mu.Unlock()
 	if err := authorize(actor, state.stored.Record); err != nil {
 		return err
 	}
 	now := time.Now().UTC()
-	state.stored.CancelRequestedAt = &now
-	switch state.stored.Record.Status {
-	case StatusQueued:
-		service.removeQueuedLocked(id)
-		if err := service.transitionLocked(ctx, state, StatusCanceled, EventCanceled, "execution.event.canceled", nil); err != nil {
+	previousCancel := state.stored.CancelRequestedAt
+	requestCancel := func(status Status, kind EventKind, messageID l10n.ID, update *promptUpdate) error {
+		state.stored.CancelRequestedAt = &now
+		if err := service.transitionLocked(ctx, state, status, kind, messageID, update); err != nil {
+			state.stored.CancelRequestedAt = previousCancel
 			return err
 		}
+		return nil
+	}
+	switch state.stored.Record.Status {
+	case StatusQueued:
+		if err := requestCancel(StatusCanceled, EventCanceled, "execution.event.canceled", nil); err != nil {
+			return err
+		}
+		service.removeQueuedLocked(id)
 		service.finishLocked(state)
 	case StatusRunning:
-		if err := service.transitionLocked(ctx, state, StatusCanceling, EventCanceling, "execution.event.canceling", nil); err != nil {
+		if err := requestCancel(StatusCanceling, EventCanceling, "execution.event.canceling", nil); err != nil {
 			return err
 		}
 		if state.cancel != nil {
@@ -313,7 +332,7 @@ func (service *Service) Cancel(ctx context.Context, actor Actor, id ExecutionID)
 		pending := state.stored.Record.PendingPrompt
 		state.stored.Record.PendingPrompt = nil
 		update := discardPromptUpdate(pending)
-		if err := service.transitionLocked(ctx, state, StatusCanceling, EventCanceling, "execution.event.canceling", update); err != nil {
+		if err := requestCancel(StatusCanceling, EventCanceling, "execution.event.canceling", update); err != nil {
 			state.stored.Record.PendingPrompt = pending
 			return err
 		}
@@ -336,12 +355,11 @@ func (service *Service) Respond(ctx context.Context, actor Actor, id ExecutionID
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	service.mu.Lock()
-	defer service.mu.Unlock()
-	state, err := service.stateLocked(ctx, id)
+	state, err := service.lockState(ctx, id)
 	if err != nil {
 		return err
 	}
+	defer service.mu.Unlock()
 	if err := authorize(actor, state.stored.Record); err != nil {
 		return err
 	}
@@ -355,33 +373,29 @@ func (service *Service) Respond(ctx context.Context, actor Actor, id ExecutionID
 	if err != nil {
 		return err
 	}
+	if state.response == nil || len(state.response) == cap(state.response) {
+		return fmt.Errorf("execution.prompt-response-unavailable:%s", promptID)
+	}
 	now := time.Now().UTC()
 	pending := state.stored.Record.PendingPrompt
-	state.stored.Record.Status = StatusRunning
 	state.stored.Record.PendingPrompt = nil
 	update := &promptUpdate{PromptID: promptID, PromptStatus: "answered", ResponseJSON: encoded, RespondedAt: &now, Redacted: redacted}
-	if err := service.store.Commit(ctx, service.executorID, state.stored, nil, update); err != nil {
-		state.stored.Record.Status = StatusWaitingInput
+	if err := service.transitionLocked(ctx, state, StatusRunning, EventInputReceived, "execution.event.input-received", update); err != nil {
 		state.stored.Record.PendingPrompt = pending
 		return err
 	}
-	select {
-	case state.response <- response:
-		state.prompt = nil
-		state.response = nil
-		return nil
-	default:
-		return fmt.Errorf("execution.prompt-response-unavailable:%s", promptID)
-	}
+	state.response <- response
+	state.prompt = nil
+	state.response = nil
+	return nil
 }
 
 func (service *Service) Subscribe(ctx context.Context, actor Actor, id ExecutionID, after EventSequence) (Subscription, error) {
-	service.mu.Lock()
-	defer service.mu.Unlock()
-	state, err := service.stateLocked(ctx, id)
+	state, err := service.lockState(ctx, id)
 	if err != nil {
 		return Subscription{}, err
 	}
+	defer service.mu.Unlock()
 	if err := authorize(actor, state.stored.Record); err != nil {
 		return Subscription{}, err
 	}
@@ -438,10 +452,8 @@ func (service *Service) Wait(ctx context.Context, actor Actor, id ExecutionID) (
 	ticker := time.NewTicker(runtimeconfig.Milliseconds(service.settings.PersistencePollMilliseconds))
 	defer ticker.Stop()
 	for {
-		service.mu.Lock()
-		state, err := service.stateLocked(ctx, id)
+		state, err := service.lockState(ctx, id)
 		if err != nil {
-			service.mu.Unlock()
 			return Record{}, err
 		}
 		if err := authorize(actor, state.stored.Record); err != nil {
@@ -615,11 +627,16 @@ func (service *Service) run(id ExecutionID) {
 		return
 	}
 	if envelope.Result != nil {
-		descriptor, _ := service.registry.Descriptor(state.stored.Record.ActionID)
-		encoded, encodeErr := descriptor.EncodeResult(envelope.Result)
-		if encodeErr != nil && dispatchErr == nil {
-			dispatchErr = encodeErr
-		} else if encodeErr == nil {
+		descriptor, ok := service.registry.Descriptor(state.stored.Record.ActionID)
+		if !ok {
+			if dispatchErr == nil {
+				dispatchErr = fmt.Errorf("execution.missing-descriptor:%s", state.stored.Record.ActionID)
+			}
+		} else if encoded, encodeErr := descriptor.EncodeResult(envelope.Result); encodeErr != nil {
+			if dispatchErr == nil {
+				dispatchErr = encodeErr
+			}
+		} else {
 			state.stored.Record.Result = &encoded
 			state.stored.Record.TypedResult = envelope.Result
 		}
@@ -629,11 +646,16 @@ func (service *Service) run(id ExecutionID) {
 		status, kind, messageID = StatusInterrupted, EventInterrupted, "execution.event.interrupted"
 		failure := FailureFromError(state.ownershipErr)
 		state.stored.Record.Failure = &failure
-	} else if errors.Is(dispatchErr, context.Canceled) {
+	} else if errors.Is(dispatchErr, context.Canceled) || dispatchErr == nil && state.stored.CancelRequestedAt != nil {
 		status, kind, messageID = StatusCanceled, EventCanceled, "execution.event.canceled"
 	} else if dispatchErr != nil {
 		status, kind, messageID = StatusFailed, EventFailed, "execution.event.failed"
 		failure := FailureFromError(dispatchErr)
+		state.stored.Record.Failure = &failure
+	}
+	if err := ValidateTransition(state.stored.Record.Status, status); err != nil {
+		status, kind, messageID = StatusFailed, EventFailed, "execution.event.failed"
+		failure := FailureFromError(err)
 		state.stored.Record.Failure = &failure
 	}
 	pending := state.stored.Record.PendingPrompt
@@ -643,14 +665,31 @@ func (service *Service) run(id ExecutionID) {
 		promptMutation = discardPromptUpdate(pending)
 	}
 	if transitionErr := service.transitionLocked(context.Background(), state, status, kind, messageID, promptMutation); transitionErr != nil {
-		state.stored.Record.PendingPrompt = pending
 		failure := FailureFromError(transitionErr)
 		state.stored.Record.Failure = &failure
+		service.forceFailedLocked(state, promptMutation)
 	}
 	service.active = nil
 	service.finishLocked(state)
-	_ = service.store.Prune(context.Background(), state.stored.Record.Root, service.settings.MaxTerminalRecordsPerRoot)
+	if err := service.store.Prune(context.Background(), state.stored.Record.Root, service.settings.MaxTerminalRecordsPerRoot); err != nil {
+		slog.Warn("execution: prune terminal records", "root", state.stored.Record.Root, "error", err)
+	}
 	service.signalWorker()
+}
+
+// forceFailedLocked guarantees a terminal record after a failed final transition: it retries as
+// Failed and, if persistence still fails, keeps the in-memory record terminal.
+func (service *Service) forceFailedLocked(state *runtimeExecution, prompt *promptUpdate) {
+	if state.stored.Record.Status != StatusFailed && ValidateTransition(state.stored.Record.Status, StatusFailed) == nil {
+		if err := service.transitionLocked(context.Background(), state, StatusFailed, EventFailed, "execution.event.failed", prompt); err == nil {
+			return
+		}
+	}
+	now := time.Now().UTC()
+	state.stored.Record.Status = StatusFailed
+	state.stored.Record.FinishedAt = &now
+	state.stored.Record.PendingPrompt = nil
+	_ = service.store.Commit(context.Background(), service.executorID, state.stored, nil, prompt)
 }
 
 func (service *Service) requestInput(ctx context.Context, id ExecutionID, prompt action.Prompt) (action.Response, error) {
@@ -954,13 +993,21 @@ func (service *Service) renewLeases(now time.Time) {
 	}
 }
 
-func (service *Service) stateLocked(ctx context.Context, id ExecutionID) (*runtimeExecution, error) {
+// lockState returns the runtime state with service.mu held. The store is read without holding
+// the lock; on error the lock is not held.
+func (service *Service) lockState(ctx context.Context, id ExecutionID) (*runtimeExecution, error) {
+	service.mu.Lock()
 	if state := service.executions[id]; state != nil {
 		return state, nil
 	}
+	service.mu.Unlock()
 	item, err := service.store.Get(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	service.mu.Lock()
+	if state := service.executions[id]; state != nil {
+		return state, nil
 	}
 	state := newRuntimeExecution(item, nil, LockSpec{Mode: LockNone})
 	service.executions[id] = state

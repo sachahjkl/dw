@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/sachahjkl/dw/internal/l10n"
@@ -85,7 +86,9 @@ func (d *Dispatcher) Register(handler Handler) error {
 }
 
 // Dispatch executes without holding the registry lock. The request/result IDs
-// are checked at both sides of the handler boundary.
+// are checked at both sides of the handler boundary. A handler must return a
+// non-nil result unless it fails; a nil result, including a typed nil pointer,
+// is reported as the handler error or as action.nil-result.
 func (d *Dispatcher) Dispatch(ctx context.Context, request Request, runtime Runtime) (ResultEnvelope, error) {
 	if request == nil {
 		return ResultEnvelope{}, fmt.Errorf("action.nil-request")
@@ -98,7 +101,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, request Request, runtime Runt
 		return ResultEnvelope{}, &MissingHandlerError{Action: id}
 	}
 	result, err := handler.Execute(ctx, request, runtime)
-	if result == nil {
+	if isNilResult(result) {
 		if err != nil {
 			return ResultEnvelope{}, err
 		}
@@ -108,6 +111,19 @@ func (d *Dispatcher) Dispatch(ctx context.Context, request Request, runtime Runt
 		return ResultEnvelope{}, &ResultMismatchError{Requested: id, Reported: result.ActionID()}
 	}
 	return ResultEnvelope{Action: id, Result: result}, err
+}
+
+func isNilResult(result Result) bool {
+	if result == nil {
+		return true
+	}
+	value := reflect.ValueOf(result)
+	switch value.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // IDs returns handler IDs in registration order.
