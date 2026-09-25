@@ -137,7 +137,7 @@ func (service *Service) Run(ctx context.Context, request Request, emit EmitFunc)
 		return Report{}, err
 	}
 	if !strings.EqualFold(digest, asset.SHA256) {
-		return Report{}, fmt.Errorf("update: invalid-sha256 expected=%s actual=%s file=%s", asset.SHA256, digest, downloaded)
+		return Report{}, fmt.Errorf("update: invalid-sha256 expected=%s actual=%s", asset.SHA256, digest)
 	}
 
 	emitEvent(emit, Event{Kind: "preparing-executable", FileName: asset.FileName, RID: rid})
@@ -203,7 +203,7 @@ func (service *Service) downloadAsset(ctx context.Context, asset Asset, emit Emi
 	}
 	buffer := make([]byte, 64*1024)
 	body := io.LimitReader(response.Body, maxAssetSize+1)
-	var received int64
+	var received, reported int64
 	for {
 		count, readErr := body.Read(buffer)
 		if count > 0 {
@@ -218,9 +218,15 @@ func (service *Service) downloadAsset(ctx context.Context, asset Asset, emit Emi
 				return "", fmt.Errorf("update: short-download-write")
 			}
 			received += int64(count)
-			emitEvent(emit, Event{Kind: "downloaded-asset-bytes", FileName: asset.FileName, Received: received, Total: total})
+			if received-reported >= progressStep || readErr == io.EOF {
+				reported = received
+				emitEvent(emit, Event{Kind: "downloaded-asset-bytes", FileName: asset.FileName, Received: received, Total: total})
+			}
 		}
 		if readErr == io.EOF {
+			if reported != received {
+				emitEvent(emit, Event{Kind: "downloaded-asset-bytes", FileName: asset.FileName, Received: received, Total: total})
+			}
 			break
 		}
 		if readErr != nil {

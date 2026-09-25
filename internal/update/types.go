@@ -21,6 +21,7 @@ const (
 	maxAssetSize          = int64(256 << 20)
 	maxArchiveSize        = int64(128 << 20)
 	maxArchiveEntries     = 1024
+	progressStep          = int64(1 << 20)
 )
 
 type Config = config.UpdateOptions
@@ -253,4 +254,6 @@ type Service struct {
 	APIBaseURL string
 	UserAgent  string
 	TempDir    string
+	// TrustedPublicKeys overrides the embedded release signing keys (tests only).
+	TrustedPublicKeys []string
 }

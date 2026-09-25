@@ -1,6 +1,7 @@
 package update
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -82,32 +83,59 @@ func (wire githubReleaseWire) release() (GitHubRelease, error) {
 }
 
 func (service *Service) FetchManifest(ctx context.Context, release GitHubRelease, assetName string) (Manifest, error) {
-	var manifestURL string
-	for _, asset := range release.Assets {
-		if strings.EqualFold(asset.Name, assetName) {
-			manifestURL = asset.URL
-			break
-		}
-	}
+	manifestURL := releaseAssetURL(release, assetName)
 	if manifestURL == "" {
 		return Manifest{}, fmt.Errorf("update: release-asset-not-found %q", assetName)
 	}
-	response, err := service.doGET(ctx, manifestURL)
+	signatureName := assetName + ".minisig"
+	signatureURL := releaseAssetURL(release, signatureName)
+	if signatureURL == "" {
+		return Manifest{}, fmt.Errorf("update: release-asset-not-found %q", signatureName)
+	}
+	contents, err := service.fetchReleaseFile(ctx, manifestURL, "manifest")
 	if err != nil {
 		return Manifest{}, err
 	}
-	defer response.Body.Close()
-	if err := validateContentLength(response.ContentLength, maxManifestSize, "manifest"); err != nil {
+	signature, err := service.fetchReleaseFile(ctx, signatureURL, "manifest-signature")
+	if err != nil {
 		return Manifest{}, err
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, readErr := readLimited(response.Body, maxManifestSize, "manifest")
-		if readErr != nil {
-			return Manifest{}, readErr
-		}
-		return Manifest{}, fmt.Errorf("update: manifest-http-%d: %s", response.StatusCode, body)
+	trustedKeys := service.TrustedPublicKeys
+	if len(trustedKeys) == 0 {
+		trustedKeys = TrustedPublicKeys
 	}
-	return ParseManifest(response.Body)
+	if err := VerifyManifestSignature(contents, signature, trustedKeys); err != nil {
+		return Manifest{}, err
+	}
+	return ParseManifest(bytes.NewReader(contents))
+}
+
+func releaseAssetURL(release GitHubRelease, name string) string {
+	for _, asset := range release.Assets {
+		if strings.EqualFold(asset.Name, name) {
+			return asset.URL
+		}
+	}
+	return ""
+}
+
+func (service *Service) fetchReleaseFile(ctx context.Context, fileURL, label string) ([]byte, error) {
+	response, err := service.doGET(ctx, fileURL)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if err := validateContentLength(response.ContentLength, maxManifestSize, label); err != nil {
+		return nil, err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		body, readErr := readLimited(response.Body, maxManifestSize, label)
+		if readErr != nil {
+			return nil, readErr
+		}
+		return nil, fmt.Errorf("update: %s-http-%d: %s", label, response.StatusCode, body)
+	}
+	return readLimited(response.Body, maxManifestSize, label)
 }
 
 func (service *Service) doGET(ctx context.Context, endpoint string) (*http.Response, error) {

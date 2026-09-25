@@ -90,10 +90,18 @@ func extractWindowsExecutable(archivePath, tempDir string) (replacement string, 
 		}
 		total += entry.UncompressedSize64
 	}
+	var executable *zip.File
 	for _, entry := range archive.File {
 		if !strings.EqualFold(path.Base(entry.Name), "dw.exe") || entry.FileInfo().IsDir() {
 			continue
 		}
+		if executable != nil {
+			return "", fmt.Errorf("update: invalid-archive-multiple-dw.exe-entries")
+		}
+		executable = entry
+	}
+	if executable != nil {
+		entry := executable
 		input, err := entry.Open()
 		if err != nil {
 			return "", fmt.Errorf("update: open-zip-entry: %w", err)
@@ -104,7 +112,11 @@ func extractWindowsExecutable(archivePath, tempDir string) (replacement string, 
 			return "", fmt.Errorf("update: create-extracted-executable: %w", err)
 		}
 		replacement = output.Name()
-		_, err = io.Copy(output, io.LimitReader(input, maxArchiveSize+1))
+		var copied int64
+		copied, err = io.Copy(output, io.LimitReader(input, maxArchiveSize+1))
+		if err == nil && copied > maxArchiveSize {
+			err = fmt.Errorf("archive-too-large: maximum=%d", maxArchiveSize)
+		}
 		if err == nil {
 			err = output.Sync()
 		}
@@ -176,7 +188,11 @@ func extractUnixExecutable(archivePath, rid, tempDir string) (replacement string
 			return "", fmt.Errorf("update: create-extracted-executable: %w", err)
 		}
 		replacement = output.Name()
-		if _, err = io.Copy(output, io.LimitReader(archive, header.Size)); err == nil {
+		var copied int64
+		if copied, err = io.Copy(output, io.LimitReader(archive, header.Size)); err == nil && copied != header.Size {
+			err = io.ErrUnexpectedEOF
+		}
+		if err == nil {
 			err = output.Sync()
 		}
 		closeErr := output.Close()
