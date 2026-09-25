@@ -193,7 +193,7 @@ validation errors. Do not implement separate lifecycle logic per interface.
 
 ## Delivery
 
-Implement on `ogf`, run `go test ./...`, then cherry-pick to the public
-`master` worktree and make only profile-specific template edits. Run the full
-suite on both branches. Finally build and install the OGF executable locally,
+Implement on the internal branch, run `go test ./...`, then cherry-pick to the
+public branch and make only profile-specific template edits. Run the full
+suite on both branches. Finally build and install the executable locally,
 restart the Web service, and verify its version and scratch command help.

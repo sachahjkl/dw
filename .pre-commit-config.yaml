@@ -1,0 +1,11 @@
+repos:
+  - repo: local
+    hooks:
+      - id: pushguard
+        name: pushguard
+        description: Refuse pushes to guarded remotes when commits match the local denylist.
+        entry: go run ./scripts/pushguard
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
