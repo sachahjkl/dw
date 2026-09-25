@@ -330,6 +330,24 @@ jobs:
           RELEASE_BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ needs.preflight.outputs.tag }}" \
           bash ./scripts/write-release-manifest.sh
 
+      - name: Sign release manifest
+        shell: bash
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [[ -z "${MINISIGN_SECRET_KEY}" ]]; then
+            echo "MINISIGN_SECRET_KEY is required to sign release.json." >&2
+            exit 1
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign
+          key_file="$(mktemp)"
+          trap 'rm -f "${key_file}"' EXIT
+          printf '%s\n' "${MINISIGN_SECRET_KEY}" > "${key_file}"
+          minisign -S -s "${key_file}" -m artifacts/release.json \
+            -t "dw ${{ needs.preflight.outputs.tag }} ${{ github.sha }}"
+          minisign -V -P "RWTdsGAfmDUoLMf4q+Gp4eoOnn0+n721Rryg2Up3E1VKBKbDo+3+E84A" -m artifacts/release.json
+
       - name: Create release tag
         shell: bash
         run: |
@@ -347,3 +365,4 @@ jobs:
             artifacts/dw-linux-x64/dw-linux-x64.tar.gz
             artifacts/dw-win-x64/dw-win-x64.zip
             artifacts/release.json
+            artifacts/release.json.minisig
