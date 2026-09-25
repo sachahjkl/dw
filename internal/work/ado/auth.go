@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sachahjkl/dw/internal/contract"
+	"github.com/sachahjkl/dw/internal/l10n"
 )
 
 const (
@@ -30,6 +32,9 @@ type Authenticator struct {
 	NewClient func() HTTPDoer
 	OpenURL   func(string) error
 	Now       func() time.Time
+	// Lock serializes refresh-token rotation across dw processes.
+	Lock func(context.Context) (func(), error)
+	Warn func(l10n.Message)
 }
 
 func NewAuthenticator(options *AuthOptions, store contract.SecretStore) *Authenticator {
@@ -39,7 +44,30 @@ func NewAuthenticator(options *AuthOptions, store contract.SecretStore) *Authent
 		NewClient: newDefaultHTTPClient,
 		OpenURL:   openURL,
 		Now:       time.Now,
+		Lock:      lockRefreshToken,
+		Warn:      warnStderr,
 	}
+}
+
+func warnStderr(message l10n.Message) {
+	_, _ = fmt.Fprintln(os.Stderr, l10n.Render(message))
+}
+
+func (a *Authenticator) warn(message l10n.Message) {
+	if a != nil && a.Warn != nil {
+		a.Warn(message)
+	}
+}
+
+func (a *Authenticator) lock(ctx context.Context) (func(), error) {
+	if a == nil || a.Lock == nil {
+		return func() {}, nil
+	}
+	release, err := a.Lock(ctx)
+	if err != nil {
+		return nil, keyringError(err)
+	}
+	return release, nil
 }
 
 func EnvironmentToken() *Token {
@@ -117,6 +145,11 @@ func (a *Authenticator) SilentOrEnvironment(ctx context.Context) (*Token, error)
 	if a == nil || a.Options == nil {
 		return nil, nil
 	}
+	release, err := a.lock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	refreshToken, ok, err := a.readRefreshToken(ctx)
 	if err != nil || !ok {
 		return nil, err
@@ -127,7 +160,7 @@ func (a *Authenticator) SilentOrEnvironment(ctx context.Context) (*Token, error)
 	}
 	if token.RefreshToken != "" {
 		if err := a.storeRefreshToken(ctx, token.RefreshToken); err != nil {
-			return nil, err
+			a.warn(l10n.M("ado.warning.refresh-token-not-saved", l10n.A("detail", err.Error())))
 		}
 	}
 	return a.tokenResult(token, "keyring"), nil
@@ -157,7 +190,21 @@ func (a *Authenticator) Status(ctx context.Context) (AuthStatus, error) {
 }
 
 func (a *Authenticator) Logout(ctx context.Context) (bool, error) {
+	release, err := a.lock(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	return a.deleteStoredRefreshToken(ctx)
+}
+
+func (a *Authenticator) storeRefreshTokenLocked(ctx context.Context, refreshToken string) error {
+	release, err := a.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return a.storeRefreshToken(ctx, refreshToken)
 }
 
 type oauthTokenResponse struct {
@@ -184,7 +231,7 @@ func (a *Authenticator) LoginDeviceCode(ctx context.Context, onInstructions func
 	if err != nil {
 		return Token{}, err
 	}
-	flowURL := "https://login.microsoftonline.com/" + tenant + "/oauth2/v2.0/devicecode"
+	flowURL := "https://login.microsoftonline.com/" + url.PathEscape(tenant) + "/oauth2/v2.0/devicecode"
 	var flow deviceAuthorizationResponse
 	if err := a.postOAuthForm(ctx, flowURL, url.Values{"client_id": {clientID}, "scope": {strings.Join(a.scopes(true), " ")}}, &flow); err != nil {
 		return Token{}, err
@@ -204,7 +251,7 @@ func (a *Authenticator) LoginDeviceCode(ctx context.Context, onInstructions func
 	}
 	interval := time.Duration(intervalSeconds) * time.Second
 	deadline := a.now().Add(time.Duration(flow.ExpiresIn) * time.Second)
-	tokenURL := "https://login.microsoftonline.com/" + tenant + "/oauth2/v2.0/token"
+	tokenURL := "https://login.microsoftonline.com/" + url.PathEscape(tenant) + "/oauth2/v2.0/token"
 	for {
 		var token oauthTokenResponse
 		err = a.postOAuthForm(ctx, tokenURL, url.Values{
@@ -214,7 +261,7 @@ func (a *Authenticator) LoginDeviceCode(ctx context.Context, onInstructions func
 		}, &token)
 		if err == nil {
 			if token.RefreshToken != "" {
-				if err := a.storeRefreshToken(ctx, token.RefreshToken); err != nil {
+				if err := a.storeRefreshTokenLocked(ctx, token.RefreshToken); err != nil {
 					return Token{}, err
 				}
 			}
@@ -248,7 +295,7 @@ func (a *Authenticator) refresh(ctx context.Context, refreshToken string) (oauth
 		return oauthTokenResponse{}, err
 	}
 	var token oauthTokenResponse
-	err = a.postOAuthForm(ctx, "https://login.microsoftonline.com/"+tenant+"/oauth2/v2.0/token", url.Values{
+	err = a.postOAuthForm(ctx, "https://login.microsoftonline.com/"+url.PathEscape(tenant)+"/oauth2/v2.0/token", url.Values{
 		"client_id":     {clientID},
 		"scope":         {strings.Join(a.scopes(false), " ")},
 		"refresh_token": {refreshToken},
@@ -305,10 +352,14 @@ func oauthErrorMessage(body []byte) string {
 		}
 		return value.Error
 	}
-	return string(body)
+	return truncateDetail(string(body), maximumErrorDetailLength)
 }
 
 func openURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || parsed.Host == "" {
+		return &Error{Kind: ErrorBrowserLogin, Detail: "refusing to open a non-HTTPS URL: " + truncateDetail(value, 200)}
+	}
 	var command *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":

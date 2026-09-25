@@ -2,7 +2,9 @@ package workapp
 
 import (
 	"context"
+	"errors"
 	"sort"
+	"strings"
 
 	"github.com/sachahjkl/dw/internal/l10n"
 	"github.com/sachahjkl/dw/internal/work"
@@ -42,19 +44,27 @@ func (s *Service) Changelog(ctx context.Context, request ChangelogRequest, sink 
 			return ChangelogReport{}, err
 		}
 		ids := make([]string, 0)
-		for _, repository := range request.Repositories {
-			for _, pullRequestID := range request.PullRequestIDs {
-				providerID, idErr := formatPullRequestID(pullRequestID)
-				if idErr != nil {
-					return ChangelogReport{}, idErr
-				}
+		for _, pullRequestID := range request.PullRequestIDs {
+			providerID, idErr := formatPullRequestID(pullRequestID)
+			if idErr != nil {
+				return ChangelogReport{}, idErr
+			}
+			found := false
+			for _, repository := range request.Repositories {
 				resolved, readErr := reader.PullRequestWorkItemIDs(ctx, projectRef(request.Root, request.Project), work.RepositoryName(repository), providerID)
+				if errors.Is(readErr, work.ErrPullRequestNotFound) {
+					continue
+				}
 				if readErr != nil {
 					return ChangelogReport{}, readErr
 				}
+				found = true
 				for _, id := range resolved {
 					ids = appendDistinct(ids, string(id))
 				}
+			}
+			if !found {
+				return ChangelogReport{}, pullRequestNotFound(pullRequestID, strings.Join(request.Repositories, ", "))
 			}
 		}
 		report.Sections = []ChangelogSection{newChangelogSection(nil, nil, ids, nil, len(ids) == 0)}
@@ -91,16 +101,26 @@ func (s *Service) Changelog(ctx context.Context, request ChangelogRequest, sink 
 	if err := collectEvent(ctx, &report.Events, sink, Event{Kind: "loading-changelog-items", IDs: append([]string(nil), report.WorkItemIDs...)}); err != nil {
 		return ChangelogReport{}, err
 	}
-	items, err := reader.ReadItems(ctx, projectRef(request.Root, request.Project), itemIDs(report.WorkItemIDs), work.ReadOptions{})
+	items, err := reader.ReadItems(ctx, projectRef(request.Root, request.Project), itemIDs(report.WorkItemIDs), work.ReadOptions{IncludeRelations: request.GroupByParent})
 	if err != nil {
 		return ChangelogReport{}, err
 	}
+	byID := make(map[string]work.Item, len(items))
+	for _, item := range items {
+		byID[string(item.ID)] = item
+	}
 	for index := range report.Sections {
 		section := &report.Sections[index]
-		for _, item := range items {
-			if containsString(section.WorkItemIDs, string(item.ID)) {
+		missing := make([]string, 0)
+		for _, id := range section.WorkItemIDs {
+			if item, found := byID[id]; found {
 				section.Items = append(section.Items, itemToSnapshot(item))
+			} else {
+				missing = append(missing, id)
 			}
+		}
+		if len(missing) != 0 {
+			section.Warnings = append(section.Warnings, ChangelogWarning{Detail: l10n.Render(l10n.M(msgChangelogItemsMissing, l10n.A("ids", strings.Join(missing, ", "))))})
 		}
 		sort.SliceStable(section.Items, func(i, j int) bool { return section.Items[i].ID < section.Items[j].ID })
 		section.ResolvedEmpty = len(section.WorkItemIDs) > 0 && len(section.Items) == 0
@@ -115,12 +135,10 @@ func (s *Service) Changelog(ctx context.Context, request ChangelogRequest, sink 
 				continue
 			}
 			normalized := make([]work.Item, 0, len(section.Items))
-			for _, item := range items {
-				if containsString(section.WorkItemIDs, string(item.ID)) {
-					normalized = append(normalized, item)
-				}
+			for _, snapshot := range section.Items {
+				normalized = append(normalized, byID[snapshot.ID])
 			}
-			groups, groupErr := s.groupItems(ctx, provider, request.Root, request.Project, normalized)
+			groups, groupErr := s.groupItems(ctx, provider, request.Root, request.Project, normalized, true)
 			if groupErr != nil {
 				section.Warnings = append(section.Warnings, ChangelogWarning{Detail: "Could not group work items by parent: " + groupErr.Error()})
 				continue

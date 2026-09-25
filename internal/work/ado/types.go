@@ -322,16 +322,17 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	code := "ado.error:" + string(e.Kind)
 	if e.Status != 0 {
-		return "ado.error:" + string(e.Kind) + ":" + strconv.Itoa(e.Status)
+		code += ":" + strconv.Itoa(e.Status)
 	}
-	return "ado.error:" + string(e.Kind)
+	return code + ": " + l10n.Render(e.Localized())
 }
 
 func (e *Error) Localized() l10n.Message {
 	switch e.Kind {
 	case ErrorHTTP:
-		return l10n.M("ado.error.http", l10n.A("status", e.Status), l10n.A("body", e.Body))
+		return l10n.M("ado.error.http", l10n.A("status", e.Status), l10n.A("body", truncateDetail(e.Body, maximumErrorDetailLength)))
 	case ErrorMissingAuth:
 		return l10n.M("ado.error.missing-auth")
 	case ErrorOAuth:

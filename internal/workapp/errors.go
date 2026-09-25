@@ -66,6 +66,9 @@ func itemNotFound(id string) error {
 func prItemsNotFound(id int64, repositories string) error {
 	return problem(msgPRItemsNotFound, "no work item linked to PR #%d in tested repositories: %s", l10n.A("id", id), l10n.A("repositories", repositories))
 }
+func pullRequestNotFound(id int64, repositories string) error {
+	return problem(msgChangelogPRNotFound, "pull request #%d was not found in tested repositories: %s", l10n.A("id", id), l10n.A("repositories", repositories))
+}
 func invalidPullRequestID(value any) error {
 	return problem(msgPullRequestIDInvalid, "invalid pull request ID %v: must be positive", l10n.A("id", value))
 }
@@ -97,4 +100,7 @@ const (
 	msgProviderStateResultMissing   l10n.ID = "work.error.provider-state-result-missing"
 	msgProviderPullRequestIDInvalid l10n.ID = "work.error.provider-pull-request-id-invalid"
 	msgPullRequestIDInvalid         l10n.ID = "work.error.pull-request-id-invalid"
+	msgChangelogPRNotFound          l10n.ID = "work.error.changelog-pr-not-found"
+	msgChangelogItemsMissing        l10n.ID = "work.changelog.items-missing"
+	msgNoParentGroup                l10n.ID = "work.group.no-parent"
 )

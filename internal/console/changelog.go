@@ -227,6 +227,9 @@ func changelogStatus(report ChangelogReport, section ChangelogSection, localizer
 }
 
 func rawChangelogItem(item ChangelogItem) string {
+	if item.ID == "" {
+		return item.Title
+	}
 	line := "#" + item.ID
 	if strings.TrimSpace(item.Type) != "" {
 		line += " [" + item.Type + "]"
@@ -241,6 +244,9 @@ func rawChangelogItem(item ChangelogItem) string {
 }
 
 func markdownChangelogLine(item ChangelogItem) string {
+	if item.ID == "" {
+		return item.Title
+	}
 	line := markdownChangelogLink(item)
 	if strings.TrimSpace(item.Type) != "" {
 		line += " [" + item.Type + "]"
@@ -257,6 +263,9 @@ func markdownChangelogLine(item ChangelogItem) string {
 func markdownChangelogLink(item ChangelogItem) string { return "[#" + item.ID + "](" + item.URL + ")" }
 
 func htmlChangelogLine(item ChangelogItem) string {
+	if item.ID == "" {
+		return html.EscapeString(item.Title)
+	}
 	line := htmlChangelogLink(item)
 	if strings.TrimSpace(item.Type) != "" {
 		line += " [" + html.EscapeString(item.Type) + "]"

@@ -12,7 +12,7 @@ import (
 
 func (p *Provider) TryGetPullRequestWorkItemIDs(ctx context.Context, options Options, repository string, pullRequestID int64, token Token) ([]string, bool, error) {
 	body, found, err := p.transport().GetOptional404(ctx, PullRequestWorkItemsURL(options, repository, pullRequestID), token)
-	if err != nil || !found {
+	if err != nil || !found || len(body) == 0 {
 		return nil, found, err
 	}
 	root, err := decodeObject(body)
@@ -222,7 +222,7 @@ func (p *Provider) PullRequestWorkItemIDs(ctx context.Context, project work.Proj
 		return nil, err
 	}
 	if !found {
-		return nil, &Error{Kind: ErrorRequest, Detail: "Pull request #" + string(pullRequestID) + " was not found in Azure DevOps repository " + string(repository)}
+		return nil, &Error{Kind: ErrorRequest, Detail: "Pull request #" + string(pullRequestID) + " was not found in Azure DevOps repository " + string(repository), Cause: work.ErrPullRequestNotFound}
 	}
 	result := make([]work.ItemID, len(ids))
 	for index, value := range ids {

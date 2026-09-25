@@ -2,6 +2,9 @@ package ado
 
 import (
 	"context"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/secret"
@@ -92,8 +95,66 @@ func (p *Provider) session(ctx context.Context, project work.ProjectRef) (Option
 	if auth == nil {
 		return Options{}, Token{}, &Error{Kind: ErrorMissingAuth}
 	}
-	token, err := auth.RequireToken(ctx)
+	token, err := p.accessToken(ctx, options, auth)
 	return options, token, err
+}
+
+const accessTokenExpirySkew = time.Minute
+
+type accessTokenKey struct {
+	organization string
+	tenant       string
+	client       string
+	scopes       string
+}
+
+type accessTokenCache struct {
+	mu     sync.Mutex
+	tokens map[accessTokenKey]cachedAccessToken
+}
+
+type cachedAccessToken struct {
+	token   Token
+	expires time.Time
+}
+
+var accessTokens accessTokenCache
+
+func (p *Provider) accessToken(ctx context.Context, options Options, auth *Authenticator) (Token, error) {
+	if token := EnvironmentToken(); token != nil || auth.Options == nil {
+		return auth.RequireToken(ctx)
+	}
+	tenant, client, _ := auth.tenantAndClient()
+	key := accessTokenKey{organization: strings.ToLower(strings.TrimRight(options.Organization, "/")), tenant: strings.ToLower(tenant), client: client, scopes: strings.Join(auth.scopes(false), " ")}
+	return accessTokens.get(ctx, key, auth)
+}
+
+func (cache *accessTokenCache) get(ctx context.Context, key accessTokenKey, auth *Authenticator) (Token, error) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	now := auth.now()
+	if cached, found := cache.tokens[key]; found && now.Before(cached.expires.Add(-accessTokenExpirySkew)) {
+		return cached.token, nil
+	}
+	token, err := auth.RequireToken(ctx)
+	if err != nil {
+		return Token{}, err
+	}
+	if token.ExpiresOn != nil {
+		if expires, parseErr := time.Parse(time.RFC3339, *token.ExpiresOn); parseErr == nil {
+			if cache.tokens == nil {
+				cache.tokens = make(map[accessTokenKey]cachedAccessToken)
+			}
+			cache.tokens[key] = cachedAccessToken{token: token, expires: expires}
+		}
+	}
+	return token, nil
+}
+
+func (cache *accessTokenCache) clear() {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	cache.tokens = nil
 }
 
 var (

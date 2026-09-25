@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -16,8 +17,11 @@ type HTTPDoer interface {
 
 const DefaultHTTPTimeout = 30 * time.Second
 const maximumResponseBodyBytes = 8 << 20
+const maximumErrorDetailLength = 500
 
-func newDefaultHTTPClient() HTTPDoer { return &http.Client{Timeout: DefaultHTTPTimeout} }
+var sharedHTTPClient = &http.Client{Timeout: DefaultHTTPTimeout}
+
+func newDefaultHTTPClient() HTTPDoer { return sharedHTTPClient }
 
 type Transport struct {
 	NewClient func() HTTPDoer
@@ -43,44 +47,41 @@ func authorizationHeader(token Token) string {
 }
 
 func (t *Transport) Get(ctx context.Context, url string, token Token) (json.RawMessage, error) {
-	return t.request(ctx, http.MethodGet, url, token, nil, "", false)
+	body, _, err := t.request(ctx, http.MethodGet, url, token, nil, "", false)
+	return body, err
 }
 
 func (t *Transport) GetOptional404(ctx context.Context, url string, token Token) (json.RawMessage, bool, error) {
-	body, err := t.request(ctx, http.MethodGet, url, token, nil, "", true)
-	if err != nil {
-		return nil, false, err
-	}
-	if body == nil {
-		return nil, false, nil
-	}
-	return body, true, nil
+	return t.request(ctx, http.MethodGet, url, token, nil, "", true)
 }
 
 func (t *Transport) Post(ctx context.Context, url string, token Token, body any) (json.RawMessage, error) {
-	return t.request(ctx, http.MethodPost, url, token, body, "application/json", false)
+	response, _, err := t.request(ctx, http.MethodPost, url, token, body, "application/json", false)
+	return response, err
 }
 
 func (t *Transport) PostWithContentType(ctx context.Context, url string, token Token, body any, contentType string) (json.RawMessage, error) {
-	return t.request(ctx, http.MethodPost, url, token, body, contentType, false)
+	response, _, err := t.request(ctx, http.MethodPost, url, token, body, contentType, false)
+	return response, err
 }
 
 func (t *Transport) Patch(ctx context.Context, url string, token Token, body any, contentType string) (json.RawMessage, error) {
-	return t.request(ctx, http.MethodPatch, url, token, body, contentType, false)
+	response, _, err := t.request(ctx, http.MethodPatch, url, token, body, contentType, false)
+	return response, err
 }
 
-func (t *Transport) request(ctx context.Context, method, url string, token Token, body any, contentType string, optional404 bool) (json.RawMessage, error) {
+func (t *Transport) request(ctx context.Context, method, url string, token Token, body any, contentType string, optional404 bool) (json.RawMessage, bool, error) {
 	var encoded []byte
 	var err error
 	if body != nil {
 		encoded, err = json.Marshal(body)
 		if err != nil {
-			return nil, &Error{Kind: ErrorJSON, Detail: err.Error(), Cause: err}
+			return nil, false, &Error{Kind: ErrorJSON, Detail: err.Error(), Cause: err}
 		}
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(encoded))
 	if err != nil {
-		return nil, &Error{Kind: ErrorRequest, Detail: err.Error(), Cause: err}
+		return nil, false, &Error{Kind: ErrorRequest, Detail: err.Error(), Cause: err}
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", authorizationHeader(token))
@@ -89,29 +90,52 @@ func (t *Transport) request(ctx context.Context, method, url string, token Token
 	}
 	response, err := t.client().Do(req)
 	if err != nil {
-		return nil, &Error{Kind: ErrorRequest, Detail: err.Error(), Cause: err}
+		return nil, false, &Error{Kind: ErrorRequest, Detail: err.Error(), Cause: err}
 	}
 	defer response.Body.Close()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maximumResponseBodyBytes+1))
 	if err != nil {
-		return nil, &Error{Kind: ErrorRequest, Detail: err.Error(), Cause: err}
+		return nil, false, &Error{Kind: ErrorRequest, Detail: err.Error(), Cause: err}
 	}
 	if len(responseBody) > maximumResponseBodyBytes {
-		return nil, &Error{Kind: ErrorRequest, Detail: "response body exceeds 8 MiB"}
+		return nil, false, &Error{Kind: ErrorRequest, Detail: "response body exceeds 8 MiB"}
 	}
 	if optional404 && response.StatusCode == http.StatusNotFound {
-		return nil, nil
+		return nil, false, nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, &Error{Kind: ErrorHTTP, Status: response.StatusCode, Body: string(responseBody)}
+		return nil, false, &Error{Kind: ErrorHTTP, Status: response.StatusCode, Body: httpErrorDetail(responseBody)}
 	}
 	if len(responseBody) == 0 {
-		return nil, nil
+		return nil, true, nil
 	}
 	if !json.Valid(responseBody) {
 		var value any
 		err = json.Unmarshal(responseBody, &value)
-		return nil, &Error{Kind: ErrorJSON, Detail: err.Error(), Cause: err}
+		return nil, false, &Error{Kind: ErrorJSON, Detail: err.Error(), Cause: err}
 	}
-	return json.RawMessage(responseBody), nil
+	return json.RawMessage(responseBody), true, nil
+}
+
+func httpErrorDetail(body []byte) string {
+	var payload struct {
+		Message string `json:"message"`
+		TypeKey string `json:"typeKey"`
+	}
+	detail := strings.TrimSpace(string(body))
+	if json.Unmarshal(body, &payload) == nil && strings.TrimSpace(payload.Message) != "" {
+		detail = strings.TrimSpace(payload.Message)
+		if payload.TypeKey != "" {
+			detail += " (" + payload.TypeKey + ")"
+		}
+	}
+	return truncateDetail(detail, maximumErrorDetailLength)
+}
+
+func truncateDetail(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit]) + "..."
 }

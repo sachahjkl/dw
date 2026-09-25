@@ -460,6 +460,11 @@ func buildWorkContextAI(inv *parse.Result) (action.Request, error) {
 }
 func buildWorkChangelog(inv *parse.Result) (action.Request, error) {
 	root, project := resolvedRoot(inv.Values), inv.Values.String("project")
+	if strings.TrimSpace(project) == "" {
+		if currentDirectory, err := os.Getwd(); err == nil {
+			project = inferProject(root, currentDirectory)
+		}
+	}
 	request := workapp.ChangelogRequest{Provider: selectedWorkProvider(inv.Values, root, project), Root: root, Project: project, GroupByParent: inv.Values.Bool("group_by_parent"), Table: inv.Values.Bool("table"), IDsOnly: inv.Values.Bool("ids_only"), Repositories: split(inv.Values.String("repo"))}
 	switch inv.Values.String("format") {
 	case "markdown":
@@ -947,6 +952,19 @@ func currentWorkSelection(values parse.Values) (string, string, []string, error)
 		ids = append(ids, current.PrimaryWorkItemID)
 	}
 	return root, project, ids, nil
+}
+
+func inferProject(root, currentDirectory string) string {
+	if current, err := workspace.Current(currentDirectory); err == nil && strings.TrimSpace(current.Project) != "" {
+		return current.Project
+	}
+	projects := filepath.Clean(config.NormalizePathLossy(filepath.Join(root, "projects")))
+	directory := filepath.Clean(config.NormalizePathLossy(currentDirectory))
+	relative, err := filepath.Rel(projects, directory)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return ""
+	}
+	return strings.Split(relative, string(filepath.Separator))[0]
 }
 
 func samePath(left, right string) bool {

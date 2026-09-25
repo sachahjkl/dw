@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/wirejson"
@@ -24,39 +25,121 @@ func (p *Provider) GetWorkItem(ctx context.Context, options Options, id string, 
 	return snapshotFromObject(root), nil
 }
 
+const (
+	workItemsBatchLimit       = 200
+	workItemsBatchConcurrency = 4
+)
+
+var workItemsBatchFields = []string{"System.Id", "System.WorkItemType", "System.State", "System.Title"}
+
+type workItemsBatchRequest struct {
+	IDs         []uint64 `json:"ids"`
+	Fields      []string `json:"fields,omitempty"`
+	Expand      string   `json:"$expand,omitempty"`
+	ErrorPolicy string   `json:"errorPolicy"`
+}
+
 func (p *Provider) GetWorkItemsBatch(ctx context.Context, options Options, ids []string, token Token) ([]WorkItemSnapshot, error) {
+	objects, err := p.workItemObjects(ctx, options, ids, false, token)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]WorkItemSnapshot, 0, len(objects))
+	for _, value := range objects {
+		result = append(result, snapshotFromObject(value))
+	}
+	return result, nil
+}
+
+// workItemObjects returns the accessible work items in request order; unknown,
+// inaccessible, or non-numeric IDs are omitted.
+func (p *Provider) workItemObjects(ctx context.Context, options Options, ids []string, relations bool, token Token) ([]map[string]any, error) {
 	numeric := make([]uint64, 0, len(ids))
+	seen := make(map[uint64]struct{}, len(ids))
 	for _, id := range ids {
-		if value, err := strconv.ParseUint(id, 10, 64); err == nil {
+		value, err := strconv.ParseUint(strings.TrimSpace(id), 10, 64)
+		if err != nil {
+			continue
+		}
+		if _, exists := seen[value]; !exists {
+			seen[value] = struct{}{}
 			numeric = append(numeric, value)
 		}
 	}
 	if len(numeric) == 0 {
-		return make([]WorkItemSnapshot, 0), nil
+		return make([]map[string]any, 0), nil
 	}
-	body, err := p.transport().Post(ctx, WorkItemsBatchURL(options), token, struct {
-		IDs    []uint64 `json:"ids"`
-		Fields []string `json:"fields"`
-	}{IDs: numeric, Fields: []string{"System.Id", "System.WorkItemType", "System.State", "System.Title"}})
-	if err != nil {
-		return nil, err
+	chunks := make([][]uint64, 0, (len(numeric)+workItemsBatchLimit-1)/workItemsBatchLimit)
+	for start := 0; start < len(numeric); start += workItemsBatchLimit {
+		chunks = append(chunks, numeric[start:min(start+workItemsBatchLimit, len(numeric))])
 	}
-	root, err := decodeObject(body)
-	if err != nil {
-		return nil, err
+	transport := p.transport()
+	url := WorkItemsBatchURL(options)
+	values := make([][]any, len(chunks))
+	errs := make([]error, len(chunks))
+	limiter := make(chan struct{}, workItemsBatchConcurrency)
+	var group sync.WaitGroup
+	for index, chunk := range chunks {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			limiter <- struct{}{}
+			defer func() { <-limiter }()
+			request := workItemsBatchRequest{IDs: chunk, ErrorPolicy: "Omit"}
+			if relations {
+				request.Expand = "relations"
+			} else {
+				request.Fields = workItemsBatchFields
+			}
+			body, err := transport.Post(ctx, url, token, request)
+			if err != nil {
+				errs[index] = err
+				return
+			}
+			root, err := decodeObject(body)
+			if err != nil {
+				errs[index] = err
+				return
+			}
+			values[index] = array(root["value"])
+		}()
 	}
-	byID := make(map[string]WorkItemSnapshot)
-	for _, value := range array(root["value"]) {
-		snapshot := snapshotFromObject(object(value))
-		byID[snapshot.ID] = snapshot
+	group.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
+		}
 	}
-	result := make([]WorkItemSnapshot, 0, len(ids))
-	for _, id := range ids {
-		if item, found := byID[id]; found {
+	byID := make(map[string]map[string]any)
+	for _, chunk := range values {
+		for _, value := range chunk {
+			item := object(value)
+			if id := elementText(item["id"]); item != nil && id != nil {
+				byID[*id] = item
+			}
+		}
+	}
+	result := make([]map[string]any, 0, len(byID))
+	for _, id := range numeric {
+		if item, found := byID[strconv.FormatUint(id, 10)]; found {
 			result = append(result, item)
 		}
 	}
 	return result, nil
+}
+
+func parentIDFromObject(item map[string]any) *string {
+	for _, value := range array(item["relations"]) {
+		relation := object(value)
+		rel, _ := relation["rel"].(string)
+		urlValue, _ := relation["url"].(string)
+		if strings.EqualFold(rel, RelationHierarchyReverse) {
+			if parent := workItemIDFromRelationURL(urlValue); parent != nil {
+				return parent
+			}
+		}
+	}
+	return nil
 }
 
 func (p *Provider) QueryAssignedItems(ctx context.Context, options Options, top int, token Token) ([]WorkItemSnapshot, error) {
@@ -117,20 +200,16 @@ func (p *Provider) ReadItems(ctx context.Context, project work.ProjectRef, ids [
 	for index, id := range ids {
 		values[index] = string(id)
 	}
-	snapshots, err := p.GetWorkItemsBatch(ctx, adoOptions, values, token)
+	objects, err := p.workItemObjects(ctx, adoOptions, values, options.IncludeRelations, token)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]work.Item, 0, len(snapshots))
-	for _, snapshot := range snapshots {
-		item := snapshotWorkItem(adoOptions, snapshot)
+	items := make([]work.Item, 0, len(objects))
+	for _, value := range objects {
+		item := snapshotWorkItem(adoOptions, snapshotFromObject(value))
 		if options.IncludeRelations {
-			parents, relationErr := p.GetRelatedWorkItemIDs(ctx, adoOptions, snapshot.ID, RelationHierarchyReverse, token)
-			if relationErr != nil {
-				return nil, relationErr
-			}
-			if len(parents) != 0 {
-				item.ParentID = contract.Some(work.ItemID(parents[0]))
+			if parent := parentIDFromObject(value); parent != nil {
+				item.ParentID = contract.Some(work.ItemID(*parent))
 			}
 		}
 		items = append(items, item)

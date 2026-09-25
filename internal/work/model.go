@@ -3,9 +3,14 @@
 package work
 
 import (
+	"errors"
+
 	"github.com/sachahjkl/dw/internal/contract"
 	"github.com/sachahjkl/dw/internal/wirejson"
 )
+
+// ErrPullRequestNotFound marks a pull request absent from the queried repository.
+var ErrPullRequestNotFound = errors.New("pull request not found")
 
 type ProviderName string
 type ItemID = contract.WorkItemID

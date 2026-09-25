@@ -93,6 +93,7 @@ func (p *Provider) Logout(ctx context.Context, project work.ProjectRef) (bool, e
 	if auth == nil {
 		return false, nil
 	}
+	accessTokens.clear()
 	return auth.Logout(ctx)
 }
 

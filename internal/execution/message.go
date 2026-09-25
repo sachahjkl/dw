@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -100,10 +101,12 @@ func FailureFromError(err error) Failure {
 	}
 	code := ErrorCode("execution.unclassified-error")
 	message := MessageV1{Schema: MessageSchemaV1, ID: "execution.unclassified-error", Args: []MessageArgV1{}}
-	if coded, ok := err.(codedError); ok && coded.ErrorCode() != "" {
+	var coded codedError
+	if errors.As(err, &coded) && coded.ErrorCode() != "" {
 		code = coded.ErrorCode()
 	}
-	if localized, ok := err.(localizedError); ok {
+	var localized localizedError
+	if errors.As(err, &localized) {
 		encoded, encodeErr := EncodeMessage(localized.Localized())
 		if encodeErr == nil {
 			message = encoded

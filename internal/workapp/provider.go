@@ -219,7 +219,7 @@ func (s *Service) Assigned(ctx context.Context, request AssignedRequest, sink Ev
 		if err := collectEvent(ctx, &report.Events, sink, Event{Kind: "grouping-assigned-work-items", Project: stringPtr(request.Project)}); err != nil {
 			return AssignedReport{}, err
 		}
-		groups, err := s.groupItems(ctx, provider, request.Root, request.Project, items)
+		groups, err := s.groupItems(ctx, provider, request.Root, request.Project, items, false)
 		if err != nil {
 			return AssignedReport{}, err
 		}
@@ -468,10 +468,28 @@ func (s *Service) DoingExecute(ctx context.Context, plan DoingPlanReport, sink E
 	return report, nil
 }
 
-func (s *Service) groupItems(ctx context.Context, provider work.Provider, root, project string, items []work.Item) ([]ItemGroup, error) {
+func (s *Service) groupItems(ctx context.Context, provider work.Provider, root, project string, items []work.Item, relationsLoaded bool) ([]ItemGroup, error) {
 	reader, err := work.Require[work.ItemReader](provider, work.CapabilityItemReader)
 	if err != nil {
 		return nil, err
+	}
+	if !relationsLoaded {
+		ids := make([]string, len(items))
+		for index, item := range items {
+			ids[index] = string(item.ID)
+		}
+		related, readErr := reader.ReadItems(ctx, projectRef(root, project), itemIDs(ids), work.ReadOptions{IncludeRelations: true})
+		if readErr != nil {
+			return nil, readErr
+		}
+		parentOf := make(map[work.ItemID]work.Item, len(related))
+		for _, item := range related {
+			parentOf[item.ID] = item
+		}
+		items = append([]work.Item(nil), items...)
+		for index := range items {
+			items[index].ParentID = parentOf[items[index].ID].ParentID
+		}
 	}
 	parentIDs := make([]string, 0)
 	for _, item := range items {
@@ -487,7 +505,7 @@ func (s *Service) groupItems(ctx context.Context, provider work.Provider, root, 
 	for _, parent := range parents {
 		byID[string(parent.ID)] = parent
 	}
-	groups := make([]ItemGroup, 0, len(parents))
+	groups := make([]ItemGroup, 0, len(parents)+1)
 	for _, parentID := range parentIDs {
 		parent, ok := byID[parentID]
 		if !ok {
@@ -500,6 +518,17 @@ func (s *Service) groupItems(ctx context.Context, provider work.Provider, root, 
 			}
 		}
 		groups = append(groups, group)
+	}
+	orphans := ItemGroup{Parent: ItemSnapshot{Title: stringPtr(l10n.Text(msgNoParentGroup))}, Items: []ItemSnapshot{}}
+	for _, item := range items {
+		if id, set := item.ParentID.Get(); !set {
+			orphans.Items = append(orphans.Items, itemToSnapshot(item))
+		} else if _, loaded := byID[string(id)]; !loaded {
+			orphans.Items = append(orphans.Items, itemToSnapshot(item))
+		}
+	}
+	if len(orphans.Items) != 0 {
+		groups = append(groups, orphans)
 	}
 	return groups, nil
 }

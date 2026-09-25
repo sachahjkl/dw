@@ -9,6 +9,8 @@ import (
 	"github.com/sachahjkl/dw/internal/work"
 )
 
+const maximumWorkItemIDDigits = 7
+
 func ExtractWorkItemIDsFromCommitMessages(commitLog string) []string {
 	result := make([]string, 0)
 	seen := make(map[string]struct{})
@@ -17,21 +19,56 @@ func ExtractWorkItemIDsFromCommitMessages(commitLog string) []string {
 		if index < 0 {
 			break
 		}
-		start := offset + index + 1
+		hash := offset + index
+		start := hash + 1
 		end := start
-		for end < len(commitLog) && commitLog[end] >= '0' && commitLog[end] <= '9' {
+		for end < len(commitLog) && isASCIIDigit(commitLog[end]) {
 			end++
 		}
-		if end > start {
-			id := commitLog[start:end]
-			if _, exists := seen[id]; !exists {
-				seen[id] = struct{}{}
-				result = append(result, id)
-			}
+		offset = max(end, start)
+		if end == start || end-start > maximumWorkItemIDDigits || !workItemReferenceAt(commitLog, hash, end) {
+			continue
 		}
-		offset = start
+		id := strings.TrimLeft(commitLog[start:end], "0")
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; !exists {
+			seen[id] = struct{}{}
+			result = append(result, id)
+		}
 	}
 	return result
+}
+
+func workItemReferenceAt(text string, hash, end int) bool {
+	if end < len(text) && (isWordByte(text[end]) || text[end] == ';') {
+		return false
+	}
+	if hash == 0 {
+		return true
+	}
+	previous := text[hash-1]
+	switch {
+	case hash >= 2 && strings.EqualFold(text[hash-2:hash], "AB"):
+		return hash == 2 || !isWordByte(text[hash-3])
+	case isWordByte(previous), previous == '&', previous == '=', previous == '"', previous == '\'', previous == '/':
+		return false
+	case previous == '(':
+		githubPullRequest := (hash == 1 || isSpaceByte(text[hash-2])) && end < len(text) && text[end] == ')'
+		return !githubPullRequest
+	}
+	return true
+}
+
+func isASCIIDigit(value byte) bool { return value >= '0' && value <= '9' }
+
+func isWordByte(value byte) bool {
+	return isASCIIDigit(value) || value == '_' || (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') || value >= 0x80
+}
+
+func isSpaceByte(value byte) bool {
+	return value == ' ' || value == '\t' || value == '\n' || value == '\r'
 }
 
 func (*Provider) ExtractCommitReferences(commitLog string) []work.ItemID {
@@ -44,47 +81,76 @@ func (*Provider) ExtractCommitReferences(commitLog string) []work.ItemID {
 }
 
 func (p *Provider) GroupWorkItemsByParent(ctx context.Context, options Options, items []WorkItemSnapshot, token Token) ([]WorkItemGroup, error) {
-	groups := make(map[string][]WorkItemSnapshot)
-	parents := make(map[string]WorkItemSnapshot)
+	ids := make([]string, len(items))
+	for index, item := range items {
+		ids[index] = item.ID
+	}
+	objects, err := p.workItemObjects(ctx, options, ids, true, token)
+	if err != nil {
+		return nil, err
+	}
+	parentOf := make(map[string]string, len(objects))
+	for _, value := range objects {
+		if id, parent := elementText(value["id"]), parentIDFromObject(value); id != nil && parent != nil {
+			parentOf[*id] = *parent
+		}
+	}
 	parentIDs := make([]string, 0)
 	for _, item := range items {
-		related, err := p.GetRelatedWorkItemIDs(ctx, options, item.ID, RelationHierarchyReverse, token)
-		if err != nil {
-			return nil, err
-		}
-		parentID := item.ID
-		if len(related) != 0 {
-			parentID = related[0]
-		}
-		if _, exists := groups[parentID]; !exists {
-			groups[parentID] = make([]WorkItemSnapshot, 0)
+		if parentID, found := parentOf[item.ID]; found && !containsText(parentIDs, parentID) {
 			parentIDs = append(parentIDs, parentID)
 		}
-		if parentID == item.ID {
-			parents[parentID] = item
-		} else {
-			if _, exists := parents[parentID]; !exists {
-				parent, err := p.GetWorkItem(ctx, options, parentID, token)
-				if err != nil {
-					return nil, err
-				}
-				parents[parentID] = parent
-			}
-			groups[parentID] = append(groups[parentID], item)
-		}
 	}
-	sort.Strings(parentIDs)
-	result := make([]WorkItemGroup, 0, len(parentIDs))
-	for _, parentID := range parentIDs {
-		parent, exists := parents[parentID]
-		if !exists {
+	loaded, err := p.GetWorkItemsBatch(ctx, options, parentIDs, token)
+	if err != nil {
+		return nil, err
+	}
+	parents := make(map[string]WorkItemSnapshot, len(loaded))
+	for _, parent := range loaded {
+		parents[parent.ID] = parent
+	}
+	groups := make(map[string][]WorkItemSnapshot)
+	orphans := make([]WorkItemSnapshot, 0)
+	for _, item := range items {
+		parentID, found := parentOf[item.ID]
+		if !found {
+			if _, exists := groups[item.ID]; !exists {
+				groups[item.ID] = make([]WorkItemSnapshot, 0)
+			}
+			parents[item.ID] = item
 			continue
 		}
-		children := groups[parentID]
+		if _, loaded := parents[parentID]; !loaded {
+			orphans = append(orphans, item)
+			continue
+		}
+		groups[parentID] = append(groups[parentID], item)
+	}
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]WorkItemGroup, 0, len(keys)+1)
+	for _, key := range keys {
+		children := groups[key]
 		sort.Slice(children, func(i, j int) bool { return children[i].ID < children[j].ID })
-		result = append(result, WorkItemGroup{Parent: parent, Items: children})
+		result = append(result, WorkItemGroup{Parent: parents[key], Items: children})
+	}
+	if len(orphans) != 0 {
+		sort.Slice(orphans, func(i, j int) bool { return orphans[i].ID < orphans[j].ID })
+		result = append(result, WorkItemGroup{Items: orphans})
 	}
 	return result, nil
+}
+
+func containsText(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Provider) ResolvePullRequestWorkItemIDs(ctx context.Context, options Options, repositories, pullRequestIDs []string, token Token) ([]string, error) {
