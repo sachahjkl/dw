@@ -2,16 +2,18 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Dev Workflow: work items, Git workspaces, and AI context in one CLI.">
-<title>dw — Put your workflow on rails</title>
+<meta name="description" content="Work items, Git worktrees, and coding agents in one CLI.">
+<title>dw — Dev Workflow</title>
 <link rel="icon" href="logo.png">
 <link rel="stylesheet" href="style.css">
 <body>
-<header><a class="brand" href="#">dw<span>DEV WORKFLOW</span></a><nav aria-label="Main"><a href="#install">Install</a><a href="https://github.com/sachahjkl/dw">GitHub ↗</a></nav></header>
+<header><a class="brand" href="#">dw</a><nav aria-label="Main"><a href="#install">Install</a><a href="https://github.com/sachahjkl/dw">Source ↗</a></nav></header>
 <main>
-<section class="hero"><div><p class="eyebrow">WORK ITEMS → WORKTREES → SHIPPING</p><h1>Put your workflow<br>on rails.</h1><p class="lead">Your agent writes the code. dw connects the work items, Git workspaces, context, and tools around it.</p><div class="actions"><a class="button" href="#install">Get dw ↓</a><a href="https://github.com/sachahjkl/dw#quick-start">Read the guide ↗</a></div><p class="note">Linux & Windows · Go · MIT</p></div><img class="logo" src="logo.png" alt="dw railway switch logo" width="280" height="280"></section>
-<section aria-labelledby="demo"><p class="eyebrow">THE WORKFLOW, IN MOTION</p><h2 id="demo">Preview first. Execute deliberately.</h2><img class="demo" src="demo.gif" alt="dw previews a workspace root and inspects the GitHub provider"><p class="note"><a href="demo.cast">Download the asciinema recording</a></p></section>
-<section class="cards"><article><h3>One workspace</h3><p>Keep repositories, branches, worktrees, and agent handoffs together.</p></article><article><h3>Your work provider</h3><p>Connect GitHub, Azure DevOps, or Atlassian through explicit capabilities.</p></article><article><h3>Context that travels</h3><p>Give agents work-item context and guarded access to configured data sources.</p></article></section>
-<section id="install"><p class="eyebrow">READY WHEN YOU ARE</p><h2>Install dw.</h2><h3>Try it with Nix</h3><pre><code>nix run github:sachahjkl/dw -- doctor</code></pre><div class="actions"><a class="button" href="https://github.com/sachahjkl/dw/releases/latest/download/dw-linux-x64.tar.gz">Linux x64 ↓</a><a class="button secondary" href="https://github.com/sachahjkl/dw/releases/latest/download/dw-win-x64.zip">Windows x64 ↓</a></div><p>Install Git for repository operations. See <a href="https://github.com/sachahjkl/dw/releases/latest">release notes and signed manifests</a>.</p></section>
-</main><footer>dw · <a href="https://github.com/sachahjkl/dw/blob/master/LICENSE">MIT license</a> · Built by <a href="https://github.com/sachahjkl">Sacha</a></footer>
+<section class="hero"><div><h1>dw</h1><p class="lead">Work items, Git worktrees, and coding agents. In the same terminal.</p><div class="actions"><a class="button" href="#install">Install dw</a><a href="https://github.com/sachahjkl/dw#quick-start">Documentation</a></div></div><img class="logo" src="logo.png" alt="dw railway switch logo" width="280" height="280"></section>
+<section aria-label="Terminal demonstration"><img class="demo" src="demo.gif" alt="dw previews a workspace root and inspects the GitHub provider"><p><a href="demo.cast">demo.cast</a></p></section>
+<section><h2>From ticket to worktree.</h2><pre><code>dw work context ai 142
+dw workspace start 142
+dw workspace preflight --continue</code></pre><p>Read the context. Preview the workspace. Start coding.</p><p>Connect GitHub, Azure DevOps, or Atlassian. Keep related repositories and agent handoffs in one task directory.</p></section>
+<section id="install"><h2>Install</h2><pre><code>nix run github:sachahjkl/dw -- doctor</code></pre><div class="actions"><a class="button" href="https://github.com/sachahjkl/dw/releases/latest/download/dw-linux-x64.tar.gz">Download Linux x64</a><a class="button secondary" href="https://github.com/sachahjkl/dw/releases/latest/download/dw-win-x64.zip">Download Windows x64</a></div><p>Git is required for repository operations. <a href="https://github.com/sachahjkl/dw/releases/latest">Release notes & signatures</a></p></section>
+</main><footer><a href="https://github.com/sachahjkl/dw/blob/master/LICENSE">MIT</a> · <a href="https://github.com/sachahjkl/dw/issues">Issues</a></footer>
 </body></html>
