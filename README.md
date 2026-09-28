@@ -1,234 +1,273 @@
+<div align="center">
+
+<img src=".project/image.png" alt="dw logo" width="192" height="192">
+
 # dw
 
-`dw` is the Dev Workflow CLI for AI-assisted work across external work providers, local Git workspaces, multi-repository projects, agent context, and guarded data-source inspection.
+**Deterministic rails for AI-assisted development.**
 
-The CLI is the deterministic rail. AI agents still do the reasoning and editing, but `dw` keeps provider interaction, workflow state, filesystem layout, Git operations, data access, and release/update mechanics predictable.
+[![Latest release](https://img.shields.io/github/v/release/sachahjkl/dw?style=for-the-badge&color=111827)](https://github.com/sachahjkl/dw/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/sachahjkl/dw/ci.yml?branch=master&style=for-the-badge&label=CI&color=2563eb)](https://github.com/sachahjkl/dw/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
+[![License](https://img.shields.io/github/license/sachahjkl/dw?style=for-the-badge&color=22c55e)](LICENSE)
 
-## Build
+[Install](#install) · [Quick start](#quick-start) · [Workflow](#workflow) · [Commands](#commands) · [Demo](#demo)
 
-Source builds require Go 1.26.2 or later and Git on `PATH`:
+</div>
 
-```bash
-go run ./cmd/dw version
-go fmt ./...
-go test ./...
-go vet ./...
-go tool staticcheck ./...
-go tool govulncheck ./...
-go build -o ./dw ./cmd/dw
+---
+
+`dw` connects external work items, local Git workspaces, AI-agent context, and
+guarded data access through one predictable CLI.
+
+AI agents still reason and edit. `dw` owns the repeatable parts: provider
+interaction, workspace layout, Git operations, workflow state, and release
+mechanics.
+
+```console
+$ dw work context ai 142
+$ dw workspace start 142
+$ dw workspace preflight --continue
 ```
 
-With Nix:
+## Why dw?
 
-```bash
-nix develop
-nix run . -- version
-nix run .#check
-nix build .#default
+| | |
+|---|---|
+| **Provider-neutral work** | Read and update work items without binding the workflow to one tracker. |
+| **Isolated workspaces** | Create repeatable branches, worktrees, repositories, and handoff state. |
+| **Agent-ready context** | Generate deterministic context before an agent starts reasoning. |
+| **Guarded data access** | Inspect SQL Server, SQLite, CSV, and Excel through explicit read policies. |
+| **Preview before mutation** | Review plans first, then opt into execution with `--execute`. |
+| **One operational surface** | Use the CLI, interactive TUI, or local web interface over the same actions. |
+
+## Demo
+
+Preview a Dev Workflow root, then inspect the capabilities of the GitHub work
+provider.
+
+<p align="center">
+  <a href="docs/demo.cast">
+    <img src="docs/demo.gif" alt="Terminal demo: initialize dw and inspect the GitHub provider" width="910">
+  </a>
+</p>
+
+The animation comes from the committed [asciinema recording](docs/demo.cast).
+
+## Quick start
+
+```sh
+dw doctor
+dw init
+dw provider auth login github
+dw work item list --project owner/repository
 ```
 
-`VERSION` is the release version source. The full runtime version is rendered as:
+Start work from an external item:
 
-```text
-Dev Workflow YYYY.MM.DD.N+COMMIT
+```sh
+dw work item show 142
+dw work context ai 142
+dw workspace start 142
+dw workspace open --continue
 ```
+
+Workspace commands preview destructive or remote changes by default. Add
+`--execute` only after you review the plan.
 
 ## Install
 
-Release binaries support Linux x64 and Windows x64. Git is a runtime prerequisite for repository and worktree operations. macOS is not supported.
-
 ### Nix
 
-Run the CLI without installing it:
+Run without installing:
 
-```bash
+```sh
 nix run github:sachahjkl/dw -- version
 nix run github:sachahjkl/dw -- doctor
 ```
 
-Refresh to the latest pushed revision when needed:
+Install into your profile:
 
-```bash
-nix run --refresh github:sachahjkl/dw -- version
-```
-
-Install it into your Nix profile for repeated use:
-
-```bash
+```sh
 nix profile install github:sachahjkl/dw
-dw version
 ```
 
-Upgrade a profile install:
+### Linux and WSL
 
-```bash
-nix profile upgrade github:sachahjkl/dw
-```
-
-`dw upgrade` is disabled for Nix-managed installs. Use `nix run --refresh ...` or `nix profile upgrade ...` instead.
-
-### Release Binaries
-
-Windows install from the latest GitHub release:
-
-```powershell
-irm https://raw.githubusercontent.com/sachahjkl/dw/master/scripts/install.ps1 | iex
-# or:
-iwr https://raw.githubusercontent.com/sachahjkl/dw/master/scripts/install.ps1 -UseBasicParsing | iex
-```
-
-Linux/WSL install from the latest GitHub release:
-
-```bash
+```sh
 curl -fsSL https://raw.githubusercontent.com/sachahjkl/dw/master/scripts/install.sh | sh
 ```
 
-Default install locations:
+### Windows PowerShell
 
-```text
-Windows: %LOCALAPPDATA%\DevWorkflow\bin
-Linux/WSL: ~/.local/bin
+```powershell
+irm https://raw.githubusercontent.com/sachahjkl/dw/master/scripts/install.ps1 | iex
 ```
 
-The installers update the user shell/profile PATH unless `-NoPathUpdate` or `--no-path-update` is passed.
+Release binaries support Linux x64 and Windows x64. Git is a runtime
+prerequisite. macOS is not currently supported.
 
-Manual downloads are also available from GitHub Releases:
+Release-binary installations can update themselves:
 
-- `dw-linux-x64.tar.gz`
-- `dw-win-x64.zip`
+```sh
+dw upgrade --check
+dw upgrade
+```
 
-For release-binary installs, `dw upgrade --check` can inspect the latest release manifest and `dw upgrade` updates the current binary.
+Use `nix profile upgrade github:sachahjkl/dw` for Nix-managed installations.
 
-### Local Build
+## Workflow
 
-Build and run the binary from source with Go 1.26.2 or later:
+```mermaid
+flowchart LR
+    A[Work item] --> B[AI context]
+    B --> C[Workspace plan]
+    C --> D[Git worktrees]
+    D --> E[Preflight]
+    E --> F[Implementation]
+    F --> G[Commit and finish]
+```
 
-```bash
+The daily path stays explicit:
+
+1. Inspect the work item with `dw work item show`.
+2. Generate context with `dw work context ai`.
+3. Create or resume a workspace with `dw workspace start`.
+4. Validate it with `dw workspace preflight --continue`.
+5. Implement and verify the change.
+6. Commit with `dw workspace commit --continue`.
+7. Finish with `dw workspace finish --continue`.
+
+## Commands
+
+### Work providers
+
+```sh
+dw provider list
+dw provider show github
+dw provider capabilities azure-devops
+dw provider auth status github
+dw work item list
+dw work pr list
+dw work changelog 142 143
+```
+
+Work providers currently include GitHub, Azure DevOps, and Atlassian. Optional
+capabilities remain visible through `dw provider capabilities`.
+
+### Workspaces
+
+```sh
+dw workspace status
+dw workspace list
+dw workspace current
+dw workspace preflight --continue
+dw workspace sync --continue
+dw workspace repo add owner/repository
+dw workspace handoff validate --continue
+dw workspace finish --continue --execute
+```
+
+Workspace state groups related repositories, worktrees, work items, and agent
+handoffs under one task directory.
+
+### Guarded data
+
+```sh
+dw data source list
+dw data catalog --source reporting
+dw data describe customers --source reporting
+dw data query --source reporting --query "select top 20 * from customers"
+```
+
+Each data provider defines its capabilities and read policy. Generic commands
+do not bypass provider guards.
+
+### Agents and interfaces
+
+```sh
+dw agent config
+dw agent default set opencode
+dw agent open
+dw tui
+dw web start
+```
+
+The CLI, TUI, and web interface use the same action contracts and execution
+state.
+
+## Configuration
+
+`dw init` creates a Dev Workflow root containing configuration, schemas,
+cache, projects, workspaces, and generated agent context.
+
+Inspect or move the root:
+
+```sh
+dw config show
+dw config doctor
+dw config root set ~/dev/dw
+dw refresh
+```
+
+Runtime limits live in `runtime.json`:
+
+- Linux: `$XDG_CONFIG_HOME/DevWorkflow/runtime.json`
+- Windows: `%LOCALAPPDATA%\DevWorkflow\runtime.json`
+
+The configuration uses schema version `1`. Unknown fields and invalid values
+cause a validation error.
+
+## Safety model
+
+`dw` separates planning from execution for workspace mutations. It also keeps
+provider authentication explicit and stores local secrets through the platform
+credential backend.
+
+Release updates verify a signed manifest before replacing the current binary.
+Data queries pass through the selected provider's read guard.
+
+## Development
+
+Enter the development environment:
+
+```sh
+nix develop
+```
+
+Run the complete checks:
+
+```sh
+nix run .#fmt
+nix run .#test
+nix run .#static-analysis
+nix run .#architecture
+nix flake check "path:$PWD" --no-write-lock-file
+```
+
+Source builds require Go 1.26.2 or later:
+
+```sh
 go build -o ./dw ./cmd/dw
 ./dw version
 ```
 
-Build local release artifacts:
+`VERSION` is the release version source. CI builds static Linux x64 and Windows
+x64 binaries.
 
-```bash
-VERSION="$(cat VERSION)" COMMIT="$(git rev-parse --short HEAD)" bash ./scripts/publish-linux-x64.sh
-```
-
-```powershell
-$Version = Get-Content .\VERSION
-$Commit = git rev-parse --short HEAD
-powershell -ExecutionPolicy Bypass -File .\scripts\publish-win-x64.ps1 -Version $Version -Commit $Commit
-```
-
-## Main Commands
-
-- `dw work item list|show|doing|state set|child create`: provider-neutral work-item operations.
-- `dw work pr list`: pull requests from the selected work provider.
-- `dw work context show|ai` and `dw work changelog`: provider-neutral context and changelog output.
-- `dw workspace status|list|current|open|start|preflight|sync|rename|commit|finish|teardown|prune`: local workspace and Git lifecycle.
-- `dw workspace pr start`, `dw workspace repo add|latest`, `dw workspace item add|remove`, and `dw workspace handoff validate`: grouped local workspace operations.
-- `dw data source list|collect`: configured data-source discovery and collection.
-- `dw data guard|catalog|describe|query`: generic guarded data access.
-- `dw provider list|show|capabilities`: inspect statically registered providers and their supported operations.
-- `dw provider auth login|status|logout <provider>`: authenticate a selected work provider.
-- `dw agent open|config|default set`: agent launch, workspace config generation, and default selection.
-- `dw config show|doctor|root set|color set`: local configuration inspection and updates.
-- `dw secret list|get|set|delete`: local secret inventory and storage.
-- `dw init`, `dw doctor`, and `dw upgrade --check`: root setup, health, and release management.
-
-Work commands accept optional `--provider`; otherwise the configured project work provider is used. Data-source configuration names its provider; generic data commands select it with `--source`, accept `RESOURCE` where needed, and take query text through `--query` or trailing `QUERY` values. Applicable data commands also accept `--provider`. Authentication always selects the provider positionally. `dw provider capabilities <provider>` shows which optional interfaces the provider implements before an operation is attempted.
-
-## Runtime Configuration
-
-DevWorkflow creates `runtime.json` in its user configuration directory. Edit this JSON file to change execution, HTTP, session, polling, and web-service limits.
-
-Linux uses `$XDG_CONFIG_HOME/DevWorkflow/runtime.json`, with `~/.config` as the default base. Windows uses `%LOCALAPPDATA%\DevWorkflow\runtime.json`.
-
-The file uses schema `1`. DevWorkflow rejects unknown fields and invalid values instead of applying partial settings.
-
-## Windows Console Encoding
-
-`dw` writes UTF-8. On Windows it switches the console code page to 65001 at startup and restores it on exit. When Windows PowerShell 5.1 captures the output (`$out = dw ...` or a pipe), it decodes it with `[Console]::OutputEncoding`; if that is not UTF-8, accented characters are garbled. Run this first:
-
-```powershell
-[Console]::OutputEncoding = [Text.UTF8Encoding]::new()
-```
-
-## Release Artifacts
-
-Build local release artifacts:
-
-```bash
-VERSION="$(cat VERSION)" COMMIT="$(git rev-parse --short HEAD)" bash ./scripts/publish-linux-x64.sh
-```
-
-```powershell
-$Version = Get-Content .\VERSION
-$Commit = git rev-parse --short HEAD
-powershell -ExecutionPolicy Bypass -File .\scripts\publish-win-x64.ps1 -Version $Version -Commit $Commit
-```
-
-The Linux artifact is written to:
+## Architecture
 
 ```text
-artifacts/linux-x64/dw-linux-x64.tar.gz
+cmd/dw/      Process entry point
+internal/    Actions, providers, CLI, TUI, web, and domain packages
+locales/     Embedded English localization catalog
+schemas/     Dev Workflow root schemas
+scripts/     Installers and release pipelines
 ```
 
-The Windows artifact is written to:
+Read the [architecture notes](docs/architecture/) for command contracts,
+workspaces, providers, OpenCode integration, data access, and updates.
 
-```text
-artifacts/win-x64/dw-win-x64.zip
-```
+## License
 
-Release workflows also produce `release.json` and its minisign signature `release.json.minisig`, consumed by `dw upgrade --check` and `dw upgrade`. Unsigned or badly signed manifests are rejected.
-
-## CI and Releases
-
-GitHub Actions uses Go 1.26 and Nix to:
-
-- check formatting, run `go test ./...`, and run `go vet ./...`
-- enforce the package dependency boundaries defined by the Nix architecture check
-- build and smoke-test CGO-disabled Linux x64 and Windows x64 artifacts
-- validate the Nix package on Linux
-- publish `dw-linux-x64.tar.gz`, `dw-win-x64.zip`, and their combined `release.json` manifest when a release is enabled
-
-Each platform archive contains one standalone executable: `dw` on Linux or `dw.exe` on Windows. There is no macOS artifact.
-
-## Repository Layout
-
-```text
-cmd/dw/             process entry point
-internal/           application, provider, CLI, console, TUI, and platform packages
-locales/            embedded English localization catalog
-schemas/            JSON schemas copied into DevWorkflow roots
-scripts/            Linux and Windows x64 release pipelines
-```
-
-The executable is composed from ordered, static work and data provider registries. Provider reports are derived from those registries and capability interfaces rather than a hardcoded product list. Azure DevOps is the current work implementation; GitHub and Jira can be added behind the same work contracts. SQL Server is the current data implementation; SQLite, Excel, and NoSQL sources can implement the relevant data capabilities. The interactive interface uses Charm v2; CLI, TUI, and console text crosses the English localization bridge in `internal/l10n`.
-
-## Workflow
-
-The intended end-to-end flow is:
-
-1. Inspect the project provider with `dw provider show <provider>` or `dw provider capabilities <provider>`.
-2. Authenticate when needed with `dw provider auth login <provider>`.
-3. Read external work with `dw work item show ...` and `dw work context ai ...`.
-4. Create or resume local state with `dw workspace start ...` or `dw workspace open ...`.
-5. Run `dw workspace preflight --continue` before implementation or child creation.
-6. Implement and verify, then use `dw workspace commit` and `dw workspace finish`.
-
-```mermaid
-flowchart TD
-    A[External work item] --> B[dw work item show]
-    B --> C[dw work context ai]
-    C --> D[dw workspace start]
-    D --> E[Local workspace and worktrees]
-    E --> F[dw workspace preflight]
-    F -->|blocking or warning| G[Clarify or wait]
-    F -->|clean| H[Write plan and implement]
-    G --> H
-    H --> I[Run verification]
-    I --> J[dw workspace commit]
-    J --> K[dw workspace finish]
-    K --> L[Push, pull request, provider updates]
-```
+`dw` is available under the [MIT License](LICENSE).
